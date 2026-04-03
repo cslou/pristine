@@ -1024,22 +1024,86 @@ Each phase is scoped to be independently shippable and testable.
 
 ### Phase 0: Repository Setup
 
-New repo with project scaffolding, all interfaces defined, all module directories created.
+New repo with project scaffolding, all interfaces defined, all module directories created. Source files are ported from the existing `getlou-gh/memory` repo.
+
+#### Source File Reference (getlou-gh/memory)
+
+**Types to port (~633 lines):**
+
+| Source file | What to port | Lines |
+|---|---|---|
+| `src/extractor/types.ts` | Message, Fact, TemporalConfidence, ExtractionResult | 88 |
+| `src/store/types.ts` | Memory, TemporalMode, Store, StoreTransaction, supersession types | 78 |
+| `src/consolidator/types.ts` | ConsolidationResult, ConsolidationAction, Consolidator interfaces | 85 |
+| `src/classifier/types.ts` | DetectedEntity, SensitivityReport, SensitivityClassifier | 22 |
+| `src/classifier/llm/types.ts` | LlmSensitivityFinding, LlmClassifierConfig | 33 |
+| `src/vault/types.ts` | VaultEntry, ZkV2EncryptedValue, encryption metadata | 67 |
+| `src/retriever/types.ts` | RankedMemory, RetrieveFilters, Retriever | 23 |
+| `src/query-analyzer/types.ts` | AnalyzedQuery, QueryAnalyzer, tool input schemas | 141 |
+| `src/orchestrator/types.ts` | Orchestrator, PipelineStep, IngestResult | 62 |
+| `src/embedder/types.ts` | Embedder, EmbeddingClient, EmbeddingResponse | 34 |
+
+**Prompts to port (~161 lines):**
+
+| Source file | What to port | Lines |
+|---|---|---|
+| `src/prompts/extraction.ts` | `buildExtractionPrompt()` — temporal extraction rules | 67 |
+| `src/prompts/consolidation.ts` | `buildConsolidationPrompt()` — UPDATE vs SUPERSEDE decision tree | 50 |
+| `src/prompts/classification.ts` | `buildClassificationPrompt()` — privacy/PII detection | 21 |
+| `src/prompts/query-analysis.ts` | `buildQueryAnalysisPrompt()` — query intent analysis | 19 |
+
+**Tool schemas to port (embedded in implementation files):**
+
+| Source file | Schema | Lines |
+|---|---|---|
+| `src/extractor/index.ts` lines 22-63 | `EXTRACT_FACTS_TOOL` — facts array with temporal fields | 41 |
+| `src/consolidator/index.ts` lines 118-166 | `consolidateFactsTool` — decisions array with actions | 48 |
+| `src/classifier/llm/index.ts` lines 21-60 | `CLASSIFY_SENSITIVITY_TOOL` — findings array with type/confidence | 39 |
+| `src/query-analyzer/types.ts` lines 62-114 | `analyze_query` tool — intent/filters/rewrittenQuery | 52 |
+
+**Utilities to port (~580 lines):**
+
+| Source file | What to port | Lines |
+|---|---|---|
+| `src/sanitizer/index.ts` | PLACEHOLDER_REGEX, resolve(), sanitizeText(), assertNoLlmReentry() | 390 |
+| `src/sanitizer/types.ts` | SensitiveField, SanitizedMemory, ResolveInput | 40 |
+| `src/temporal/index.ts` | validateTemporalFields() — ISO date validation, confidence rules | 111 |
+| `src/temporal/types.ts` | TemporalValidationOptions, TemporalValidationResult | 13 |
+| `src/orchestrator/chunker.ts` | chunkConversation(), CHUNK_SIZE, CHUNK_OVERLAP | 26 |
+
+**Tests to port (~3,254 lines, all mocked — no DB/API dependencies):**
+
+| Source file | Coverage | Lines |
+|---|---|---|
+| `tests/pipeline/chunker.test.ts` | Chunking boundaries, overlaps, custom params | 86 |
+| `tests/pipeline/sanitizer.test.ts` | Placeholder replacement, field ordering, approval flow | 335 |
+| `tests/pipeline/temporal-validator.test.ts` | Date validation, confidence handling, edge cases | 227 |
+| `tests/pipeline/extractor.test.ts` | Mocked Claude client — fact extraction, temporal parsing | 542 |
+| `tests/pipeline/consolidator.test.ts` | Mocked Claude client — consolidation decisions, batch handling | 712 |
+| `tests/pipeline/embedder.test.ts` | Mocked embedding client — batch embedding, retries | 362 |
+| `tests/pipeline/query-analyzer.test.ts` | Mocked Claude client — query analysis, intent detection | 506 |
+| `tests/pipeline/classifier.test.ts` | Sensitivity classification logic | 22 |
+| `tests/pipeline/llm-classifier.test.ts` | Mocked Claude client — finding detection, confidence | 462 |
+
+**Total portable: ~4,628 lines of source + ~3,254 lines of tests**
+
+#### Tasks
 
 - [ ] 0.1: Create repo (`pristine-local`), initialize with TypeScript, Vitest, ESLint, Prettier
 - [ ] 0.2: Set up `tsconfig.json` (strict mode, ESM, path aliases)
-- [ ] 0.3: Create `src/core/types.ts` — port all shared types from existing repo (Fact, Memory, Message, Episode, Entity, Relationship, etc.)
-- [ ] 0.4: Create `src/core/interfaces.ts` — define all module interfaces (LlmClient, Embedder, Store, Extractor, Consolidator, SensitivityClassifier, VaultStore, EpisodeStore, EntityStore, RelationshipStore, Retriever)
+- [ ] 0.3: Create `src/core/types.ts` — consolidate all shared types from the source files listed above into unified type definitions. Add new types for Episode, Entity, Relationship (not in the existing repo).
+- [ ] 0.4: Create `src/core/interfaces.ts` — define all module interfaces (LlmClient, Embedder, Store, Extractor, Consolidator, SensitivityClassifier, VaultStore, EpisodeStore, EntityStore, RelationshipStore, Retriever). The `LlmClient` interface uses the new `generate<T>()` shape (see Section 5.2), not the Anthropic SDK shape from the source repo.
 - [ ] 0.5: Create directory structure for all modules (see Section 9) with placeholder `types.ts` files re-exporting from `core/interfaces.ts`
 - [ ] 0.6: Create `tests/` directory structure mirroring `src/`
-- [ ] 0.7: Port prompts from existing repo (`src/prompts/` → module-local `prompts.ts` files)
-- [ ] 0.8: Port tool schemas from existing repo (extractor, consolidator, classifier)
-- [ ] 0.9: Port sanitizer and temporal validation utilities
-- [ ] 0.10: Port chunker (`chunkConversation()`) + its tests
-- [ ] 0.11: Set up `CLAUDE.md` with coding conventions
-- [ ] 0.12: Verify: `npm test` runs (with placeholder/skeleton tests), `npm run typecheck` passes, `npm run lint` passes
+- [ ] 0.7: Port prompts — copy from source `src/prompts/*.ts`, place into module-local `prompts.ts` files (e.g., `src/extractor/prompts.ts`, `src/consolidator/prompts.ts`)
+- [ ] 0.8: Port tool schemas — extract from source implementation files (see table above), place into module-local `schema.ts` files. Adapt to work with the new `LlmClient.generate<T>()` interface (JSON Schema objects, not Anthropic tool format).
+- [ ] 0.9: Port sanitizer (`src/sanitizer/`) and temporal validation (`src/temporal/`) from source — these are pure logic, copy directly
+- [ ] 0.10: Port chunker (`src/orchestrator/chunker.ts`) + its tests — pure logic, copy directly
+- [ ] 0.11: Port tests — copy all test files from the table above. Adapt mocked clients to use the new `LlmClient` interface instead of the Anthropic SDK shape. Tests for sanitizer, temporal, and chunker need no changes.
+- [ ] 0.12: Set up `CLAUDE.md` with coding conventions
+- [ ] 0.13: Verify: `npm test` runs, `npm run typecheck` passes, `npm run lint` passes
 
-**Exit criteria:** Repo compiles, lints, and has all interfaces defined. Every module directory exists with its `types.ts`. A developer can pick any module, read the interface, and start implementing without touching other modules.
+**Exit criteria:** Repo compiles, lints, and has all interfaces defined. Every module directory exists with its `types.ts`. Ported tests pass. A developer can pick any module, read the interface, and start implementing without touching other modules.
 
 ---
 

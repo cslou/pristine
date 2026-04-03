@@ -1,0 +1,77 @@
+{
+  "labels": [],
+  "comment": "",
+  "enabled": true,
+  "fixWithAI": false,
+  "hideFooter": false,
+  "strictness": 3,
+  "statusCheck": true,
+  "commentTypes": [
+    "logic",
+    "style"
+  ],
+  "instructions": "When a PR description contains an \"Acceptance Criteria\" section, verify each criterion against the diff. Flag any AC that appears unmet or only partially addressed. Flag any changes not covered by an AC as potential scope creep. When a \"Testing Approach\" section is present, check that tests in the diff match the described approach. When a \"Tests Added\" section is present, verify each listed test exists in the diff and covers what it claims. Flag if tests are listed but missing from the diff, or if significant code changes have no corresponding tests. Include an \"AC Verification\" section in your review with: ✅ met, ❌ unmet, ⚠️ can't verify from diff alone.",
+  "disabledLabels": [],
+  "excludeAuthors": [
+    "dependabot[bot]",
+    "renovate[bot]"
+  ],
+  "ignoreKeywords": "",
+  "ignorePatterns": "greptile.json\n",
+  "includeAuthors": [],
+  "summarySection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": false
+  },
+  "excludeBranches": [],
+  "fileChangeLimit": 100,
+  "includeBranches": [],
+  "includeKeywords": "",
+  "triggerOnDrafts": false,
+  "triggerOnUpdates": true,
+  "updateSummaryOnly": false,
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "statusCommentsEnabled": true,
+  "confidenceScoreSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": false
+  },
+  "sequenceDiagramSection": {
+    "included": false,
+    "collapsible": false,
+    "defaultOpen": false
+  },
+  "shouldUpdateDescription": false,
+  "commentsOutsideDiffSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "customContext": {
+    "other": [
+      {
+        "scope": [],
+        "content": ""
+      }
+    ],
+    "rules": [
+      {
+        "scope": [],
+        "rule": ""
+      }
+    ],
+    "files": [
+      {
+        "scope": [],
+        "path": "",
+        "description": ""
+      }
+    ]
+  }
+}

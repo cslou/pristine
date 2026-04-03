@@ -909,6 +909,12 @@ pristine-local/
 │   │   ├── retrieve.ts                 #   Retrieve pipeline (analyze → embed → search → fuse)
 │   │   └── chunker.ts                  #   Conversation chunking
 │   │
+│   ├── query-analyzer/                 # Query intent analysis + rewriting
+│   │   ├── types.ts                    #   QueryAnalyzer interface, AnalyzedQuery
+│   │   ├── index.ts                    #   Implementation (uses LlmClient)
+│   │   ├── prompts.ts                  #   Default query analysis prompt
+│   │   └── schema.ts                   #   analyze_query JSON Schema
+│   │
 │   ├── sanitizer/                      # Redaction + LLM reentry guards
 │   │   └── index.ts
 │   │
@@ -930,6 +936,7 @@ pristine-local/
 │   ├── episodes/
 │   ├── graph/
 │   ├── retriever/
+│   ├── query-analyzer/
 │   ├── orchestrator/
 │   └── integration/                    #   End-to-end pipeline tests
 │
@@ -950,9 +957,15 @@ Every module exports an interface from its `types.ts`. Implementations live in s
 // core/interfaces.ts — all module contracts in one place
 
 export interface LlmClient {
-  messages: {
-    create(params: LlmRequest): Promise<LlmResponse>;
-  };
+  /** Generate a structured response matching the given JSON schema.
+      The engine enforces the schema via grammar constraints (llama.cpp)
+      or structured output (Ollama format parameter). */
+  generate<T>(params: {
+    systemPrompt: string;
+    userPrompt: string;
+    schema: JsonSchema;
+    maxTokens?: number;
+  }): Promise<T>;
 }
 
 export interface Embedder {
@@ -1018,17 +1031,13 @@ Each interface can be implemented independently. The orchestrator wires them tog
 
 ## 10. Implementation Phases
 
+Phases are organized by workstream (privacy, then memory) with each module built end-to-end including its storage and inference. Shared infrastructure (SQLite connection, LLM engine, embedder) is scaffolded early. Each module creates its own SQLite tables when it needs them.
+
 Each phase is scoped to be independently shippable and testable.
-
----
-
-### Phase 0: Repository Setup
-
-New repo with project scaffolding, all interfaces defined, all module directories created. Source files are ported from the existing memory repo.
 
 #### Source File Reference
 
-Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below are relative to that directory.
+Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below are relative to that directory. Source files are ported into the appropriate module as each phase is built — not in a single bulk port.
 
 **Types to port (~633 lines):**
 
@@ -1063,7 +1072,7 @@ Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below a
 | `src/classifier/llm/index.ts` lines 21-60 | `CLASSIFY_SENSITIVITY_TOOL` — findings array with type/confidence | 39 |
 | `src/query-analyzer/types.ts` lines 62-114 | `analyze_query` tool — intent/filters/rewrittenQuery | 52 |
 
-**Utilities to port (~580 lines):**
+**Utilities to port (~1,449 lines):**
 
 | Source file | What to port | Lines |
 |---|---|---|
@@ -1072,8 +1081,19 @@ Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below a
 | `src/temporal/index.ts` | validateTemporalFields() — ISO date validation, confidence rules | 111 |
 | `src/temporal/types.ts` | TemporalValidationOptions, TemporalValidationResult | 13 |
 | `src/orchestrator/chunker.ts` | chunkConversation(), CHUNK_SIZE, CHUNK_OVERLAP | 26 |
+| `src/retriever/ranking.ts` | applyTemporalBoosts(), recencyBoost(), currentFactBoost(), confidenceBoost() | 50 |
+| `src/classifier/index.ts` | extractCleanSpans(), mergeReports(), CombinedClassifier merge/dedup logic | 117 |
+| `src/vault/asymmetric-crypto.ts` | RSA key generation, validation, DEK wrap/unwrap, key fingerprint | 115 |
+| `src/vault/asymmetric-encrypt.ts` | AES-256-GCM + RSA-OAEP envelope encryption | 42 |
+| `src/vault/base64url.ts` | base64url encoding/decoding utilities | 69 |
+| `src/vault/redaction.ts` | Redaction/reveal logic, placeholder-to-vault flow | 228 |
+| `src/vault/index.ts` | VaultStore implementation (adapt from PostgreSQL to SQLite) | 248 |
 
-**Tests to port (~3,254 lines, all mocked — no DB/API dependencies):**
+**Tests to port (~5,826 lines):**
+
+Tests are ported alongside their module in each phase, not in bulk. Mocked tests adapt `messages.create` to `generate<T>()`. Store tests (PostgreSQL-specific) are rewritten for SQLite rather than ported.
+
+*Directly portable (mock-based or pure logic, ~5,826 lines):*
 
 | Source file | Coverage | Lines |
 |---|---|---|
@@ -1084,61 +1104,70 @@ Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below a
 | `tests/pipeline/consolidator.test.ts` | Mocked Claude client — consolidation decisions, batch handling | 712 |
 | `tests/pipeline/embedder.test.ts` | Mocked embedding client — batch embedding, retries | 362 |
 | `tests/pipeline/query-analyzer.test.ts` | Mocked Claude client — query analysis, intent detection | 506 |
-| `tests/pipeline/classifier.test.ts` | Sensitivity classification logic | 22 |
-| `tests/pipeline/llm-classifier.test.ts` | Mocked Claude client — finding detection, confidence | 462 |
+| `tests/pipeline/classifier.test.ts` | Sensitivity classification logic + extractCleanSpans | 462 |
+| `tests/pipeline/llm-classifier.test.ts` | Mocked Claude client — reentry guard | 22 |
+| `tests/pipeline/orchestrator.test.ts` | Mocked pipeline — ingest/retrieve wiring, step composition | 1,071 |
+| `tests/pipeline/retriever.test.ts` | Mocked store/embedder — retrieval logic | 355 |
+| `tests/pipeline/retriever-ranking.test.ts` | Temporal boost functions — pure logic | 283 |
+| `tests/pipeline/temporal-extraction-accuracy.test.ts` | Temporal extraction edge cases | 305 |
+| `tests/vault/asymmetric-crypto.test.ts` | RSA key operations — pure crypto | 194 |
+| `tests/vault/asymmetric-encrypt.test.ts` | AES-256-GCM envelope — pure crypto | 182 |
+| `tests/vault/vault-redaction.test.ts` | Redaction/reveal flow — pure logic | 275 |
 
-**Total portable: ~4,628 lines of source + ~3,254 lines of tests**
+*Rewrite for SQLite (PostgreSQL-specific, ~1,150 lines — used as behavioral reference):*
+
+| Source file | Coverage | Lines |
+|---|---|---|
+| `tests/pipeline/store.test.ts` | PostgreSQL UUID error handling | 33 |
+| `tests/pipeline/store-supersede.test.ts` | Supersession with DB transactions | 283 |
+| `tests/pipeline/store-temporal-modes.test.ts` | Temporal mode queries with pgvector | 148 |
+| `tests/pipeline/supersession-chains.test.ts` | Chain traversal with DB | 403 |
+| `tests/pipeline/supersession-chain-retrieval.test.ts` | Chain retrieval integration | 283 |
+
+*Intentionally dropped:*
+
+| Source file | Reason |
+|---|---|
+| `tests/pipeline/presidio-classifier.test.ts` | Presidio replaced by deterministic classifier |
+| `tests/pipeline/turn-order-contract.test.ts` | Server-specific turn ordering, not needed in local-first |
+
+**Total portable: ~5,497 lines of source + ~5,826 lines of tests (+ ~1,150 lines rewrite reference)**
+
+---
+
+### Phase 0: Foundation
+
+Scaffold + contracts. No module implementations yet, but everything compiles.
 
 #### Tasks
 
-- [ ] 0.1: Create repo (`pristine-local`), initialize with TypeScript, Vitest, ESLint, Prettier
-- [ ] 0.2: Set up `tsconfig.json` (strict mode, ESM, path aliases)
-- [ ] 0.3: Create `src/core/types.ts` — consolidate all shared types from the source files listed above into unified type definitions. Add new types for Episode, Entity, Relationship (not in the existing repo).
+- [ ] 0.1: Init TypeScript project (package.json, tsconfig strict + ESM, vitest, eslint, prettier)
+- [ ] 0.2: Set up `CLAUDE.md` with project-specific coding conventions
+- [ ] 0.3: Create `src/core/types.ts` — consolidate all shared types from the source files listed above into unified type definitions. Add new types for Episode, Entity, Relationship (not in the existing repo — defined in the Section 6 SQLite schema and Section 9 interfaces). Include `PromptConfig` interface (see Section 5.4) and `LocalConfig` interface (see Section 5.3).
 - [ ] 0.4: Create `src/core/interfaces.ts` — define all module interfaces (LlmClient, Embedder, Store, Extractor, Consolidator, SensitivityClassifier, VaultStore, EpisodeStore, EntityStore, RelationshipStore, Retriever). The `LlmClient` interface uses the new `generate<T>()` shape (see Section 5.2), not the Anthropic SDK shape from the source repo.
-- [ ] 0.5: Create directory structure for all modules (see Section 9) with placeholder `types.ts` files re-exporting from `core/interfaces.ts`
-- [ ] 0.6: Create `tests/` directory structure mirroring `src/`
-- [ ] 0.7: Port prompts — copy from source `src/prompts/*.ts`, place into module-local `prompts.ts` files (e.g., `src/extractor/prompts.ts`, `src/consolidator/prompts.ts`)
-- [ ] 0.8: Port tool schemas — extract from source implementation files (see table above), place into module-local `schema.ts` files. Adapt to work with the new `LlmClient.generate<T>()` interface (JSON Schema objects, not Anthropic tool format).
-- [ ] 0.9: Port sanitizer (`src/sanitizer/`) and temporal validation (`src/temporal/`) from source — these are pure logic, copy directly
-- [ ] 0.10: Port chunker (`src/orchestrator/chunker.ts`) + its tests — pure logic, copy directly
-- [ ] 0.11: Port tests — copy all test files from the table above. Adapt mocked clients to use the new `LlmClient` interface instead of the Anthropic SDK shape. Tests for sanitizer, temporal, and chunker need no changes.
-- [ ] 0.12: Set up `CLAUDE.md` with coding conventions
-- [ ] 0.13: Verify: `npm test` runs, `npm run typecheck` passes, `npm run lint` passes
+- [ ] 0.5: Create `src/core/errors.ts` — define base error class and domain-specific errors: `LlmClassificationError`, `DownloadError`, `ResolveApprovalError`, `ResolveApprovalTimeoutError`, and others as needed. Per coding conventions: explicit error types, never throw generic `Error`.
+- [ ] 0.6: Create directory structure for all modules (see Section 9) with placeholder `types.ts` files re-exporting from `core/interfaces.ts`
+- [ ] 0.7: SQLite connection scaffolding — `better-sqlite3` dependency, connection factory, WAL mode, integrity check. No tables yet.
+- [ ] 0.8: Verify: `npm run typecheck` passes, `npm run lint` passes
 
-**Exit criteria:** Repo compiles, lints, and has all interfaces defined. Every module directory exists with its `types.ts`. Ported tests pass. A developer can pick any module, read the interface, and start implementing without touching other modules.
+**Exit criteria:** Repo compiles, lints. All interfaces defined. A developer can read any module's contract and know what to implement.
 
 ---
 
-### Phase 1a: Local LLM Runtime (In-Process)
+### Phase 1: Shared Infrastructure
 
-Stand up the in-process LLM inference layer via node-llama-cpp.
+LLM engine + embedder. Everything that uses inference depends on these.
 
-- [ ] 1a.1: Add `node-llama-cpp` dependency, verify GGUF model loading on Mac (M-series) and Linux
-- [ ] 1a.2: Define `LocalLlmClient` interface matching `ConsolidatorClient` / Anthropic SDK `messages.create()` shape
-- [ ] 1a.3: Implement `LlamaCppClient` (in-process engine) with grammar-constrained generation (JSON grammar from tool schema)
-- [ ] 1a.4: Test: pass existing extractor tool schema, verify structured JSON output from Qwen2.5 7B / Llama 3.2
-- [ ] 1a.5: Test: pass existing consolidator tool schema, verify decisions array output
-- [ ] 1a.6: Test: pass existing LLM classifier tool schema, verify PII entity detection output
-- [ ] 1a.7: Model config interface (`LocalConfig`) + model path resolution (`~/.pristine/models/`)
-- [ ] 1a.8: Model singleton — load once on `create()`, keep resident, reuse across calls
+#### Tasks
 
-**Exit criteria:** `LlamaCppClient` can produce valid tool-call responses for all three existing tool schemas (extractor, consolidator, classifier).
-
----
-
-### Phase 1b: Ollama Engine Support
-
-Add Ollama as an alternative LLM engine for users who already have it installed. Same `LocalLlmClient` interface, HTTP backend instead of in-process.
-
-- [ ] 1b.1: Implement `OllamaClient` implementing `LocalLlmClient` interface
-- [ ] 1b.2: HTTP client targeting `localhost:11434` (configurable via `OLLAMA_HOST` env var)
-- [ ] 1b.3: Map `LocalLlmClient.messages.create()` to Ollama's `/api/chat` endpoint with `tools` parameter
-- [ ] 1b.4: Parse Ollama's tool-call response format back into the `LocalLlmClient` response shape
-- [ ] 1b.5: Auto-detect rule: if `llmEngine` is not set in config and Ollama is reachable at `localhost:11434` (or `OLLAMA_HOST`), default to Ollama engine and skip model download. Otherwise fall back to `llamacpp`.
-- [ ] 1b.6: Test: same three tool schema tests as Phase 1a, but via Ollama with `qwen2.5:7b`
-- [ ] 1b.7: Engine selection config: `llmEngine: 'llamacpp' | 'ollama'`
-
-**Exit criteria:** `OllamaClient` passes the same tool-call tests as `LlamaCppClient`. User with Ollama already running can use Pristine with zero model download — just `npm install` + config.
+- [ ] 1.1: `src/engine/llamacpp/` — `LlamaCppClient` implementing `LlmClient.generate<T>()` with grammar-constrained generation via `createGrammarForJsonSchema()`
+- [ ] 1.2: `src/engine/ollama/` — `OllamaClient` implementing `LlmClient.generate<T>()` via HTTP (`/api/chat` with `format: schema`)
+- [ ] 1.3: Model config (`LocalConfig`), model path resolution (`~/.pristine/models/`), model singleton (load once on `create()`, keep resident)
+- [ ] 1.4: `src/models/` — model registry (model name -> URL + checksum mapping) + download manager (resumable, progress reporting)
+- [ ] 1.5: Engine auto-detect: if `llmEngine` is not set in config and Ollama is reachable at `localhost:11434` (or `OLLAMA_HOST`), default to Ollama engine and skip model download. Otherwise fall back to `llamacpp`.
+- [ ] 1.6: `src/embedder/local/` — `LocalEmbedder` with `@huggingface/transformers` + Nomic Embed v1.5, 768-dim output
+- [ ] 1.7: Tests: engine produces valid structured output for sample schemas; embedder produces correct-dimension vectors
+- [ ] 1.8: Benchmark: measure embedder throughput on M-series Mac (target: >500 embeddings/sec for short texts)
 
 ```typescript
 // In-process (self-contained, ~4.5 GB download on first use)
@@ -1148,178 +1177,206 @@ PristineLocal.create({ llmEngine: 'llamacpp', llmModel: 'qwen2.5-7b-instruct-q4_
 PristineLocal.create({ llmEngine: 'ollama', llmModel: 'qwen2.5:7b' });
 ```
 
----
-
-### Phase 2: Local Embedder
-
-Stand up local embedding inference.
-
-- [ ] 2.1: Add `@huggingface/transformers` dependency (wraps ONNX Runtime + handles tokenization + model download)
-- [ ] 2.2: Verify Nomic Embed v1.5 model loads and runs via `@huggingface/transformers` on Mac M-series
-- [ ] 2.3: Implement `LocalEmbedder` class matching `Embedder` interface (`embed()` + `embedBatch()`)
-- [ ] 2.4: Output 768-dim vectors (vs current 1536-dim). Document dimension change.
-- [ ] 2.5: Benchmark: measure throughput on M-series Mac (target: >500 embeddings/sec for short texts)
-- [ ] 2.6: Test: verify cosine similarity ranking quality against a small hand-curated test set
-
-**Exit criteria:** `LocalEmbedder` passes existing embedder unit tests (adapted for 768-dim output).
+**Exit criteria:** `LlmClient.generate<T>()` works with both engines. `Embedder.embed()` produces 768-dim vectors. Model download works.
 
 ---
 
-### Phase 3: SQLite Store
+### Phase 2: Privacy Pipeline
 
-Replace PostgreSQL + pgvector with SQLite + sqlite-vec.
+End-to-end: text in -> classified -> redacted -> encrypted PII stored in SQLite -> revealable. Each module built completely with its own storage.
 
-- [ ] 3.1: Add `better-sqlite3` + `sqlite-vec` dependencies
-- [ ] 3.2: Create SQLite schema: `memories` table (mirrors PostgreSQL schema, minus pgvector types)
-- [ ] 3.3: Create `memory_vectors` virtual table (sqlite-vec, 768-dim)
-- [ ] 3.4: Implement `SqliteStore` matching existing `Store` interface (addMemory, getMemory, searchSimilar, updateMemory, deleteMemory, supersedeMemory, getSupersessionChain, clearAll)
-- [ ] 3.5: Implement `searchSimilar` using sqlite-vec cosine distance query
-- [ ] 3.6: Implement content hash dedup (same SHA-256 + ON CONFLICT logic)
-- [ ] 3.7: WAL mode + file locking for concurrent access safety
-- [ ] 3.8: Test: port existing store unit tests to run against `SqliteStore`
-- [ ] 3.9: Test: verify temporal queries (valid_from/valid_until filtering, supersession chains)
+#### Phase 2a: Sanitizer
 
-**Exit criteria:** `SqliteStore` passes all existing store interface tests. Single-file database created at configurable path.
+- [ ] 2a.1: Port `src/sanitizer/` from source — pure logic: PLACEHOLDER_REGEX, resolve(), sanitizeText(), assertNoLlmReentry(), approval flow
+- [ ] 2a.2: Port `src/sanitizer/types.ts` — SensitiveField, SanitizedMemory, ResolveInput
+- [ ] 2a.3: Port sanitizer tests (drop the 2 API endpoint tests that import from `src/api/`)
+- [ ] 2a.4: Verify: sanitizer tests pass
 
----
+#### Phase 2b: Classifier
 
-### Phase 4: Local Ingest Pipeline (Semantic + Temporal Memory)
+- [ ] 2b.1: Port classification prompt (`buildClassificationPrompt()`) into `src/classifier/llm/prompts.ts`
+- [ ] 2b.2: Port classify_sensitivity schema into `src/classifier/llm/schema.ts` — adapted to plain JSON Schema for `LlmClient.generate<T>()` (not Anthropic tool format)
+- [ ] 2b.3: Implement LLM classifier using `LlmClient` — port parsing/validation logic from source `src/classifier/llm/index.ts`, adapt from Anthropic SDK `messages.create()` to `generate<T>()`
+- [ ] 2b.4: Implement deterministic classifier (new — regex/rule-based patterns for structural PII replacing Presidio). No Docker dependency.
+- [ ] 2b.5: Implement combined classifier — port `extractCleanSpans()` + `mergeReports()` from source `src/classifier/index.ts`, parallel execution of deterministic + LLM, span dedup merge
+- [ ] 2b.6: Port + adapt classifier tests — mock `generate<T>()` instead of `messages.create`
+- [ ] 2b.7: Test: PII detection on multilingual text (Mandarin, Hindi, Japanese, Spanish) — the main improvement over Presidio
 
-Wire phases 1-3 together into a working local ingest pipeline.
+#### Phase 2c: Vault
 
-- [ ] 4.1: Create `LocalExtractor` wrapping `LocalLlmClient` with existing `extract_facts` tool schema
-- [ ] 4.2: Create `LocalConsolidator` wrapping `LocalLlmClient` with existing `consolidate_facts` tool schema
-- [ ] 4.3: Wire `LocalExtractor` + `LocalEmbedder` + `SqliteStore` + `LocalConsolidator` into orchestrator via dependency injection
-- [ ] 4.4: Verify chunking works with local LLM (adjust prompts if needed for smaller model)
-- [ ] 4.5: Verify temporal extraction (validFrom, validUntil, temporalConfidence) with local LLM
-- [ ] 4.6: Verify supersession chains (SUPERSEDE action + supersessionReason) with local LLM
-- [ ] 4.7: Verify retrieval pipeline (embed query + sqlite-vec search + temporal filtering)
-- [ ] 4.8: End-to-end test: ingest a multi-turn conversation, search, verify correct facts returned
+- [ ] 2c.1: Port vault crypto utilities from source: `asymmetric-crypto.ts` (RSA key ops), `asymmetric-encrypt.ts` (AES-256-GCM + RSA-OAEP wrapping), `base64url.ts` (encoding), `redaction.ts` (redaction/reveal logic)
+- [ ] 2c.2: Create vault SQLite tables (`vault_entries`, `user_public_keys`) — module creates its own tables on init
+- [ ] 2c.3: Implement `SqliteVaultStore` adapting source `src/vault/index.ts` from PostgreSQL to SQLite (same zk-v2 encryption scheme)
+- [ ] 2c.4: Implement `SqlitePublicKeyStore`
+- [ ] 2c.5: Port vault crypto tests (`asymmetric-crypto.test.ts`, `asymmetric-encrypt.test.ts`, `vault-redaction.test.ts`)
+- [ ] 2c.6: Tests: encrypt/decrypt round-trip, entry CRUD, placeholder lookup
 
-**Exit criteria:** Full ingest + retrieve cycle works locally. No API calls. All data in SQLite.
+#### Phase 2d: Privacy Integration
 
----
+- [ ] 2d.1: Wire sanitizer + classifier + vault into `secureAndRedact()`, `reveal()`, `scrubOutput()` public API methods
+- [ ] 2d.2: End-to-end test: raw text -> PII detected -> redacted -> vault stored -> revealed with decrypted values
 
-### Phase 5: MemoryBench Integration
-
-Ensure MemoryBench can benchmark the local memory pipeline (extraction + retrieval). Privacy benchmarking is separate and comes after Phase 6.
-
-- [ ] 5.1: Add `pristine-local` as a new MemoryBench provider in `benchmarks/memorybench/src/providers/`
-- [ ] 5.2: Provider implements the same `Provider` interface (ingest sessions, search, clear)
-- [ ] 5.3: Provider uses `LocalExtractor` + `LocalEmbedder` + `SqliteStore` + `LocalConsolidator` directly (no HTTP, in-process)
-- [ ] 5.4: Run LongMemEval smoke test (1-2 questions) with local provider, verify end-to-end scoring
-- [ ] 5.5: Compare local vs hosted accuracy on same question set (document quality delta)
-- [ ] 5.6: Add benchmark config flag: `--provider pristine-local --model <model-path>`
-
-**Exit criteria:** `bun run src/index.ts run -p pristine-local -b longmemeval -j gpt-4o -s 1` completes end-to-end and produces scored results.
+**Exit criteria:** Full privacy pipeline works. Classify, redact, vault encrypt/decrypt. No Presidio, no external APIs. SQLite vault tables created and populated.
 
 ---
 
-### Phase 6: Local Privacy (PII Redaction)
+### Phase 3: Memory Pipeline — Core
 
-Replace Presidio + Claude classifier with two local classifiers: deterministic (rule-based) and non-deterministic (local LLM).
+End-to-end: conversation in -> chunked -> facts extracted -> embedded -> consolidated -> stored in SQLite -> searchable.
 
-- [ ] 6.1: Implement `DeterministicClassifier` implementing `SensitivityClassifier` interface — regex/rule-based patterns for structural PII (credit cards, emails, phone numbers, common ID formats). No Docker, no Presidio.
-- [ ] 6.2: Implement `LocalLlmClassifier` implementing `SensitivityClassifier` interface, using `LocalLlmClient` with existing `classify_sensitivity` tool schema. Prompt configurable via `PromptConfig.classifier`.
-- [ ] 6.3: Wire both into `CombinedClassifier` (parallel execution + span dedup merge, same pattern as current Presidio + LLM)
-- [ ] 6.4: Create `SqliteVaultStore` implementing `VaultStore` interface (same encryption scheme, SQLite backend)
-- [ ] 6.5: Create `SqlitePublicKeyStore` implementing `UserPublicKeyStore` interface
-- [ ] 6.6: Test: PII detection on English text (compare against current Presidio + LLM baseline)
-- [ ] 6.7: Test: PII detection on multilingual text (Mandarin, Hindi, Japanese, Spanish) — the main improvement over Presidio
-- [ ] 6.8: Test: vault encrypt/decrypt round-trip with SQLite backend
-- [ ] 6.9: Test: full privacy flow (classify -> redact -> vault store -> reveal -> decrypt)
+#### Phase 3a: Pure Logic Utilities
 
-**Exit criteria:** PII detection works across multiple languages using both classifiers. Vault encrypt/decrypt works with SQLite. No Presidio, no external API calls.
+- [ ] 3a.1: Port `src/temporal/` (validateTemporalFields, pure logic) + types + tests
+- [ ] 3a.2: Port `src/orchestrator/chunker.ts` (chunkConversation, CHUNK_SIZE, CHUNK_OVERLAP) + tests
+
+#### Phase 3b: Extractor
+
+- [ ] 3b.1: Port extraction prompt (`buildExtractionPrompt()`) into `src/extractor/prompts.ts`
+- [ ] 3b.2: Port extract_facts schema into `src/extractor/schema.ts` — adapted to plain JSON Schema for `generate<T>()`
+- [ ] 3b.3: Implement extractor using `LlmClient` — port parsing, validation, pronoun filter, temporal field extraction from source `src/extractor/index.ts`, adapt from Anthropic SDK to `generate<T>()`
+- [ ] 3b.4: Port + adapt extractor tests — mock `generate<T>()` instead of `messages.create`
+
+#### Phase 3c: Store
+
+- [ ] 3c.1: Create memories SQLite tables (`memories`, `memory_vectors` via sqlite-vec 768-dim, `memories_fts` via FTS5 + sync triggers) — module creates its own tables on init
+- [ ] 3c.2: Implement `SqliteStore` matching `Store` interface (addMemory, getMemory, searchSimilar via sqlite-vec cosine distance, updateMemory, deleteMemory, supersedeMemory, getSupersessionChain, clearAll)
+- [ ] 3c.3: Content hash dedup (SHA-256 + UNIQUE constraint on user_id + content_hash)
+- [ ] 3c.4: Tests: CRUD, vector search ranking, temporal queries (valid_from/valid_until filtering), supersession chains
+
+#### Phase 3d: Consolidator
+
+- [ ] 3d.1: Port consolidation prompt (`buildConsolidationPrompt()`) into `src/consolidator/prompts.ts`
+- [ ] 3d.2: Port consolidate_facts schema into `src/consolidator/schema.ts` — adapted to plain JSON Schema
+- [ ] 3d.3: Implement consolidator using `LlmClient` — port batch logic, integer-to-UUID ID remapping, retry with exponential backoff, validation, post-validation downgrades (SUPERSEDE->ADD, UPDATE->ADD, DELETE->NOOP) from source `src/consolidator/index.ts`
+- [ ] 3d.4: Port + adapt consolidator tests — mock `generate<T>()` instead of `messages.create`
+
+#### Phase 3e: Query Analyzer
+
+**Latency note:** Each LLM-based query analysis adds ~3-4s to search latency. The source implementation already has a heuristic fallback path (empty/failed queries return defaults without an LLM call). For the local version, consider making LLM analysis optional — use heuristic-only by default and LLM analysis when the query is complex or ambiguous. This decision can be made during implementation.
+
+- [ ] 3e.1: Port query analysis prompt (`buildQueryAnalysisPrompt()`) into `src/query-analyzer/prompts.ts`
+- [ ] 3e.2: Port analyze_query schema into `src/query-analyzer/schema.ts` — adapted to plain JSON Schema
+- [ ] 3e.3: Implement query analyzer using `LlmClient` — port validation, fallback logic from source `src/query-analyzer/index.ts`. Include heuristic-only mode for low-latency search.
+- [ ] 3e.4: Port + adapt query analyzer tests — mock `generate<T>()` instead of `messages.create`
+
+#### Phase 3f: Embedder Integration
+
+- [ ] 3f.1: Port + adapt embedder tests (mock EmbeddingClient interface, test batching/chunking/retry logic). Note: `LocalEmbedder` implementation already exists from Phase 1 — this step ports the test coverage from the source repo.
+
+#### Phase 3g: Retriever
+
+- [ ] 3g.1: Port retriever ranking logic from source `src/retriever/ranking.ts` — applyTemporalBoosts(), recencyBoost(), currentFactBoost(), confidenceBoost()
+- [ ] 3g.2: Implement basic retriever (vector search via sqlite-vec + temporal filtering + keyword search via FTS5 BM25 + temporal boost re-ranking)
+- [ ] 3g.3: Port + adapt retriever tests (`retriever.test.ts`, `retriever-ranking.test.ts`)
+- [ ] 3g.4: Tests: search returns ranked results with correct scores, temporal filtering and boost re-ranking works
+
+#### Phase 3h: Orchestrator + Integration
+
+- [ ] 3h.1: Wire chunker + extractor + embedder + store + consolidator + temporal validation into ingest pipeline via dependency injection
+- [ ] 3h.2: Wire query analyzer + embedder + retriever into retrieve pipeline
+- [ ] 3h.3: `store()` and `search()` public API methods
+- [ ] 3h.4: Port + adapt orchestrator tests from source `tests/pipeline/orchestrator.test.ts` (mocked pipeline wiring — adapt to local interfaces)
+- [ ] 3h.5: End-to-end test: ingest a multi-turn conversation, search, verify correct facts returned with temporal fields
+
+**Exit criteria:** Full memory ingest + retrieve cycle works. Conversation in, facts stored in SQLite, searchable by vector + keyword + temporal. No external APIs.
 
 ---
 
-### Phase 7: Episodic Memory
+### Phase 4: Episodic Memory
 
-Full conversation preservation + summary-based search (Phase 5 from spec 002).
+Extends memory pipeline with full conversation preservation + summary search (Phase 5 from spec 002).
 
-- [ ] 7.1: Add `episodes` + `episode_vectors` + `memory_episodes` tables to SQLite schema
-- [ ] 7.2: Define `Episode` type + `EpisodeStore` interface
-- [ ] 7.3: Implement `SqliteEpisodeStore` (CRUD + summary embedding search)
-- [ ] 7.4: Episode summary generation via local LLM (1-3 sentence summary per conversation)
-- [ ] 7.5: Embed summary via `LocalEmbedder`, store in `episode_vectors`
-- [ ] 7.6: Add episode storage step to ingest pipeline (runs in parallel with extraction)
-- [ ] 7.7: Link extracted facts to source episode via `memory_episodes` junction
-- [ ] 7.8: Implement episode search (cosine similarity on summary embeddings)
-- [ ] 7.9: Test: ingest conversation, verify episode created with correct summary + links
-- [ ] 7.10: Test: search "remember that conversation about X?" returns correct episode
+#### Tasks
+
+- [ ] 4.1: Create episodes SQLite tables (`episodes`, `episode_vectors` via sqlite-vec 768-dim, `memory_episodes` junction) — module creates its own tables on init
+- [ ] 4.2: Implement `SqliteEpisodeStore` (CRUD + summary embedding search via cosine similarity)
+- [ ] 4.3: Episode summary generation via `LlmClient` (1-3 sentence summary per conversation). Prompt configurable via `PromptConfig.episodeSummary`.
+- [ ] 4.4: Embed summary via `Embedder`, store in `episode_vectors`
+- [ ] 4.5: Add episode storage step to ingest pipeline (runs in parallel with extraction)
+- [ ] 4.6: Link extracted facts to source episode via `memory_episodes` junction
+- [ ] 4.7: Extend retriever with episode search channel
+- [ ] 4.8: Test: ingest conversation, verify episode created with correct summary + links
+- [ ] 4.9: Test: search "remember that conversation about X?" returns correct episode
 
 **Exit criteria:** Episodes stored alongside facts. Summary search finds relevant conversations. Facts linked to source episodes.
 
 ---
 
-### Phase 8: Relational Memory (Entity Graph)
+### Phase 5: Relational Memory (Entity Graph)
 
-Entity extraction, resolution, and graph queries (Phase 6 from spec 002, SQLite replaces Neo4j).
+Extends memory pipeline with entity extraction + graph queries (Phase 6 from spec 002, SQLite replaces Neo4j).
 
-- [ ] 8.1: Add `entities` + `entity_vectors` + `relationships` + `relationship_vectors` tables to SQLite schema
-- [ ] 8.2: Define `Entity`, `Relationship` types + `EntityStore`, `RelationshipStore` interfaces
-- [ ] 8.3: Implement `SqliteEntityStore` (CRUD + embedding-based resolution)
-- [ ] 8.4: Implement `SqliteRelationshipStore` (CRUD + temporal fields + soft delete)
-- [ ] 8.5: Extend extractor tool schema to output entities + relationships alongside facts (single LLM pass)
-- [ ] 8.6: Entity resolution logic in `EntityStore.resolve()`: exact name match -> alias match -> embedding similarity (deterministic, no LLM). LLM disambiguation deferred to a future phase — it adds latency and complexity to the write path.
-- [ ] 8.7: Relationship storage with temporal fields (valid_from/valid_until, inherits from Phase 4 temporal)
-- [ ] 8.8: Graph traversal via recursive CTEs (multi-hop queries, configurable depth)
-- [ ] 8.9: Wire entity extraction + resolution into ingest pipeline (runs after fact extraction)
-- [ ] 8.10: Test: extract entities from "Sarah works at Google", verify entity nodes + relationship edge created
-- [ ] 8.11: Test: entity resolution merges "my wife" and "Sarah" into same entity
-- [ ] 8.12: Test: multi-hop query "who works at the same company as Sarah?" traverses graph correctly
+#### Tasks
+
+- [ ] 5.1: Create graph SQLite tables (`entities`, `entity_vectors` via sqlite-vec, `relationships`, `relationship_vectors` via sqlite-vec, `relationships_fts` via FTS5 + sync triggers) — module creates its own tables on init
+- [ ] 5.2: Implement `SqliteEntityStore` (CRUD + embedding-based resolution)
+- [ ] 5.3: Implement `SqliteRelationshipStore` (CRUD + temporal fields valid_from/valid_until + soft delete via is_invalid)
+- [ ] 5.4: Entity resolution logic in `EntityStore.resolve()`: exact name match -> alias match (via json_each on aliases JSON array) -> embedding similarity via entity_vectors. Deterministic, no LLM. LLM disambiguation deferred to a future phase.
+- [ ] 5.5: Extend extractor tool schema to output entities + relationships alongside facts (single LLM pass). Prompt configurable via `PromptConfig.entityExtractor`.
+- [ ] 5.6: Relationship storage with temporal fields (valid_from/valid_until, same validation as memory temporal)
+- [ ] 5.7: Graph traversal via recursive CTEs (multi-hop queries, configurable depth, bidirectional, cycle detection via path tracking — see Section 6)
+- [ ] 5.8: Wire entity extraction + resolution into ingest pipeline (runs after fact extraction)
+- [ ] 5.9: Extend retriever with graph search channel
+- [ ] 5.10: Test: extract entities from "Sarah works at Google", verify entity nodes + relationship edge created
+- [ ] 5.11: Test: entity resolution merges "my wife" and "Sarah" into same entity
+- [ ] 5.12: Test: multi-hop query "who works at the same company as Sarah?" traverses graph correctly
 
 **Exit criteria:** Entities and relationships stored in SQLite. Multi-hop graph queries work via recursive CTEs. Entity resolution handles aliases and embedding-based matching.
 
 ---
 
-### Phase 9: Retrieval Fusion
+### Phase 6: Retrieval Fusion
 
-Unified search across all memory types.
+Unifies all search channels into a single ranked result set.
 
-- [ ] 9.1: Add FTS5 tables (`memories_fts`, `relationships_fts`) and triggers to keep them in sync with base tables
-- [ ] 9.2: Implement keyword search channel (FTS5 BM25 ranking)
-- [ ] 9.3: Implement RRF (Reciprocal Rank Fusion) to merge ranked results from: fact vector search, keyword search, episode search, graph search
-- [ ] 9.4: Implement MMR (Maximal Marginal Relevance) diversification to reduce redundant results
-- [ ] 9.5: Retriever accepts `sources` parameter: `['facts', 'keywords', 'episodes', 'graph']` (default: all)
-- [ ] 9.6: Configurable per-source weights (e.g., vector: 0.4, keyword: 0.2, episode: 0.2, graph: 0.2)
-- [ ] 9.7: Extend query analyzer to detect new intents: `relational_query`, `broad_query` (from spec 002) for routing to graph channel
-- [ ] 9.8: All retrieval channels run in parallel, fusion step runs after all return
-- [ ] 9.9: Test: query that matches a fact, an episode, and a graph entity returns fused results
-- [ ] 9.10: Benchmark: measure retrieval latency with all channels active (target: <200ms at 100K memories, accounting for brute-force sqlite-vec across multiple vector tables)
+#### Tasks
+
+- [ ] 6.1: Implement RRF (Reciprocal Rank Fusion) to merge ranked results from: fact vector search, keyword search (FTS5), episode summary search, graph traversal search
+- [ ] 6.2: Implement MMR (Maximal Marginal Relevance) diversification to reduce redundant results
+- [ ] 6.3: Retriever accepts `sources` parameter: `['facts', 'keywords', 'episodes', 'graph']` (default: all)
+- [ ] 6.4: Configurable per-source weights (e.g., vector: 0.4, keyword: 0.2, episode: 0.2, graph: 0.2)
+- [ ] 6.5: Extend query analyzer to detect new intents: `relational_query`, `broad_query` (from spec 002) for routing to graph channel
+- [ ] 6.6: All retrieval channels run in parallel, fusion step runs after all return
+- [ ] 6.7: Test: query that matches a fact, an episode, and a graph entity returns fused results
+- [ ] 6.8: Benchmark: measure retrieval latency with all channels active (target: <200ms at 100K memories)
 
 **Exit criteria:** Single search query returns fused results from all memory types. Latency within target.
 
 ---
 
-### Phase 10: SDK Package + Distribution
+### Phase 7: SDK Package + Distribution
 
 Package everything for `npm install`.
 
-- [ ] 10.1: Create `packages/ts-sdk-local/` workspace package
-- [ ] 10.2: `PristineLocal` client class wrapping all local components (extractor, embedder, store, classifier, vault, episodes, graph)
-- [ ] 10.3: Public API: `store()`, `search()`, `secureAndRedact()`, `reveal()`, `scrubOutput()`
-- [ ] 10.4: Model download manager (check `~/.pristine/models/`, download on first use, progress reporting)
-- [ ] 10.5: `npx pristine-local download-models` CLI command
-- [ ] 10.6: Platform-specific native binary distribution (darwin-arm64, darwin-x64, linux-x64)
-- [ ] 10.7: `postinstall` script for native dependency setup
-- [ ] 10.8: Integration test: `npm install` from scratch on clean machine, run full pipeline
-- [ ] 10.9: Dogfooding test: Lou uses it in a real agent project on his laptop
+#### Tasks
+
+- [ ] 7.1: `PristineLocal` client class wrapping all local components (extractor, embedder, store, classifier, vault, episodes, graph)
+- [ ] 7.2: Public API: `store()`, `search()`, `secureAndRedact()`, `reveal()`, `scrubOutput()`
+- [ ] 7.3: `npx pristine-local download-models` CLI command
+- [ ] 7.4: Platform-specific native binary distribution (darwin-arm64, darwin-x64, linux-x64)
+- [ ] 7.5: `postinstall` script for native dependency setup
+- [ ] 7.6: Integration test: `npm install` from scratch on clean machine, run full pipeline
+- [ ] 7.7: Dogfooding test: use in a real agent project
 
 **Exit criteria:** `npm install @pristine/shield-local` + `PristineLocal.create()` works end-to-end. No server, no API keys, no Docker.
 
 ---
 
-### Phase 11: MemoryBench Full Benchmark
+### Phase 8: Benchmarking
 
-Comprehensive quality measurement of the local pipeline.
+Comprehensive quality measurement of the local pipeline. MemoryBench is a separate repository (`getlou-gh/memorybench`) — the pristine-local provider is added there, not in this repo. The `benchmarks/` directory in this repo is reserved for local micro-benchmarks (latency, throughput).
 
-- [ ] 11.1: Run full LongMemEval (10+ questions) with local provider, compare accuracy against hosted baseline
-- [ ] 11.2: Run multilingual PII detection benchmark (compare against Presidio + Haiku baseline)
-- [ ] 11.3: Run episodic retrieval evaluation (custom test set)
-- [ ] 11.4: Run entity resolution accuracy test
-- [ ] 11.5: Document results: quality deltas, latency, storage, and recommendations
-- [ ] 11.6: If accuracy is below threshold, identify which model/prompt changes would close the gap
+#### Tasks
+
+- [ ] 8.1: Add `pristine-local` as a new MemoryBench provider in the MemoryBench repo (`memorybench/src/providers/`)
+- [ ] 8.2: Provider implements the same `Provider` interface (ingest sessions, search, clear) using local components directly (no HTTP, in-process)
+- [ ] 8.3: Run LongMemEval smoke test (1-2 questions) with local provider, verify end-to-end scoring
+- [ ] 8.4: Run full LongMemEval (10+ questions), compare accuracy against hosted baseline
+- [ ] 8.5: Run multilingual PII detection benchmark (compare against Presidio + Haiku baseline)
+- [ ] 8.6: Run episodic retrieval evaluation (custom test set)
+- [ ] 8.7: Run entity resolution accuracy test
+- [ ] 8.8: Document results: quality deltas, latency, storage, and recommendations
+- [ ] 8.9: If accuracy is below threshold, identify which model/prompt changes would close the gap
 
 **Exit criteria:** Published benchmark report comparing local vs hosted across all memory types and privacy.
 

@@ -1,0 +1,48 @@
+export class AppError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+export class LlmClassificationError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'LlmClassificationError';
+  }
+}
+
+export class DownloadError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'DownloadError';
+  }
+}
+
+export class ResolveApprovalError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ResolveApprovalError';
+  }
+}
+
+export class ResolveApprovalTimeoutError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ResolveApprovalTimeoutError';
+  }
+}
+
+export class ExtractionError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ExtractionError';
+  }
+}
+
+export class ConsolidationError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ConsolidationError';
+  }
+}

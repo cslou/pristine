@@ -162,7 +162,6 @@ export interface LlmSensitivityFinding {
 export interface LlmClassifierConfig {
   readonly model?: string;
   readonly maxTokens?: number;
-  readonly client?: LlmClient;
   readonly confidenceThreshold?: number;
 }
 
@@ -435,15 +434,3 @@ export interface LocalConfig {
 
 export type JsonSchema = Record<string, unknown>;
 
-// ---------------------------------------------------------------------------
-// Forward reference for LlmClient (used by LlmClassifierConfig above)
-// ---------------------------------------------------------------------------
-
-export interface LlmClient {
-  generate<T>(params: {
-    readonly systemPrompt: string;
-    readonly userPrompt: string;
-    readonly schema: JsonSchema;
-    readonly maxTokens?: number;
-  }): Promise<T>;
-}

@@ -834,7 +834,7 @@ Local first. The modular architecture (interfaces for each component) means a ho
 
 ## 9. Repository Structure
 
-New repo, clean slate. Interfaces, types, prompts, and tool schemas are ported from the existing `getlou-gh/memory` repo. Server infrastructure (Express, Supabase, auth, rate limiting) is left behind.
+New repo at `~/projects/pristine`. Interfaces, types, prompts, and tool schemas are ported from the existing memory repo at `~/projects/memory` (GitHub: `getlou-gh/memory`). Server infrastructure (Express, Supabase, auth, rate limiting) is left behind.
 
 ```
 pristine-local/
@@ -1024,9 +1024,11 @@ Each phase is scoped to be independently shippable and testable.
 
 ### Phase 0: Repository Setup
 
-New repo with project scaffolding, all interfaces defined, all module directories created. Source files are ported from the existing `getlou-gh/memory` repo.
+New repo with project scaffolding, all interfaces defined, all module directories created. Source files are ported from the existing memory repo.
 
-#### Source File Reference (getlou-gh/memory)
+#### Source File Reference
+
+Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below are relative to that directory.
 
 **Types to port (~633 lines):**
 

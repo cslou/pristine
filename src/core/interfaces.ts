@@ -139,7 +139,7 @@ export interface EntityStore {
 
 export interface RelationshipStore {
   addRelationship(rel: RelationshipInput): Promise<Relationship>;
-  traverse(entityId: string, maxDepth: number): Promise<TraversalResult[]>;
+  traverse(entityId: string, userId: string, maxDepth: number): Promise<TraversalResult[]>;
   searchByEmbedding(embedding: number[], topK: number, userId: string): Promise<RankedRelationship[]>;
 }
 

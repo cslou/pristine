@@ -79,10 +79,7 @@ export interface Store {
 // ---------------------------------------------------------------------------
 
 export interface Extractor {
-  extract(
-    conversation: readonly Message[],
-    referenceTimestamp?: string,
-  ): Promise<ExtractionResult>;
+  extract(conversation: readonly Message[], referenceTimestamp?: string): Promise<ExtractionResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,19 +125,18 @@ export interface EpisodeStore {
 
 export interface EntityStore {
   addEntity(entity: EntityInput): Promise<Entity>;
-  resolve(
-    name: string,
-    type: string,
-    userId: string,
-    embedding?: number[],
-  ): Promise<Entity | null>;
+  resolve(name: string, type: string, userId: string, embedding?: number[]): Promise<Entity | null>;
   getEntity(id: string, userId: string): Promise<Entity | null>;
 }
 
 export interface RelationshipStore {
   addRelationship(rel: RelationshipInput): Promise<Relationship>;
   traverse(entityId: string, userId: string, maxDepth: number): Promise<TraversalResult[]>;
-  searchByEmbedding(embedding: number[], topK: number, userId: string): Promise<RankedRelationship[]>;
+  searchByEmbedding(
+    embedding: number[],
+    topK: number,
+    userId: string,
+  ): Promise<RankedRelationship[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,11 +165,7 @@ export interface Orchestrator {
     userId: string,
     options?: IngestOptions,
   ): Promise<IngestResult>;
-  retrieve(
-    query: string,
-    userId: string,
-    options?: RetrieveOptions,
-  ): Promise<RetrieveResult>;
+  retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
   readonly ingestSteps: PipelineStep[];
   readonly retrieveSteps: PipelineStep[];
   registerIngestStep(step: PipelineStep): void;

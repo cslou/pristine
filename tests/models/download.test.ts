@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, unlinkSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, unlinkSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { downloadModel } from '../../src/models/download.js';
@@ -134,6 +134,33 @@ describe('downloadModel', () => {
 
     expect(existsSync(destPath)).toBe(false);
     expect(existsSync(`${destPath}.partial`)).toBe(false);
+  });
+
+  it('resumes download from existing partial file', async () => {
+    const dir = createTempDir();
+    const destPath = join(dir, 'model.gguf');
+    const partialPath = `${destPath}.partial`;
+
+    // Simulate a partial download (5 bytes already downloaded)
+    writeFileSync(partialPath, 'hello');
+
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      createMockResponse(' world', 206, { 'content-range': 'bytes 5-10/11' }),
+    );
+
+    await downloadModel({ url: 'https://example.com/model.gguf', destPath });
+
+    expect(existsSync(destPath)).toBe(true);
+    // Partial content was appended since status is 206
+    const content = readFileSync(destPath, 'utf8');
+    expect(content).toBe('hello world');
+
+    // Verify Range header was sent
+    const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0]!;
+    const headers = fetchCall[1]?.headers as Record<string, string>;
+    expect(headers['Range']).toBe('bytes=5-');
+
+    unlinkSync(destPath);
   });
 
   it('creates parent directories if they do not exist', async () => {

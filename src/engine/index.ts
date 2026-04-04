@@ -13,7 +13,8 @@ export async function createLlmClient(config: LocalConfig = {}): Promise<LlmClie
 
   if (engine === 'ollama') {
     const model = config.llmModel ?? getDefaultLlmModelName();
-    return new OllamaClient({ model });
+    const host = process.env.OLLAMA_HOST;
+    return new OllamaClient({ model, ...(host ? { host } : {}) });
   }
 
   const modelsDir = config.modelsDir ?? DEFAULT_MODELS_DIR;

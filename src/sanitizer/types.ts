@@ -1,4 +1,1 @@
-export type {
-  DetectedEntity,
-  SensitivityReport,
-} from '../core/types.js';
+export type { DetectedEntity, SensitivityReport } from '../core/types.js';

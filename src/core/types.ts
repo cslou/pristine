@@ -433,4 +433,3 @@ export interface LocalConfig {
 // ---------------------------------------------------------------------------
 
 export type JsonSchema = Record<string, unknown>;
-

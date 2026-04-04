@@ -77,7 +77,9 @@ describe('createDatabase', () => {
 
     // sqlite-vec registers vec0 virtual table module; verify by creating one
     db.exec('CREATE VIRTUAL TABLE test_vec USING vec0(embedding float[3])');
-    const info = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='test_vec'").get() as { name: string } | undefined;
+    const info = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='test_vec'")
+      .get() as { name: string } | undefined;
 
     expect(info?.name).toBe('test_vec');
     db.close();

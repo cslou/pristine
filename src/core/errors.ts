@@ -46,3 +46,10 @@ export class ConsolidationError extends AppError {
     this.name = 'ConsolidationError';
   }
 }
+
+export class EmbedderError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'EmbedderError';
+  }
+}

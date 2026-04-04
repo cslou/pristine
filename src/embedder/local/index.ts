@@ -1,6 +1,6 @@
 import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import type { Embedder } from '../../core/interfaces.js';
-import { AppError } from '../../core/errors.js';
+import { EmbedderError } from '../../core/errors.js';
 
 const DEFAULT_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 const EXPECTED_DIMENSION = 768;
@@ -22,7 +22,7 @@ export class LocalEmbedder implements Embedder {
     const results = await this.embedBatch([text]);
     const first = results[0];
     if (!first) {
-      throw new AppError('Embedding service returned no results.');
+      throw new EmbedderError('Embedding service returned no results.');
     }
     return first;
   }
@@ -35,6 +35,9 @@ export class LocalEmbedder implements Embedder {
     const extractor = await this.ensurePipeline();
     const results: number[][] = [];
 
+    // Process sequentially — @huggingface/transformers feature-extraction
+    // pipeline returns a single Tensor for array input without per-item separation.
+    // Sequential processing ensures correct 1:1 mapping.
     for (const text of texts) {
       const output = await extractor(text, { pooling: 'mean', normalize: true });
       const embedding = Array.from(output.data as Float32Array).slice(0, EXPECTED_DIMENSION);
@@ -45,8 +48,16 @@ export class LocalEmbedder implements Embedder {
   }
 
   public async dispose(): Promise<void> {
+    const currentPipe = this.pipe;
     this.pipe = null;
     this.pipePromise = null;
+
+    if (
+      currentPipe &&
+      typeof (currentPipe as unknown as { dispose?: () => void }).dispose === 'function'
+    ) {
+      (currentPipe as unknown as { dispose: () => void }).dispose();
+    }
   }
 
   private async ensurePipeline(): Promise<FeatureExtractionPipeline> {
@@ -68,7 +79,7 @@ export class LocalEmbedder implements Embedder {
       return await pipeline('feature-extraction', this.modelName);
     } catch (error: unknown) {
       this.pipePromise = null;
-      throw new AppError(
+      throw new EmbedderError(
         `Failed to load embedding model ${this.modelName}: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     }

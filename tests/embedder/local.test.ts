@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { AppError } from '../../src/core/errors.js';
+import { EmbedderError } from '../../src/core/errors.js';
 
 const mockPipeline = vi.fn();
 
@@ -98,7 +98,7 @@ describe('LocalEmbedder', () => {
 
     const embedder = new LocalEmbedder();
 
-    await expect(embedder.embed('test')).rejects.toThrow(AppError);
+    await expect(embedder.embed('test')).rejects.toThrow(EmbedderError);
     await expect(embedder.embed('test')).rejects.toThrow(/Failed to load embedding model/);
   });
 

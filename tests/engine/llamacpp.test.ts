@@ -137,7 +137,23 @@ describe('LlamaCppClient', () => {
     );
   });
 
-  it('defaults maxTokens to 4096', async () => {
+  it('falls back to config maxTokens when params omits it', async () => {
+    const client = new LlamaCppClient({ ...TEST_CONFIG, maxTokens: 1024 });
+    await client.generate({
+      systemPrompt: 'Extract.',
+      userPrompt: 'Test.',
+      schema: TEST_SCHEMA,
+    });
+
+    expect(mockPrompt).toHaveBeenCalledWith(
+      'Test.',
+      expect.objectContaining({
+        maxTokens: 1024,
+      }),
+    );
+  });
+
+  it('defaults maxTokens to 4096 when neither params nor config set it', async () => {
     const client = new LlamaCppClient(TEST_CONFIG);
     await client.generate({
       systemPrompt: 'Extract.',
@@ -227,5 +243,38 @@ describe('LlamaCppClient', () => {
     ).rejects.toThrow();
 
     expect(mockDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('wraps grammar creation errors as AppError', async () => {
+    mockCreateGrammarForJsonSchema.mockRejectedValue(new Error('invalid schema'));
+
+    const client = new LlamaCppClient(TEST_CONFIG);
+    await expect(
+      client.generate({
+        systemPrompt: 'Extract.',
+        userPrompt: 'Test.',
+        schema: TEST_SCHEMA,
+      }),
+    ).rejects.toThrow(AppError);
+  });
+
+  it('dispose() cleans up all handles', async () => {
+    const client = new LlamaCppClient(TEST_CONFIG);
+    await client.generate({
+      systemPrompt: 'Extract.',
+      userPrompt: 'Test.',
+      schema: TEST_SCHEMA,
+    });
+
+    await client.dispose();
+
+    expect(mockContextDispose).toHaveBeenCalledTimes(1);
+    expect(mockModelDispose).toHaveBeenCalledTimes(1);
+    expect(mockLlamaDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispose() is safe to call when not loaded', async () => {
+    const client = new LlamaCppClient(TEST_CONFIG);
+    await expect(client.dispose()).resolves.toBeUndefined();
   });
 });

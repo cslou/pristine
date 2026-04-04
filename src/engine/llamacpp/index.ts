@@ -14,6 +14,7 @@ export class LlamaCppClient implements LlmClient {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
   private context: LlamaContext | null = null;
+  private loadPromise: Promise<void> | null = null;
 
   public constructor(config: LlamaCppConfig) {
     this.config = config;
@@ -27,19 +28,22 @@ export class LlamaCppClient implements LlmClient {
   }): Promise<T> {
     await this.ensureLoaded();
 
-    const grammar = await this.llama!.createGrammarForJsonSchema(
-      params.schema as Parameters<Llama['createGrammarForJsonSchema']>[0],
-    );
-
-    const session = new LlamaChatSession({
-      contextSequence: this.context!.getSequence(),
-      systemPrompt: params.systemPrompt,
-    });
-
+    let session: LlamaChatSession | null = null;
     try {
+      const grammar = await this.llama!.createGrammarForJsonSchema(
+        params.schema as Parameters<Llama['createGrammarForJsonSchema']>[0],
+      );
+
+      session = new LlamaChatSession({
+        contextSequence: this.context!.getSequence(),
+        systemPrompt: params.systemPrompt,
+      });
+
+      const maxTokens = params.maxTokens ?? this.config.maxTokens ?? DEFAULT_MAX_TOKENS;
+
       const responseText = await session.prompt(params.userPrompt, {
         grammar,
-        maxTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
+        maxTokens,
         temperature: this.config.temperature ?? DEFAULT_TEMPERATURE,
       });
 
@@ -52,7 +56,7 @@ export class LlamaCppClient implements LlmClient {
         `LlamaCpp inference failed: ${error instanceof Error ? error.message : 'unknown error'}`,
       );
     } finally {
-      session.dispose();
+      session?.dispose();
     }
   }
 
@@ -69,6 +73,7 @@ export class LlamaCppClient implements LlmClient {
       await this.llama.dispose();
       this.llama = null;
     }
+    this.loadPromise = null;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -76,7 +81,18 @@ export class LlamaCppClient implements LlmClient {
       return;
     }
 
+    if (this.loadPromise) {
+      await this.loadPromise;
+      return;
+    }
+
+    this.loadPromise = this.load();
+    await this.loadPromise;
+  }
+
+  private async load(): Promise<void> {
     if (!existsSync(this.config.modelPath)) {
+      this.loadPromise = null;
       throw new DownloadError(
         `Model file not found: ${this.config.modelPath}. Run 'npx pristine-local download-models' to download.`,
       );

@@ -13,7 +13,8 @@ const DEFAULT_LLM_MODEL: ModelEntry = {
   url: 'https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf',
   sha256: '', // populated when model is finalized
   sizeBytes: 4_680_000_000,
-  description: 'Qwen2.5 7B Instruct Q4_K_M — default LLM for extraction, consolidation, classification',
+  description:
+    'Qwen2.5 7B Instruct Q4_K_M — default LLM for extraction, consolidation, classification',
 };
 
 const REGISTRY: ReadonlyMap<string, ModelEntry> = new Map([

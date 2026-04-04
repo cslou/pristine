@@ -25,6 +25,7 @@
     "vitest": "3.2.4"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.0.1",
     "better-sqlite3": "12.8.0",
     "node-llama-cpp": "3.18.1",
     "sqlite-vec": "0.1.9"

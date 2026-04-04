@@ -11,6 +11,11 @@ const MODEL_PATH = join(MODELS_DIR, DEFAULT_MODEL_FILE);
 
 const hasLocalModel = existsSync(MODEL_PATH);
 
+async function isOllamaReachable(): Promise<boolean> {
+  const client = new OllamaClient({ model: 'qwen2.5:7b' });
+  return client.isReachable();
+}
+
 const EXTRACT_FACTS_SCHEMA = {
   type: 'object' as const,
   properties: {
@@ -50,14 +55,12 @@ describe.skipIf(!hasLocalModel)('LlamaCppClient integration (real model)', () =>
   }, 120000);
 });
 
-describe('OllamaClient integration (requires running Ollama)', () => {
-  it('generates valid JSON when Ollama is available', async () => {
-    const client = new OllamaClient({ model: 'qwen2.5:7b' });
-    const reachable = await client.isReachable();
+// Check Ollama reachability once at module level to skip the entire describe block
+const ollamaReachable = await isOllamaReachable().catch(() => false);
 
-    if (!reachable) {
-      return;
-    }
+describe.skipIf(!ollamaReachable)('OllamaClient integration (requires running Ollama)', () => {
+  it('generates valid JSON matching extract_facts schema', async () => {
+    const client = new OllamaClient({ model: 'qwen2.5:7b' });
 
     const result = await client.generate<{ facts: Array<{ text: string }> }>({
       systemPrompt: 'Extract factual statements from the conversation.',

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
+import { AppError } from './errors.js';
 
 export interface DatabaseOptions {
   readonly path: string;
@@ -29,7 +30,7 @@ export function createDatabase(options: DatabaseOptions | string): Database.Data
     const status = result[0]?.integrity_check;
     if (status !== 'ok') {
       db.close();
-      throw new Error(`SQLite integrity check failed: ${status ?? 'unknown'}`);
+      throw new AppError(`SQLite integrity check failed: ${status ?? 'unknown'}`);
     }
   }
 

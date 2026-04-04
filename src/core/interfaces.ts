@@ -118,7 +118,7 @@ export interface VaultStore {
 
 export interface EpisodeStore {
   addEpisode(episode: EpisodeInput): Promise<Episode>;
-  searchByEmbedding(embedding: number[], topK: number): Promise<RankedEpisode[]>;
+  searchByEmbedding(embedding: number[], topK: number, userId: string): Promise<RankedEpisode[]>;
   linkMemory(memoryId: string, episodeId: string): Promise<void>;
 }
 
@@ -134,13 +134,13 @@ export interface EntityStore {
     userId: string,
     embedding?: number[],
   ): Promise<Entity | null>;
-  getEntity(id: string): Promise<Entity | null>;
+  getEntity(id: string, userId: string): Promise<Entity | null>;
 }
 
 export interface RelationshipStore {
   addRelationship(rel: RelationshipInput): Promise<Relationship>;
   traverse(entityId: string, maxDepth: number): Promise<TraversalResult[]>;
-  searchByEmbedding(embedding: number[], topK: number): Promise<RankedRelationship[]>;
+  searchByEmbedding(embedding: number[], topK: number, userId: string): Promise<RankedRelationship[]>;
 }
 
 // ---------------------------------------------------------------------------

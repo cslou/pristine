@@ -24,11 +24,11 @@ afterEach(() => {
 });
 
 describe('createDatabase', () => {
-  it('creates a database file at the given path', () => {
+  it('creates a database file at the given path (object form)', () => {
     const dbPath = createTempDbPath();
     dbPaths.push(dbPath);
 
-    const db = createDatabase(dbPath);
+    const db = createDatabase({ path: dbPath });
     db.close();
 
     expect(existsSync(dbPath)).toBe(true);
@@ -59,8 +59,7 @@ describe('createDatabase', () => {
     const dbPath = createTempDbPath();
     dbPaths.push(dbPath);
 
-    expect(() => createDatabase(dbPath)).not.toThrow();
-    const db = createDatabase({ path: dbPath, runIntegrityCheck: false });
+    const db = createDatabase(dbPath);
     db.close();
   });
 

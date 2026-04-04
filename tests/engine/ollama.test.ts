@@ -238,4 +238,14 @@ describe('OllamaClient', () => {
 
     expect(reachable).toBe(false);
   });
+
+  it('throws AppError after exhausting all retries on 429', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(mockFetchResponse({}, 429));
+
+    const client = new OllamaClient(TEST_CONFIG);
+
+    await expect(client.generate(TEST_PARAMS)).rejects.toThrow(/Ollama API error: 429/);
+    // 1 initial + 3 retries = 4 calls
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+  }, 15000);
 });

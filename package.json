@@ -1,0 +1,26 @@
+{
+  "name": "@pristine/shield-local",
+  "version": "0.0.1",
+  "description": "Local-first privacy and memory SDK — no API calls, no server, no data leaving the device",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/ --no-error-on-unmatched-pattern",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "@typescript-eslint/eslint-plugin": "8.26.1",
+    "@typescript-eslint/parser": "8.26.1",
+    "eslint": "8.57.0",
+    "eslint-config-prettier": "10.1.5",
+    "eslint-plugin-prettier": "5.5.0",
+    "prettier": "3.5.3",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  }
+}

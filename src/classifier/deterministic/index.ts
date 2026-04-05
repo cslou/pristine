@@ -61,7 +61,7 @@ const PATTERNS: readonly PatternRule[] = [
   // Phone: E.164 and common formats (+1-234-567-8901, (234) 567-8901, etc.)
   {
     type: 'phone_number',
-    pattern: /(?:\+\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g,
+    pattern: /(?<!\d)(?:\+\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g,
     confidence: 0.85,
   },
 ];

@@ -103,11 +103,11 @@ class CombinedClassifier implements SensitivityClassifier {
       return await this.llm.classify(text);
     } catch (error: unknown) {
       if (error instanceof LlmClassificationError) {
-        throw new LlmClassificationError(
-          `Classification blocked: LLM classifier failed. Ingestion cannot proceed. ${error.message}`,
-        );
+        throw error;
       }
-      throw error;
+      throw new LlmClassificationError(
+        `Classification blocked: unexpected error in LLM classifier. Ingestion cannot proceed. ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
     }
   }
 }

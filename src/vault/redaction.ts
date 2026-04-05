@@ -32,8 +32,7 @@ const STREET_TOKEN_RE =
   /\b(street|st|road|rd|avenue|ave|boulevard|blvd|lane|ln|drive|dr|court|ct|way|highway|hwy|block|blk|unit|apt|suite|floor|flr|postal|postcode|zip)\b/i;
 const HOUSE_NUMBER_RE = /\b\d{1,6}[a-z]?\b/i;
 const ZIPISH_RE = /\b\d{5}(?:-\d{4})?\b/;
-const ADDRESS_CONTEXT_RE =
-  /\b(address|live at|reside(?:s|d)? at|located at|ship to|mail to)\b/i;
+const ADDRESS_CONTEXT_RE = /\b(address|live at|reside(?:s|d)? at|located at|ship to|mail to)\b/i;
 const EMAIL_RE = /\b[^@\s]+@[^@\s]+\.[^@\s]+\b/;
 const PHONE_RE = /\+?\d[\d\s().-]{7,}\d/;
 const LONG_DIGIT_RE = /\b\d{8,}\b/;
@@ -65,9 +64,7 @@ const lastFourLabel = (prefix: string, value: string): string => {
 const detectCardNetwork = (value: string): string => {
   const digits = digitsOnly(value);
   if (/^4\d{12}(\d{3}){0,2}$/.test(digits)) return 'visa';
-  if (
-    /^(5[1-5]\d{14}|2(2[2-9]\d{12}|[3-6]\d{13}|7([01]\d{12}|20\d{12})))$/.test(digits)
-  )
+  if (/^(5[1-5]\d{14}|2(2[2-9]\d{12}|[3-6]\d{13}|7([01]\d{12}|20\d{12})))$/.test(digits))
     return 'mastercard';
   if (/^3[47]\d{13}$/.test(digits)) return 'amex';
   if (/^(6011\d{12}|65\d{14}|64[4-9]\d{13})$/.test(digits)) return 'discover';

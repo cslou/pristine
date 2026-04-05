@@ -24,10 +24,7 @@ export const encodeBase64Url = (value: Uint8Array): string => {
   }
 
   if (typeof btoa === 'function') {
-    return btoa(toBinaryString(value))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '');
+    return btoa(toBinaryString(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
   throw new VaultEncodingError('No base64url encoder is available in this runtime.');

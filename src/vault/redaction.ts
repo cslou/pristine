@@ -22,13 +22,15 @@ const buildPlaceholder = (type: string, id: string): string => `[SENSITIVE:${typ
  * PLACEHOLDER_REGEX requires [a-z_]+ — LLMs may return types with spaces,
  * dashes, or mixed case (e.g., "contact info - phone number").
  */
-const normalizeType = (type: string): string =>
-  type
+const normalizeType = (type: string): string => {
+  const normalized = type
     .toLowerCase()
     .replace(/[\s-]+/g, '_')
     .replace(/[^a-z_]/g, '')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '');
+  return normalized.length > 0 ? normalized : 'other';
+};
 
 const DIGITS_RE = /\D+/g;
 const TEMPORAL_TYPE_RE =
@@ -231,7 +233,7 @@ export const redactText = (text: string, report: SensitivityReport): RedactionRe
     placeholders.push({
       id,
       type: safeType,
-      label: buildPlaceholderLabel(entity.type, entity.text),
+      label: buildPlaceholderLabel(safeType, entity.text),
       originalText: entity.text,
       start: entity.start,
       end: entity.end,

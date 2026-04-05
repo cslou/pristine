@@ -17,6 +17,21 @@ export interface RedactionPlaceholder {
 
 const buildPlaceholder = (type: string, id: string): string => `[SENSITIVE:${type}:${id}]`;
 
+/**
+ * Normalize entity type to snake_case for placeholder compatibility.
+ * PLACEHOLDER_REGEX requires [a-z_]+ — LLMs may return types with spaces,
+ * dashes, or mixed case (e.g., "contact info - phone number").
+ */
+const normalizeType = (type: string): string => {
+  const normalized = type
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return normalized.length > 0 ? normalized : 'other';
+};
+
 const DIGITS_RE = /\D+/g;
 const TEMPORAL_TYPE_RE =
   /\b(date|time|datetime|timestamp|schedule|itinerary|travel|check_?in|check_?out)\b/i;
@@ -211,13 +226,14 @@ export const redactText = (text: string, report: SensitivityReport): RedactionRe
     result += text.slice(cursor, entity.start);
 
     const id = randomUUID();
-    const placeholder = buildPlaceholder(entity.type, id);
+    const safeType = normalizeType(entity.type);
+    const placeholder = buildPlaceholder(safeType, id);
     result += placeholder;
 
     placeholders.push({
       id,
-      type: entity.type,
-      label: buildPlaceholderLabel(entity.type, entity.text),
+      type: safeType,
+      label: buildPlaceholderLabel(safeType, entity.text),
       originalText: entity.text,
       start: entity.start,
       end: entity.end,

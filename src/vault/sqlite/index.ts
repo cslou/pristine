@@ -157,52 +157,55 @@ export class SqliteVaultStore implements VaultStore {
       return [];
     }
 
-    const stmt = this.db.prepare(`
+    const insertStmt = this.db.prepare(`
       INSERT INTO vault_entries (
         id, memory_id, user_id, placeholder_id, sensitive_type,
         encrypted_value, iv, auth_tag, encryption_mode, encryption_metadata
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    const selectStmt = this.db.prepare('SELECT * FROM vault_entries WHERE id = ?');
 
-    const results: VaultEntry[] = [];
+    const insertAll = this.db.transaction((items: VaultEntryInput[]) => {
+      const results: VaultEntry[] = [];
 
-    for (const entry of entries) {
-      const id = entry.entryId ?? randomUUID();
-      const encryptedValue = Buffer.from(decodeBase64Url(entry.encrypted.ciphertext));
-      const iv = Buffer.from(decodeBase64Url(entry.encrypted.iv));
-      const authTag = Buffer.from(decodeBase64Url(entry.encrypted.authTag));
-      const encryptionMetadata: ZkV2EncryptedValueMetadata = {
-        scheme: entry.encrypted.scheme,
-        algorithm: entry.encrypted.algorithm,
-        keyWrapping: entry.encrypted.keyWrapping,
-        keyId: entry.encrypted.keyId,
-        wrappedDek: entry.encrypted.wrappedDek,
-        aad: entry.encrypted.aad,
-        recoveryWrappedDek: entry.encrypted.recoveryWrappedDek,
-      };
+      for (const entry of items) {
+        const id = entry.entryId ?? randomUUID();
+        const encryptedValue = Buffer.from(decodeBase64Url(entry.encrypted.ciphertext));
+        const iv = Buffer.from(decodeBase64Url(entry.encrypted.iv));
+        const authTag = Buffer.from(decodeBase64Url(entry.encrypted.authTag));
+        const encryptionMetadata: ZkV2EncryptedValueMetadata = {
+          scheme: entry.encrypted.scheme,
+          algorithm: entry.encrypted.algorithm,
+          keyWrapping: entry.encrypted.keyWrapping,
+          keyId: entry.encrypted.keyId,
+          wrappedDek: entry.encrypted.wrappedDek,
+          aad: entry.encrypted.aad,
+          recoveryWrappedDek: entry.encrypted.recoveryWrappedDek,
+        };
 
-      stmt.run(
-        id,
-        null,
-        entry.userId,
-        entry.placeholderId ?? null,
-        entry.sensitiveType,
-        encryptedValue,
-        iv,
-        authTag,
-        CLIENT_V2,
-        JSON.stringify(encryptionMetadata),
-      );
+        insertStmt.run(
+          id,
+          null,
+          entry.userId,
+          entry.placeholderId ?? null,
+          entry.sensitiveType,
+          encryptedValue,
+          iv,
+          authTag,
+          CLIENT_V2,
+          JSON.stringify(encryptionMetadata),
+        );
 
-      const row = this.db.prepare('SELECT * FROM vault_entries WHERE id = ?').get(id) as
-        | VaultRow
-        | undefined;
-      if (row) {
-        results.push(mapRow(row));
+        const row = selectStmt.get(id) as VaultRow | undefined;
+        if (row) {
+          results.push(mapRow(row));
+        }
       }
-    }
 
-    return results;
+      return results;
+    });
+
+    return insertAll(entries);
   }
 
   public async getEntriesByPlaceholderIds(

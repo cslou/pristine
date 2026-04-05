@@ -1403,6 +1403,26 @@ Currently `store()` blocks until the full pipeline completes (~19s on M4 Pro). F
 
 ---
 
+### Phase 10: PII Detection Evaluation
+
+Measure precision, recall, and span accuracy of the privacy classifier (deterministic + LLM combined) against a curated fixture set. The classifier is only as good as its weakest detection — this phase quantifies gaps before they reach production.
+
+#### Tasks
+
+- [ ] 10.1: Build PII evaluation fixture set — 50+ annotated text samples with ground-truth entity annotations (type, start, end, text). Cover: structural PII (credit cards, SSN, email, phone), contextual PII (health, financial, legal, relationship), multilingual PII (Mandarin, Japanese, Hindi, Spanish), edge cases (partial addresses, dates vs DOB, travel phrases, mixed PII density)
+- [ ] 10.2: Implement eval runner — takes fixture set + classifier, computes per-entity-type precision, recall, F1, and span IoU (intersection over union for positional accuracy)
+- [ ] 10.3: Run deterministic classifier eval — measure regex pattern coverage, false positive rate on clean text, span accuracy
+- [ ] 10.4: Run LLM classifier eval with target model (Llama 3.2 3B, Qwen 2.5 7B) — measure detection rate across all PII categories, confidence calibration, type label consistency
+- [ ] 10.5: Run combined classifier eval — measure merge quality (does overlap dedup lose entities?), combined precision/recall vs individual classifiers
+- [ ] 10.6: Measure false positive rate — run classifier on 50+ clean text samples (news articles, code, casual conversation) and verify near-zero false detections
+- [ ] 10.7: Measure redaction fidelity — run full secureAndRedact -> reveal round-trip on fixture set, verify all original values recovered exactly
+- [ ] 10.8: Document baseline metrics and identify gaps — which PII types are under-detected, which models perform best, recommended confidence thresholds per type
+- [ ] 10.9: If accuracy is below threshold on any category, iterate on prompts, regex patterns, or recommend model upgrades
+
+**Exit criteria:** Published PII detection report with per-type precision/recall. Combined classifier F1 >= 0.85 on structural PII, >= 0.75 on contextual PII. False positive rate < 5% on clean text. All round-trip reveal tests pass.
+
+---
+
 ## 11. Risks and Mitigations
 
 | Risk | Impact | Mitigation |

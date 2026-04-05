@@ -406,4 +406,18 @@ describe('LLM classifier', () => {
       expect(report.entities[0]).toMatchObject({ type: 'identity_number', source: 'llm' });
     });
   });
+
+  describe('custom system prompt', () => {
+    it('uses provided systemPrompt instead of default', async () => {
+      const client = createMockClient({ findings: [] });
+      const customPrompt = 'You are a custom classifier. Only detect phone numbers.';
+
+      const classifier = createLlmClassifier(client, { systemPrompt: customPrompt });
+      await classifier.classify('test text');
+
+      expect(client.generate).toHaveBeenCalledWith(
+        expect.objectContaining({ systemPrompt: customPrompt }),
+      );
+    });
+  });
 });

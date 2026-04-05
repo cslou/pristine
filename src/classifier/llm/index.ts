@@ -40,11 +40,13 @@ export class LlmClassifier implements SensitivityClassifier {
   private readonly client: LlmClient;
   private readonly maxTokens: number;
   private readonly confidenceThreshold: number;
+  private readonly systemPrompt: string;
 
   public constructor(client: LlmClient, config: LlmClassifierConfig = {}) {
     this.client = client;
     this.maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.confidenceThreshold = config.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+    this.systemPrompt = config.systemPrompt ?? buildClassificationPrompt();
   }
 
   public async classify(text: string): Promise<SensitivityReport> {
@@ -57,7 +59,7 @@ export class LlmClassifier implements SensitivityClassifier {
     let result: ClassifySensitivityInput;
     try {
       result = await this.client.generate<ClassifySensitivityInput>({
-        systemPrompt: buildClassificationPrompt(),
+        systemPrompt: this.systemPrompt,
         userPrompt: `Classify the following text for sensitive content:\n\n${text}`,
         schema: CLASSIFY_SENSITIVITY_SCHEMA,
         maxTokens: this.maxTokens,

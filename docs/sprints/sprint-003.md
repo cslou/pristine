@@ -213,17 +213,20 @@ Story 1 (sanitizer) must come first — classifier and vault tests import `asser
 ---
 
 ## Completion
-*(Filled by coding agent when sprint is done)*
 
 ### Summary
+Complete privacy pipeline: classify -> redact -> encrypt -> vault -> reveal. All 4 stories merged with Greptile review clean. Two hotfixes applied post-sprint (type normalization, configurable classifier prompt).
 
 ### Results
-- Story 1: Port sanitizer — PR #, status
-- Story 2: Build classifier — PR #, status
-- Story 3: Build vault — PR #, status
-- Story 4: Wire privacy pipeline — PR #, status
+- Story 1: Port sanitizer — PR #10, merged
+- Story 2: Build classifier — PR #11, merged
+- Story 3: Build vault — PR #12, merged
+- Story 4: Wire privacy pipeline — PR #13, merged
+- Hotfix: Type normalization — PR #14, merged
+- Hotfix: Configurable classifier prompt — PR #15, pending
 
 ### New Dependencies
+None
 
 ### Blockers / Issues
 

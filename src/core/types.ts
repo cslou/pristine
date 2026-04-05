@@ -163,6 +163,7 @@ export interface LlmClassifierConfig {
   readonly model?: string;
   readonly maxTokens?: number;
   readonly confidenceThreshold?: number;
+  readonly systemPrompt?: string;
 }
 
 // ---------------------------------------------------------------------------

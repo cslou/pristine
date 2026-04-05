@@ -1,5 +1,5 @@
 import { getLlama, LlamaChatSession } from 'node-llama-cpp';
-import type { Llama, LlamaModel, LlamaContext } from 'node-llama-cpp';
+import type { Llama, LlamaModel, LlamaContext, LlamaContextSequence } from 'node-llama-cpp';
 import { existsSync } from 'node:fs';
 import type { LlmClient } from '../../core/interfaces.js';
 import type { JsonSchema } from '../../core/types.js';
@@ -14,6 +14,7 @@ export class LlamaCppClient implements LlmClient {
   private llama: Llama | null = null;
   private model: LlamaModel | null = null;
   private context: LlamaContext | null = null;
+  private contextSequence: LlamaContextSequence | null = null;
   private loadPromise: Promise<void> | null = null;
 
   public constructor(config: LlamaCppConfig) {
@@ -35,7 +36,7 @@ export class LlamaCppClient implements LlmClient {
       );
 
       session = new LlamaChatSession({
-        contextSequence: this.context!.getSequence(),
+        contextSequence: this.contextSequence!,
         systemPrompt: params.systemPrompt,
       });
 
@@ -61,6 +62,7 @@ export class LlamaCppClient implements LlmClient {
   }
 
   public async dispose(): Promise<void> {
+    this.contextSequence = null;
     if (this.context) {
       await this.context.dispose();
       this.context = null;
@@ -101,6 +103,7 @@ export class LlamaCppClient implements LlmClient {
     this.llama = await getLlama({ gpu: this.config.gpu ?? 'auto' });
     this.model = await this.llama.loadModel({ modelPath: this.config.modelPath });
     this.context = await this.model.createContext();
+    this.contextSequence = this.context.getSequence();
   }
 }
 

@@ -53,3 +53,24 @@ export class EmbedderError extends AppError {
     this.name = 'EmbedderError';
   }
 }
+
+export class VaultEncodingError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'VaultEncodingError';
+  }
+}
+
+export class AsymmetricCryptoError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'AsymmetricCryptoError';
+  }
+}
+
+export class VaultEntryContractError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'VaultEntryContractError';
+  }
+}

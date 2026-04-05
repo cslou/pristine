@@ -8,7 +8,7 @@ import type {
 } from './types.js';
 import { ResolveApprovalError, ResolveApprovalTimeoutError } from '../core/errors.js';
 
-export const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z_]+):([0-9a-f-]+)\]/g;
+export const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z_]+):([0-9a-f-]+)\]/;
 
 const NO_REENTRY_METADATA = Symbol('memory.resolve.noLlmReentry');
 

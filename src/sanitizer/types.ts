@@ -1,6 +1,4 @@
 export type {
-  DetectedEntity,
-  SensitivityReport,
   SensitiveField,
   SanitizedMemory,
   SensitivePlaceholderMatch,

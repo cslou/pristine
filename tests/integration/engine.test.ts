@@ -33,8 +33,8 @@ async function findOllamaModel(): Promise<string | null> {
     if (!data.models || data.models.length === 0) return null;
 
     if (override) {
-      const found = data.models.some((m) => m.name === override || m.name.startsWith(override));
-      return found ? override : null;
+      const match = data.models.find((m) => m.name === override || m.name.startsWith(override));
+      return match?.name ?? null;
     }
 
     // Use first available model

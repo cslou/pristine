@@ -1,1 +1,9 @@
-export type { DetectedEntity, SensitivityReport } from '../core/types.js';
+export type {
+  SensitiveField,
+  SanitizedMemory,
+  SensitivePlaceholderMatch,
+  ApprovalRequestPayload,
+  ApprovalDecision,
+  ApprovalDecisionPayload,
+  ResolveInput,
+} from '../core/types.js';

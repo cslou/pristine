@@ -1382,6 +1382,27 @@ Comprehensive quality measurement of the local pipeline. MemoryBench is a separa
 
 ---
 
+### Phase 9: Two-Phase Ingestion
+
+Optimize ingest latency by making content searchable immediately via FTS5 keyword index, then running the full LLM extraction pipeline asynchronously. Inspired by memvid's two-phase enrichment pattern (Searchable -> Enriched).
+
+Currently `store()` blocks until the full pipeline completes (~19s on M4 Pro). For background ingest after a conversation ends this is acceptable, but for interactive use cases (agent mid-conversation) the latency is a UX problem. Two-phase ingestion decouples search availability from extraction latency.
+
+#### Tasks
+
+- [ ] 9.1: On `store()`, immediately index raw conversation text in `memories_fts` (FTS5) and return a pending ingest handle
+- [ ] 9.2: Run the LLM pipeline (chunk -> extract -> embed -> consolidate) asynchronously in the background
+- [ ] 9.3: `search()` returns both FTS5 keyword matches (available immediately) and vector/fact matches (available after extraction completes), with a flag indicating enrichment status
+- [ ] 9.4: Ingest handle exposes `await completion()` for callers that need to wait for full extraction
+- [ ] 9.5: Track enrichment state per conversation: `pending` -> `extracting` -> `enriched` -> `failed`
+- [ ] 9.6: On startup, detect incomplete enrichments and resume them (crash recovery)
+- [ ] 9.7: Test: store() returns before extraction completes, keyword search works immediately, fact search works after enrichment
+- [ ] 9.8: Benchmark: measure time-to-first-search-result with two-phase vs current pipeline
+
+**Exit criteria:** `store()` returns in <100ms. Keyword search available immediately. Fact/vector search available after background enrichment (~19s). Enrichment state tracked and resumable.
+
+---
+
 ## 11. Risks and Mitigations
 
 | Risk | Impact | Mitigation |

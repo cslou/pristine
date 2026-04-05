@@ -166,6 +166,51 @@ export interface LlmClassifierConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Sanitizer
+// ---------------------------------------------------------------------------
+
+export interface SensitiveField {
+  readonly id: string;
+  readonly type: string;
+  readonly description: string;
+  readonly status: 'requires_approval';
+}
+
+export interface SanitizedMemory {
+  readonly text: string;
+  readonly sensitiveFields: readonly SensitiveField[];
+}
+
+export interface SensitivePlaceholderMatch {
+  readonly placeholder: string;
+  readonly type: string;
+  readonly id: string;
+}
+
+export interface ApprovalRequestPayload {
+  readonly requestId: string;
+  readonly placeholders: readonly SensitivePlaceholderMatch[];
+}
+
+export interface ApprovalDecision {
+  readonly id: string;
+  readonly approved: boolean;
+  readonly value?: string;
+}
+
+export interface ApprovalDecisionPayload {
+  readonly requestId: string;
+  readonly challengeSuccess: boolean;
+  readonly decisions: readonly ApprovalDecision[];
+}
+
+export interface ResolveInput {
+  readonly approvedValues?: ReadonlyMap<string, string> | Record<string, string>;
+  readonly approvalCallback?: (request: ApprovalRequestPayload) => Promise<ApprovalDecisionPayload>;
+  readonly approvalTimeoutMs?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Vault & Encryption
 // ---------------------------------------------------------------------------
 

@@ -59,8 +59,8 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Testing approach:** Port consolidator tests adapting mocked `messages.create` to `generate<T>()`. Test all 5 action types, batch remapping, retry logic, post-validation downgrades.
 - **QA:** N/A
 - **Planned commits:**
-  1. `feat: port consolidation prompt and schema` — src/consolidator/prompts.ts, schema.ts
-  2. `feat: implement consolidator with batch processing` — src/consolidator/index.ts
+  1. `feat: port consolidation prompt and schema` — src/memory/consolidator/prompts.ts, schema.ts
+  2. `feat: implement consolidator with batch processing` — src/memory/consolidator/index.ts
   3. `test: port consolidator tests` — tests/memory/consolidator/
 - **Technical notes:**
   - Source: `~/projects/memory/src/consolidator/index.ts` (422 lines), `types.ts` (85 lines)
@@ -103,8 +103,8 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Testing approach:** Port tests adapting mocked `messages.create` to `generate<T>()`. Test intent classification, filter extraction, validation, heuristic fallback, error handling.
 - **QA:** N/A
 - **Planned commits:**
-  1. `feat: port query analysis prompt and schema` — src/query-analyzer/prompts.ts, schema.ts
-  2. `feat: implement query analyzer with heuristic fallback` — src/query-analyzer/index.ts
+  1. `feat: port query analysis prompt and schema` — src/memory/query-analyzer/prompts.ts, schema.ts
+  2. `feat: implement query analyzer with heuristic fallback` — src/memory/query-analyzer/index.ts
   3. `test: port query analyzer tests` — tests/memory/query-analyzer/
 - **Technical notes:**
   - Source: `~/projects/memory/src/query-analyzer/index.ts` (297 lines), `types.ts` (141 lines)
@@ -143,8 +143,8 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Testing approach:** Port retriever tests (pure logic for ranking, mocked store + embedder for retriever). Verify boost calculations, ranking order, temporal mode filtering.
 - **QA:** N/A
 - **Planned commits:**
-  1. `feat: port retriever ranking logic` — src/retriever/ranking.ts with temporal boost functions
-  2. `feat: implement retriever with temporal modes` — src/retriever/index.ts
+  1. `feat: port retriever ranking logic` — src/memory/retriever/ranking.ts with temporal boost functions
+  2. `feat: implement retriever with temporal modes` — src/memory/retriever/index.ts
   3. `test: port retriever and ranking tests` — tests/memory/retriever/
 - **Technical notes:**
   - Source: `~/projects/memory/src/retriever/index.ts` (127 lines), `ranking.ts` (50 lines), `types.ts` (23 lines)

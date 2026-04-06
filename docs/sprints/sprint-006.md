@@ -86,7 +86,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Testing approach:** Mock all 6 modules (extractor, embedder, store, consolidator, retriever, query-analyzer). Verify pipeline step execution order, context data flow, error handling.
 - **QA:** N/A
 - **Planned commits:**
-  1. `feat: implement ingest pipeline` — src/orchestrator/ingest.ts
+  1. `feat: implement ingest pipeline` — src/memory/orchestrator/ingest.ts
   2. `test: add ingest pipeline tests` — tests/memory/orchestrator/ingest.test.ts
 - **Technical notes:**
   - Source: `~/projects/memory/src/orchestrator/ingest.ts` (449 lines)
@@ -118,7 +118,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Testing approach:** Mock query analyzer, embedder, retriever. Verify query analysis feeds correctly into retriever, results returned in expected format.
 - **QA:** N/A
 - **Planned commits:**
-  1. `feat: implement retrieve pipeline` — src/orchestrator/retrieve.ts
+  1. `feat: implement retrieve pipeline` — src/memory/orchestrator/retrieve.ts
   2. `test: add retrieve pipeline tests` — tests/memory/orchestrator/retrieve.test.ts
 - **Technical notes:**
   - Source: `~/projects/memory/src/orchestrator/retrieve.ts` (103 lines)
@@ -156,7 +156,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Testing approach:** End-to-end tests using in-memory SQLite, real embedder (Nomic Embed), and mocked LlmClient. Verify full pipeline from conversation input to search results.
 - **QA:** N/A
 - **Planned commits:**
-  1. `feat: implement orchestrator with ingest and retrieve` — src/orchestrator/index.ts, factory function
+  1. `feat: implement orchestrator with ingest and retrieve` — src/memory/orchestrator/index.ts, factory function
   2. `test: add end-to-end orchestrator integration tests` — tests/integration/orchestrator.test.ts
 - **Technical notes:**
   - Source: `~/projects/memory/src/orchestrator/orchestrator.ts` (166 lines), `index.ts` (3 lines)

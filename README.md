@@ -165,7 +165,7 @@ The engine auto-detects: if Ollama is running with a model available, it uses Ol
 ### Verify Setup
 
 ```bash
-# Run all tests (275+ should pass)
+# Run all tests (286+ should pass)
 npm test
 
 # Type check
@@ -205,6 +205,8 @@ Input: "My email is alice@example.com and I live at 123 Main St"
 ### Usage
 
 ```typescript
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { OllamaClient } from './src/engine/ollama/index.js';
 import { SqliteVaultStore } from './src/privacy/vault/sqlite/index.js';
@@ -215,7 +217,7 @@ import { secureAndRedact, reveal, scrubOutput } from './src/privacy/index.js';
 const db = new Database('./privacy.db');
 const vaultStore = new SqliteVaultStore(db);
 const client = new OllamaClient({ model: 'llama3.2:latest' });
-const keyManager = new FileSystemKeyManager({ keysDir: '~/.pristine/keys' });
+const keyManager = new FileSystemKeyManager({ keysDir: join(homedir(), '.pristine/keys') });
 
 // Redact PII before sending to an LLM
 const { redactedText, placeholderIds } = await secureAndRedact(

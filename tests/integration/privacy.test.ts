@@ -2,22 +2,18 @@ import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secureAndRedact, reveal, scrubOutput } from '../../src/privacy/index.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
-import { generateKeyPair } from '../../src/privacy/vault/asymmetric-crypto.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
-import type { LlmClient } from '../../src/core/interfaces.js';
+import type { KeyManager, LlmClient } from '../../src/core/interfaces.js';
+import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 
 let db: Database.Database;
 let vaultStore: SqliteVaultStore;
-let publicKey: string;
-let privateKey: string;
+let keyManager: KeyManager;
 
 beforeAll(async () => {
   db = new Database(':memory:');
   vaultStore = new SqliteVaultStore(db);
-
-  const keyPair = await generateKeyPair();
-  publicKey = keyPair.publicKey;
-  privateKey = keyPair.privateKey;
+  keyManager = new InMemoryKeyManager();
 });
 
 afterAll(() => {
@@ -52,7 +48,7 @@ describe('privacy pipeline end-to-end', () => {
     const result = await secureAndRedact(text, {
       client: mockClient,
       vaultStore,
-      publicKeyPem: publicKey,
+      keyManager,
       userId: 'user-e2e-1',
     });
 
@@ -64,7 +60,7 @@ describe('privacy pipeline end-to-end', () => {
 
     const revealed = await reveal(result.redactedText, {
       vaultStore,
-      privateKeyPem: privateKey,
+      keyManager,
       userId: 'user-e2e-1',
     });
 
@@ -81,7 +77,7 @@ describe('privacy pipeline end-to-end', () => {
     const result = await secureAndRedact(text, {
       client: mockClient,
       vaultStore,
-      publicKeyPem: publicKey,
+      keyManager,
       userId: 'user-e2e-2',
     });
 
@@ -106,7 +102,7 @@ describe('privacy pipeline end-to-end', () => {
     const result = await secureAndRedact(text, {
       client: mockClient,
       vaultStore,
-      publicKeyPem: publicKey,
+      keyManager,
       userId: 'user-e2e-3',
     });
 
@@ -127,7 +123,7 @@ describe('privacy pipeline end-to-end', () => {
 
     const revealed = await reveal(text, {
       vaultStore,
-      privateKeyPem: privateKey,
+      keyManager,
       userId: 'user-e2e-4',
     });
 
@@ -172,7 +168,7 @@ describe('privacy pipeline end-to-end', () => {
     const result = await secureAndRedact(text, {
       client: mockClient,
       vaultStore,
-      publicKeyPem: publicKey,
+      keyManager,
       userId: 'user-e2e-5',
     });
 
@@ -181,7 +177,7 @@ describe('privacy pipeline end-to-end', () => {
 
     const revealed = await reveal(result.redactedText, {
       vaultStore,
-      privateKeyPem: privateKey,
+      keyManager,
       userId: 'user-e2e-5',
     });
 

@@ -231,10 +231,12 @@ export interface VaultEntry {
   readonly encryptionMetadata?: ZkV2EncryptedValueMetadata;
 }
 
+export type KeyWrappingScheme = 'rsa-oaep-256' | 'aes-256-kw+rsa-oaep-256';
+
 export interface ZkV2EncryptedValue {
   readonly scheme: 'zk-v2';
   readonly algorithm: 'aes-256-gcm';
-  readonly keyWrapping: 'rsa-oaep-256';
+  readonly keyWrapping: KeyWrappingScheme;
   readonly keyId: string;
   readonly sensitiveType: string;
   readonly ciphertext: string;
@@ -248,7 +250,7 @@ export interface ZkV2EncryptedValue {
 export interface ZkV2EncryptedValueMetadata {
   readonly scheme: 'zk-v2';
   readonly algorithm: 'aes-256-gcm';
-  readonly keyWrapping: 'rsa-oaep-256';
+  readonly keyWrapping: KeyWrappingScheme;
   readonly keyId: string;
   readonly wrappedDek: string;
   readonly aad: string;

@@ -33,7 +33,6 @@ Pristine has two pipelines that share common infrastructure:
               |                             |
      +--------v--------+          +--------v--------+
      |  Privacy Pipeline |          |  Memory Pipeline |
-     |  (Sprint 003)    |          |  (Sprint 004-006)|
      +------------------+          +------------------+
      | secureAndRedact()|          | extract()        |
      | reveal()         |          | store.addMemory()|

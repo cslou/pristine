@@ -194,6 +194,14 @@ export class SqliteStore implements Store {
         const restored = this.db
           .prepare('SELECT *, rowid FROM memories WHERE id = ?')
           .get(deleted.id) as MemoryRow;
+
+        if (input.embedding.length === EMBEDDING_DIM && restored.rowid !== undefined) {
+          this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(restored.rowid);
+          this.db
+            .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+            .run(restored.rowid, embeddingJson);
+        }
+
         return mapRow(restored);
       }
 
@@ -264,41 +272,44 @@ export class SqliteStore implements Store {
 
     values.push(id, userId);
 
-    this.db
+    const updateResult = this.db
       .prepare(
         `UPDATE memories SET ${setClauses.join(', ')} WHERE id = ? AND user_id = ? AND is_deleted = 0`,
       )
       .run(...values);
 
-    if (updates.embedding !== undefined) {
-      const row = this.db.prepare('SELECT rowid FROM memories WHERE id = ?').get(id) as
-        | { rowid: number }
-        | undefined;
-      if (row) {
-        this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(row.rowid);
-        if (updates.embedding.length === EMBEDDING_DIM) {
-          this.db
-            .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
-            .run(row.rowid, JSON.stringify(updates.embedding));
-        }
-      }
-    }
-
     const updated = this.db
       .prepare('SELECT *, rowid FROM memories WHERE id = ? AND user_id = ? AND is_deleted = 0')
       .get(id, userId) as MemoryRow | undefined;
 
-    if (!updated) {
-      throw new AppError(`Memory ${id} not found after update.`);
+    if (!updated || updateResult.changes === 0) {
+      throw new AppError(`Memory ${id} not found or is deleted.`);
+    }
+
+    if (updates.embedding !== undefined && updated.rowid !== undefined) {
+      this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(updated.rowid);
+      if (updates.embedding.length === EMBEDDING_DIM) {
+        this.db
+          .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+          .run(updated.rowid, JSON.stringify(updates.embedding));
+      }
     }
 
     return mapRow(updated);
   }
 
   public async deleteMemory(id: string, userId: string): Promise<void> {
+    const row = this.db
+      .prepare('SELECT rowid FROM memories WHERE id = ? AND user_id = ?')
+      .get(id, userId) as { rowid: number } | undefined;
+
     this.db
       .prepare('UPDATE memories SET is_deleted = 1, updated_at = ? WHERE id = ? AND user_id = ?')
       .run(new Date().toISOString(), id, userId);
+
+    if (row) {
+      this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(row.rowid);
+    }
   }
 
   public async clearAll(userId?: string): Promise<void> {

@@ -369,7 +369,8 @@ export class SqliteStore implements Store {
     const filterValues: unknown[] = [...rowids, params.userId];
 
     if (mode === 'current') {
-      temporalClause = ' AND (m.valid_until IS NULL)';
+      temporalClause =
+        " AND (m.valid_from IS NULL OR m.valid_from <= datetime('now')) AND (m.valid_until IS NULL)";
     } else if (mode === 'as_of') {
       temporalClause =
         ' AND (m.valid_from IS NULL OR m.valid_from <= ?) AND (m.valid_until IS NULL OR m.valid_until > ?)';

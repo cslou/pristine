@@ -444,27 +444,37 @@ export class SqliteStore implements Store {
       const embeddingJson = JSON.stringify(newMemory.embedding);
       const metadataJson = JSON.stringify(newMemory.metadata ?? {});
 
-      this.db
-        .prepare(
-          `INSERT INTO memories (
-            id, user_id, text, embedding, content_hash, created_at, updated_at,
-            last_accessed, source_conversation_id, metadata, valid_from, supersedes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          newId,
-          newMemory.userId,
-          newMemory.text,
-          embeddingJson,
-          newMemory.contentHash,
-          now,
-          now,
-          now,
-          newMemory.sourceConversationId ?? null,
-          metadataJson,
-          effectiveValidUntil,
-          oldId,
-        );
+      try {
+        this.db
+          .prepare(
+            `INSERT INTO memories (
+              id, user_id, text, embedding, content_hash, created_at, updated_at,
+              last_accessed, source_conversation_id, metadata, valid_from, supersedes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            newId,
+            newMemory.userId,
+            newMemory.text,
+            embeddingJson,
+            newMemory.contentHash,
+            now,
+            now,
+            now,
+            newMemory.sourceConversationId ?? null,
+            metadataJson,
+            effectiveValidUntil,
+            oldId,
+          );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('UNIQUE constraint')) {
+          throw new AppError(
+            `Cannot supersede: replacement memory content hash already exists for this user.`,
+          );
+        }
+        throw new AppError(`Failed to insert replacement memory: ${message}`);
+      }
 
       const newRow = this.db
         .prepare('SELECT *, rowid FROM memories WHERE id = ?')

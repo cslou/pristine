@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { KeyManager } from '../core/interfaces.js';
 import type { ZkV2EncryptedValueMetadata } from '../core/types.js';
-import { AppError } from '../core/errors.js';
+import { VaultEntryContractError } from '../core/errors.js';
 import { unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url, encodeBase64Url } from './vault/base64url.js';
 import { type KekManager, wrapDekWithKek } from './kek/kek-manager.js';
@@ -46,7 +46,7 @@ export async function migrateToKek(
     try {
       metadata = JSON.parse(row.encryption_metadata) as ZkV2EncryptedValueMetadata;
     } catch {
-      throw new AppError(`Corrupt encryption_metadata on vault entry ${row.id}`);
+      throw new VaultEntryContractError(`Corrupt encryption_metadata on vault entry ${row.id}`);
     }
     if (metadata.keyWrapping === 'rsa-oaep-256') {
       toMigrate.push({ id: row.id, metadata });

@@ -196,9 +196,11 @@ export class SqliteStore implements Store {
           .get(deleted.id) as MemoryRow;
 
         if (input.embedding.length === EMBEDDING_DIM && restored.rowid !== undefined) {
-          this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(restored.rowid);
           this.db
-            .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+            .prepare('DELETE FROM memory_vectors WHERE rowid = CAST(? AS INTEGER)')
+            .run(restored.rowid);
+          this.db
+            .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)')
             .run(restored.rowid, embeddingJson);
         }
 
@@ -212,7 +214,7 @@ export class SqliteStore implements Store {
 
     if (input.embedding.length === EMBEDDING_DIM && row.rowid !== undefined) {
       this.db
-        .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+        .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)')
         .run(row.rowid, embeddingJson);
     }
 
@@ -287,10 +289,12 @@ export class SqliteStore implements Store {
     }
 
     if (updates.embedding !== undefined && updated.rowid !== undefined) {
-      this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(updated.rowid);
+      this.db
+        .prepare('DELETE FROM memory_vectors WHERE rowid = CAST(? AS INTEGER)')
+        .run(updated.rowid);
       if (updates.embedding.length === EMBEDDING_DIM) {
         this.db
-          .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+          .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)')
           .run(updated.rowid, JSON.stringify(updates.embedding));
       }
     }
@@ -308,7 +312,7 @@ export class SqliteStore implements Store {
       .run(new Date().toISOString(), id, userId);
 
     if (row) {
-      this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(row.rowid);
+      this.db.prepare('DELETE FROM memory_vectors WHERE rowid = CAST(? AS INTEGER)').run(row.rowid);
     }
   }
 
@@ -318,7 +322,9 @@ export class SqliteStore implements Store {
         rowid: number;
       }[];
       for (const row of rows) {
-        this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(row.rowid);
+        this.db
+          .prepare('DELETE FROM memory_vectors WHERE rowid = CAST(? AS INTEGER)')
+          .run(row.rowid);
       }
       this.db.prepare('DELETE FROM memories WHERE user_id = ?').run(userId);
     } else {
@@ -463,7 +469,7 @@ export class SqliteStore implements Store {
 
       if (newMemory.embedding.length === EMBEDDING_DIM && newRow.rowid !== undefined) {
         this.db
-          .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+          .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (CAST(? AS INTEGER), ?)')
           .run(newRow.rowid, embeddingJson);
       }
 

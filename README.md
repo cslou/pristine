@@ -37,7 +37,7 @@ Pristine has two pipelines that share common infrastructure:
      +------------------+          +------------------+
      | secureAndRedact()|          | extract()        |
      | reveal()         |          | store.addMemory()|
-     | scrubOutput()    |          | store.search()   |
+     | scrubOutput()    |          | searchSimilar()  |
      +--------+---------+          +--------+---------+
               |                             |
               +--------------+--------------+
@@ -164,7 +164,7 @@ The engine auto-detects: if Ollama is running with a model available, it uses Ol
 ### Verify Setup
 
 ```bash
-# Run all tests (193+ should pass)
+# Run all tests (275+ should pass)
 npm test
 
 # Type check
@@ -477,7 +477,7 @@ async function handleTool(name: string, params: Record<string, unknown>) {
     const memories = await store.searchSimilar({
       embedding, limit: 10, userId, temporalMode: 'current',
     });
-    return { memories: memories.map((m) => ({ text: m.text, score: m.contentHash })) };
+    return { memories: memories.map((m) => ({ text: m.text })) };
   }
 }
 ```

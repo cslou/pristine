@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactText } from '../../src/vault/redaction.js';
+import { redactText } from '../../src/privacy/vault/redaction.js';
 import type { SensitivityReport, DetectedEntity } from '../../src/core/types.js';
 
 const entity = (

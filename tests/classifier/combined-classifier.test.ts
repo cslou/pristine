@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { extractCleanSpans, mergeReports } from '../../src/classifier/combined/index.js';
-import { createLlmClassifier } from '../../src/classifier/llm/index.js';
-import { resolve, clearResolvedStringRegistry } from '../../src/sanitizer/index.js';
+import { extractCleanSpans, mergeReports } from '../../src/privacy/classifier/combined/index.js';
+import { createLlmClassifier } from '../../src/privacy/classifier/llm/index.js';
+import { resolve, clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import { ResolveApprovalError } from '../../src/core/errors.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
 import type { DetectedEntity } from '../../src/core/types.js';

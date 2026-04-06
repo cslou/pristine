@@ -22,7 +22,11 @@ Local-first privacy and memory SDK. No API calls, no server, no data leaving the
 - All shared types live in `src/core/types.ts`
 - All error classes live in `src/core/errors.ts`
 - Each module directory has a `types.ts` re-exporting relevant types from core
-- Implementations live in subdirectories (e.g., `store/sqlite/`, `engine/llamacpp/`)
+- Modules are grouped by workstream:
+  - `src/privacy/` — sanitizer, classifier, vault, and pipeline (`secureAndRedact`, `reveal`, `scrubOutput`)
+  - `src/memory/` — extractor, consolidator, store, temporal, retriever, query-analyzer, orchestrator, episodes, graph
+  - Shared: `src/core/`, `src/engine/`, `src/embedder/`, `src/models/`
+- Implementations live in subdirectories (e.g., `privacy/vault/sqlite/`, `engine/llamacpp/`)
 
 ## Coding Conventions
 

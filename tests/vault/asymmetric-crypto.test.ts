@@ -6,7 +6,7 @@ import {
   unwrapDek,
   validatePublicKey,
   wrapDek,
-} from '../../src/vault/asymmetric-crypto.js';
+} from '../../src/privacy/vault/asymmetric-crypto.js';
 import { AsymmetricCryptoError } from '../../src/core/errors.js';
 
 const generateRsa2048 = (): { publicKey: string; privateKey: string } =>

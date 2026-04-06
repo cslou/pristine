@@ -1,5 +1,10 @@
 import { createDecipheriv, privateDecrypt, constants } from 'node:crypto';
-import type { KeyManager, LlmClient, SensitivityClassifier, VaultStore } from '../core/interfaces.js';
+import type {
+  KeyManager,
+  LlmClient,
+  SensitivityClassifier,
+  VaultStore,
+} from '../core/interfaces.js';
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
 import { redactText, type RedactionPlaceholder } from './vault/redaction.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';

@@ -10,6 +10,8 @@ import type {
 } from '../../../core/types.js';
 import { AppError } from '../../../core/errors.js';
 
+const EMBEDDING_DIM = 768;
+
 interface MemoryRow {
   id: string;
   user_id: string;
@@ -166,7 +168,7 @@ export class SqliteStore implements Store {
 
     const row = this.db.prepare('SELECT *, rowid FROM memories WHERE id = ?').get(id) as MemoryRow;
 
-    if (input.embedding.length > 0 && row.rowid !== undefined) {
+    if (input.embedding.length === EMBEDDING_DIM && row.rowid !== undefined) {
       this.db
         .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
         .run(row.rowid, embeddingJson);
@@ -238,7 +240,7 @@ export class SqliteStore implements Store {
         | undefined;
       if (row) {
         this.db.prepare('DELETE FROM memory_vectors WHERE rowid = ?').run(row.rowid);
-        if (updates.embedding.length > 0) {
+        if (updates.embedding.length === EMBEDDING_DIM) {
           this.db
             .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
             .run(row.rowid, JSON.stringify(updates.embedding));

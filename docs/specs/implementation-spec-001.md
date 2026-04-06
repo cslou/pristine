@@ -196,17 +196,17 @@ Deterministic Classifier     Local LLM Classifier
 
 | Module | Change | Details |
 |---|---|---|
-| `src/classifier/deterministic/` | **New** | Rule-based classifier replacing Presidio. Same `SensitivityClassifier` interface. Custom regex patterns, no Docker. |
-| `src/classifier/llm/` | **Modify** | Replace Anthropic SDK client with local LLM client. Same tool schema, same output types. Prompt configurable via `PromptConfig.classifier`. |
-| `src/classifier/index.ts` | **Keep** | `CombinedClassifier` merge logic stays — still runs both classifiers in parallel and deduplicates. |
-| `src/vault/` | **Modify** | Replace PostgreSQL backend with SQLite backend. Same interface. |
+| `src/privacy/classifier/deterministic/` | **New** | Rule-based classifier replacing Presidio. Same `SensitivityClassifier` interface. Custom regex patterns, no Docker. |
+| `src/privacy/classifier/llm/` | **Modify** | Replace Anthropic SDK client with local LLM client. Same tool schema, same output types. Prompt configurable via `PromptConfig.classifier`. |
+| `src/privacy/classifier/index.ts` | **Keep** | `CombinedClassifier` merge logic stays — still runs both classifiers in parallel and deduplicates. |
+| `src/privacy/vault/` | **Modify** | Replace PostgreSQL backend with SQLite backend. Same interface. |
 | `src/privacy/` | **Modify** | Replace PostgreSQL key store with SQLite. Same interface. |
 
 ### 3.4 What Stays the Same
 
 - `SensitivityClassifier` interface (unchanged)
 - `DetectedEntity` type (unchanged)
-- Redaction logic in `src/sanitizer/` (unchanged)
+- Redaction logic in `src/privacy/sanitizer/` (unchanged)
 - Vault encryption scheme: zk-v2 (unchanged)
 - SDK's `secureAndRedact()`, `reveal()`, `scrubOutput()` functions (unchanged API)
 - RSA key management in SDK (unchanged)
@@ -294,15 +294,15 @@ Steps 1-4 run in parallel. All local, all in-process.
 
 | Module | Change | Details |
 |---|---|---|
-| `src/extractor/` | **Modify** | Replace Anthropic client with local LLM client. Extend tool schema to also extract entities + relationships (Phase 6). Same `Extractor` interface. |
+| `src/memory/extractor/` | **Modify** | Replace Anthropic client with local LLM client. Extend tool schema to also extract entities + relationships (Phase 6). Same `Extractor` interface. |
 | `src/embedder/` | **Replace** | New `LocalEmbedder` using ONNX Runtime + Nomic Embed. Implements same `Embedder` interface. Output dimension changes from 1536 to 768. |
-| `src/consolidator/` | **Modify** | Replace Anthropic client with local LLM client. Same `Consolidator` interface, same tool schema. Retry logic unchanged. |
-| `src/store/` | **New impl** | New `SqliteStore` implementing existing `Store` interface. SQLite + sqlite-vec for vector search. Same schema shape. |
-| `src/vault/` | **Modify** | Replace PostgreSQL backend with SQLite (shared DB file with store). |
-| `src/retriever/` | **Modify** | Extend to support episode search + graph-enhanced retrieval + RRF fusion. |
-| `src/orchestrator/` | **Modify** | Add episode storage step (parallel with extraction). Add entity resolution + relationship storage step (after extraction). |
-| `src/episodes/` | **New** | `EpisodeStore` interface + `SqliteEpisodeStore`. Summary generation, episode search, fact-episode linking. |
-| `src/graph/` | **New** | `EntityStore` + `RelationshipStore` interfaces + SQLite implementations. Entity resolution (name/alias/embedding match). Graph traversal queries. Replaces the planned Neo4j integration from spec 002. |
+| `src/memory/consolidator/` | **Modify** | Replace Anthropic client with local LLM client. Same `Consolidator` interface, same tool schema. Retry logic unchanged. |
+| `src/memory/store/` | **New impl** | New `SqliteStore` implementing existing `Store` interface. SQLite + sqlite-vec for vector search. Same schema shape. |
+| `src/privacy/vault/` | **Modify** | Replace PostgreSQL backend with SQLite (shared DB file with store). |
+| `src/memory/retriever/` | **Modify** | Extend to support episode search + graph-enhanced retrieval + RRF fusion. |
+| `src/memory/orchestrator/` | **Modify** | Add episode storage step (parallel with extraction). Add entity resolution + relationship storage step (after extraction). |
+| `src/memory/episodes/` | **New** | `EpisodeStore` interface + `SqliteEpisodeStore`. Summary generation, episode search, fact-episode linking. |
+| `src/memory/graph/` | **New** | `EntityStore` + `RelationshipStore` interfaces + SQLite implementations. Entity resolution (name/alias/embedding match). Graph traversal queries. Replaces the planned Neo4j integration from spec 002. |
 
 ### 4.3 What Stays the Same
 
@@ -841,106 +841,110 @@ pristine-local/
 ├── src/
 │   ├── index.ts                        # Public API: PristineLocal.create()
 │   │
-│   ├── core/                           # Shared types and interfaces
-│   │   ├── types.ts                    #   Fact, Memory, Message, Episode, Entity, Relationship
-│   │   └── interfaces.ts              #   All module interfaces (see below)
+│   ├── core/                           # Shared types, interfaces, errors, database
+│   │   ├── types.ts                    #   Fact, Memory, Message, Episode, Entity, Relationship, PromptConfig
+│   │   ├── interfaces.ts              #   All module interfaces (LlmClient, Embedder, Store, etc.)
+│   │   ├── errors.ts                  #   Domain error hierarchy (AppError base + subclasses)
+│   │   └── database.ts               #   SQLite connection factory (WAL, integrity check, sqlite-vec)
 │   │
-│   ├── engine/                         # LLM inference engines (swappable)
-│   │   ├── types.ts                    #   LlmClient interface
-│   │   ├── llamacpp/                   #   In-process engine (node-llama-cpp)
+│   ├── engine/                         # LLM inference engines (swappable — see Extension Guide)
+│   │   ├── index.ts                    #   Auto-detect factory: createLlmClient()
+│   │   ├── types.ts                    #   LlamaCppConfig, OllamaConfig
+│   │   ├── llamacpp/                   #   In-process engine (node-llama-cpp v3, grammar-constrained)
 │   │   │   └── index.ts
-│   │   └── ollama/                     #   HTTP engine (Ollama API)
+│   │   └── ollama/                     #   HTTP engine (Ollama /api/chat, structured output)
 │   │       └── index.ts
 │   │
-│   ├── embedder/                       # Embedding inference (swappable)
-│   │   ├── types.ts                    #   Embedder interface
-│   │   └── local/                      #   @huggingface/transformers + Nomic Embed
+│   ├── embedder/                       # Embedding inference (swappable — see Extension Guide)
+│   │   ├── types.ts                    #   Embedder interface re-export
+│   │   └── local/                      #   @huggingface/transformers + Nomic Embed v1.5 (768-dim)
 │   │       └── index.ts
 │   │
-│   ├── store/                          # Memory persistence (swappable)
-│   │   ├── types.ts                    #   Store interface
-│   │   └── sqlite/                     #   SQLite + sqlite-vec implementation
-│   │       ├── index.ts
-│   │       ├── schema.ts              #   Table definitions + migrations
-│   │       └── vectors.ts             #   sqlite-vec queries
+│   ├── models/                         # Model registry + download manager
+│   │   ├── registry.ts                 #   Model name → URL + SHA-256 + size mapping
+│   │   └── download.ts                 #   Resumable HTTP download with checksum verification
 │   │
-│   ├── extractor/                      # Fact extraction from conversations (swappable)
-│   │   ├── types.ts                    #   Extractor interface
-│   │   ├── index.ts                    #   Implementation (uses LlmClient)
-│   │   └── prompts.ts                  #   Default extraction prompt
-│   │
-│   ├── consolidator/                   # Fact dedup/merge decisions (swappable)
-│   │   ├── types.ts                    #   Consolidator interface
-│   │   ├── index.ts                    #   Implementation (uses LlmClient)
-│   │   └── prompts.ts                  #   Default consolidation prompt
-│   │
-│   ├── classifier/                     # PII detection (swappable)
-│   │   ├── types.ts                    #   SensitivityClassifier interface
-│   │   ├── deterministic/              #   Rule-based classifier (regex patterns)
-│   │   │   └── index.ts
-│   │   ├── llm/                        #   LLM-based classifier (uses LlmClient)
+│   ├── privacy/                        # Privacy pipeline (classify → redact → encrypt → vault)
+│   │   ├── index.ts                    #   secureAndRedact(), reveal(), scrubOutput()
+│   │   ├── sanitizer/                  #   Placeholder detection, resolution, LLM reentry guards
 │   │   │   ├── index.ts
-│   │   │   └── prompts.ts             #   Default classification prompt
-│   │   └── combined/                   #   Runs both in parallel, merges results
-│   │       └── index.ts
+│   │   │   └── types.ts
+│   │   ├── classifier/                 #   PII detection (deterministic + LLM + combined)
+│   │   │   ├── types.ts
+│   │   │   ├── deterministic/          #   Regex patterns (credit card, email, SSN, phone)
+│   │   │   │   └── index.ts
+│   │   │   ├── llm/                    #   LLM-based classifier (uses LlmClient.generate<T>())
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── prompts.ts          #   Default classification prompt (configurable)
+│   │   │   │   └── schema.ts           #   classify_sensitivity JSON Schema
+│   │   │   └── combined/               #   Runs both in parallel, merges + deduplicates
+│   │   │       └── index.ts
+│   │   └── vault/                      #   Encrypted PII storage (RSA-4096 + AES-256-GCM)
+│   │       ├── types.ts
+│   │       ├── asymmetric-crypto.ts    #   RSA key gen, wrap/unwrap DEK
+│   │       ├── asymmetric-encrypt.ts   #   AES-256-GCM envelope encryption
+│   │       ├── base64url.ts            #   URL-safe Base64 encoding
+│   │       ├── redaction.ts            #   Smart redaction with entity filtering
+│   │       └── sqlite/                 #   SQLite vault + public key store
+│   │           └── index.ts
 │   │
-│   ├── vault/                          # Encrypted PII storage (swappable)
-│   │   ├── types.ts                    #   VaultStore interface
-│   │   └── sqlite/                     #   SQLite implementation
-│   │       └── index.ts
-│   │
-│   ├── episodes/                       # Episodic memory (swappable)
-│   │   ├── types.ts                    #   EpisodeStore interface
-│   │   └── sqlite/                     #   SQLite implementation
-│   │       └── index.ts
-│   │
-│   ├── graph/                          # Entity graph / relational memory (swappable)
-│   │   ├── types.ts                    #   EntityStore, RelationshipStore interfaces
-│   │   └── sqlite/                     #   SQLite implementation
-│   │       └── index.ts
-│   │
-│   ├── retriever/                      # Search + fusion (swappable)
-│   │   ├── types.ts                    #   Retriever interface
-│   │   └── index.ts                    #   Fused retrieval (vector + keyword + episodes + graph)
-│   │
-│   ├── orchestrator/                   # Pipeline coordination
-│   │   ├── types.ts                    #   Pipeline interfaces
-│   │   ├── ingest.ts                   #   Ingest pipeline (extract → embed → consolidate → store)
-│   │   ├── retrieve.ts                 #   Retrieve pipeline (analyze → embed → search → fuse)
-│   │   └── chunker.ts                  #   Conversation chunking
-│   │
-│   ├── query-analyzer/                 # Query intent analysis + rewriting
-│   │   ├── types.ts                    #   QueryAnalyzer interface, AnalyzedQuery
-│   │   ├── index.ts                    #   Implementation (uses LlmClient)
-│   │   ├── prompts.ts                  #   Default query analysis prompt
-│   │   └── schema.ts                   #   analyze_query JSON Schema
-│   │
-│   ├── sanitizer/                      # Redaction + LLM reentry guards
-│   │   └── index.ts
-│   │
-│   ├── temporal/                       # Temporal validation
-│   │   └── index.ts
-│   │
-│   └── models/                         # Model registry + download manager
-│       ├── registry.ts                 #   Model name → URL + checksum mapping
-│       └── download.ts                 #   Download + cache logic
+│   └── memory/                         # Memory pipeline (ingest → extract → store → search)
+│       ├── temporal/                   #   Temporal field validation (ISO dates, bounds)
+│       │   ├── index.ts
+│       │   └── types.ts
+│       ├── extractor/                  #   Fact extraction from conversations (uses LlmClient)
+│       │   ├── types.ts
+│       │   ├── index.ts
+│       │   ├── prompts.ts              #   Default extraction prompt (configurable)
+│       │   └── schema.ts               #   extract_facts JSON Schema
+│       ├── store/                      #   Memory persistence (SQLite + sqlite-vec + FTS5)
+│       │   ├── types.ts
+│       │   └── sqlite/
+│       │       └── index.ts
+│       ├── consolidator/               #   Fact dedup/merge decisions (uses LlmClient)
+│       │   ├── types.ts
+│       │   ├── index.ts
+│       │   ├── prompts.ts              #   Default consolidation prompt (configurable)
+│       │   └── schema.ts               #   consolidate_facts JSON Schema
+│       ├── query-analyzer/             #   Query intent analysis + rewriting (uses LlmClient)
+│       │   ├── types.ts
+│       │   ├── index.ts
+│       │   ├── prompts.ts              #   Default query analysis prompt (configurable)
+│       │   └── schema.ts               #   analyze_query JSON Schema
+│       ├── retriever/                  #   Search + fusion (vector + keyword + temporal ranking)
+│       │   ├── types.ts
+│       │   ├── index.ts
+│       │   └── ranking.ts              #   Temporal boost functions
+│       ├── orchestrator/               #   Pipeline coordination
+│       │   ├── types.ts                #   PipelineStep, IngestResult, RetrieveResult
+│       │   ├── index.ts                #   Orchestrator class with ingest() + retrieve()
+│       │   ├── ingest.ts               #   Ingest pipeline (chunk → extract → embed → consolidate → store)
+│       │   ├── retrieve.ts             #   Retrieve pipeline (analyze → embed → search → rank)
+│       │   ├── chunker.ts              #   Conversation chunking
+│       │   └── turn-order.ts           #   Message ordering within chunks
+│       ├── episodes/                   #   Episodic memory (conversation summaries)
+│       │   ├── types.ts
+│       │   └── sqlite/
+│       │       └── index.ts
+│       └── graph/                      #   Entity graph / relational memory
+│           ├── types.ts
+│           └── sqlite/
+│               └── index.ts
 │
 ├── tests/                              # Mirrors src/ structure
+│   ├── core/
 │   ├── engine/
 │   ├── embedder/
-│   ├── store/
-│   ├── extractor/
-│   ├── consolidator/
+│   ├── sanitizer/
 │   ├── classifier/
 │   ├── vault/
-│   ├── episodes/
-│   ├── graph/
-│   ├── retriever/
-│   ├── query-analyzer/
-│   ├── orchestrator/
-│   └── integration/                    #   End-to-end pipeline tests
+│   └── integration/                    #   End-to-end pipeline tests (engine, embedder, privacy)
 │
-├── benchmarks/                         #   MemoryBench integration
+├── benchmarks/                         #   Local micro-benchmarks (embedder throughput, etc.)
+│
+├── docs/
+│   └── specs/
+│       └── implementation-spec-001.md  #   This file
 │
 ├── package.json
 ├── tsconfig.json
@@ -1027,6 +1031,83 @@ export interface Retriever {
 
 Each interface can be implemented independently. The orchestrator wires them together via dependency injection — same pattern as the existing codebase.
 
+### Extension Guide
+
+The architecture is designed for easy extension. All modules communicate through interfaces defined in `src/core/interfaces.ts` — adding a new implementation requires no changes to existing code.
+
+#### Adding a New LLM Engine
+
+To add a new inference backend (e.g., MLX Swift, vLLM, a cloud API):
+
+**Step 1:** Create `src/engine/<name>/index.ts` implementing the `LlmClient` interface:
+
+```typescript
+// src/core/interfaces.ts — the contract your engine must fulfill
+export interface LlmClient {
+  generate<T>(params: {
+    readonly systemPrompt: string;
+    readonly userPrompt: string;
+    readonly schema: JsonSchema;  // JSON Schema for structured output
+    readonly maxTokens?: number;
+  }): Promise<T>;
+}
+```
+
+The `schema` parameter is critical — `generate<T>()` must return structured JSON matching the schema. For grammar-constrained engines (like llama.cpp), this means using the schema to build a grammar. For HTTP APIs, this means using the structured output feature (e.g., Ollama's `format` parameter).
+
+Reference implementations:
+- `src/engine/llamacpp/index.ts` — in-process engine with grammar-constrained generation
+- `src/engine/ollama/index.ts` — HTTP-based engine with `format: schema` structured output
+
+**Step 2:** Add a config interface to `src/engine/types.ts`:
+
+```typescript
+export interface MlxConfig {
+  readonly modelPath: string;
+  readonly maxTokens?: number;
+  readonly temperature?: number;
+}
+```
+
+**Step 3:** Update the auto-detect factory in `src/engine/index.ts` to include your engine in the detection logic. The factory tries engines in priority order and returns the first one that's available.
+
+#### Adding a New Model
+
+To add a downloadable model to the registry:
+
+**Step 1:** Add a `ModelEntry` to `src/models/registry.ts`:
+
+```typescript
+{
+  name: 'my-model-name',
+  filename: 'my-model-q4_k_m.gguf',
+  url: 'https://huggingface.co/.../resolve/main/my-model-q4_k_m.gguf',
+  sha256: '...', // SHA-256 hash of the file (optional but recommended)
+  sizeBytes: 4_500_000_000,
+  description: 'My Model 7B Q4_K_M quantization',
+}
+```
+
+**Step 2:** That's it. The download manager (`src/models/download.ts`) handles resumable HTTP downloads with `.partial` file suffix, progress callbacks, and SHA-256 checksum verification on completion.
+
+#### Adding a New Embedding Model
+
+To use a different embedding model:
+
+**Step 1:** Create a new implementation of the `Embedder` interface:
+
+```typescript
+// src/core/interfaces.ts — the contract
+export interface Embedder {
+  embed(text: string): Promise<number[]>;
+  embedBatch(texts: readonly string[]): Promise<number[][]>;
+}
+```
+
+Reference: `src/embedder/local/index.ts` — uses `@huggingface/transformers` pipeline with Nomic Embed v1.5 (768-dim, mean pooling, L2 normalization).
+
+**Important:** The output dimension must match the sqlite-vec virtual table configuration. The current tables use `float[768]`. If your embedding model outputs a different dimension, you'll need to update the table DDL in the store and episode modules.
+
 ---
 
 ## 10. Implementation Phases
@@ -1043,15 +1124,15 @@ Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below a
 
 | Source file | What to port | Lines |
 |---|---|---|
-| `src/extractor/types.ts` | Message, Fact, TemporalConfidence, ExtractionResult | 88 |
-| `src/store/types.ts` | Memory, TemporalMode, Store, StoreTransaction, supersession types | 78 |
-| `src/consolidator/types.ts` | ConsolidationResult, ConsolidationAction, Consolidator interfaces | 85 |
-| `src/classifier/types.ts` | DetectedEntity, SensitivityReport, SensitivityClassifier | 22 |
-| `src/classifier/llm/types.ts` | LlmSensitivityFinding, LlmClassifierConfig | 33 |
-| `src/vault/types.ts` | VaultEntry, ZkV2EncryptedValue, encryption metadata | 67 |
-| `src/retriever/types.ts` | RankedMemory, RetrieveFilters, Retriever | 23 |
-| `src/query-analyzer/types.ts` | AnalyzedQuery, QueryAnalyzer, tool input schemas | 141 |
-| `src/orchestrator/types.ts` | Orchestrator, PipelineStep, IngestResult | 62 |
+| `src/memory/extractor/types.ts` | Message, Fact, TemporalConfidence, ExtractionResult | 88 |
+| `src/memory/store/types.ts` | Memory, TemporalMode, Store, StoreTransaction, supersession types | 78 |
+| `src/memory/consolidator/types.ts` | ConsolidationResult, ConsolidationAction, Consolidator interfaces | 85 |
+| `src/privacy/classifier/types.ts` | DetectedEntity, SensitivityReport, SensitivityClassifier | 22 |
+| `src/privacy/classifier/llm/types.ts` | LlmSensitivityFinding, LlmClassifierConfig | 33 |
+| `src/privacy/vault/types.ts` | VaultEntry, ZkV2EncryptedValue, encryption metadata | 67 |
+| `src/memory/retriever/types.ts` | RankedMemory, RetrieveFilters, Retriever | 23 |
+| `src/memory/query-analyzer/types.ts` | AnalyzedQuery, QueryAnalyzer, tool input schemas | 141 |
+| `src/memory/orchestrator/types.ts` | Orchestrator, PipelineStep, IngestResult | 62 |
 | `src/embedder/types.ts` | Embedder, EmbeddingClient, EmbeddingResponse | 34 |
 
 **Prompts to port (~161 lines):**
@@ -1067,27 +1148,27 @@ Source repo: `~/projects/memory` (GitHub: `getlou-gh/memory`). All paths below a
 
 | Source file | Schema | Lines |
 |---|---|---|
-| `src/extractor/index.ts` lines 22-63 | `EXTRACT_FACTS_TOOL` — facts array with temporal fields | 41 |
-| `src/consolidator/index.ts` lines 118-166 | `consolidateFactsTool` — decisions array with actions | 48 |
-| `src/classifier/llm/index.ts` lines 21-60 | `CLASSIFY_SENSITIVITY_TOOL` — findings array with type/confidence | 39 |
-| `src/query-analyzer/types.ts` lines 62-114 | `analyze_query` tool — intent/filters/rewrittenQuery | 52 |
+| `src/memory/extractor/index.ts` lines 22-63 | `EXTRACT_FACTS_TOOL` — facts array with temporal fields | 41 |
+| `src/memory/consolidator/index.ts` lines 118-166 | `consolidateFactsTool` — decisions array with actions | 48 |
+| `src/privacy/classifier/llm/index.ts` lines 21-60 | `CLASSIFY_SENSITIVITY_TOOL` — findings array with type/confidence | 39 |
+| `src/memory/query-analyzer/types.ts` lines 62-114 | `analyze_query` tool — intent/filters/rewrittenQuery | 52 |
 
 **Utilities to port (~1,449 lines):**
 
 | Source file | What to port | Lines |
 |---|---|---|
-| `src/sanitizer/index.ts` | PLACEHOLDER_REGEX, resolve(), sanitizeText(), assertNoLlmReentry() | 390 |
-| `src/sanitizer/types.ts` | SensitiveField, SanitizedMemory, ResolveInput | 40 |
-| `src/temporal/index.ts` | validateTemporalFields() — ISO date validation, confidence rules | 111 |
-| `src/temporal/types.ts` | TemporalValidationOptions, TemporalValidationResult | 13 |
-| `src/orchestrator/chunker.ts` | chunkConversation(), CHUNK_SIZE, CHUNK_OVERLAP | 26 |
-| `src/retriever/ranking.ts` | applyTemporalBoosts(), recencyBoost(), currentFactBoost(), confidenceBoost() | 50 |
-| `src/classifier/index.ts` | extractCleanSpans(), mergeReports(), CombinedClassifier merge/dedup logic | 117 |
-| `src/vault/asymmetric-crypto.ts` | RSA key generation, validation, DEK wrap/unwrap, key fingerprint | 115 |
-| `src/vault/asymmetric-encrypt.ts` | AES-256-GCM + RSA-OAEP envelope encryption | 42 |
-| `src/vault/base64url.ts` | base64url encoding/decoding utilities | 69 |
-| `src/vault/redaction.ts` | Redaction/reveal logic, placeholder-to-vault flow | 228 |
-| `src/vault/index.ts` | VaultStore implementation (adapt from PostgreSQL to SQLite) | 248 |
+| `src/privacy/sanitizer/index.ts` | PLACEHOLDER_REGEX, resolve(), sanitizeText(), assertNoLlmReentry() | 390 |
+| `src/privacy/sanitizer/types.ts` | SensitiveField, SanitizedMemory, ResolveInput | 40 |
+| `src/memory/temporal/index.ts` | validateTemporalFields() — ISO date validation, confidence rules | 111 |
+| `src/memory/temporal/types.ts` | TemporalValidationOptions, TemporalValidationResult | 13 |
+| `src/memory/orchestrator/chunker.ts` | chunkConversation(), CHUNK_SIZE, CHUNK_OVERLAP | 26 |
+| `src/memory/retriever/ranking.ts` | applyTemporalBoosts(), recencyBoost(), currentFactBoost(), confidenceBoost() | 50 |
+| `src/privacy/classifier/index.ts` | extractCleanSpans(), mergeReports(), CombinedClassifier merge/dedup logic | 117 |
+| `src/privacy/vault/asymmetric-crypto.ts` | RSA key generation, validation, DEK wrap/unwrap, key fingerprint | 115 |
+| `src/privacy/vault/asymmetric-encrypt.ts` | AES-256-GCM + RSA-OAEP envelope encryption | 42 |
+| `src/privacy/vault/base64url.ts` | base64url encoding/decoding utilities | 69 |
+| `src/privacy/vault/redaction.ts` | Redaction/reveal logic, placeholder-to-vault flow | 228 |
+| `src/privacy/vault/index.ts` | VaultStore implementation (adapt from PostgreSQL to SQLite) | 248 |
 
 **Tests to port (~5,826 lines):**
 
@@ -1187,18 +1268,18 @@ End-to-end: text in -> classified -> redacted -> encrypted PII stored in SQLite 
 
 #### Phase 2a: Sanitizer
 
-- [ ] 2a.1: Port `src/sanitizer/` from source — pure logic: PLACEHOLDER_REGEX, resolve(), sanitizeText(), assertNoLlmReentry(), approval flow
-- [ ] 2a.2: Port `src/sanitizer/types.ts` — SensitiveField, SanitizedMemory, ResolveInput
+- [ ] 2a.1: Port `src/privacy/sanitizer/` from source — pure logic: PLACEHOLDER_REGEX, resolve(), sanitizeText(), assertNoLlmReentry(), approval flow
+- [ ] 2a.2: Port `src/privacy/sanitizer/types.ts` — SensitiveField, SanitizedMemory, ResolveInput
 - [ ] 2a.3: Port sanitizer tests (drop the 2 API endpoint tests that import from `src/api/`)
 - [ ] 2a.4: Verify: sanitizer tests pass
 
 #### Phase 2b: Classifier
 
-- [ ] 2b.1: Port classification prompt (`buildClassificationPrompt()`) into `src/classifier/llm/prompts.ts`
-- [ ] 2b.2: Port classify_sensitivity schema into `src/classifier/llm/schema.ts` — adapted to plain JSON Schema for `LlmClient.generate<T>()` (not Anthropic tool format)
-- [ ] 2b.3: Implement LLM classifier using `LlmClient` — port parsing/validation logic from source `src/classifier/llm/index.ts`, adapt from Anthropic SDK `messages.create()` to `generate<T>()`
+- [ ] 2b.1: Port classification prompt (`buildClassificationPrompt()`) into `src/privacy/classifier/llm/prompts.ts`
+- [ ] 2b.2: Port classify_sensitivity schema into `src/privacy/classifier/llm/schema.ts` — adapted to plain JSON Schema for `LlmClient.generate<T>()` (not Anthropic tool format)
+- [ ] 2b.3: Implement LLM classifier using `LlmClient` — port parsing/validation logic from source `src/privacy/classifier/llm/index.ts`, adapt from Anthropic SDK `messages.create()` to `generate<T>()`
 - [ ] 2b.4: Implement deterministic classifier (new — regex/rule-based patterns for structural PII replacing Presidio). No Docker dependency.
-- [ ] 2b.5: Implement combined classifier — port `extractCleanSpans()` + `mergeReports()` from source `src/classifier/index.ts`, parallel execution of deterministic + LLM, span dedup merge
+- [ ] 2b.5: Implement combined classifier — port `extractCleanSpans()` + `mergeReports()` from source `src/privacy/classifier/index.ts`, parallel execution of deterministic + LLM, span dedup merge
 - [ ] 2b.6: Port + adapt classifier tests — mock `generate<T>()` instead of `messages.create`
 - [ ] 2b.7: Test: PII detection on multilingual text (Mandarin, Hindi, Japanese, Spanish) — the main improvement over Presidio
 
@@ -1206,7 +1287,7 @@ End-to-end: text in -> classified -> redacted -> encrypted PII stored in SQLite 
 
 - [ ] 2c.1: Port vault crypto utilities from source: `asymmetric-crypto.ts` (RSA key ops), `asymmetric-encrypt.ts` (AES-256-GCM + RSA-OAEP wrapping), `base64url.ts` (encoding), `redaction.ts` (redaction/reveal logic)
 - [ ] 2c.2: Create vault SQLite tables (`vault_entries`, `user_public_keys`) — module creates its own tables on init
-- [ ] 2c.3: Implement `SqliteVaultStore` adapting source `src/vault/index.ts` from PostgreSQL to SQLite (same zk-v2 encryption scheme)
+- [ ] 2c.3: Implement `SqliteVaultStore` adapting source `src/privacy/vault/index.ts` from PostgreSQL to SQLite (same zk-v2 encryption scheme)
 - [ ] 2c.4: Implement `SqlitePublicKeyStore`
 - [ ] 2c.5: Port vault crypto tests (`asymmetric-crypto.test.ts`, `asymmetric-encrypt.test.ts`, `vault-redaction.test.ts`)
 - [ ] 2c.6: Tests: encrypt/decrypt round-trip, entry CRUD, placeholder lookup
@@ -1226,14 +1307,14 @@ End-to-end: conversation in -> chunked -> facts extracted -> embedded -> consoli
 
 #### Phase 3a: Pure Logic Utilities
 
-- [ ] 3a.1: Port `src/temporal/` (validateTemporalFields, pure logic) + types + tests
-- [ ] 3a.2: Port `src/orchestrator/chunker.ts` (chunkConversation, CHUNK_SIZE, CHUNK_OVERLAP) + tests
+- [ ] 3a.1: Port `src/memory/temporal/` (validateTemporalFields, pure logic) + types + tests
+- [ ] 3a.2: Port `src/memory/orchestrator/chunker.ts` (chunkConversation, CHUNK_SIZE, CHUNK_OVERLAP) + tests
 
 #### Phase 3b: Extractor
 
-- [ ] 3b.1: Port extraction prompt (`buildExtractionPrompt()`) into `src/extractor/prompts.ts`
-- [ ] 3b.2: Port extract_facts schema into `src/extractor/schema.ts` — adapted to plain JSON Schema for `generate<T>()`
-- [ ] 3b.3: Implement extractor using `LlmClient` — port parsing, validation, pronoun filter, temporal field extraction from source `src/extractor/index.ts`, adapt from Anthropic SDK to `generate<T>()`
+- [ ] 3b.1: Port extraction prompt (`buildExtractionPrompt()`) into `src/memory/extractor/prompts.ts`
+- [ ] 3b.2: Port extract_facts schema into `src/memory/extractor/schema.ts` — adapted to plain JSON Schema for `generate<T>()`
+- [ ] 3b.3: Implement extractor using `LlmClient` — port parsing, validation, pronoun filter, temporal field extraction from source `src/memory/extractor/index.ts`, adapt from Anthropic SDK to `generate<T>()`
 - [ ] 3b.4: Port + adapt extractor tests — mock `generate<T>()` instead of `messages.create`
 
 #### Phase 3c: Store
@@ -1245,18 +1326,18 @@ End-to-end: conversation in -> chunked -> facts extracted -> embedded -> consoli
 
 #### Phase 3d: Consolidator
 
-- [ ] 3d.1: Port consolidation prompt (`buildConsolidationPrompt()`) into `src/consolidator/prompts.ts`
-- [ ] 3d.2: Port consolidate_facts schema into `src/consolidator/schema.ts` — adapted to plain JSON Schema
-- [ ] 3d.3: Implement consolidator using `LlmClient` — port batch logic, integer-to-UUID ID remapping, retry with exponential backoff, validation, post-validation downgrades (SUPERSEDE->ADD, UPDATE->ADD, DELETE->NOOP) from source `src/consolidator/index.ts`
+- [ ] 3d.1: Port consolidation prompt (`buildConsolidationPrompt()`) into `src/memory/consolidator/prompts.ts`
+- [ ] 3d.2: Port consolidate_facts schema into `src/memory/consolidator/schema.ts` — adapted to plain JSON Schema
+- [ ] 3d.3: Implement consolidator using `LlmClient` — port batch logic, integer-to-UUID ID remapping, retry with exponential backoff, validation, post-validation downgrades (SUPERSEDE->ADD, UPDATE->ADD, DELETE->NOOP) from source `src/memory/consolidator/index.ts`
 - [ ] 3d.4: Port + adapt consolidator tests — mock `generate<T>()` instead of `messages.create`
 
 #### Phase 3e: Query Analyzer
 
 **Latency note:** Each LLM-based query analysis adds ~3-4s to search latency. The source implementation already has a heuristic fallback path (empty/failed queries return defaults without an LLM call). For the local version, consider making LLM analysis optional — use heuristic-only by default and LLM analysis when the query is complex or ambiguous. This decision can be made during implementation.
 
-- [ ] 3e.1: Port query analysis prompt (`buildQueryAnalysisPrompt()`) into `src/query-analyzer/prompts.ts`
-- [ ] 3e.2: Port analyze_query schema into `src/query-analyzer/schema.ts` — adapted to plain JSON Schema
-- [ ] 3e.3: Implement query analyzer using `LlmClient` — port validation, fallback logic from source `src/query-analyzer/index.ts`. Include heuristic-only mode for low-latency search.
+- [ ] 3e.1: Port query analysis prompt (`buildQueryAnalysisPrompt()`) into `src/memory/query-analyzer/prompts.ts`
+- [ ] 3e.2: Port analyze_query schema into `src/memory/query-analyzer/schema.ts` — adapted to plain JSON Schema
+- [ ] 3e.3: Implement query analyzer using `LlmClient` — port validation, fallback logic from source `src/memory/query-analyzer/index.ts`. Include heuristic-only mode for low-latency search.
 - [ ] 3e.4: Port + adapt query analyzer tests — mock `generate<T>()` instead of `messages.create`
 
 #### Phase 3f: Embedder Integration
@@ -1265,7 +1346,7 @@ End-to-end: conversation in -> chunked -> facts extracted -> embedded -> consoli
 
 #### Phase 3g: Retriever
 
-- [ ] 3g.1: Port retriever ranking logic from source `src/retriever/ranking.ts` — applyTemporalBoosts(), recencyBoost(), currentFactBoost(), confidenceBoost()
+- [ ] 3g.1: Port retriever ranking logic from source `src/memory/retriever/ranking.ts` — applyTemporalBoosts(), recencyBoost(), currentFactBoost(), confidenceBoost()
 - [ ] 3g.2: Implement basic retriever (vector search via sqlite-vec + temporal filtering + keyword search via FTS5 BM25 + temporal boost re-ranking)
 - [ ] 3g.3: Port + adapt retriever tests (`retriever.test.ts`, `retriever-ranking.test.ts`)
 - [ ] 3g.4: Tests: search returns ranked results with correct scores, temporal filtering and boost re-ranking works

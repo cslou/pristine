@@ -1,21 +1,19 @@
-import { createPrivateKey, createPublicKey } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createPrivateKey } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { KeyManagerError } from '../../core/errors.js';
 import type { KeyManager } from '../../core/interfaces.js';
 import type { KeyPairWithStatus } from '../../core/types.js';
-import { generateKeyPair } from '../vault/asymmetric-crypto.js';
+import { generateKeyPair, validatePublicKey } from '../vault/asymmetric-crypto.js';
 
 interface FileSystemKeyManagerOptions {
   readonly keysDir: string;
 }
 
-const IS_WINDOWS = process.platform === 'win32';
-
 const validatePem = (pem: string, kind: 'public' | 'private', filePath: string): void => {
   try {
     if (kind === 'public') {
-      createPublicKey(pem);
+      validatePublicKey(pem);
     } else {
       createPrivateKey(pem);
     }
@@ -25,9 +23,9 @@ const validatePem = (pem: string, kind: 'public' | 'private', filePath: string):
   }
 };
 
-const atomicWriteFile = (filePath: string, content: string): void => {
+const atomicWriteFile = (filePath: string, content: string, mode = 0o644): void => {
   const tmpPath = `${filePath}.tmp`;
-  writeFileSync(tmpPath, content, 'utf-8');
+  writeFileSync(tmpPath, content, { encoding: 'utf-8', mode });
   renameSync(tmpPath, filePath);
 };
 
@@ -84,9 +82,6 @@ export class FileSystemKeyManager implements KeyManager {
   private writeToDisk(userId: string, publicKey: string, privateKey: string): void {
     mkdirSync(this.keysDir, { recursive: true });
     atomicWriteFile(this.publicKeyPath(userId), publicKey);
-    atomicWriteFile(this.privateKeyPath(userId), privateKey);
-    if (!IS_WINDOWS) {
-      chmodSync(this.privateKeyPath(userId), 0o600);
-    }
+    atomicWriteFile(this.privateKeyPath(userId), privateKey, 0o600);
   }
 }

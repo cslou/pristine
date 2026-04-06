@@ -78,7 +78,7 @@ const parseZkV2EncryptionMetadata = (value: unknown): ZkV2EncryptedValueMetadata
   if (
     parsed.scheme !== 'zk-v2' ||
     parsed.algorithm !== 'aes-256-gcm' ||
-    parsed.keyWrapping !== 'rsa-oaep-256' ||
+    (parsed.keyWrapping !== 'rsa-oaep-256' && parsed.keyWrapping !== 'aes-256-kw+rsa-oaep-256') ||
     typeof parsed.keyId !== 'string' ||
     typeof parsed.wrappedDek !== 'string' ||
     typeof parsed.aad !== 'string'

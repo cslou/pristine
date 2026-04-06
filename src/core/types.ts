@@ -454,6 +454,16 @@ export interface RankedRelationship {
 }
 
 // ---------------------------------------------------------------------------
+// Key Management
+// ---------------------------------------------------------------------------
+
+export interface KeyPairWithStatus {
+  readonly publicKey: string;
+  readonly privateKey: string;
+  readonly created: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 

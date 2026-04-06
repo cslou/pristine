@@ -43,19 +43,19 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 - **Dependencies:** None
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/temporal/index.ts` exports `validateTemporalFields()` with ISO date validation, temporal bounds checking (validFrom <= validUntil), and confidence policies
-  - [ ] `src/temporal/types.ts` re-exports temporal types from core (TemporalConfidence, etc.)
+  - [ ] `src/memory/temporal/index.ts` exports `validateTemporalFields()` with ISO date validation, temporal bounds checking (validFrom <= validUntil), and confidence policies
+  - [ ] `src/memory/temporal/types.ts` re-exports temporal types from core (TemporalConfidence, etc.)
   - [ ] Validates: ISO 8601 format, rejects invalid dates, handles undefined fields, applies confidence-based policies
-  - [ ] Temporal validation tests pass (ported from source `tests/temporal/`)
+  - [ ] Temporal validation tests pass (ported from source `tests/memory/temporal/`)
   - [ ] `npm run typecheck` and `npm test` pass
 - **Testing approach:** Port temporal tests directly — pure logic, no mocks needed. Port key validation scenarios (valid dates, invalid dates, bounds checking, confidence policies).
 - **QA:** N/A
 - **Planned commits:**
   1. `feat: port temporal validation utilities` — src/temporal/index.ts, types.ts
-  2. `test: port temporal validation tests` — tests/temporal/
+  2. `test: port temporal validation tests` — tests/memory/temporal/
 - **Technical notes:**
   - Source: `~/projects/memory/src/temporal/index.ts` (111 lines), `types.ts` (13 lines)
-  - Source tests: `~/projects/memory/tests/temporal/` (1,145 lines — extensive, port key scenarios)
+  - Source tests: `~/projects/memory/tests/memory/temporal/` (1,145 lines — extensive, port key scenarios)
   - Pure logic, no external dependencies
 - **Priority:** Must-have
 - **Owner:** Coding Agent
@@ -76,19 +76,19 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 - **Dependencies:** None
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/orchestrator/chunker.ts` exports `chunkConversation()` with configurable `CHUNK_SIZE` and `CHUNK_OVERLAP`
+  - [ ] `src/memory/orchestrator/chunker.ts` exports `chunkConversation()` with configurable `CHUNK_SIZE` and `CHUNK_OVERLAP`
   - [ ] Chunks are arrays of `Message[]` with overlap for context continuity
   - [ ] Handles edge cases: empty conversation, single message, exactly chunk-size
-  - [ ] Chunker tests pass (ported from source `tests/orchestrator/chunker.test.ts`)
+  - [ ] Chunker tests pass (ported from source `tests/memory/orchestrator/chunker.test.ts`)
   - [ ] `npm run typecheck` and `npm test` pass
 - **Testing approach:** Port chunker tests — pure logic, splits message arrays by token/message count.
 - **QA:** N/A
 - **Planned commits:**
   1. `feat: port conversation chunker` — src/orchestrator/chunker.ts
-  2. `test: port chunker tests` — tests/orchestrator/chunker.test.ts
+  2. `test: port chunker tests` — tests/memory/orchestrator/chunker.test.ts
 - **Technical notes:**
   - Source: `~/projects/memory/src/orchestrator/chunker.ts` (26 lines)
-  - Source tests: `~/projects/memory/tests/orchestrator/chunker.test.ts`
+  - Source tests: `~/projects/memory/tests/memory/orchestrator/chunker.test.ts`
   - Very small module — straightforward port
 - **Priority:** Must-have
 - **Owner:** Coding Agent
@@ -109,9 +109,9 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 - **Dependencies:** Story 1 (temporal types)
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/extractor/prompts.ts` contains `buildExtractionPrompt()` — system prompt configurable via `PromptConfig.extractor`
-  - [ ] `src/extractor/schema.ts` contains `EXTRACT_FACTS_SCHEMA` as plain JSON Schema (not Anthropic tool format)
-  - [ ] `src/extractor/index.ts` exports class implementing `Extractor` interface from `src/core/interfaces.ts`, using `LlmClient.generate<T>()` — ported from source with Anthropic SDK adaptation
+  - [ ] `src/memory/extractor/prompts.ts` contains `buildExtractionPrompt()` — system prompt configurable via `PromptConfig.extractor`
+  - [ ] `src/memory/extractor/schema.ts` contains `EXTRACT_FACTS_SCHEMA` as plain JSON Schema (not Anthropic tool format)
+  - [ ] `src/memory/extractor/index.ts` exports class implementing `Extractor` interface from `src/core/interfaces.ts`, using `LlmClient.generate<T>()` — ported from source with Anthropic SDK adaptation
   - [ ] Extracted facts include: text, temporal fields (validFrom, validUntil, temporalConfidence), pronoun filtering
   - [ ] `ExtractionError` thrown on LLM failure (fail-closed)
   - [ ] Prompt configurable via constructor config (same pattern as LlmClassifier.systemPrompt)
@@ -122,7 +122,7 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 - **Planned commits:**
   1. `feat: port extraction prompt and schema` — src/extractor/prompts.ts, src/extractor/schema.ts
   2. `feat: implement extractor with generate<T>()` — src/extractor/index.ts, adapted from Anthropic SDK
-  3. `test: port extractor tests` — tests/extractor/
+  3. `test: port extractor tests` — tests/memory/extractor/
 - **Technical notes:**
   - Source: `~/projects/memory/src/extractor/index.ts` (207 lines), `types.ts` (88 lines)
   - Source prompt: `~/projects/memory/src/prompts/extraction.ts`
@@ -150,7 +150,7 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 - **Coding Agent:** claude
 - **Acceptance criteria:**
   - [ ] `memories`, `memory_vectors` (sqlite-vec 768-dim), `memories_fts` (FTS5 with sync triggers) SQLite tables created on module init
-  - [ ] `src/store/sqlite/index.ts` exports `SqliteStore` implementing `Store` interface from `src/core/interfaces.ts`
+  - [ ] `src/memory/store/sqlite/index.ts` exports `SqliteStore` implementing `Store` interface from `src/core/interfaces.ts`
   - [ ] `addMemory()` stores fact with embedding in sqlite-vec and text in FTS5
   - [ ] `getMemory()` retrieves by ID + userId
   - [ ] `updateMemory()` updates fields, syncs FTS5
@@ -164,7 +164,7 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 - **Planned commits:**
   1. `feat: create memory SQLite tables with vector and FTS5 indexes` — DDL with sqlite-vec, FTS5, sync triggers
   2. `feat: implement SqliteStore CRUD operations` — addMemory, getMemory, updateMemory, deleteMemory, clearAll, content hash dedup
-  3. `test: add memory store CRUD tests` — tests/store/
+  3. `test: add memory store CRUD tests` — tests/memory/store/
 - **Technical notes:**
   - Source: `~/projects/memory/src/store/index.ts` (602 lines), `types.ts` (78 lines)
   - SQLite adaptation: `$1` → `?`, `pg.Pool` → `better-sqlite3.Database`
@@ -203,9 +203,9 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
   1. `feat: implement vector search and temporal filtering` — searchSimilar via sqlite-vec with temporal modes
   2. `feat: implement FTS5 keyword search` — keyword search via memories_fts MATCH
   3. `feat: implement supersession chains` — supersedeMemory, getSupersessionChain with cycle detection
-  4. `test: add vector search, FTS5, and supersession tests` — tests/store/
+  4. `test: add vector search, FTS5, and supersession tests` — tests/memory/store/
 - **Technical notes:**
-  - Source tests: `~/projects/memory/tests/store/` (1,275 lines — port search + supersession scenarios)
+  - Source tests: `~/projects/memory/tests/memory/store/` (1,275 lines — port search + supersession scenarios)
   - sqlite-vec cosine: `SELECT rowid, vec_distance_cosine(embedding, ?) AS distance FROM memory_vectors ORDER BY distance LIMIT ?`
   - FTS5: `SELECT rowid, rank FROM memories_fts WHERE memories_fts MATCH ? ORDER BY rank`
   - Supersession: recursive query or iterative loop with max depth 50 and visited set for cycle detection

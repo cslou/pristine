@@ -1,5 +1,9 @@
 import type { LlmClient, SensitivityClassifier } from '../../../core/interfaces.js';
-import type { DetectedEntity, SensitivityReport, LlmClassifierConfig } from '../../../core/types.js';
+import type {
+  DetectedEntity,
+  SensitivityReport,
+  LlmClassifierConfig,
+} from '../../../core/types.js';
 import { LlmClassificationError } from '../../../core/errors.js';
 import { createLlmClassifier } from '../llm/index.js';
 import {

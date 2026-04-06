@@ -45,9 +45,9 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Dependencies:** Sprint 004 (Store, temporal types)
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/consolidator/prompts.ts` contains `buildConsolidationPrompt()` — configurable via `PromptConfig.consolidator`
-  - [ ] `src/consolidator/schema.ts` contains consolidation JSON Schema for `generate<T>()`
-  - [ ] `src/consolidator/index.ts` exports class implementing `Consolidator` interface from `src/core/interfaces.ts`, with `consolidate()` and `consolidateBatch()`
+  - [ ] `src/memory/consolidator/prompts.ts` contains `buildConsolidationPrompt()` — configurable via `PromptConfig.consolidator`
+  - [ ] `src/memory/consolidator/schema.ts` contains consolidation JSON Schema for `generate<T>()`
+  - [ ] `src/memory/consolidator/index.ts` exports class implementing `Consolidator` interface from `src/core/interfaces.ts`, with `consolidate()` and `consolidateBatch()`
   - [ ] 5 action types: ADD, UPDATE, DELETE, NOOP, SUPERSEDE
   - [ ] Batch processing with integer-to-UUID ID remapping
   - [ ] Retry with exponential backoff (max 2 retries, base 500ms, on transient/retryable errors — engine-agnostic, not HTTP status codes)
@@ -61,7 +61,7 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Planned commits:**
   1. `feat: port consolidation prompt and schema` — src/consolidator/prompts.ts, schema.ts
   2. `feat: implement consolidator with batch processing` — src/consolidator/index.ts
-  3. `test: port consolidator tests` — tests/consolidator/
+  3. `test: port consolidator tests` — tests/memory/consolidator/
 - **Technical notes:**
   - Source: `~/projects/memory/src/consolidator/index.ts` (422 lines), `types.ts` (85 lines)
   - Source prompt: `~/projects/memory/src/prompts/consolidation.ts`
@@ -88,9 +88,9 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Dependencies:** None (uses LlmClient interface only)
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/query-analyzer/prompts.ts` contains `buildQueryAnalysisPrompt()` — configurable via `PromptConfig.queryAnalyzer`
-  - [ ] `src/query-analyzer/schema.ts` contains query analysis JSON Schema for `generate<T>()`
-  - [ ] `src/query-analyzer/index.ts` exports class implementing `QueryAnalyzer` interface from `src/core/interfaces.ts`
+  - [ ] `src/memory/query-analyzer/prompts.ts` contains `buildQueryAnalysisPrompt()` — configurable via `PromptConfig.queryAnalyzer`
+  - [ ] `src/memory/query-analyzer/schema.ts` contains query analysis JSON Schema for `generate<T>()`
+  - [ ] `src/memory/query-analyzer/index.ts` exports class implementing `QueryAnalyzer` interface from `src/core/interfaces.ts`
   - [ ] Add `queryAnalyzer?: string` field to `PromptConfig` in `src/core/types.ts` (missing from Sprint 001 scaffolding)
   - [ ] Intent classification: `factual_lookup`, `contextual_search`, `temporal_query`
   - [ ] Filter extraction: temporal range, topic, agent scope, suggested topK
@@ -105,7 +105,7 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Planned commits:**
   1. `feat: port query analysis prompt and schema` — src/query-analyzer/prompts.ts, schema.ts
   2. `feat: implement query analyzer with heuristic fallback` — src/query-analyzer/index.ts
-  3. `test: port query analyzer tests` — tests/query-analyzer/
+  3. `test: port query analyzer tests` — tests/memory/query-analyzer/
 - **Technical notes:**
   - Source: `~/projects/memory/src/query-analyzer/index.ts` (297 lines), `types.ts` (141 lines)
   - Source prompt: `~/projects/memory/src/prompts/query-analysis.ts`
@@ -132,8 +132,8 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Dependencies:** Sprint 004 (SqliteStore from Stories 4-5)
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/retriever/ranking.ts` exports temporal boost functions: `applyTemporalBoosts()`, `recencyBoost()`, `currentFactBoost()`, `confidenceBoost()`
-  - [ ] `src/retriever/index.ts` exports class implementing `Retriever` interface from `src/core/interfaces.ts`
+  - [ ] `src/memory/retriever/ranking.ts` exports temporal boost functions: `applyTemporalBoosts()`, `recencyBoost()`, `currentFactBoost()`, `confidenceBoost()`
+  - [ ] `src/memory/retriever/index.ts` exports class implementing `Retriever` interface from `src/core/interfaces.ts`
   - [ ] Vector search channel: query embedding → store.searchSimilar → ranking
   - [ ] Keyword search channel: FTS5 BM25 search via store (per spec Phase 3g.2)
   - [ ] Temporal boost system: recency (2-year decay, 0.02 max), current fact (0.05 boost in full mode), confidence (0.007 inferred, 0.003 implied)
@@ -145,10 +145,10 @@ All three stories are independent — they can run in parallel. Story 3 (retriev
 - **Planned commits:**
   1. `feat: port retriever ranking logic` — src/retriever/ranking.ts with temporal boost functions
   2. `feat: implement retriever with temporal modes` — src/retriever/index.ts
-  3. `test: port retriever and ranking tests` — tests/retriever/
+  3. `test: port retriever and ranking tests` — tests/memory/retriever/
 - **Technical notes:**
   - Source: `~/projects/memory/src/retriever/index.ts` (127 lines), `ranking.ts` (50 lines), `types.ts` (23 lines)
-  - Source tests: `~/projects/memory/tests/retriever/` (1,034 lines — extensive ranking scenarios)
+  - Source tests: `~/projects/memory/tests/memory/retriever/` (1,034 lines — extensive ranking scenarios)
   - Retriever is thin: delegates search to Store, then applies ranking boosts
   - Ranking is additive: base similarity score + sum of temporal boosts
   - No LLM dependency — pure algorithm

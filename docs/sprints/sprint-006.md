@@ -44,9 +44,9 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Dependencies:** Sprints 004-005
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/orchestrator/types.ts` exports: `PipelineStep`, `PipelineContext`, `IngestOptions`, `IngestResult`, `OrchestratorConfig`
-  - [ ] `src/orchestrator/pipeline.ts` exports pipeline step execution utilities
-  - [ ] `src/orchestrator/turn-order.ts` exports turn-order computation for chunk message ordering
+  - [ ] `src/memory/orchestrator/types.ts` exports: `PipelineStep`, `PipelineContext`, `IngestOptions`, `IngestResult`, `OrchestratorConfig`
+  - [ ] `src/memory/orchestrator/pipeline.ts` exports pipeline step execution utilities
+  - [ ] `src/memory/orchestrator/turn-order.ts` exports turn-order computation for chunk message ordering
   - [ ] Types compile and are usable by ingest/retrieve modules
   - [ ] `npm run typecheck` and `npm test` pass
 - **Testing approach:** Unit tests for turn-order computation (pure logic). Pipeline step execution tested via integration in Stories 2-3.
@@ -77,7 +77,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Dependencies:** Story 1
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/orchestrator/ingest.ts` implements the full ingest flow: chunk → extract → embed → search similar → consolidate → store
+  - [ ] `src/memory/orchestrator/ingest.ts` implements the full ingest flow: chunk → extract → embed → search similar → consolidate → store
   - [ ] Content hash dedup prevents re-processing identical conversations
   - [ ] Source conversation ID tracked on stored memories
   - [ ] Each pipeline step callable independently and composable
@@ -87,7 +87,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **QA:** N/A
 - **Planned commits:**
   1. `feat: implement ingest pipeline` — src/orchestrator/ingest.ts
-  2. `test: add ingest pipeline tests` — tests/orchestrator/ingest.test.ts
+  2. `test: add ingest pipeline tests` — tests/memory/orchestrator/ingest.test.ts
 - **Technical notes:**
   - Source: `~/projects/memory/src/orchestrator/ingest.ts` (449 lines)
   - Ingest flow: (1) hash conversation for dedup, (2) chunk into manageable pieces, (3) extract facts per chunk, (4) embed each fact, (5) search for similar existing facts, (6) consolidate new vs existing, (7) apply consolidation actions to store
@@ -111,7 +111,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Dependencies:** Story 1, Sprint 005 (query analyzer, retriever)
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/orchestrator/retrieve.ts` implements: analyze query → embed query → retrieve from store → rank → return
+  - [ ] `src/memory/orchestrator/retrieve.ts` implements: analyze query → embed query → retrieve from store → rank → return
   - [ ] Query analyzer results feed into retriever (intent, filters, suggested topK)
   - [ ] Retrieve tests pass with mocked modules
   - [ ] `npm run typecheck` and `npm test` pass
@@ -119,7 +119,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **QA:** N/A
 - **Planned commits:**
   1. `feat: implement retrieve pipeline` — src/orchestrator/retrieve.ts
-  2. `test: add retrieve pipeline tests` — tests/orchestrator/retrieve.test.ts
+  2. `test: add retrieve pipeline tests` — tests/memory/orchestrator/retrieve.test.ts
 - **Technical notes:**
   - Source: `~/projects/memory/src/orchestrator/retrieve.ts` (103 lines)
   - Simpler than ingest: analyze → embed → retrieve → return
@@ -144,7 +144,7 @@ Stories are sequential: Story 1 (infrastructure) → Story 2 (ingest) → Story 
 - **Dependencies:** Stories 1-3
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] `src/orchestrator/index.ts` exports `Orchestrator` class with `ingest()`, `retrieve()`, pipeline step registration
+  - [ ] `src/memory/orchestrator/index.ts` exports `Orchestrator` class with `ingest()`, `retrieve()`, pipeline step registration
   - [ ] `createOrchestrator(config)` factory function with dependency injection
   - [ ] `store()` and `search()` convenience methods on orchestrator (aliases for `ingest()` and `retrieve()` with simplified signatures for the common case)
   - [ ] End-to-end test: ingest a multi-turn conversation with mocked LLM, search, verify correct facts returned

@@ -327,21 +327,211 @@ export class SqliteStore implements Store {
     }
   }
 
-  public async searchSimilar(_params: SearchParams): Promise<Memory[]> {
-    throw new AppError('searchSimilar not implemented yet — see Story 5.');
+  public async searchSimilar(params: SearchParams): Promise<Memory[]> {
+    const mode = params.temporalMode ?? 'current';
+
+    if (mode === 'as_of' && !params.asOf) {
+      throw new AppError('searchSimilar as_of mode requires an asOf timestamp.');
+    }
+
+    if (mode === 'as_of' && Number.isNaN(Date.parse(params.asOf!))) {
+      throw new AppError(`searchSimilar as_of received invalid asOf: "${params.asOf}".`);
+    }
+
+    // Step 1: Find nearest vectors via sqlite-vec
+    const vectorRows = this.db
+      .prepare(
+        `SELECT rowid, distance
+         FROM memory_vectors
+         WHERE embedding MATCH ?
+         ORDER BY distance
+         LIMIT ?`,
+      )
+      .all(JSON.stringify(params.embedding), params.limit * 3) as {
+      rowid: number;
+      distance: number;
+    }[];
+
+    if (vectorRows.length === 0) return [];
+
+    // Step 2: Join with memories table, apply filters
+    const rowids = vectorRows.map((r) => r.rowid);
+    const distanceMap = new Map(vectorRows.map((r) => [r.rowid, r.distance]));
+    const placeholders = rowids.map(() => '?').join(', ');
+
+    let temporalClause = '';
+    const filterValues: unknown[] = [...rowids, params.userId];
+
+    if (mode === 'current') {
+      temporalClause = ' AND (m.valid_until IS NULL)';
+    } else if (mode === 'as_of') {
+      temporalClause =
+        ' AND (m.valid_from IS NULL OR m.valid_from <= ?) AND (m.valid_until IS NULL OR m.valid_until > ?)';
+      filterValues.push(params.asOf, params.asOf);
+    }
+
+    const memoryRows = this.db
+      .prepare(
+        `SELECT m.*, m.rowid AS rowid FROM memories m
+         WHERE m.rowid IN (${placeholders})
+           AND m.user_id = ?
+           AND m.is_deleted = 0${temporalClause}`,
+      )
+      .all(...filterValues) as MemoryRow[];
+
+    // Step 3: Sort by vector distance and limit
+    const sorted = memoryRows
+      .map((row) => ({ row, distance: distanceMap.get(row.rowid!) ?? Infinity }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, params.limit);
+
+    return sorted.map((s) => mapRow(s.row));
+  }
+
+  public async searchByKeyword(query: string, userId: string, limit: number): Promise<Memory[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT m.*, m.rowid AS rowid, fts.rank
+         FROM memories_fts fts
+         JOIN memories m ON m.rowid = fts.rowid
+         WHERE memories_fts MATCH ?
+           AND m.user_id = ?
+           AND m.is_deleted = 0
+         ORDER BY fts.rank
+         LIMIT ?`,
+      )
+      .all(query, userId, limit) as (MemoryRow & { rank: number })[];
+
+    return rows.map(mapRow);
   }
 
   public async supersedeMemory(
-    _oldId: string,
-    _newMemory: AddMemoryInput,
-    _reason: string,
-    _validUntil?: string,
+    oldId: string,
+    newMemory: AddMemoryInput,
+    reason: string,
+    validUntil?: string,
   ): Promise<SupersedeMemoryResult> {
-    throw new AppError('supersedeMemory not implemented yet — see Story 5.');
+    const effectiveValidUntil = validUntil ?? new Date().toISOString();
+
+    const doSupersede = this.db.transaction(() => {
+      // Step 1: Verify old memory is eligible
+      const oldRow = this.db
+        .prepare(
+          'SELECT *, rowid FROM memories WHERE id = ? AND is_deleted = 0 AND superseded_by IS NULL',
+        )
+        .get(oldId) as MemoryRow | undefined;
+
+      if (!oldRow) {
+        throw new AppError(`Memory ${oldId} not found, is deleted, or is already superseded.`);
+      }
+
+      if (oldRow.user_id !== newMemory.userId) {
+        throw new AppError('Cannot supersede a memory belonging to a different user.');
+      }
+
+      // Step 2: Insert new memory with supersedes link
+      const newId = randomUUID();
+      const now = new Date().toISOString();
+      const embeddingJson = JSON.stringify(newMemory.embedding);
+      const metadataJson = JSON.stringify(newMemory.metadata ?? {});
+
+      this.db
+        .prepare(
+          `INSERT INTO memories (
+            id, user_id, text, embedding, content_hash, created_at, updated_at,
+            last_accessed, source_conversation_id, metadata, valid_from, supersedes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          newId,
+          newMemory.userId,
+          newMemory.text,
+          embeddingJson,
+          newMemory.contentHash,
+          now,
+          now,
+          now,
+          newMemory.sourceConversationId ?? null,
+          metadataJson,
+          effectiveValidUntil,
+          oldId,
+        );
+
+      const newRow = this.db
+        .prepare('SELECT *, rowid FROM memories WHERE id = ?')
+        .get(newId) as MemoryRow;
+
+      if (newMemory.embedding.length === EMBEDDING_DIM && newRow.rowid !== undefined) {
+        this.db
+          .prepare('INSERT INTO memory_vectors (rowid, embedding) VALUES (?, ?)')
+          .run(newRow.rowid, embeddingJson);
+      }
+
+      // Step 3: Update old memory
+      this.db
+        .prepare(
+          `UPDATE memories SET valid_until = ?, superseded_by = ?, supersession_reason = ?,
+           updated_at = ? WHERE id = ?`,
+        )
+        .run(effectiveValidUntil, newId, reason, now, oldId);
+
+      const updatedOldRow = this.db
+        .prepare('SELECT *, rowid FROM memories WHERE id = ?')
+        .get(oldId) as MemoryRow;
+
+      return {
+        oldMemory: mapRow(updatedOldRow),
+        newMemory: mapRow(newRow),
+      };
+    });
+
+    return doSupersede();
   }
 
-  public async getSupersessionChain(_memoryId: string, _userId: string): Promise<Memory[]> {
-    throw new AppError('getSupersessionChain not implemented yet — see Story 5.');
+  private static readonly MAX_CHAIN_DEPTH = 50;
+
+  public async getSupersessionChain(memoryId: string, userId: string): Promise<Memory[]> {
+    const target = this.fetchMemoryById(memoryId, userId);
+    if (!target) return [];
+
+    const visited = new Set<string>([target.id]);
+    const chain: Memory[] = [target];
+    const halfDepth = Math.floor(SqliteStore.MAX_CHAIN_DEPTH / 2);
+
+    // Walk backward via supersedes to find the root
+    let current = target;
+    let backwardSteps = 0;
+    while (current.supersedes && backwardSteps < halfDepth) {
+      if (visited.has(current.supersedes)) break;
+      const prev = this.fetchMemoryById(current.supersedes, userId);
+      if (!prev) break;
+      visited.add(prev.id);
+      chain.unshift(prev);
+      current = prev;
+      backwardSteps++;
+    }
+
+    // Walk forward via supersededBy from the target
+    current = target;
+    let forwardSteps = 0;
+    while (current.supersededBy && forwardSteps < halfDepth) {
+      if (visited.has(current.supersededBy)) break;
+      const next = this.fetchMemoryById(current.supersededBy, userId);
+      if (!next) break;
+      visited.add(next.id);
+      chain.push(next);
+      current = next;
+      forwardSteps++;
+    }
+
+    return chain;
+  }
+
+  private fetchMemoryById(id: string, userId: string): Memory | null {
+    const row = this.db
+      .prepare('SELECT *, rowid FROM memories WHERE id = ? AND user_id = ?')
+      .get(id, userId) as MemoryRow | undefined;
+    return row ? mapRow(row) : null;
   }
 }
 

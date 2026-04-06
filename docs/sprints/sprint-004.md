@@ -246,6 +246,38 @@ Story 0 (docs) runs first — no code dependencies. Story 1 (temporal) must come
 - **Priority:** Must-have
 - **Owner:** Coding Agent
 
+#### Story 6: End-to-end memory pipeline smoke test
+- **Story Checklist:**
+  - [ ] Follows sprint template (acceptance criteria, testing approach, planned commits)
+  - [ ] Within size limits (max 5 commits; split if larger)
+  - [ ] Reviewed by sub-agent
+  - [ ] Review findings addressed and have sub-agent review again until they state that it is ok (fixes applied or disagreements noted)
+  - [ ] Each AC verified against git diff and test output before marking done
+  - [ ] Ready for Lou
+- **Review:**
+  - Reviewer: *(sub-agent session ID)*
+  - Findings: *(summary of review feedback)*
+  - Resolution: *(agreed + fixed / disagreed + reason)*
+- **As a** developer, **I want** an end-to-end smoke test demonstrating the full memory pipeline, **so that** I can verify facts are extracted from conversations, stored in SQLite, and searchable by vector and keyword — even before the orchestrator is built.
+- **Dependencies:** Stories 1-5
+- **Coding Agent:** claude
+- **Acceptance criteria:**
+  - [ ] Integration test: input conversation with mocked LLM → extract facts → embed → store in SQLite → search by vector similarity → verify correct facts returned
+  - [ ] Integration test: store facts → search by FTS5 keyword → verify keyword match
+  - [ ] Integration test: privacy + memory together — secureAndRedact → extract from redacted text → store → search → verify placeholders preserved through pipeline
+  - [ ] Tests use in-memory SQLite + mocked LlmClient + real embedder (skippable when model unavailable)
+  - [ ] `npm run typecheck`, `npm test`, `npm run lint` all pass
+- **Testing approach:** Integration tests that manually wire extractor → embedder → store (no orchestrator). Mocked LlmClient returns known facts. Real embedder generates actual vectors for similarity search. Privacy test verifies [SENSITIVE:...] placeholders survive extraction and storage.
+- **QA:** N/A
+- **Planned commits:**
+  1. `test: add end-to-end memory pipeline smoke tests` — tests/integration/memory.test.ts
+- **Technical notes:**
+  - This is the Sprint 004 demo: proves the pipeline works end-to-end with manual wiring
+  - Uses `describe.skipIf` for real embedder dependency (CI-safe)
+  - The orchestrator (Sprint 006) will replace the manual wiring with a single `ingest()` / `retrieve()` call
+- **Priority:** Must-have
+- **Owner:** Coding Agent
+
 ### Rules
 - Follow repo's `CLAUDE.md` for branching, rebase, and PR conventions
 - Follow PR template (`.github/PULL_REQUEST_TEMPLATE.md`) when opening PRs
@@ -274,12 +306,13 @@ Story 0 (docs) runs first — no code dependencies. Story 1 (temporal) must come
 ### Summary
 
 ### Results
-- Story 0: Update documentation — PR #, status
-- Story 1: Port temporal validation — PR #, status
-- Story 2: Port conversation chunker — PR #, status
-- Story 3: Port fact extractor — PR #, status
+- Story 0: Update documentation — PR #17, merged
+- Story 1: Port temporal validation — PR #18, merged
+- Story 2: Port conversation chunker — PR #19, merged
+- Story 3: Port fact extractor — PR #20, merged
 - Story 4: Build SqliteStore CRUD — PR #, status
 - Story 5: Build SqliteStore search + supersession — PR #, status
+- Story 6: End-to-end memory pipeline smoke test — PR #, status
 
 ### New Dependencies
 

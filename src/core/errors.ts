@@ -81,3 +81,10 @@ export class KeyManagerError extends AppError {
     this.name = 'KeyManagerError';
   }
 }
+
+export class KekManagerError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'KekManagerError';
+  }
+}

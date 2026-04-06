@@ -1,7 +1,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
-import { wrapDek } from './asymmetric-crypto.js';
 import { encodeBase64Url } from './base64url.js';
-import type { ZkV2EncryptedValue } from '../../core/types.js';
+import type { KeyWrappingScheme, ZkV2EncryptedValue } from '../../core/types.js';
+import { wrapDekWithKek } from '../kek/kek-manager.js';
 
 const AES_GCM_IV_LENGTH = 12;
 const DEK_LENGTH = 32;
@@ -10,7 +10,7 @@ export const encryptAndWrapValue = (
   plaintext: string,
   sensitiveType: string,
   placeholderId: string,
-  publicKeyPem: string,
+  kek: Buffer,
   keyFingerprint: string,
 ): ZkV2EncryptedValue => {
   const dek = randomBytes(DEK_LENGTH);
@@ -22,12 +22,13 @@ export const encryptAndWrapValue = (
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
-  const wrappedDek = wrapDek(dek, publicKeyPem);
+  const wrappedDek = wrapDekWithKek(dek, kek);
+  const keyWrapping: KeyWrappingScheme = 'aes-256-kw+rsa-oaep-256';
 
   return {
     scheme: 'zk-v2',
     algorithm: 'aes-256-gcm',
-    keyWrapping: 'rsa-oaep-256',
+    keyWrapping,
     keyId: keyFingerprint,
     sensitiveType,
     ciphertext: encodeBase64Url(new Uint8Array(encrypted)),

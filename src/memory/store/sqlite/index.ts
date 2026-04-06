@@ -154,6 +154,7 @@ export class SqliteStore implements Store {
       );
 
     if (result.changes === 0) {
+      // Check for active duplicate first
       const existing = this.db
         .prepare(
           'SELECT *, rowid FROM memories WHERE user_id = ? AND content_hash = ? AND is_deleted = 0',
@@ -163,6 +164,39 @@ export class SqliteStore implements Store {
       if (existing) {
         return mapRow(existing);
       }
+
+      // Check for soft-deleted duplicate — un-delete and update it
+      const deleted = this.db
+        .prepare(
+          'SELECT *, rowid FROM memories WHERE user_id = ? AND content_hash = ? AND is_deleted = 1',
+        )
+        .get(input.userId, input.contentHash) as MemoryRow | undefined;
+
+      if (deleted) {
+        this.db
+          .prepare(
+            `UPDATE memories SET is_deleted = 0, text = ?, embedding = ?, metadata = ?,
+             updated_at = ?, last_accessed = ?, valid_from = ?, valid_until = ?,
+             source_conversation_id = ? WHERE id = ?`,
+          )
+          .run(
+            input.text,
+            embeddingJson,
+            metadataJson,
+            now,
+            now,
+            input.validFrom ?? null,
+            input.validUntil ?? null,
+            input.sourceConversationId ?? null,
+            deleted.id,
+          );
+
+        const restored = this.db
+          .prepare('SELECT *, rowid FROM memories WHERE id = ?')
+          .get(deleted.id) as MemoryRow;
+        return mapRow(restored);
+      }
+
       throw new AppError('Content hash conflict but existing memory not found.');
     }
 
@@ -231,7 +265,9 @@ export class SqliteStore implements Store {
     values.push(id, userId);
 
     this.db
-      .prepare(`UPDATE memories SET ${setClauses.join(', ')} WHERE id = ? AND user_id = ?`)
+      .prepare(
+        `UPDATE memories SET ${setClauses.join(', ')} WHERE id = ? AND user_id = ? AND is_deleted = 0`,
+      )
       .run(...values);
 
     if (updates.embedding !== undefined) {
@@ -249,7 +285,7 @@ export class SqliteStore implements Store {
     }
 
     const updated = this.db
-      .prepare('SELECT *, rowid FROM memories WHERE id = ? AND user_id = ?')
+      .prepare('SELECT *, rowid FROM memories WHERE id = ? AND user_id = ? AND is_deleted = 0')
       .get(id, userId) as MemoryRow | undefined;
 
     if (!updated) {

@@ -6,12 +6,14 @@ import {
   computeKeyFingerprint,
 } from '../../src/privacy/vault/asymmetric-crypto.js';
 import { encryptAndWrapValue } from '../../src/privacy/vault/asymmetric-encrypt.js';
+import { generateKek } from '../../src/privacy/kek/kek-manager.js';
 
 let db: Database.Database;
 let store: SqliteVaultStore;
 let keyStore: SqlitePublicKeyStore;
 let publicKey: string;
 let fingerprint: string;
+let kek: Buffer;
 
 beforeAll(async () => {
   db = new Database(':memory:');
@@ -21,6 +23,7 @@ beforeAll(async () => {
   const keyPair = await generateKeyPair();
   publicKey = keyPair.publicKey;
   fingerprint = computeKeyFingerprint(publicKey);
+  kek = generateKek();
 });
 
 afterAll(() => {
@@ -32,7 +35,7 @@ const makeEntry = (placeholderId: string, sensitiveType = 'email_address') => {
     `secret-${placeholderId}`,
     sensitiveType,
     placeholderId,
-    publicKey,
+    kek,
     fingerprint,
   );
   return { userId: 'user-1', placeholderId, sensitiveType, encrypted };

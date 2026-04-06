@@ -22,10 +22,43 @@
 - Source files for reference: `~/projects/memory/src/temporal/`, `~/projects/memory/src/extractor/`, `~/projects/memory/src/store/`, `~/projects/memory/src/orchestrator/chunker.ts`
 
 ### Parallelization
-Story 1 (temporal) must come first — extractor and store both use temporal types. Story 2 (chunker) is independent. Story 3 (extractor) depends on Story 1. Stories 4-5 (store CRUD, store search+supersession) are sequential. Extractor and store tracks are independent of each other.
+Story 0 (docs) runs first — no code dependencies. Story 1 (temporal) must come before Stories 3-5. Story 2 (chunker) is independent. Story 3 (extractor) depends on Story 1. Stories 4-5 (store CRUD, store search+supersession) are sequential. Extractor and store tracks are independent of each other.
 
 ### Stories
-**Note:** This sprint has 5 stories across 3 spec sub-phases (3a, 3b, 3c). Max 5 commits per story.
+**Note:** This sprint has 6 stories (Story 0 for docs + 5 code stories across 3 spec sub-phases). Max 5 commits per story.
+
+#### Story 0: Update documentation for workstream directory structure
+- **Story Checklist:**
+  - [ ] Follows sprint template (acceptance criteria, testing approach, planned commits)
+  - [ ] Within size limits (max 5 commits; split if larger)
+  - [ ] Reviewed by sub-agent
+  - [ ] Review findings addressed and have sub-agent review again until they state that it is ok (fixes applied or disagreements noted)
+  - [ ] Each AC verified against git diff and test output before marking done
+  - [ ] Ready for Lou
+- **Review:**
+  - Reviewer: *(sub-agent session ID)*
+  - Findings: *(summary of review feedback)*
+  - Resolution: *(agreed + fixed / disagreed + reason)*
+- **As a** developer, **I want** documentation reflecting the current module structure with extension guides, **so that** contributors know where modules live and how to add new engines or models.
+- **Dependencies:** None
+- **Coding Agent:** claude
+- **Acceptance criteria:**
+  - [ ] Implementation spec repo structure table updated: all `src/classifier/`, `src/sanitizer/`, `src/vault/`, `src/extractor/`, `src/store/`, `src/temporal/`, `src/retriever/`, `src/query-analyzer/`, `src/orchestrator/`, `src/episodes/`, `src/graph/` paths replaced with `src/privacy/...` or `src/memory/...` equivalents
+  - [ ] Implementation spec Section 9 (repo structure tree) reflects the new directory layout
+  - [ ] New section added to implementation spec: "Extension Guide" with concrete examples for adding a new LLM engine and adding a new model to the registry
+  - [ ] Sprint 004, 005, 006 file paths verified (already updated in restructure PR, but verify no stale refs)
+  - [ ] `npm run typecheck` and `npm test` pass (no code changes, just docs)
+- **Testing approach:** Grep for stale paths across all docs to verify completeness. No code changes — typecheck/test as sanity check.
+- **QA:** N/A
+- **Planned commits:**
+  1. `docs: update implementation spec paths for workstream directory structure` — bulk path replacement + repo structure tree update
+  2. `docs: add extension guide for new engines and models` — concrete examples showing how to add an MLX engine or a new GGUF model
+- **Technical notes:**
+  - ~36 stale path references in implementation spec need updating
+  - Extension guide should reference: `LlmClient` interface (`src/core/interfaces.ts:39-46`), `Embedder` interface (`src/core/interfaces.ts:52-55`), engine factory (`src/engine/index.ts`), model registry (`src/models/registry.ts`)
+  - Examples: "Adding MLX Swift engine", "Adding a new GGUF model to the registry"
+- **Priority:** Must-have
+- **Owner:** Coding Agent
 
 #### Story 1: Port temporal validation utilities
 - **Story Checklist:**
@@ -241,6 +274,7 @@ Story 1 (temporal) must come first — extractor and store both use temporal typ
 ### Summary
 
 ### Results
+- Story 0: Update documentation — PR #, status
 - Story 1: Port temporal validation — PR #, status
 - Story 2: Port conversation chunker — PR #, status
 - Story 3: Port fact extractor — PR #, status

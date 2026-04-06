@@ -1031,6 +1031,83 @@ export interface Retriever {
 
 Each interface can be implemented independently. The orchestrator wires them together via dependency injection — same pattern as the existing codebase.
 
+### Extension Guide
+
+The architecture is designed for easy extension. All modules communicate through interfaces defined in `src/core/interfaces.ts` — adding a new implementation requires no changes to existing code.
+
+#### Adding a New LLM Engine
+
+To add a new inference backend (e.g., MLX Swift, vLLM, a cloud API):
+
+**Step 1:** Create `src/engine/<name>/index.ts` implementing the `LlmClient` interface:
+
+```typescript
+// src/core/interfaces.ts — the contract your engine must fulfill
+export interface LlmClient {
+  generate<T>(params: {
+    readonly systemPrompt: string;
+    readonly userPrompt: string;
+    readonly schema: JsonSchema;  // JSON Schema for structured output
+    readonly maxTokens?: number;
+  }): Promise<T>;
+}
+```
+
+The `schema` parameter is critical — `generate<T>()` must return structured JSON matching the schema. For grammar-constrained engines (like llama.cpp), this means using the schema to build a grammar. For HTTP APIs, this means using the structured output feature (e.g., Ollama's `format` parameter).
+
+Reference implementations:
+- `src/engine/llamacpp/index.ts` — in-process engine with grammar-constrained generation
+- `src/engine/ollama/index.ts` — HTTP-based engine with `format: schema` structured output
+
+**Step 2:** Add a config interface to `src/engine/types.ts`:
+
+```typescript
+export interface MlxConfig {
+  readonly modelPath: string;
+  readonly maxTokens?: number;
+  readonly temperature?: number;
+}
+```
+
+**Step 3:** Update the auto-detect factory in `src/engine/index.ts` to include your engine in the detection logic. The factory tries engines in priority order and returns the first one that's available.
+
+#### Adding a New Model
+
+To add a downloadable model to the registry:
+
+**Step 1:** Add a `ModelEntry` to `src/models/registry.ts`:
+
+```typescript
+{
+  name: 'my-model-name',
+  filename: 'my-model-q4_k_m.gguf',
+  url: 'https://huggingface.co/.../resolve/main/my-model-q4_k_m.gguf',
+  sha256: '...', // SHA-256 hash of the file (optional but recommended)
+  sizeBytes: 4_500_000_000,
+  description: 'My Model 7B Q4_K_M quantization',
+}
+```
+
+**Step 2:** That's it. The download manager (`src/models/download.ts`) handles resumable HTTP downloads with `.partial` file suffix, progress callbacks, and SHA-256 checksum verification on completion.
+
+#### Adding a New Embedding Model
+
+To use a different embedding model:
+
+**Step 1:** Create a new implementation of the `Embedder` interface:
+
+```typescript
+// src/core/interfaces.ts — the contract
+export interface Embedder {
+  embed(text: string): Promise<number[]>;
+  embedBatch(texts: readonly string[]): Promise<number[][]>;
+}
+```
+
+Reference: `src/embedder/local/index.ts` — uses `@huggingface/transformers` pipeline with Nomic Embed v1.5 (768-dim, mean pooling, L2 normalization).
+
+**Important:** The output dimension must match the sqlite-vec virtual table configuration. The current tables use `float[768]`. If your embedding model outputs a different dimension, you'll need to update the table DDL in the store and episode modules.
+
 ---
 
 ## 10. Implementation Phases

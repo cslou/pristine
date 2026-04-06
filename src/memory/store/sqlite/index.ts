@@ -426,16 +426,12 @@ export class SqliteStore implements Store {
       // Step 1: Verify old memory is eligible
       const oldRow = this.db
         .prepare(
-          'SELECT *, rowid FROM memories WHERE id = ? AND is_deleted = 0 AND superseded_by IS NULL',
+          'SELECT *, rowid FROM memories WHERE id = ? AND user_id = ? AND is_deleted = 0 AND superseded_by IS NULL',
         )
-        .get(oldId) as MemoryRow | undefined;
+        .get(oldId, newMemory.userId) as MemoryRow | undefined;
 
       if (!oldRow) {
         throw new AppError(`Memory ${oldId} not found, is deleted, or is already superseded.`);
-      }
-
-      if (oldRow.user_id !== newMemory.userId) {
-        throw new AppError('Cannot supersede a memory belonging to a different user.');
       }
 
       // Step 2: Insert new memory with supersedes link

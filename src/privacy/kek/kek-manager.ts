@@ -126,6 +126,16 @@ export class KekManager {
     return resolvedKek;
   }
 
+  public updateWrappedKek(userId: string, wrappedKek: Buffer, keyId: string): void {
+    const result = this.db
+      .prepare('UPDATE user_keks SET wrapped_kek = ?, key_id = ? WHERE user_id = ?')
+      .run(wrappedKek, keyId, userId);
+    if (result.changes === 0) {
+      throw new KekManagerError(`No KEK found for user ${userId} — cannot update.`);
+    }
+    this.cache.delete(userId);
+  }
+
   public clearCache(userId?: string): void {
     if (userId !== undefined) {
       this.cache.delete(userId);

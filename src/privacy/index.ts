@@ -1,5 +1,5 @@
 import { createDecipheriv, privateDecrypt, constants } from 'node:crypto';
-import type { LlmClient, SensitivityClassifier, VaultStore } from '../core/interfaces.js';
+import type { KeyManager, LlmClient, SensitivityClassifier, VaultStore } from '../core/interfaces.js';
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
 import { redactText, type RedactionPlaceholder } from './vault/redaction.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
@@ -14,7 +14,7 @@ import {
 export interface SecureAndRedactConfig {
   readonly client: LlmClient;
   readonly vaultStore: VaultStore;
-  readonly publicKeyPem: string;
+  readonly keyManager: KeyManager;
   readonly userId: string;
   readonly classifier?: CombinedClassifierConfig;
 }
@@ -26,7 +26,7 @@ export interface SecureAndRedactResult {
 
 export interface RevealConfig {
   readonly vaultStore: VaultStore;
-  readonly privateKeyPem: string;
+  readonly keyManager: KeyManager;
   readonly userId: string;
 }
 
@@ -55,13 +55,14 @@ export async function secureAndRedact(
     return { redactedText, placeholderIds: [] };
   }
 
-  const fingerprint = computeKeyFingerprint(config.publicKeyPem);
+  const { publicKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
+  const fingerprint = computeKeyFingerprint(publicKey);
 
   const vaultEntries = placeholders.map((p: RedactionPlaceholder) => ({
     userId: config.userId,
     placeholderId: p.id,
     sensitiveType: p.type,
-    encrypted: encryptAndWrapValue(p.originalText, p.type, p.id, config.publicKeyPem, fingerprint),
+    encrypted: encryptAndWrapValue(p.originalText, p.type, p.id, publicKey, fingerprint),
   }));
 
   await config.vaultStore.addEntries(vaultEntries);
@@ -86,6 +87,7 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
   const placeholderIds = matches.map((m) => m.id);
   const entries = await config.vaultStore.getEntriesByPlaceholderIds(config.userId, placeholderIds);
 
+  const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
   const approvedValues = new Map<string, string>();
 
   for (const entry of entries) {
@@ -95,7 +97,7 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
 
     const wrappedDek = Buffer.from(decodeBase64Url(envelope.wrappedDek));
     const dek = privateDecrypt(
-      { key: config.privateKeyPem, oaepHash: 'sha256', padding: constants.RSA_PKCS1_OAEP_PADDING },
+      { key: privateKey, oaepHash: 'sha256', padding: constants.RSA_PKCS1_OAEP_PADDING },
       wrappedDek,
     );
 

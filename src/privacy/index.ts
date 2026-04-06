@@ -92,6 +92,10 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
   const placeholderIds = matches.map((m) => m.id);
   const entries = await config.vaultStore.getEntriesByPlaceholderIds(config.userId, placeholderIds);
 
+  if (entries.length === 0) {
+    return redactedText;
+  }
+
   const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
   const approvedValues = new Map<string, string>();
 

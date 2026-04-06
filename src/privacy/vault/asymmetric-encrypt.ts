@@ -1,7 +1,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 import { wrapDek } from './asymmetric-crypto.js';
 import { encodeBase64Url } from './base64url.js';
-import type { ZkV2EncryptedValue } from '../core/types.js';
+import type { ZkV2EncryptedValue } from '../../core/types.js';
 
 const AES_GCM_IV_LENGTH = 12;
 const DEK_LENGTH = 32;

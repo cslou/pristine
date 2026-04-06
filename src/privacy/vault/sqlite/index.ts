@@ -1,14 +1,14 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { decodeBase64Url, encodeBase64Url } from '../base64url.js';
-import { VaultEntryContractError } from '../../core/errors.js';
-import type { VaultStore } from '../../core/interfaces.js';
+import { VaultEntryContractError } from '../../../core/errors.js';
+import type { VaultStore } from '../../../core/interfaces.js';
 import type {
   VaultEntry,
   VaultEntryInput,
   ZkV2EncryptedValue,
   ZkV2EncryptedValueMetadata,
-} from '../../core/types.js';
+} from '../../../core/types.js';
 
 const CLIENT_V2 = 'client_v2';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDeterministicClassifier } from '../../src/classifier/deterministic/index.js';
+import { createDeterministicClassifier } from '../../src/privacy/classifier/deterministic/index.js';
 
 describe('deterministic classifier', () => {
   describe('credit card detection', () => {

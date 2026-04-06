@@ -7,7 +7,7 @@ import {
   publicEncrypt,
 } from 'node:crypto';
 import { promisify } from 'node:util';
-import { AsymmetricCryptoError } from '../core/errors.js';
+import { AsymmetricCryptoError } from '../../core/errors.js';
 
 const generateKeyPairAsync = promisify(generateKeyPairCb);
 const RSA_MODULUS_LENGTH = 4096;

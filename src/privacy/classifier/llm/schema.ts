@@ -1,4 +1,4 @@
-import type { JsonSchema } from '../../core/types.js';
+import type { JsonSchema } from '../../../core/types.js';
 
 /**
  * JSON Schema for the classify_sensitivity structured output.

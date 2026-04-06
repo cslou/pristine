@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SqliteVaultStore, SqlitePublicKeyStore } from '../../src/vault/sqlite/index.js';
-import { generateKeyPair, computeKeyFingerprint } from '../../src/vault/asymmetric-crypto.js';
-import { encryptAndWrapValue } from '../../src/vault/asymmetric-encrypt.js';
+import { SqliteVaultStore, SqlitePublicKeyStore } from '../../src/privacy/vault/sqlite/index.js';
+import { generateKeyPair, computeKeyFingerprint } from '../../src/privacy/vault/asymmetric-crypto.js';
+import { encryptAndWrapValue } from '../../src/privacy/vault/asymmetric-encrypt.js';
 
 let db: Database.Database;
 let store: SqliteVaultStore;

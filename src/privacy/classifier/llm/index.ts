@@ -1,12 +1,12 @@
-import type { LlmClient } from '../../core/interfaces.js';
+import type { LlmClient } from '../../../core/interfaces.js';
 import type {
   DetectedEntity,
   SensitivityReport,
   LlmSensitivityFinding,
   LlmClassifierConfig,
-} from '../../core/types.js';
-import type { SensitivityClassifier } from '../../core/interfaces.js';
-import { LlmClassificationError } from '../../core/errors.js';
+} from '../../../core/types.js';
+import type { SensitivityClassifier } from '../../../core/interfaces.js';
+import { LlmClassificationError } from '../../../core/errors.js';
 import { assertNoLlmReentry } from '../../sanitizer/index.js';
 import { buildClassificationPrompt } from './prompts.js';
 import { CLASSIFY_SENSITIVITY_SCHEMA } from './schema.js';

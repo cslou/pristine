@@ -6,4 +6,4 @@ export type {
   ApprovalDecision,
   ApprovalDecisionPayload,
   ResolveInput,
-} from '../core/types.js';
+} from '../../core/types.js';

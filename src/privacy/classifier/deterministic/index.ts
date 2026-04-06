@@ -1,5 +1,5 @@
-import type { DetectedEntity, SensitivityReport, SensitivityType } from '../../core/types.js';
-import type { SensitivityClassifier } from '../../core/interfaces.js';
+import type { DetectedEntity, SensitivityReport, SensitivityType } from '../../../core/types.js';
+import type { SensitivityClassifier } from '../../../core/interfaces.js';
 
 export interface DeterministicClassifierConfig {
   readonly confidenceThreshold?: number;

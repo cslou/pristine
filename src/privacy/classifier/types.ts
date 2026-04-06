@@ -1,4 +1,4 @@
-export type { SensitivityClassifier } from '../core/interfaces.js';
+export type { SensitivityClassifier } from '../../core/interfaces.js';
 export type {
   DetectedEntity,
   LlmClassifierConfig,
@@ -6,4 +6,4 @@ export type {
   SensitivityReport,
   SensitivitySource,
   SensitivityType,
-} from '../core/types.js';
+} from '../../core/types.js';

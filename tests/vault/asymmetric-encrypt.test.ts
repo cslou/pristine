@@ -1,8 +1,8 @@
 import { createDecipheriv, privateDecrypt, constants } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { generateKeyPair } from '../../src/vault/asymmetric-crypto.js';
-import { encryptAndWrapValue } from '../../src/vault/asymmetric-encrypt.js';
-import { decodeBase64Url } from '../../src/vault/base64url.js';
+import { generateKeyPair } from '../../src/privacy/vault/asymmetric-crypto.js';
+import { encryptAndWrapValue } from '../../src/privacy/vault/asymmetric-encrypt.js';
+import { decodeBase64Url } from '../../src/privacy/vault/base64url.js';
 
 describe('encryptAndWrapValue', () => {
   it('returns a valid zk-v2 envelope', async () => {

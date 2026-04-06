@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createLlmClassifier } from '../../src/classifier/llm/index.js';
+import { createLlmClassifier } from '../../src/privacy/classifier/llm/index.js';
 import { LlmClassificationError } from '../../src/core/errors.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
 

@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secureAndRedact, reveal, scrubOutput } from '../../src/privacy/index.js';
-import { SqliteVaultStore } from '../../src/vault/sqlite/index.js';
-import { generateKeyPair } from '../../src/vault/asymmetric-crypto.js';
-import { clearResolvedStringRegistry } from '../../src/sanitizer/index.js';
+import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
+import { generateKeyPair } from '../../src/privacy/vault/asymmetric-crypto.js';
+import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
 
 let db: Database.Database;

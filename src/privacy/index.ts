@@ -1,15 +1,15 @@
 import { createDecipheriv, privateDecrypt, constants } from 'node:crypto';
 import type { LlmClient, SensitivityClassifier, VaultStore } from '../core/interfaces.js';
-import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from '../sanitizer/index.js';
-import { redactText, type RedactionPlaceholder } from '../vault/redaction.js';
-import { encryptAndWrapValue } from '../vault/asymmetric-encrypt.js';
-import { computeKeyFingerprint } from '../vault/asymmetric-crypto.js';
-import { decodeBase64Url } from '../vault/base64url.js';
-import { toApprovedValue } from '../vault/sqlite/index.js';
+import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
+import { redactText, type RedactionPlaceholder } from './vault/redaction.js';
+import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
+import { computeKeyFingerprint } from './vault/asymmetric-crypto.js';
+import { decodeBase64Url } from './vault/base64url.js';
+import { toApprovedValue } from './vault/sqlite/index.js';
 import {
   createCombinedClassifier,
   type CombinedClassifierConfig,
-} from '../classifier/combined/index.js';
+} from './classifier/combined/index.js';
 
 export interface SecureAndRedactConfig {
   readonly client: LlmClient;

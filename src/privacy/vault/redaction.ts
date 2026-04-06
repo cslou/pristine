@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SensitivityReport } from '../core/types.js';
+import type { SensitivityReport } from '../../core/types.js';
 
 export interface RedactionResult {
   readonly redactedText: string;

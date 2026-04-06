@@ -1,4 +1,4 @@
-import { VaultEncodingError } from '../core/errors.js';
+import { VaultEncodingError } from '../../core/errors.js';
 
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 

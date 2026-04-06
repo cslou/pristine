@@ -6,7 +6,7 @@ import type {
   SensitiveField,
   SanitizedMemory,
 } from './types.js';
-import { ResolveApprovalError, ResolveApprovalTimeoutError } from '../core/errors.js';
+import { ResolveApprovalError, ResolveApprovalTimeoutError } from '../../core/errors.js';
 
 export const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z_]+):([0-9a-f-]+)\]/;
 

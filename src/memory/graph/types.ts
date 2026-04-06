@@ -1,4 +1,4 @@
-export type { EntityStore, RelationshipStore } from '../core/interfaces.js';
+export type { EntityStore, RelationshipStore } from '../../core/interfaces.js';
 export type {
   Entity,
   EntityInput,
@@ -7,4 +7,4 @@ export type {
   Relationship,
   RelationshipInput,
   TraversalResult,
-} from '../core/types.js';
+} from '../../core/types.js';

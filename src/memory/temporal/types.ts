@@ -3,4 +3,4 @@ export type {
   TemporalConfidence,
   TemporalValidationOptions,
   TemporalValidationResult,
-} from '../core/types.js';
+} from '../../core/types.js';

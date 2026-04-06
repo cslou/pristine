@@ -1,4 +1,4 @@
-export type { Store } from '../core/interfaces.js';
+export type { Store } from '../../core/interfaces.js';
 export type {
   Memory,
   AddMemoryInput,
@@ -6,4 +6,4 @@ export type {
   SupersedeMemoryResult,
   TemporalMode,
   SearchParams,
-} from '../core/types.js';
+} from '../../core/types.js';

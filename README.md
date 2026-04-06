@@ -81,6 +81,8 @@ src/
 
   privacy/                  Privacy pipeline
     index.ts                secureAndRedact(), reveal(), scrubOutput()
+    keys/
+      filesystem.ts         FileSystemKeyManager — persists RSA keys to disk
     sanitizer/              Placeholder detection, resolution, LLM reentry guards
     classifier/             PII detection
       deterministic/        Regex patterns (credit cards, emails, SSN, phone)
@@ -90,7 +92,7 @@ src/
       asymmetric-crypto.ts  RSA-4096 key generation, DEK wrapping (OAEP-256)
       asymmetric-encrypt.ts AES-256-GCM envelope encryption
       redaction.ts          Smart redaction with entity filtering
-      sqlite/               SQLite vault store + public key store
+      sqlite/               SQLite vault store
 
   memory/                   Memory pipeline
     temporal/               Temporal field validation (ISO dates, bounds, confidence)
@@ -206,26 +208,26 @@ Input: "My email is alice@example.com and I live at 123 Main St"
 import Database from 'better-sqlite3';
 import { OllamaClient } from './src/engine/ollama/index.js';
 import { SqliteVaultStore } from './src/privacy/vault/sqlite/index.js';
-import { generateKeyPair } from './src/privacy/vault/asymmetric-crypto.js';
+import { FileSystemKeyManager } from './src/privacy/keys/filesystem.js';
 import { secureAndRedact, reveal, scrubOutput } from './src/privacy/index.js';
 
 // One-time setup
 const db = new Database('./privacy.db');
 const vaultStore = new SqliteVaultStore(db);
 const client = new OllamaClient({ model: 'llama3.2:latest' });
-const { publicKey, privateKey } = await generateKeyPair();
+const keyManager = new FileSystemKeyManager({ keysDir: '~/.pristine/keys' });
 
 // Redact PII before sending to an LLM
 const { redactedText, placeholderIds } = await secureAndRedact(
   'My email is alice@example.com and my SSN is 123-45-6789',
-  { client, vaultStore, publicKeyPem: publicKey, userId: 'user-1' },
+  { client, vaultStore, keyManager, userId: 'user-1' },
 );
 // redactedText: "My email is [SENSITIVE:email_address:...] and my SSN is [SENSITIVE:identity_number:...]"
 // Safe to send to any LLM — no PII exposed
 
-// Later: recover original values (requires private key)
+// Later: recover original values
 const originalText = await reveal(redactedText, {
-  vaultStore, privateKeyPem: privateKey, userId: 'user-1',
+  vaultStore, keyManager, userId: 'user-1',
 });
 // originalText: "My email is alice@example.com and my SSN is 123-45-6789"
 
@@ -247,6 +249,25 @@ Both run in parallel. Results are merged with overlap deduplication.
 ### Encryption
 
 Each PII value is encrypted with AES-256-GCM using a random data encryption key (DEK). The DEK is wrapped with the user's RSA-4096 public key (RSA-OAEP-256). Only the holder of the private key can decrypt. Encrypted values are stored in SQLite — even if the database is compromised, PII is protected.
+
+### Key Management
+
+RSA key pairs are managed via the `KeyManager` interface. The default `FileSystemKeyManager` persists keys to disk:
+
+- **Auto-generation:** On first use per userId, an RSA-4096 key pair is generated and saved to `{keysDir}/{userId}-private.pem` and `{userId}-public.pem`. Subsequent calls load from disk (cached in memory).
+- **Default location:** `~/.pristine/keys/`
+- **File permissions:** Private keys are written with `0o600` (owner-only read/write). On Windows, the mode parameter is a no-op.
+- **Atomic writes:** Keys are written to a temp file and renamed to prevent corruption on crash.
+- **`created` flag:** `getOrCreateKeyPair()` returns `{ publicKey, privateKey, created }`. When `created` is `true`, it's the first time a key was generated for that user — useful for showing a one-time setup notice:
+
+```typescript
+const { created } = await keyManager.getOrCreateKeyPair(userId);
+if (created) {
+  console.log('New encryption keys generated. Back up ~/.pristine/keys/');
+}
+```
+
+The `KeyManager` interface is swappable — the `FileSystemKeyManager` can be replaced with an OS Keychain backend (macOS Keychain, Windows Credential Manager) without changing any consumer code.
 
 ---
 
@@ -459,7 +480,7 @@ async function handleTool(name: string, params: Record<string, unknown>) {
     const messages = params.messages as { role: string; content: string }[];
 
     // Optional: redact PII before extraction
-    // const { redactedText } = await secureAndRedact(text, privacyConfig);
+    // const { redactedText } = await secureAndRedact(text, { client, vaultStore, keyManager, userId });
 
     const { facts } = await extractor.extract(messages);
     for (const fact of facts) {
@@ -563,7 +584,7 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ### Commands
 
 ```bash
-npm test              # Run all tests (275+)
+npm test              # Run all tests (286+)
 npm run typecheck     # TypeScript strict mode check
 npm run lint          # ESLint + Prettier
 npm run test:watch    # Watch mode
@@ -587,7 +608,9 @@ Work is organized into sprints (see `docs/sprints/`). Each sprint has stories wi
 | 001 | Foundation (scaffold, types, interfaces) | Complete |
 | 002 | Shared Infrastructure (LLM engines, embedder, models) | Complete |
 | 003 | Privacy Pipeline (sanitizer, classifier, vault) | Complete |
-| 004 | Memory Pipeline — Foundations (temporal, extractor, store) | In Progress |
+| 004 | Memory Pipeline — Foundations (temporal, extractor, store) | Complete |
+| 004b | Key Management (KeyManager interface, FileSystemKeyManager) | In Progress |
+| 004c | KEK Intermediary (AES-256-KW wrapping, key rotation) | Planned |
 | 005 | Memory Pipeline — Processing (consolidator, query analyzer, retriever) | Planned |
 | 006 | Memory Pipeline — Orchestrator (ingest + retrieve pipelines) | Planned |
 

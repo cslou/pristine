@@ -404,6 +404,8 @@ export class SqliteStore implements Store {
          WHERE memories_fts MATCH ?
            AND m.user_id = ?
            AND m.is_deleted = 0
+           AND (m.valid_from IS NULL OR m.valid_from <= datetime('now'))
+           AND m.valid_until IS NULL
          ORDER BY fts.rank
          LIMIT ?`,
       )

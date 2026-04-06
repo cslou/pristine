@@ -62,31 +62,39 @@ export class KekManager {
       return cached;
     }
 
-    const row = this.db
+    const existing = this.db
       .prepare('SELECT wrapped_kek, key_id FROM user_keks WHERE user_id = ?')
       .get(userId) as KekRow | undefined;
 
-    if (row) {
+    if (existing) {
       const { privateKey } = await this.keyManager.getOrCreateKeyPair(userId);
-      const kek = unwrapKek(row.wrapped_kek, privateKey);
+      const kek = unwrapKek(existing.wrapped_kek, privateKey);
       this.cache.set(userId, kek);
       return kek;
     }
 
-    const kek = generateKek();
-    const { publicKey } = await this.keyManager.getOrCreateKeyPair(userId);
+    const { publicKey, privateKey } = await this.keyManager.getOrCreateKeyPair(userId);
     const fingerprint = computeKeyFingerprint(publicKey);
+    const kek = generateKek();
     const wrappedKek = wrapKek(kek, publicKey);
 
+    // INSERT OR IGNORE handles the race where concurrent callers both pass
+    // the SELECT above. The loser's insert is silently ignored, and the
+    // unconditional re-fetch below adopts the winner's stored KEK.
     this.db
       .prepare(
-        `INSERT INTO user_keks (user_id, wrapped_kek, key_id, algorithm)
+        `INSERT OR IGNORE INTO user_keks (user_id, wrapped_kek, key_id, algorithm)
          VALUES (?, ?, ?, 'rsa-oaep-256')`,
       )
       .run(userId, wrappedKek, fingerprint);
 
-    this.cache.set(userId, kek);
-    return kek;
+    const row = this.db
+      .prepare('SELECT wrapped_kek FROM user_keks WHERE user_id = ?')
+      .get(userId) as KekRow;
+
+    const resolvedKek = unwrapKek(row.wrapped_kek, privateKey);
+    this.cache.set(userId, resolvedKek);
+    return resolvedKek;
   }
 
   public clearCache(userId?: string): void {

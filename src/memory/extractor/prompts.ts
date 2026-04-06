@@ -1,7 +1,7 @@
 const SENSITIVE_PLACEHOLDER_RULES =
   'CRITICAL: If the text contains [SENSITIVE:type:id] placeholders, you MUST preserve them EXACTLY as-is in your extracted facts. ' +
   'Do NOT summarize, paraphrase, or remove these placeholders. They are redacted sensitive values that must pass through unchanged. ' +
-  "Example input: \"User's NRIC is [SENSITIVE:identity_number:abc-123]\" -> Output fact: \"The user's NRIC is [SENSITIVE:identity_number:abc-123].\"";
+  'Example input: "User\'s NRIC is [SENSITIVE:identity_number:abc-123]" -> Output fact: "The user\'s NRIC is [SENSITIVE:identity_number:abc-123]."';
 
 const CATEGORY_GUIDANCE =
   'Focus on extracting these types of information: ' +

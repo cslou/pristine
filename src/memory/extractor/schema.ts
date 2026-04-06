@@ -17,8 +17,7 @@ export const EXTRACT_FACTS_SCHEMA: JsonSchema = {
         properties: {
           text: {
             type: 'string',
-            description:
-              'A complete, standalone factual statement with no unresolved pronouns.',
+            description: 'A complete, standalone factual statement with no unresolved pronouns.',
           },
           metadata: {
             type: 'object',

@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { KeyManager } from '../../core/interfaces.js';
 import { KekManagerError } from '../../core/errors.js';
 import { computeKeyFingerprint, unwrapDek, wrapDek } from '../vault/asymmetric-crypto.js';
@@ -31,6 +31,35 @@ export const wrapKek = (kek: Buffer, publicKeyPem: string): Buffer => {
 
 export const unwrapKek = (wrappedKek: Buffer, privateKeyPem: string): Buffer =>
   unwrapDek(wrappedKek, privateKeyPem);
+
+// AES-256-KW (RFC 3394) uses a fixed 8-byte IV
+const AES_KW_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
+const DEK_LENGTH_BYTES = 32;
+const AES_KW_WRAPPED_LENGTH = 40; // 32-byte DEK + 8-byte integrity check
+
+export const wrapDekWithKek = (dek: Buffer, kek: Buffer): Buffer => {
+  if (dek.length !== DEK_LENGTH_BYTES) {
+    throw new KekManagerError(`DEK must be exactly ${DEK_LENGTH_BYTES} bytes, got ${dek.length}.`);
+  }
+  if (kek.length !== KEK_LENGTH_BYTES) {
+    throw new KekManagerError(`KEK must be exactly ${KEK_LENGTH_BYTES} bytes, got ${kek.length}.`);
+  }
+  const cipher = createCipheriv('aes256-wrap', kek, AES_KW_IV);
+  return Buffer.concat([cipher.update(dek), cipher.final()]);
+};
+
+export const unwrapDekWithKek = (wrappedDek: Buffer, kek: Buffer): Buffer => {
+  if (wrappedDek.length !== AES_KW_WRAPPED_LENGTH) {
+    throw new KekManagerError(
+      `Wrapped DEK must be exactly ${AES_KW_WRAPPED_LENGTH} bytes, got ${wrappedDek.length}.`,
+    );
+  }
+  if (kek.length !== KEK_LENGTH_BYTES) {
+    throw new KekManagerError(`KEK must be exactly ${KEK_LENGTH_BYTES} bytes, got ${kek.length}.`);
+  }
+  const decipher = createDecipheriv('aes256-wrap', kek, AES_KW_IV);
+  return Buffer.concat([decipher.update(wrappedDek), decipher.final()]);
+};
 
 export function initKekTable(db: Database.Database): void {
   db.exec(USER_KEKS_DDL);

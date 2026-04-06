@@ -5,15 +5,18 @@ import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import type { KeyManager, LlmClient } from '../../src/core/interfaces.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
+import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 
 let db: Database.Database;
 let vaultStore: SqliteVaultStore;
 let keyManager: KeyManager;
+let kekManager: KekManager;
 
 beforeAll(async () => {
   db = new Database(':memory:');
   vaultStore = new SqliteVaultStore(db);
   keyManager = new InMemoryKeyManager();
+  kekManager = new KekManager(db, keyManager);
 });
 
 afterAll(() => {
@@ -49,6 +52,7 @@ describe('privacy pipeline end-to-end', () => {
       client: mockClient,
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-1',
     });
 
@@ -61,6 +65,7 @@ describe('privacy pipeline end-to-end', () => {
     const revealed = await reveal(result.redactedText, {
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-1',
     });
 
@@ -78,6 +83,7 @@ describe('privacy pipeline end-to-end', () => {
       client: mockClient,
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-2',
     });
 
@@ -103,6 +109,7 @@ describe('privacy pipeline end-to-end', () => {
       client: mockClient,
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-3',
     });
 
@@ -124,6 +131,7 @@ describe('privacy pipeline end-to-end', () => {
     const revealed = await reveal(text, {
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-4',
     });
 
@@ -169,6 +177,7 @@ describe('privacy pipeline end-to-end', () => {
       client: mockClient,
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-5',
     });
 
@@ -178,6 +187,7 @@ describe('privacy pipeline end-to-end', () => {
     const revealed = await reveal(result.redactedText, {
       vaultStore,
       keyManager,
+      kekManager,
       userId: 'user-e2e-5',
     });
 

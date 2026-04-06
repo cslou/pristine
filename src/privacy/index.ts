@@ -1,4 +1,4 @@
-import { createDecipheriv, privateDecrypt, constants } from 'node:crypto';
+import { createDecipheriv } from 'node:crypto';
 import type {
   KeyManager,
   LlmClient,
@@ -8,18 +8,21 @@ import type {
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
 import { redactText, type RedactionPlaceholder } from './vault/redaction.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
-import { computeKeyFingerprint } from './vault/asymmetric-crypto.js';
+import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url } from './vault/base64url.js';
 import { toApprovedValue } from './vault/sqlite/index.js';
 import {
   createCombinedClassifier,
   type CombinedClassifierConfig,
 } from './classifier/combined/index.js';
+import type { KekManager } from './kek/kek-manager.js';
+import { unwrapDekWithKek } from './kek/kek-manager.js';
 
 export interface SecureAndRedactConfig {
   readonly client: LlmClient;
   readonly vaultStore: VaultStore;
   readonly keyManager: KeyManager;
+  readonly kekManager: KekManager;
   readonly userId: string;
   readonly classifier?: CombinedClassifierConfig;
 }
@@ -32,6 +35,7 @@ export interface SecureAndRedactResult {
 export interface RevealConfig {
   readonly vaultStore: VaultStore;
   readonly keyManager: KeyManager;
+  readonly kekManager: KekManager;
   readonly userId: string;
 }
 
@@ -62,12 +66,13 @@ export async function secureAndRedact(
 
   const { publicKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
   const fingerprint = computeKeyFingerprint(publicKey);
+  const kek = await config.kekManager.getOrCreate(config.userId);
 
   const vaultEntries = placeholders.map((p: RedactionPlaceholder) => ({
     userId: config.userId,
     placeholderId: p.id,
     sensitiveType: p.type,
-    encrypted: encryptAndWrapValue(p.originalText, p.type, p.id, publicKey, fingerprint),
+    encrypted: encryptAndWrapValue(p.originalText, p.type, p.id, kek, fingerprint),
   }));
 
   await config.vaultStore.addEntries(vaultEntries);
@@ -97,18 +102,21 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
   }
 
   const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
+  const kek = await config.kekManager.getOrCreate(config.userId);
   const approvedValues = new Map<string, string>();
 
   for (const entry of entries) {
     if (!entry.placeholderId) continue;
 
     const envelope = toApprovedValue(entry);
+    const wrappedDekBuf = Buffer.from(decodeBase64Url(envelope.wrappedDek));
 
-    const wrappedDek = Buffer.from(decodeBase64Url(envelope.wrappedDek));
-    const dek = privateDecrypt(
-      { key: privateKey, oaepHash: 'sha256', padding: constants.RSA_PKCS1_OAEP_PADDING },
-      wrappedDek,
-    );
+    let dek: Buffer;
+    if (envelope.keyWrapping === 'aes-256-kw+rsa-oaep-256') {
+      dek = unwrapDekWithKek(wrappedDekBuf, kek);
+    } else {
+      dek = unwrapDek(wrappedDekBuf, privateKey);
+    }
 
     const ciphertext = Buffer.from(decodeBase64Url(envelope.ciphertext));
     const iv = Buffer.from(decodeBase64Url(envelope.iv));

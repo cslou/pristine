@@ -22,14 +22,13 @@ export async function rotateKey(
   const newKeyPair = await generateKeyPair();
   const newFingerprint = computeKeyFingerprint(newKeyPair.publicKey);
 
-  // Re-wrap KEK with new RSA public key and update DB
   const newWrappedKek = wrapKek(kek, newKeyPair.publicKey);
-  kekManager.updateWrappedKek(userId, newWrappedKek, newFingerprint);
 
-  // Persist new RSA key pair (replaces old keys on disk/memory)
+  // Persist new RSA key pair FIRST — if this fails, the DB still holds the
+  // old wrapped KEK which remains decryptable with the old private key.
+  // Updating the DB first would risk leaving the KEK unrecoverable.
   await keyManager.saveKeyPair(userId, newKeyPair);
 
-  // Force re-read on next getOrCreate — cache now holds stale KEK
-  // (same plaintext, but the KekManager needs to know about the new wrapping)
-  kekManager.clearCache(userId);
+  // Now update DB with new wrapped KEK (updateWrappedKek also clears cache)
+  kekManager.updateWrappedKek(userId, newWrappedKek, newFingerprint);
 }

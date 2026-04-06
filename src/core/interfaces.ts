@@ -13,6 +13,7 @@ import type {
   IngestOptions,
   IngestResult,
   JsonSchema,
+  KeyPairWithStatus,
   Memory,
   Message,
   PipelineStep,
@@ -97,6 +98,15 @@ export interface Consolidator {
 
 export interface SensitivityClassifier {
   classify(text: string): Promise<SensitivityReport>;
+}
+
+// ---------------------------------------------------------------------------
+// Key Management
+// ---------------------------------------------------------------------------
+
+export interface KeyManager {
+  getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus>;
+  saveKeyPair(userId: string, keyPair: { publicKey: string; privateKey: string }): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

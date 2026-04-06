@@ -74,3 +74,10 @@ export class VaultEntryContractError extends AppError {
     this.name = 'VaultEntryContractError';
   }
 }
+
+export class KeyManagerError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'KeyManagerError';
+  }
+}

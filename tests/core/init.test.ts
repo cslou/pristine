@@ -1,8 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ConfigError } from '../../src/core/errors.js';
+import { AppError, ConfigError } from '../../src/core/errors.js';
 import { DEFAULT_MODEL_CONFIG, initPristine, loadModelConfig } from '../../src/core/init.js';
 import { createDefaultDatabase } from '../../src/core/database.js';
 
@@ -290,6 +298,19 @@ describe('createDefaultDatabase', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('rejects data directory with group/other access (Unix only)', () => {
+    if (process.platform === 'win32') return;
+
+    const dir = makeTmpDir('db-perms');
+    const dataDir = join(dir, 'data');
+    mkdirSync(dataDir, { recursive: true });
+    chmodSync(dataDir, 0o755);
+
+    expect(() => createDefaultDatabase(dataDir)).toThrow(AppError);
+    expect(() => createDefaultDatabase(dataDir)).toThrow(/too open/);
+    expect(() => createDefaultDatabase(dataDir)).toThrow(/chmod 700/);
   });
 
   it('is idempotent -- opening existing database succeeds', () => {

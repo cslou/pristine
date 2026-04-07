@@ -76,8 +76,9 @@ function validateModelEntry(value: unknown, section: string): ModelEntry {
   }
   if (!existsSync(obj.path)) {
     throw new ConfigError(
-      `GGUF file not found: ${obj.path} (configured in "${section}"). ` +
-        `Update the path in ~/.pristine/models.json`,
+      `GGUF file not found: ${obj.path} (configured in "${section}").\n` +
+        `Update the path in ~/.pristine/models.json:\n\n` +
+        `  { "${section}": { "engine": "llamacpp", "path": "/absolute/path/to/model.gguf" } }`,
     );
   }
   if (obj.gpu !== undefined && !VALID_GPU_VALUES.has(obj.gpu)) {

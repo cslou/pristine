@@ -102,13 +102,18 @@ export class OllamaClient implements LlmClient {
           await this.delay(BASE_DELAY_MS * Math.pow(2, attempt));
           continue;
         }
+        const msg = error instanceof Error ? error.message : 'unknown error';
         throw new AppError(
-          `Ollama request failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+          `Ollama request failed: ${msg}. ` +
+            `Start Ollama with \`ollama serve\`, or switch to llamacpp in ~/.pristine/models.json`,
         );
       }
     }
 
-    throw new AppError('Ollama request failed: max retries exceeded');
+    throw new AppError(
+      'Ollama request failed: max retries exceeded. ' +
+        'Start Ollama with `ollama serve`, or switch to llamacpp in ~/.pristine/models.json',
+    );
   }
 
   private isRetryableStatus(status: number): boolean {

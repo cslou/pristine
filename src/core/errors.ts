@@ -88,3 +88,10 @@ export class KekManagerError extends AppError {
     this.name = 'KekManagerError';
   }
 }
+
+export class ConfigError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}

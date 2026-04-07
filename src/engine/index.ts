@@ -15,7 +15,7 @@ function entriesMatch(a: ModelEntry, b: ModelEntry): boolean {
     return a.model === b.model && (a.host ?? '') === (b.host ?? '');
   }
   if (a.engine === 'llamacpp' && b.engine === 'llamacpp') {
-    return a.path === b.path;
+    return a.path === b.path && (a.gpu ?? undefined) === (b.gpu ?? undefined);
   }
   return false;
 }

@@ -111,6 +111,23 @@ describe('createLlmClients', () => {
     expect(privacyClient).toBe(memoryClient);
   });
 
+  it('returns different instances when llamacpp entries have same path but different gpu', () => {
+    const dir = makeTmpDir('clients-diff-gpu');
+    const ggufPath = join(dir, 'model.gguf');
+    writeFileSync(ggufPath, '');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'llamacpp', path: ggufPath, gpu: 'metal' },
+        memory: { engine: 'llamacpp', path: ggufPath, gpu: false },
+      }),
+    );
+
+    const { privacyClient, memoryClient } = createLlmClients(dir);
+
+    expect(privacyClient).not.toBe(memoryClient);
+  });
+
   it('throws ConfigError when models.json does not exist', () => {
     const dir = makeTmpDir('clients-missing');
 

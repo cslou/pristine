@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { AppError } from './errors.js';
@@ -39,4 +42,10 @@ export function createDatabase(options: DatabaseOptions | string): Database.Data
   }
 
   return db;
+}
+
+export function createDefaultDatabase(dataDir?: string): Database.Database {
+  const resolvedDir = dataDir ?? join(homedir(), '.pristine', 'data');
+  mkdirSync(resolvedDir, { recursive: true, mode: 0o700 });
+  return createDatabase({ path: join(resolvedDir, 'pristine.db') });
 }

@@ -1,5 +1,13 @@
 import { createPrivateKey } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { KeyManagerError } from '../../core/errors.js';
 import type { KeyManager } from '../../core/interfaces.js';
@@ -20,6 +28,30 @@ const validatePem = (pem: string, kind: 'public' | 'private', filePath: string):
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new KeyManagerError(`Corrupt ${kind} key at ${filePath}: ${message}`);
+  }
+};
+
+const validateDirectoryPermissions = (dirPath: string): void => {
+  if (process.platform === 'win32') return;
+  const mode = statSync(dirPath).mode & 0o777;
+  if ((mode & 0o077) !== 0) {
+    throw new KeyManagerError(
+      `Permissions 0${mode.toString(8)} for '${dirPath}' are too open. ` +
+        `It is required that your key directory is NOT accessible by others. ` +
+        `Run: chmod 700 ${dirPath}`,
+    );
+  }
+};
+
+const validateFilePermissions = (filePath: string): void => {
+  if (process.platform === 'win32') return;
+  const mode = statSync(filePath).mode & 0o777;
+  if ((mode & 0o077) !== 0) {
+    throw new KeyManagerError(
+      `Permissions 0${mode.toString(8)} for '${filePath}' are too open. ` +
+        `It is required that your private key files are NOT accessible by others. ` +
+        `Run: chmod 600 ${filePath}`,
+    );
   }
 };
 
@@ -47,6 +79,8 @@ export class FileSystemKeyManager implements KeyManager {
     const privateKeyPath = this.privateKeyPath(userId);
 
     if (existsSync(publicKeyPath) && existsSync(privateKeyPath)) {
+      validateDirectoryPermissions(this.keysDir);
+      validateFilePermissions(privateKeyPath);
       const publicKey = readFileSync(publicKeyPath, 'utf-8');
       const privateKey = readFileSync(privateKeyPath, 'utf-8');
       validatePem(publicKey, 'public', publicKeyPath);
@@ -80,7 +114,10 @@ export class FileSystemKeyManager implements KeyManager {
   }
 
   private writeToDisk(userId: string, publicKey: string, privateKey: string): void {
-    mkdirSync(this.keysDir, { recursive: true });
+    mkdirSync(this.keysDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== 'win32') {
+      chmodSync(this.keysDir, 0o700);
+    }
     atomicWriteFile(this.publicKeyPath(userId), publicKey);
     atomicWriteFile(this.privateKeyPath(userId), privateKey, 0o600);
   }

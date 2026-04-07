@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -297,7 +305,8 @@ describe('createDefaultDatabase', () => {
 
     const dir = makeTmpDir('db-perms');
     const dataDir = join(dir, 'data');
-    mkdirSync(dataDir, { recursive: true, mode: 0o755 });
+    mkdirSync(dataDir, { recursive: true });
+    chmodSync(dataDir, 0o755);
 
     expect(() => createDefaultDatabase(dataDir)).toThrow(AppError);
     expect(() => createDefaultDatabase(dataDir)).toThrow(/too open/);

@@ -478,11 +478,8 @@ export interface PromptConfig {
 }
 
 export interface LocalConfig {
-  readonly llmEngine?: 'llamacpp' | 'ollama';
-  readonly llmModel?: string;
   readonly embedModel?: string;
   readonly dataDir?: string;
-  readonly modelsDir?: string;
   readonly prompts?: PromptConfig;
 }
 

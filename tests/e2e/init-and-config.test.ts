@@ -87,11 +87,13 @@ describe('e2e: initialization and configuration', () => {
 
     chmodSync(keysDir, 0o755);
 
-    await expect(km.getOrCreateKeyPair('test-user')).rejects.toThrow(KeyManagerError);
-    await expect(km.getOrCreateKeyPair('test-user')).rejects.toThrow(/too open/);
-    await expect(km.getOrCreateKeyPair('test-user')).rejects.toThrow(/chmod 700/);
-
-    chmodSync(keysDir, 0o700);
+    try {
+      await expect(km.getOrCreateKeyPair('test-user')).rejects.toThrow(KeyManagerError);
+      await expect(km.getOrCreateKeyPair('test-user')).rejects.toThrow(/too open/);
+      await expect(km.getOrCreateKeyPair('test-user')).rejects.toThrow(/chmod 700/);
+    } finally {
+      chmodSync(keysDir, 0o700);
+    }
   });
 
   it('rejects private key file with wrong permissions', async () => {

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OllamaClient } from '../../src/engine/ollama/index.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
@@ -8,7 +8,7 @@ import { secureAndRedact, reveal } from '../../src/privacy/index.js';
 import { rotateKey } from '../../src/privacy/rotation.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import { createDatabase } from '../../src/core/database.js';
-import { cleanupDirs, isOllamaAvailable } from './helpers.js';
+import { isOllamaAvailable } from './helpers.js';
 
 const ollamaAvailable = await isOllamaAvailable();
 
@@ -17,10 +17,6 @@ let vaultStore: SqliteVaultStore;
 let keyManager: InMemoryKeyManager;
 let kekManager: KekManager;
 let client: OllamaClient;
-
-afterEach(() => {
-  cleanupDirs();
-});
 
 describe.skipIf(!ollamaAvailable)(
   'e2e: privacy pipeline with real Ollama',

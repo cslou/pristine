@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OllamaClient } from '../../src/engine/ollama/index.js';
 import { LocalEmbedder } from '../../src/embedder/local/index.js';
 import { createExtractor } from '../../src/memory/extractor/index.js';
 import { SqliteStore } from '../../src/memory/store/sqlite/index.js';
 import { createDatabase } from '../../src/core/database.js';
 import type { Extractor } from '../../src/core/interfaces.js';
-import { cleanupDirs, isOllamaAvailable } from './helpers.js';
+import { isOllamaAvailable } from './helpers.js';
 
 const ollamaAvailable = await isOllamaAvailable();
 
@@ -16,10 +16,6 @@ let store: SqliteStore;
 let client: OllamaClient;
 let embedder: LocalEmbedder;
 let extractor: Extractor;
-
-afterEach(() => {
-  cleanupDirs();
-});
 
 describe.skipIf(!ollamaAvailable)(
   'e2e: memory pipeline with real Ollama and embeddings',

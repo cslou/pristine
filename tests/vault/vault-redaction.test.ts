@@ -143,7 +143,7 @@ describe('redaction', () => {
     expect(result.placeholders[0]!.type).toBe('identity_number');
   });
 
-  it('does not redact travel date/time phrases misclassified as other', () => {
+  it('redacts travel date/time phrases when they are present in the finalized report', () => {
     const text = 'Flight date: 2026-03-20, hotel checkin 2026-03-20 checkout 2026-03-24';
     const first = text.indexOf('2026-03-20');
     const second = text.indexOf('2026-03-20', first + 1);
@@ -159,11 +159,11 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).toBe(text);
-    expect(result.placeholders).toHaveLength(0);
+    expect(result.redactedText).not.toBe(text);
+    expect(result.placeholders).toHaveLength(3);
   });
 
-  it('does not redact relative weekday travel phrases misclassified as other', () => {
+  it('redacts relative weekday travel phrases when policy has already approved them', () => {
     const text = 'next week monday to friday';
     const report: SensitivityReport = {
       entities: [entity('other', 0, text.length, text)],
@@ -172,11 +172,11 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).toBe(text);
-    expect(result.placeholders).toHaveLength(0);
+    expect(result.redactedText).toMatch(/\[SENSITIVE:other:[0-9a-f-]+\]/);
+    expect(result.placeholders).toHaveLength(1);
   });
 
-  it('does not redact long travel scheduling phrase misclassified as other', () => {
+  it('redacts long travel scheduling phrases when policy has already approved them', () => {
     const text =
       'I want to book a trip from MAA to Tokyo next week Monday to Friday for a short vacation';
     const report: SensitivityReport = {
@@ -186,8 +186,8 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).toBe(text);
-    expect(result.placeholders).toHaveLength(0);
+    expect(result.redactedText).toMatch(/\[SENSITIVE:other:[0-9a-f-]+\]/);
+    expect(result.placeholders).toHaveLength(1);
   });
 
   it('still redacts date values when context indicates DOB', () => {
@@ -205,10 +205,10 @@ describe('redaction', () => {
     expect(result.placeholders).toHaveLength(1);
   });
 
-  it('does not redact one-digit day dates misclassified as other', () => {
+  it('redacts one-digit day dates when they are present in the finalized report', () => {
     const text = 'dates: 2026-05-20 to 2026-05-2';
     const first = text.indexOf('2026-05-20');
-    const second = text.indexOf('2026-05-2');
+    const second = text.lastIndexOf('2026-05-2');
     const report: SensitivityReport = {
       entities: [
         entity('other', first, first + '2026-05-20'.length, '2026-05-20'),
@@ -219,11 +219,11 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).toBe(text);
-    expect(result.placeholders).toHaveLength(0);
+    expect(result.redactedText).not.toBe(text);
+    expect(result.placeholders).toHaveLength(2);
   });
 
-  it('does not redact city-only value misclassified as physical_address', () => {
+  it('redacts city-only physical address spans when they are present in the finalized report', () => {
     const text = 'arriving at tokyo';
     const start = text.indexOf('tokyo');
     const report: SensitivityReport = {
@@ -233,8 +233,8 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).toBe(text);
-    expect(result.placeholders).toHaveLength(0);
+    expect(result.redactedText).toMatch(/\[SENSITIVE:physical_address:[0-9a-f-]+\]/);
+    expect(result.placeholders).toHaveLength(1);
   });
 
   it('still redacts full physical addresses', () => {

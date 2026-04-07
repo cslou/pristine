@@ -1,6 +1,7 @@
 import type { LlmClient, SensitivityClassifier } from '../../../core/interfaces.js';
 import type {
   DetectedEntity,
+  LlmFailureMode,
   SensitivityReport,
   LlmClassifierConfig,
 } from '../../../core/types.js';
@@ -14,49 +15,8 @@ import {
 export interface CombinedClassifierConfig {
   readonly deterministic?: DeterministicClassifierConfig;
   readonly llm?: LlmClassifierConfig;
+  readonly onLlmFailure?: LlmFailureMode;
 }
-
-interface CleanSpan {
-  readonly text: string;
-  /** Start offset in the original text */
-  readonly originalStart: number;
-}
-
-export const extractCleanSpans = (
-  text: string,
-  entities: readonly DetectedEntity[],
-): CleanSpan[] => {
-  if (entities.length === 0) {
-    return [{ text, originalStart: 0 }];
-  }
-
-  const sorted = [...entities].sort((a, b) => a.start - b.start);
-  const spans: CleanSpan[] = [];
-  let cursor = 0;
-
-  for (const entity of sorted) {
-    if (entity.start > cursor) {
-      const raw = text.slice(cursor, entity.start);
-      const trimStart = raw.length - raw.trimStart().length;
-      const trimmed = raw.trim();
-      if (trimmed.length > 0) {
-        spans.push({ text: trimmed, originalStart: cursor + trimStart });
-      }
-    }
-    cursor = Math.max(cursor, entity.end);
-  }
-
-  if (cursor < text.length) {
-    const raw = text.slice(cursor);
-    const trimStart = raw.length - raw.trimStart().length;
-    const trimmed = raw.trim();
-    if (trimmed.length > 0) {
-      spans.push({ text: trimmed, originalStart: cursor + trimStart });
-    }
-  }
-
-  return spans;
-};
 
 export const mergeReports = (
   deterministicReport: SensitivityReport,
@@ -75,19 +35,27 @@ export const mergeReports = (
     }
   }
 
+  const warnings = [
+    ...(deterministicReport.warnings ?? []),
+    ...(llmReport.warnings ?? []),
+  ];
+
   return {
     entities: kept,
     hasSensitiveContent: kept.length > 0,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 };
 
 class CombinedClassifier implements SensitivityClassifier {
   private readonly deterministic: SensitivityClassifier;
   private readonly llm: ReturnType<typeof createLlmClassifier>;
+  private readonly onLlmFailure: LlmFailureMode;
 
   public constructor(client: LlmClient, config: CombinedClassifierConfig = {}) {
     this.deterministic = createDeterministicClassifier(config.deterministic);
     this.llm = createLlmClassifier(client, config.llm);
+    this.onLlmFailure = config.onLlmFailure ?? 'block';
   }
 
   public async classify(text: string): Promise<SensitivityReport> {
@@ -106,6 +74,18 @@ class CombinedClassifier implements SensitivityClassifier {
     try {
       return await this.llm.classify(text);
     } catch (error: unknown) {
+      if (this.onLlmFailure === 'degrade') {
+        const message =
+          error instanceof LlmClassificationError
+            ? error.message
+            : `LLM classification degraded: ${error instanceof Error ? error.message : 'unknown error'}`;
+        return {
+          entities: [],
+          hasSensitiveContent: false,
+          warnings: [message],
+        };
+      }
+
       if (error instanceof LlmClassificationError) {
         throw error;
       }

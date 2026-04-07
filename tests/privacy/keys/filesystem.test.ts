@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -103,6 +103,18 @@ describe('FileSystemKeyManager', () => {
 
     expect(result.created).toBe(true);
     expect(existsSync(join(nestedKeysDir, 'user-1-public.pem'))).toBe(true);
+  });
+
+  it('encodes unsafe user ids into filenames inside keysDir', async () => {
+    const { manager, keysDir } = createManager();
+
+    await manager.getOrCreateKeyPair('../escape/../../user');
+
+    const files = readdirSync(keysDir);
+    expect(files).toHaveLength(2);
+    expect(files.every((file) => file.endsWith('.pem'))).toBe(true);
+    expect(files.some((file) => file.includes('/'))).toBe(false);
+    expect(existsSync(join(keysDir, '..', 'escape-public.pem'))).toBe(false);
   });
 
   it('throws KeyManagerError for corrupt public key file', async () => {

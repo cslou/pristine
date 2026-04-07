@@ -18,21 +18,31 @@ interface ClassifySensitivityInput {
   readonly findings: readonly LlmSensitivityFinding[];
 }
 
-const findingToEntity = (finding: LlmSensitivityFinding, sourceText: string): DetectedEntity => {
+interface GroundedFinding {
+  readonly entity: DetectedEntity | null;
+  readonly warning?: string;
+}
+
+const groundFinding = (finding: LlmSensitivityFinding, sourceText: string): GroundedFinding => {
   const idx = sourceText.indexOf(finding.text);
-  // Fail-closed: if exact span not found, try case-insensitive search
-  const ciIdx = idx < 0 ? sourceText.toLowerCase().indexOf(finding.text.toLowerCase()) : idx;
-  // If still not found, cover the entire text (conservative — ensures redaction)
-  const start = ciIdx >= 0 ? ciIdx : 0;
-  const end = ciIdx >= 0 ? ciIdx + finding.text.length : sourceText.length;
+  const ciIdx = idx >= 0 ? idx : sourceText.toLowerCase().indexOf(finding.text.toLowerCase());
+
+  if (ciIdx < 0) {
+    return {
+      entity: null,
+      warning: `Skipped ungroundable LLM finding for type "${finding.type}" with text "${finding.text}".`,
+    };
+  }
 
   return {
-    type: finding.type,
-    source: 'llm',
-    confidence: finding.confidence,
-    start,
-    end,
-    text: finding.text,
+    entity: {
+      type: finding.type,
+      source: 'llm',
+      confidence: finding.confidence,
+      start: ciIdx,
+      end: ciIdx + finding.text.length,
+      text: finding.text,
+    },
   };
 };
 
@@ -77,19 +87,28 @@ export class LlmClassifier implements SensitivityClassifier {
       );
     }
 
-    const entities = result.findings
+    const groundedFindings = result.findings
       .filter(
         (f): f is LlmSensitivityFinding =>
           typeof f.type === 'string' &&
           typeof f.confidence === 'number' &&
           typeof f.text === 'string' &&
+          f.text.trim().length > 0 &&
           f.confidence >= this.confidenceThreshold,
       )
-      .map((f) => findingToEntity(f, text));
+      .map((f) => groundFinding(f, text));
+
+    const entities = groundedFindings
+      .map((finding) => finding.entity)
+      .filter((entity): entity is DetectedEntity => entity !== null);
+    const warnings = groundedFindings
+      .map((finding) => finding.warning)
+      .filter((warning): warning is string => typeof warning === 'string');
 
     return {
       entities,
       hasSensitiveContent: entities.length > 0,
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
 }

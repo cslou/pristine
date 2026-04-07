@@ -2,34 +2,30 @@ import { createDecipheriv } from 'node:crypto';
 import type {
   KeyManager,
   LlmClient,
-  SensitivityClassifier,
+  PrivacyPipeline,
   VaultStore,
 } from '../core/interfaces.js';
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
-import { redactText, type RedactionPlaceholder } from './vault/redaction.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
 import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url } from './vault/base64url.js';
 import { toApprovedValue } from './vault/sqlite/index.js';
-import {
-  createCombinedClassifier,
-  type CombinedClassifierConfig,
-} from './classifier/combined/index.js';
+import { createPrivacyPipeline } from './pipeline.js';
+import type { CombinedClassifierConfig } from './classifier/combined/index.js';
 import type { KekManager } from './kek/kek-manager.js';
 import { unwrapDekWithKek } from './kek/kek-manager.js';
+import { PrivacyPipelineError } from '../core/errors.js';
+import type { RevealResult, SecureAndRedactResult } from '../core/types.js';
+import { scrubStructuredSensitivePatterns } from './safety-scan.js';
 
 export interface SecureAndRedactConfig {
-  readonly client: LlmClient;
+  readonly client?: LlmClient;
   readonly vaultStore: VaultStore;
   readonly keyManager: KeyManager;
   readonly kekManager: KekManager;
   readonly userId: string;
   readonly classifier?: CombinedClassifierConfig;
-}
-
-export interface SecureAndRedactResult {
-  readonly redactedText: string;
-  readonly placeholderIds: readonly string[];
+  readonly pipeline?: PrivacyPipeline;
 }
 
 export interface RevealConfig {
@@ -39,6 +35,37 @@ export interface RevealConfig {
   readonly userId: string;
 }
 
+const resolvePrivacyPipeline = (config: SecureAndRedactConfig): PrivacyPipeline => {
+  if (config.pipeline) {
+    return config.pipeline;
+  }
+
+  if (!config.client) {
+    throw new PrivacyPipelineError(
+      'secureAndRedact requires either an injected privacy pipeline or an LLM client.',
+    );
+  }
+
+  return createPrivacyPipeline(config.client, { classifier: config.classifier });
+};
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const uniqueStrings = (values: readonly string[]): readonly string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    if (value.length === 0 || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+
+  return result;
+};
+
 /**
  * Classify text for PII, redact detected entities with placeholders,
  * encrypt original values, and store them in the vault.
@@ -47,39 +74,47 @@ export async function secureAndRedact(
   text: string,
   config: SecureAndRedactConfig,
 ): Promise<SecureAndRedactResult> {
-  const classifier: SensitivityClassifier = createCombinedClassifier(
-    config.client,
-    config.classifier,
-  );
+  const pipeline = resolvePrivacyPipeline(config);
+  const { redaction, safetyViolations } = await pipeline.classifyAndRedact(text);
+  const redactedText = redaction?.redactedText ?? text;
 
-  const report = await classifier.classify(text);
-
-  if (!report.hasSensitiveContent || report.entities.length === 0) {
-    return { redactedText: text, placeholderIds: [] };
+  if (safetyViolations.length > 0) {
+    return {
+      ok: false,
+      redactedText,
+      safetyViolations,
+    };
   }
 
-  const { redactedText, placeholders } = redactText(text, report);
+  const placeholders = redaction?.placeholders ?? [];
 
   if (placeholders.length === 0) {
-    return { redactedText, placeholderIds: [] };
+    return { ok: true, redactedText, placeholderIds: [] };
   }
 
   const { publicKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
   const fingerprint = computeKeyFingerprint(publicKey);
   const kek = await config.kekManager.getOrCreate(config.userId);
 
-  const vaultEntries = placeholders.map((p: RedactionPlaceholder) => ({
+  const vaultEntries = placeholders.map((placeholder) => ({
     userId: config.userId,
-    placeholderId: p.id,
-    sensitiveType: p.type,
-    encrypted: encryptAndWrapValue(p.originalText, p.type, p.id, kek, fingerprint),
+    placeholderId: placeholder.id,
+    sensitiveType: placeholder.type,
+    encrypted: encryptAndWrapValue(
+      placeholder.originalText,
+      placeholder.type,
+      placeholder.id,
+      kek,
+      fingerprint,
+    ),
   }));
 
   await config.vaultStore.addEntries(vaultEntries);
 
   return {
+    ok: true,
     redactedText,
-    placeholderIds: placeholders.map((p) => p.id),
+    placeholderIds: placeholders.map((placeholder) => placeholder.id),
   };
 }
 
@@ -88,17 +123,17 @@ export async function secureAndRedact(
  * and replace placeholders with the original values.
  * The result is marked as no-LLM-reentry to prevent accidental re-classification.
  */
-export async function reveal(redactedText: string, config: RevealConfig): Promise<string> {
+export async function reveal(redactedText: string, config: RevealConfig): Promise<RevealResult> {
   const matches = collectPlaceholders(redactedText);
   if (matches.length === 0) {
-    return redactedText;
+    return { text: redactedText, revealedValues: [] };
   }
 
   const placeholderIds = matches.map((m) => m.id);
   const entries = await config.vaultStore.getEntriesByPlaceholderIds(config.userId, placeholderIds);
 
   if (entries.length === 0) {
-    return redactedText;
+    return { text: redactedText, revealedValues: [] };
   }
 
   const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
@@ -130,14 +165,29 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
     approvedValues.set(entry.placeholderId, decrypted.toString('utf8'));
   }
 
-  return resolve(redactedText, { approvedValues }) as string;
+  const text = resolve(redactedText, { approvedValues }) as string;
+  const revealedValues = uniqueStrings(
+    matches
+      .map((match) => approvedValues.get(match.id))
+      .filter((value): value is string => typeof value === 'string'),
+  );
+
+  return { text, revealedValues };
 }
 
 /**
- * Safety net: remove any remaining [SENSITIVE:...] placeholders from text.
- * Use this before sending output to users to ensure no leaked placeholders.
+ * Safety net: scrub revealed plaintext, leftover placeholders, and obvious structured patterns.
  */
-export function scrubOutput(text: string): string {
+export function scrubOutput(text: string, revealedValues: readonly string[]): string {
+  const sortedRevealedValues = [...uniqueStrings(revealedValues)].sort((a, b) => b.length - a.length);
+  let scrubbed = text;
+
+  for (const value of sortedRevealedValues) {
+    scrubbed = scrubbed.replace(new RegExp(escapeRegExp(value), 'g'), '');
+  }
+
   const globalRegex = new RegExp(PLACEHOLDER_REGEX.source, 'g');
-  return text.replace(globalRegex, '');
+  scrubbed = scrubbed.replace(globalRegex, '');
+
+  return scrubStructuredSensitivePatterns(scrubbed);
 }

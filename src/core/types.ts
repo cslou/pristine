@@ -150,6 +150,7 @@ export interface DetectedEntity {
 export interface SensitivityReport {
   readonly entities: readonly DetectedEntity[];
   readonly hasSensitiveContent: boolean;
+  readonly warnings?: readonly string[];
 }
 
 export interface LlmSensitivityFinding {
@@ -165,6 +166,45 @@ export interface LlmClassifierConfig {
   readonly confidenceThreshold?: number;
   readonly systemPrompt?: string;
 }
+
+export type LlmFailureMode = 'block' | 'degrade';
+
+export interface RedactionPlaceholder {
+  readonly id: string;
+  readonly type: string;
+  readonly label?: string;
+  readonly originalText: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface RedactionResult {
+  readonly redactedText: string;
+  readonly placeholders: readonly RedactionPlaceholder[];
+}
+
+export interface RevealResult {
+  readonly text: string;
+  readonly revealedValues: readonly string[];
+}
+
+export interface ClassificationPipelineResult {
+  readonly report: SensitivityReport;
+  readonly redaction: RedactionResult | null;
+  readonly safetyViolations: readonly DetectedEntity[];
+}
+
+export type SecureAndRedactResult =
+  | {
+      readonly ok: true;
+      readonly redactedText: string;
+      readonly placeholderIds: readonly string[];
+    }
+  | {
+      readonly ok: false;
+      readonly redactedText: string;
+      readonly safetyViolations: readonly DetectedEntity[];
+    };
 
 // ---------------------------------------------------------------------------
 // Sanitizer

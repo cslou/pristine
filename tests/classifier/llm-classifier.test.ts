@@ -271,7 +271,7 @@ describe('LLM classifier', () => {
       );
     });
 
-    it('handles text not found in source (fail-closed: covers full text)', async () => {
+    it('skips text not found in source and emits a warning', async () => {
       const sourceText = 'Different text entirely.';
       const client = createMockClient({
         findings: [
@@ -287,8 +287,9 @@ describe('LLM classifier', () => {
       const classifier = createLlmClassifier(client);
       const report = await classifier.classify(sourceText);
 
-      expect(report.entities[0]!.start).toBe(0);
-      expect(report.entities[0]!.end).toBe(sourceText.length);
+      expect(report.entities).toHaveLength(0);
+      expect(report.warnings).toHaveLength(1);
+      expect(report.warnings?.[0]).toMatch(/Skipped ungroundable LLM finding/);
     });
   });
 

@@ -104,7 +104,8 @@ describe('migrateToKek', () => {
 
     const redacted = `Contact [SENSITIVE:email_address:${phId}] please`;
     const revealed = await reveal(redacted, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed).toContain('bob@test.com');
+    expect(revealed.text).toContain('bob@test.com');
+    expect(revealed.revealedValues).toEqual(['bob@test.com']);
   });
 
   it('is idempotent — running twice causes no errors', async () => {

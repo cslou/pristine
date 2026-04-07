@@ -1,64 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { extractCleanSpans, mergeReports } from '../../src/privacy/classifier/combined/index.js';
+import { createCombinedClassifier, mergeReports } from '../../src/privacy/classifier/combined/index.js';
 import { createLlmClassifier } from '../../src/privacy/classifier/llm/index.js';
 import { resolve, clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import { ResolveApprovalError } from '../../src/core/errors.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
-import type { DetectedEntity } from '../../src/core/types.js';
-
-describe('extractCleanSpans', () => {
-  it('returns full text when no entities', () => {
-    const spans = extractCleanSpans('Hello world', []);
-    expect(spans).toEqual([{ text: 'Hello world', originalStart: 0 }]);
-  });
-
-  it('extracts text between entities with correct offsets', () => {
-    const entities: DetectedEntity[] = [
-      {
-        type: 'email_address',
-        source: 'deterministic',
-        confidence: 0.9,
-        start: 0,
-        end: 17,
-        text: 'alice@example.com',
-      },
-      {
-        type: 'phone_number',
-        source: 'deterministic',
-        confidence: 0.8,
-        start: 30,
-        end: 42,
-        text: '555-867-5309',
-      },
-    ];
-    const text = 'alice@example.com and phone 555-867-5309 end';
-    const spans = extractCleanSpans(text, entities);
-
-    expect(spans.length).toBeGreaterThanOrEqual(1);
-    spans.forEach((span) => {
-      expect(span.text).not.toContain('alice@example.com');
-      expect(span.text).not.toContain('555-867-5309');
-      expect(text.substring(span.originalStart, span.originalStart + span.text.length)).toBe(
-        span.text,
-      );
-    });
-  });
-
-  it('returns empty array when entire text is PII', () => {
-    const entities: DetectedEntity[] = [
-      {
-        type: 'email_address',
-        source: 'deterministic',
-        confidence: 0.9,
-        start: 0,
-        end: 17,
-        text: 'alice@example.com',
-      },
-    ];
-    const spans = extractCleanSpans('alice@example.com', entities);
-    expect(spans).toHaveLength(0);
-  });
-});
 
 describe('mergeReports', () => {
   it('keeps both non-overlapping entities', () => {
@@ -165,6 +110,15 @@ describe('mergeReports', () => {
     expect(result.entities).toHaveLength(0);
     expect(result.hasSensitiveContent).toBe(false);
   });
+
+  it('merges warnings from both reports', () => {
+    const result = mergeReports(
+      { entities: [], hasSensitiveContent: false, warnings: ['deterministic warning'] },
+      { entities: [], hasSensitiveContent: false, warnings: ['llm warning'] },
+    );
+
+    expect(result.warnings).toEqual(['deterministic warning', 'llm warning']);
+  });
 });
 
 describe('classifier reentry guard', () => {
@@ -182,5 +136,34 @@ describe('classifier reentry guard', () => {
 
     await expect(classifier.classify(resolved)).rejects.toThrow(ResolveApprovalError);
     expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+describe('combined classifier LLM failure modes', () => {
+  it('degrades and emits warnings when configured to continue on LLM failure', async () => {
+    const client: LlmClient = {
+      generate: vi.fn().mockRejectedValue(new Error('llm offline')),
+    };
+
+    const classifier = createCombinedClassifier(client, { onLlmFailure: 'degrade' });
+    const report = await classifier.classify('Reach me at alice@example.com');
+
+    expect(report.hasSensitiveContent).toBe(true);
+    expect(report.entities).toHaveLength(1);
+    expect(report.entities[0]!.type).toBe('email_address');
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings?.[0]).toMatch(/llm offline/);
+  });
+
+  it('blocks by default when the LLM classifier fails', async () => {
+    const client: LlmClient = {
+      generate: vi.fn().mockRejectedValue(new Error('llm offline')),
+    };
+
+    const classifier = createCombinedClassifier(client);
+
+    await expect(classifier.classify('Reach me at alice@example.com')).rejects.toThrow(
+      /Classification blocked/,
+    );
   });
 });

@@ -4,6 +4,7 @@ import { secureAndRedact, reveal, scrubOutput } from '../../src/privacy/index.js
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import type { KeyManager, LlmClient } from '../../src/core/interfaces.js';
+import type { SecureAndRedactResult } from '../../src/core/types.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 
@@ -27,8 +28,18 @@ const createMockLlmClient = (findings: unknown[]): LlmClient => ({
   generate: vi.fn().mockResolvedValue({ findings }),
 });
 
+const expectSuccess = (
+  result: SecureAndRedactResult,
+): Extract<SecureAndRedactResult, { ok: true }> => {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(`Expected privacy pipeline success but got violations: ${result.redactedText}`);
+  }
+  return result;
+};
+
 describe('privacy pipeline end-to-end', () => {
-  it('secureAndRedact -> reveal round-trip recovers original PII', async () => {
+  it('secureAndRedact -> reveal -> scrubOutput round-trip recovers then scrubs PII', async () => {
     clearResolvedStringRegistry();
 
     const text = 'Contact alice@example.com or call 555-867-5309 for details.';
@@ -48,13 +59,15 @@ describe('privacy pipeline end-to-end', () => {
       },
     ]);
 
-    const result = await secureAndRedact(text, {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId: 'user-e2e-1',
-    });
+    const result = expectSuccess(
+      await secureAndRedact(text, {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-e2e-1',
+      }),
+    );
 
     expect(result.redactedText).not.toContain('alice@example.com');
     expect(result.redactedText).not.toContain('555-867-5309');
@@ -69,9 +82,19 @@ describe('privacy pipeline end-to-end', () => {
       userId: 'user-e2e-1',
     });
 
-    expect(revealed).toContain('alice@example.com');
-    expect(revealed).toContain('555-867-5309');
-    expect(revealed).not.toContain('[SENSITIVE:');
+    expect(revealed.text).toContain('alice@example.com');
+    expect(revealed.text).toContain('555-867-5309');
+    expect(revealed.text).not.toContain('[SENSITIVE:');
+    expect(revealed.revealedValues).toEqual(['alice@example.com', '555-867-5309']);
+
+    const scrubbed = scrubOutput(
+      `Echoed: ${revealed.text} and ${result.redactedText}`,
+      revealed.revealedValues,
+    );
+
+    expect(scrubbed).not.toContain('alice@example.com');
+    expect(scrubbed).not.toContain('555-867-5309');
+    expect(scrubbed).not.toContain('[SENSITIVE:');
   });
 
   it('secureAndRedact returns text unchanged when no PII detected', async () => {
@@ -79,13 +102,15 @@ describe('privacy pipeline end-to-end', () => {
 
     const mockClient = createMockLlmClient([]);
 
-    const result = await secureAndRedact(text, {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId: 'user-e2e-2',
-    });
+    const result = expectSuccess(
+      await secureAndRedact(text, {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-e2e-2',
+      }),
+    );
 
     expect(result.redactedText).toBe(text);
     expect(result.placeholderIds).toHaveLength(0);
@@ -105,13 +130,15 @@ describe('privacy pipeline end-to-end', () => {
       },
     ]);
 
-    const result = await secureAndRedact(text, {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId: 'user-e2e-3',
-    });
+    const result = expectSuccess(
+      await secureAndRedact(text, {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-e2e-3',
+      }),
+    );
 
     expect(result.placeholderIds).toHaveLength(1);
 
@@ -135,35 +162,57 @@ describe('privacy pipeline end-to-end', () => {
       userId: 'user-e2e-4',
     });
 
-    expect(revealed).toBe(text);
+    expect(revealed).toEqual({ text, revealedValues: [] });
   });
 
-  it('scrubOutput removes all SENSITIVE placeholders', () => {
+  it('scrubOutput removes revealed values, placeholders, and structured leftovers', () => {
     const text =
-      'Contact [SENSITIVE:email_address:abc-123] or [SENSITIVE:phone_number:def-456] for info.';
+      'Contact alice@example.com or [SENSITIVE:phone_number:def-456] and password=supersecret.';
 
-    const scrubbed = scrubOutput(text);
+    const scrubbed = scrubOutput(text, ['alice@example.com']);
 
-    expect(scrubbed).toBe('Contact  or  for info.');
+    expect(scrubbed).not.toContain('alice@example.com');
     expect(scrubbed).not.toContain('[SENSITIVE:');
+    expect(scrubbed).not.toContain('password=supersecret');
   });
 
-  it('scrubOutput returns text unchanged when no placeholders', () => {
+  it('scrubOutput returns text unchanged when there is nothing sensitive to remove', () => {
     const text = 'No sensitive content here.';
-    expect(scrubOutput(text)).toBe(text);
+    expect(scrubOutput(text, [])).toBe(text);
+  });
+
+  it('fails closed when post-redaction safety scan finds survivors', async () => {
+    const text = 'Local config api_key=super-secret-value';
+    const mockClient = createMockLlmClient([]);
+
+    const result = await secureAndRedact(text, {
+      client: mockClient,
+      vaultStore,
+      keyManager,
+      kekManager,
+      userId: 'user-e2e-unsafe',
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('Expected safety scan to block vault writes');
+    }
+    expect(result.redactedText).toContain('api_key=super-secret-value');
+    expect(result.safetyViolations).toHaveLength(1);
+    expect(result.safetyViolations[0]!.type).toBe('secret');
   });
 
   it('handles unicode PII in round-trip', async () => {
     clearResolvedStringRegistry();
 
-    const text = 'Name is \u5c71\u7530\u592a\u90ce and email taro@example.jp';
+    const text = 'Name is 山田太郎 and email taro@example.jp';
 
     const mockClient = createMockLlmClient([
       {
         type: 'identity_number',
         confidence: 0.9,
         reasoning: 'Japanese name detected',
-        text: '\u5c71\u7530\u592a\u90ce',
+        text: '山田太郎',
       },
       {
         type: 'email_address',
@@ -173,15 +222,17 @@ describe('privacy pipeline end-to-end', () => {
       },
     ]);
 
-    const result = await secureAndRedact(text, {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId: 'user-e2e-5',
-    });
+    const result = expectSuccess(
+      await secureAndRedact(text, {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-e2e-5',
+      }),
+    );
 
-    expect(result.redactedText).not.toContain('\u5c71\u7530\u592a\u90ce');
+    expect(result.redactedText).not.toContain('山田太郎');
     expect(result.redactedText).not.toContain('taro@example.jp');
 
     const revealed = await reveal(result.redactedText, {
@@ -191,7 +242,8 @@ describe('privacy pipeline end-to-end', () => {
       userId: 'user-e2e-5',
     });
 
-    expect(revealed).toContain('\u5c71\u7530\u592a\u90ce');
-    expect(revealed).toContain('taro@example.jp');
+    expect(revealed.text).toContain('山田太郎');
+    expect(revealed.text).toContain('taro@example.jp');
+    expect(revealed.revealedValues).toEqual(['山田太郎', 'taro@example.jp']);
   });
 });

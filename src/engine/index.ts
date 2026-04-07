@@ -1,39 +1,46 @@
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { LlmClient } from '../core/interfaces.js';
-import type { LocalConfig } from '../core/types.js';
+import type { ModelConfig, ModelEntry } from '../core/init.js';
+import { loadModelConfig } from '../core/init.js';
 import { LlamaCppClient } from './llamacpp/index.js';
 import { OllamaClient } from './ollama/index.js';
-import { getModelEntry, getDefaultLlmModelName } from '../models/registry.js';
 
-const DEFAULT_MODELS_DIR = join(homedir(), '.pristine', 'models');
-
-export async function createLlmClient(config: LocalConfig = {}): Promise<LlmClient> {
-  const engine = config.llmEngine ?? (await detectEngine(config));
-
-  if (engine === 'ollama') {
-    const model = config.llmModel ?? getDefaultLlmModelName();
-    const host = process.env.OLLAMA_HOST;
-    return new OllamaClient({ model, ...(host ? { host } : {}) });
-  }
-
-  const modelsDir = config.modelsDir ?? DEFAULT_MODELS_DIR;
-  const modelName = config.llmModel ?? getDefaultLlmModelName();
-  const entry = getModelEntry(modelName);
-  const modelPath = entry ? join(modelsDir, entry.filename) : modelName;
-
-  return new LlamaCppClient({ modelPath });
+export interface LlmClients {
+  readonly privacyClient: LlmClient;
+  readonly memoryClient: LlmClient;
 }
 
-async function detectEngine(config: LocalConfig): Promise<'llamacpp' | 'ollama'> {
-  try {
-    const host = process.env.OLLAMA_HOST ?? 'http://localhost:11434';
-    const client = new OllamaClient({ model: config.llmModel ?? getDefaultLlmModelName(), host });
-    const reachable = await client.isReachable();
-    return reachable ? 'ollama' : 'llamacpp';
-  } catch {
-    return 'llamacpp';
+function entriesMatch(a: ModelEntry, b: ModelEntry): boolean {
+  if (a.engine !== b.engine) return false;
+  if (a.engine === 'ollama' && b.engine === 'ollama') {
+    return a.model === b.model && (a.host ?? '') === (b.host ?? '');
   }
+  if (a.engine === 'llamacpp' && b.engine === 'llamacpp') {
+    return a.path === b.path;
+  }
+  return false;
+}
+
+function createClientFromEntry(entry: ModelEntry): LlmClient {
+  if (entry.engine === 'ollama') {
+    const host = entry.host ?? process.env.OLLAMA_HOST;
+    return new OllamaClient({ model: entry.model, ...(host ? { host } : {}) });
+  }
+  return new LlamaCppClient({
+    modelPath: entry.path,
+    ...(entry.gpu !== undefined ? { gpu: entry.gpu } : {}),
+  });
+}
+
+export function createLlmClients(configDir?: string): LlmClients {
+  const config: ModelConfig = loadModelConfig(configDir);
+  const privacyClient = createClientFromEntry(config.privacy);
+
+  if (entriesMatch(config.privacy, config.memory)) {
+    return { privacyClient, memoryClient: privacyClient };
+  }
+
+  const memoryClient = createClientFromEntry(config.memory);
+  return { privacyClient, memoryClient };
 }
 
 export { LlamaCppClient } from './llamacpp/index.js';

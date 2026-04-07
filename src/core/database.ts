@@ -46,6 +46,6 @@ export function createDatabase(options: DatabaseOptions | string): Database.Data
 
 export function createDefaultDatabase(dataDir?: string): Database.Database {
   const resolvedDir = dataDir ?? join(homedir(), '.pristine', 'data');
-  mkdirSync(resolvedDir, { recursive: true });
+  mkdirSync(resolvedDir, { recursive: true, mode: 0o700 });
   return createDatabase({ path: join(resolvedDir, 'pristine.db') });
 }

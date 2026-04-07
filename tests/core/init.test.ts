@@ -191,6 +191,22 @@ describe('loadModelConfig', () => {
     }
   });
 
+  it('throws ConfigError for invalid gpu value in llamacpp config', () => {
+    const dir = makeTmpDir('cfg-bad-gpu');
+    const ggufPath = join(dir, 'fake.gguf');
+    writeFileSync(ggufPath, '');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'llamacpp', path: ggufPath, gpu: 'rocm' },
+        memory: { engine: 'ollama', model: 'x' },
+      }),
+    );
+
+    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
+    expect(() => loadModelConfig(dir)).toThrow(/Invalid gpu value "rocm"/);
+  });
+
   it('accepts optional gpu in llamacpp config', () => {
     const dir = makeTmpDir('cfg-gpu');
     const ggufPath = join(dir, 'fake.gguf');

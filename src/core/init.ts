@@ -60,13 +60,13 @@ function validateModelEntry(value: unknown, section: string): ModelEntry {
     if (typeof obj.model !== 'string' || obj.model.length === 0) {
       throw new ConfigError(`"${section}" with engine "ollama" requires a non-empty "model" field`);
     }
-    if (obj.host !== undefined && typeof obj.host !== 'string') {
-      throw new ConfigError(`"${section}.host" must be a string if provided`);
+    if (obj.host !== undefined && (typeof obj.host !== 'string' || obj.host.length === 0)) {
+      throw new ConfigError(`"${section}.host" must be a non-empty string if provided`);
     }
     return {
       engine: 'ollama',
       model: obj.model,
-      ...(obj.host ? { host: obj.host as string } : {}),
+      ...(obj.host !== undefined ? { host: obj.host as string } : {}),
     };
   }
 

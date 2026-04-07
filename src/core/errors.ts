@@ -95,3 +95,10 @@ export class PrivacyPipelineError extends AppError {
     this.name = 'PrivacyPipelineError';
   }
 }
+
+export class ConfigError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}

@@ -1,8 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { rmSync } from 'node:fs';
 import { FileSystemKeyManager } from '../../../src/privacy/keys/filesystem.js';
 import { KeyManagerError } from '../../../src/core/errors.js';
 import { generateKeyPair } from '../../../src/privacy/vault/asymmetric-crypto.js';
@@ -12,7 +20,10 @@ const makeTmpKeysDir = (): string => {
     tmpdir(),
     `pristine-test-keys-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') {
+    chmodSync(dir, 0o700);
+  }
   return dir;
 };
 
@@ -123,7 +134,7 @@ describe('FileSystemKeyManager', () => {
 
     // Write valid private key but corrupt public key
     const keyPair = await generateKeyPair();
-    writeFileSync(join(keysDir, 'user-1-private.pem'), keyPair.privateKey);
+    writeFileSync(join(keysDir, 'user-1-private.pem'), keyPair.privateKey, { mode: 0o600 });
     writeFileSync(join(keysDir, 'user-1-public.pem'), 'NOT A VALID PEM');
 
     const manager = new FileSystemKeyManager({ keysDir });
@@ -137,7 +148,7 @@ describe('FileSystemKeyManager', () => {
 
     const keyPair = await generateKeyPair();
     writeFileSync(join(keysDir, 'user-1-public.pem'), keyPair.publicKey);
-    writeFileSync(join(keysDir, 'user-1-private.pem'), 'TRUNCATED CONTENT');
+    writeFileSync(join(keysDir, 'user-1-private.pem'), 'TRUNCATED CONTENT', { mode: 0o600 });
 
     const manager = new FileSystemKeyManager({ keysDir });
     await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(KeyManagerError);
@@ -184,5 +195,52 @@ describe('FileSystemKeyManager', () => {
     await manager.saveKeyPair('user-1', keyPair);
 
     expect(existsSync(join(nestedKeysDir, 'user-1-public.pem'))).toBe(true);
+  });
+
+  it('sets 0o700 on keys directory when creating it', async () => {
+    if (process.platform === 'win32') return;
+
+    const { manager, keysDir } = createManager();
+    await manager.getOrCreateKeyPair('user-1');
+
+    const mode = statSync(keysDir).mode & 0o777;
+    expect(mode).toBe(0o700);
+  });
+
+  it('rejects keys directory with group/other access', async () => {
+    if (process.platform === 'win32') return;
+
+    const { manager, keysDir } = createManager();
+    await manager.getOrCreateKeyPair('user-1');
+    manager['cache'].clear();
+    chmodSync(keysDir, 0o755);
+
+    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(/too open/);
+    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(/chmod 700/);
+  });
+
+  it('rejects private key file with group/other access', async () => {
+    if (process.platform === 'win32') return;
+
+    const { manager, keysDir } = createManager();
+    await manager.getOrCreateKeyPair('user-1');
+    manager['cache'].clear();
+    chmodSync(join(keysDir, 'user-1-private.pem'), 0o644);
+
+    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(/too open/);
+    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(/chmod 600/);
+  });
+
+  it('accepts correct permissions (0o700 dir, 0o600 private key)', async () => {
+    if (process.platform === 'win32') return;
+
+    const { manager } = createManager();
+    await manager.getOrCreateKeyPair('user-1');
+    manager['cache'].clear();
+
+    const result = await manager.getOrCreateKeyPair('user-1');
+    expect(result.created).toBe(false);
   });
 });

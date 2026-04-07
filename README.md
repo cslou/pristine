@@ -7,8 +7,11 @@ Pristine gives agents persistent memory (remember facts from conversations) and 
 ## Table of Contents
 
 - [Architecture](#architecture)
+- [Storage Layout](#storage-layout)
 - [Directory Structure](#directory-structure)
 - [Getting Started](#getting-started)
+- [Initialization](#initialization)
+- [Model Configuration](#model-configuration)
 - [How Privacy Works](#how-privacy-works)
 - [How Memory Works](#how-memory-works)
 - [Multi-User and Multi-Agent](#multi-user-and-multi-agent)
@@ -57,15 +60,68 @@ Pristine has two pipelines that share common infrastructure:
 
 ---
 
+## Storage Layout
+
+`initPristine()` bootstraps the full `~/.pristine/` directory tree on first run. Everything Pristine needs is under this single directory.
+
+```
+~/.pristine/                         (0o700) Root — created by initPristine()
+  models.json                        Model configuration (auto-created with Ollama defaults)
+  keys/                              (0o700) RSA key pairs
+    {userId}-private.pem             (0o600) RSA-4096 private key
+    {userId}-public.pem              (0o644) RSA-4096 public key
+  data/                              (0o700) SQLite database
+    pristine.db                      WAL-mode database containing:
+      user_keks table                  Wrapped KEK per user (512-byte RSA-wrapped blob)
+      vault_entries table              Wrapped DEK + encrypted PII per value
+      memories table                   Memory facts + embeddings
+  models/                            GGUF model files (optional, for llama.cpp)
+```
+
+**What lives where:**
+
+| Key | Storage | Persistence |
+|-----|---------|-------------|
+| RSA-4096 key pair | PEM files in `keys/` | On disk, survives restarts |
+| Wrapped KEK | SQLite `user_keks` table (512-byte blob) | On disk in `pristine.db` |
+| Wrapped DEK | SQLite `vault_entries.encryption_metadata` (40 bytes per value) | On disk in `pristine.db` |
+| Plaintext KEK | `KekManager` in-memory cache | Process memory only, never on disk |
+| Plaintext DEK | Ephemeral during encrypt/decrypt | Never persisted anywhere |
+
+### Backup
+
+A single `cp -r ~/.pristine/ backup/` captures everything needed to restore: keys, wrapped keys, encrypted data, memories, and model configuration. No external dependencies.
+
+To restore: copy the backup to `~/.pristine/` on the new machine. All encrypted data is recoverable as long as the RSA private keys are present.
+
+### Security
+
+Pristine validates directory and file permissions on every key load, following the OpenSSH model:
+
+- **Keys directory** (`~/.pristine/keys/`): must be `0o700` (owner-only). Rejects if group or others have any access.
+- **Private key files**: must have no group/other bits set (`mode & 0o077 === 0`). Rejects with an error including the exact `chmod` command.
+- **Data directory** (`~/.pristine/data/`): must be `0o700`. Contains wrapped encryption keys.
+- **Windows**: all permission checks are skipped (`process.platform === 'win32'`).
+
+If permissions are wrong, Pristine refuses to proceed with a descriptive error:
+```
+Permissions 0755 for '~/.pristine/keys/' are too open.
+It is required that your key directory is NOT accessible by others.
+Run: chmod 700 ~/.pristine/keys/
+```
+
+---
+
 ## Directory Structure
 
 ```
 src/
   core/                     Shared types, interfaces, errors, SQLite factory
+    init.ts                 initPristine(), ModelConfig types, loadModelConfig()
     types.ts                All type definitions (Fact, Memory, Message, etc.)
     interfaces.ts           All module contracts (LlmClient, Embedder, Store, etc.)
     errors.ts               Domain error hierarchy (AppError + subclasses)
-    database.ts             createDatabase() with WAL, integrity check, sqlite-vec
+    database.ts             createDatabase(), createDefaultDatabase()
 
   engine/                   LLM inference backends
     llamacpp/               node-llama-cpp v3 (in-process, grammar-constrained)
@@ -81,8 +137,12 @@ src/
 
   privacy/                  Privacy pipeline
     index.ts                secureAndRedact(), reveal(), scrubOutput()
+    rotation.ts             rotateKey() — O(1) RSA key rotation via KEK re-wrapping
+    migration.ts            migrateToKek() — migrate legacy RSA-wrapped entries
     keys/
       filesystem.ts         FileSystemKeyManager — persists RSA keys to disk
+    kek/
+      kek-manager.ts        KekManager — KEK generation, caching, AES-256-KW wrapping
     sanitizer/              Placeholder detection, resolution, LLM reentry guards
     classifier/             PII detection
       deterministic/        Regex patterns (credit cards, emails, SSN, phone)
@@ -165,7 +225,7 @@ The engine auto-detects: if Ollama is running with a model available, it uses Ol
 ### Verify Setup
 
 ```bash
-# Run all tests (286+ should pass)
+# Run all tests (357+ should pass)
 npm test
 
 # Type check
@@ -173,6 +233,87 @@ npm run typecheck
 
 # Lint
 npm run lint
+```
+
+---
+
+## Initialization
+
+Call `initPristine()` once at startup. It creates the full `~/.pristine/` directory tree, writes a default `models.json` if one doesn't exist, and creates the SQLite database.
+
+```typescript
+import { initPristine } from './src/core/init.js';
+
+const { config, baseDir, databasePath } = initPristine();
+// Creates: ~/.pristine/, keys/ (0o700), data/ (0o700), models/,
+//          models.json (Ollama defaults), data/pristine.db
+```
+
+Idempotent: safe to call on every startup. Existing config and data are preserved.
+
+---
+
+## Model Configuration
+
+Pristine uses `~/.pristine/models.json` as the source of truth for which LLM engine and model to use. It is auto-created by `initPristine()` with Ollama defaults.
+
+### Default config (auto-created)
+
+```json
+{
+  "privacy": { "engine": "ollama", "model": "llama3.2:latest" },
+  "memory": { "engine": "ollama", "model": "llama3.2:latest" }
+}
+```
+
+Each pipeline (`privacy` for PII classification, `memory` for fact extraction) can use a different engine or model.
+
+### Using Ollama
+
+Install Ollama, pull a model, and Pristine works out of the box:
+
+```bash
+ollama pull llama3.2
+ollama serve
+```
+
+Optional fields: `host` (defaults to `OLLAMA_HOST` env var or `localhost:11434`).
+
+### Using llama.cpp
+
+Edit `~/.pristine/models.json` to point to your GGUF file:
+
+```json
+{
+  "privacy": { "engine": "llamacpp", "path": "/absolute/path/to/model.gguf" },
+  "memory": { "engine": "llamacpp", "path": "/absolute/path/to/model.gguf" }
+}
+```
+
+Optional fields: `gpu` (`auto`, `metal`, `cuda`, `vulkan`, or `false`).
+
+Common GGUF locations if you already have models: `~/.lmstudio/models/`, `~/llama.cpp/models/`.
+
+### Loading clients
+
+```typescript
+import { createLlmClients } from './src/engine/index.js';
+
+const { privacyClient, memoryClient } = createLlmClients();
+// Reads models.json, returns one or two LlmClient instances
+// Same instance returned when both pipelines have identical config
+```
+
+### SDK escape hatch
+
+SDK developers can construct clients directly, bypassing `models.json`:
+
+```typescript
+import { OllamaClient } from './src/engine/ollama/index.js';
+import { LlamaCppClient } from './src/engine/llamacpp/index.js';
+
+const client = new OllamaClient({ model: 'llama3.2:latest' });
+const llamaClient = new LlamaCppClient({ modelPath: '/path/to/model.gguf' });
 ```
 
 ---
@@ -195,7 +336,7 @@ Input: "My email is alice@example.com and I live at 123 Main St"
    "My email is [SENSITIVE:email_address:abc-123] and I live at [SENSITIVE:physical_address:def-456]"
   |
   v
-3. ENCRYPT + VAULT (per placeholder: AES-256-GCM + RSA key wrapping)
+3. ENCRYPT + VAULT (per placeholder: AES-256-GCM + KEK wrapping via AES-256-KW)
    Original values encrypted and stored in SQLite vault
   |
   v
@@ -205,31 +346,33 @@ Input: "My email is alice@example.com and I live at 123 Main St"
 ### Usage
 
 ```typescript
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { OllamaClient } from './src/engine/ollama/index.js';
+import { initPristine } from './src/core/init.js';
+import { createLlmClients } from './src/engine/index.js';
 import { SqliteVaultStore } from './src/privacy/vault/sqlite/index.js';
 import { FileSystemKeyManager } from './src/privacy/keys/filesystem.js';
+import { KekManager } from './src/privacy/kek/kek-manager.js';
 import { secureAndRedact, reveal, scrubOutput } from './src/privacy/index.js';
 
 // One-time setup
-const db = new Database('./privacy.db');
+const { databasePath, baseDir } = initPristine();
+const db = new Database(databasePath);
 const vaultStore = new SqliteVaultStore(db);
-const client = new OllamaClient({ model: 'llama3.2:latest' });
-const keyManager = new FileSystemKeyManager({ keysDir: join(homedir(), '.pristine/keys') });
+const { privacyClient } = createLlmClients();
+const keyManager = new FileSystemKeyManager({ keysDir: `${baseDir}/keys` });
+const kekManager = new KekManager(db, keyManager);
 
 // Redact PII before sending to an LLM
 const { redactedText, placeholderIds } = await secureAndRedact(
   'My email is alice@example.com and my SSN is 123-45-6789',
-  { client, vaultStore, keyManager, userId: 'user-1' },
+  { client: privacyClient, vaultStore, keyManager, kekManager, userId: 'user-1' },
 );
 // redactedText: "My email is [SENSITIVE:email_address:...] and my SSN is [SENSITIVE:identity_number:...]"
 // Safe to send to any LLM — no PII exposed
 
 // Later: recover original values
 const originalText = await reveal(redactedText, {
-  vaultStore, keyManager, userId: 'user-1',
+  vaultStore, keyManager, kekManager, userId: 'user-1',
 });
 // originalText: "My email is alice@example.com and my SSN is 123-45-6789"
 
@@ -244,15 +387,34 @@ const clean = scrubOutput(someText);
 
 **LLM classifier** (contextual, catches what regex misses):
 - Health conditions, financial info, legal matters, relationships, identity documents
-- Works across languages (Mandarin, Japanese, Spanish, Hindi, etc.)
+- System prompt (what to look out for) is configurable by user
 
 Both run in parallel. Results are merged with overlap deduplication.
 
 ### Encryption
 
-Each PII value is encrypted with AES-256-GCM using a random data encryption key (DEK). The DEK is wrapped with the user's RSA-4096 public key (RSA-OAEP-256). Only the holder of the private key can decrypt. Encrypted values are stored in SQLite — even if the database is compromised, PII is protected.
+Pristine uses a three-layer encryption scheme:
+
+```
+RSA-4096 key pair (per user, persisted to disk)
+  |
+  v wraps (RSA-OAEP-256)
+KEK — Key Encryption Key (per user, 256-bit AES, stored in user_keks table)
+  |
+  v wraps (AES-256-KW, RFC 3394)
+DEK — Data Encryption Key (per PII value, random 256-bit)
+  |
+  v encrypts (AES-256-GCM)
+PII plaintext
+```
+
+Each PII value gets its own random DEK. The DEK is wrapped by a per-user KEK using AES-256-KW (Key Wrap). The KEK itself is wrapped once by the user's RSA-4096 public key and stored in the `user_keks` SQLite table. Only the holder of the RSA private key can decrypt.
+
+This design enables **O(1) key rotation** — rotating the RSA key pair only re-wraps the single KEK, not every DEK in the vault.
 
 ### Key Management
+
+#### RSA Key Pairs
 
 RSA key pairs are managed via the `KeyManager` interface. The default `FileSystemKeyManager` persists keys to disk:
 
@@ -270,6 +432,41 @@ if (created) {
 ```
 
 The `KeyManager` interface is swappable — the `FileSystemKeyManager` can be replaced with an OS Keychain backend (macOS Keychain, Windows Credential Manager) without changing any consumer code.
+
+#### KEK (Key Encryption Key)
+
+The `KekManager` handles the KEK intermediary layer:
+
+- **Auto-generation:** On first use per userId, a random 256-bit KEK is generated, wrapped with the user's RSA public key, and stored in the `user_keks` SQLite table. Subsequent calls return the cached plaintext KEK.
+- **Storage:** `user_keks` table with columns: `user_id`, `wrapped_kek` (512-byte RSA-wrapped blob), `key_id` (RSA fingerprint), `algorithm`, `created_at`.
+- **Caching:** Plaintext KEK is held in memory after first retrieval (same threat model as RSA private key in process memory). `clearCache()` forces re-read from DB.
+
+#### Key Rotation
+
+`rotateKey()` generates a new RSA key pair and re-wraps the existing KEK — O(1) regardless of vault size:
+
+```typescript
+import { rotateKey } from './src/privacy/rotation.js';
+
+// Rotate the RSA key pair for a user
+// Generates new RSA-4096 key pair, re-wraps KEK, saves new keys
+await rotateKey(userId, keyManager, kekManager);
+
+// All existing vault entries remain decryptable — KEK unchanged, only its RSA wrapping changed
+const original = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
+```
+
+#### Migrating Legacy Entries
+
+Entries created before the KEK layer (wrapped directly by RSA) can be migrated:
+
+```typescript
+import { migrateToKek } from './src/privacy/migration.js';
+
+// Re-wraps all RSA-wrapped DEKs with the user's KEK
+// Runs in a single transaction, idempotent
+const { migrated, skipped } = await migrateToKek(userId, keyManager, kekManager, db);
+```
 
 ---
 
@@ -543,7 +740,7 @@ interface LlmClient {
 
 1. Create `src/engine/<name>/index.ts` implementing `LlmClient`
 2. Add config type to `src/engine/types.ts`
-3. Update `src/engine/index.ts` auto-detect factory
+3. Add engine name to `models.json` validation in `src/core/init.ts`
 
 Existing implementations for reference:
 - `src/engine/llamacpp/` — in-process, grammar-constrained via `node-llama-cpp`
@@ -586,7 +783,7 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ### Commands
 
 ```bash
-npm test              # Run all tests (286+)
+npm test              # Run all tests (357+)
 npm run typecheck     # TypeScript strict mode check
 npm run lint          # ESLint + Prettier
 npm run test:watch    # Watch mode
@@ -611,8 +808,8 @@ Work is organized into sprints (see `docs/sprints/`). Each sprint has stories wi
 | 002 | Shared Infrastructure (LLM engines, embedder, models) | Complete |
 | 003 | Privacy Pipeline (sanitizer, classifier, vault) | Complete |
 | 004 | Memory Pipeline — Foundations (temporal, extractor, store) | Complete |
-| 004b | Key Management (KeyManager interface, FileSystemKeyManager) | In Progress |
-| 004c | KEK Intermediary (AES-256-KW wrapping, key rotation) | Planned |
+| 004b | Key Management (KeyManager interface, FileSystemKeyManager) | Complete |
+| 004c | KEK Intermediary (AES-256-KW wrapping, key rotation) | Complete |
 | 005 | Memory Pipeline — Processing (consolidator, query analyzer, retriever) | Planned |
 | 006 | Memory Pipeline — Orchestrator (ingest + retrieve pipelines) | Planned |
 

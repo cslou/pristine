@@ -172,6 +172,29 @@ describe('loadModelConfig', () => {
 
     expect(() => loadModelConfig(dir)).toThrow(ConfigError);
     expect(() => loadModelConfig(dir)).toThrow(/GGUF file not found/);
+    expect(() => loadModelConfig(dir)).toThrow(/Update the path in/);
+    expect(() => loadModelConfig(dir)).toThrow(/"engine": "llamacpp"/);
+  });
+
+  it('includes example config in malformed JSON error', () => {
+    const dir = makeTmpDir('cfg-example');
+    writeFileSync(join(dir, 'models.json'), '{bad json');
+
+    expect(() => loadModelConfig(dir)).toThrow(/Expected format:/);
+    expect(() => loadModelConfig(dir)).toThrow(/"engine": "ollama"/);
+  });
+
+  it('includes valid engines in unknown engine error', () => {
+    const dir = makeTmpDir('cfg-engines-list');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'vllm', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+      }),
+    );
+
+    expect(() => loadModelConfig(dir)).toThrow(/Valid engines: ollama, llamacpp/);
   });
 
   it('accepts optional host in ollama config', () => {

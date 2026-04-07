@@ -217,6 +217,20 @@ describe('OllamaClient', () => {
     await expect(client.generate(TEST_PARAMS)).rejects.toThrow(AppError);
   });
 
+  it('network error includes ollama serve and models.json guidance', async () => {
+    vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+    const client = new OllamaClient(TEST_CONFIG);
+    try {
+      await client.generate(TEST_PARAMS);
+      expect.unreachable('should have thrown');
+    } catch (error: unknown) {
+      const msg = (error as Error).message;
+      expect(msg).toContain('ollama serve');
+      expect(msg).toContain('models.json');
+    }
+  });
+
   it('isReachable returns true when Ollama responds', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(mockFetchResponse({ models: [] }));
 

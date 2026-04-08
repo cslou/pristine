@@ -322,7 +322,51 @@ const llamaClient = new LlamaCppClient({ modelPath: '/path/to/model.gguf' });
 
 The privacy pipeline detects PII in text, replaces it with encrypted placeholders, and stores the original values in an encrypted vault. The original values can be recovered with the private key.
 
-### Flow
+### Pipeline Architecture
+
+```
+Input text
+  |
+  v
++---------------------------+
+| CLASSIFY                  |   Deterministic (regex) + LLM (contextual)
+| src/privacy/classifier/   |   Run in parallel, merged with overlap dedup
++---------------------------+
+  |
+  | SensitivityReport (entities with type, span, confidence)
+  v
++---------------------------+
+| REDACT                    |   Replace every entity with [SENSITIVE:type:id]
+| src/privacy/vault/        |   No filtering — redacts all entities it receives
+| redaction.ts              |
++---------------------------+
+  |
+  | RedactionResult (redacted text + placeholders)
+  v
++---------------------------+
+| ENCRYPT + VAULT           |   AES-256-GCM per value, KEK wrapping (AES-256-KW)
+| src/privacy/vault/        |   Store encrypted entries in SQLite
++---------------------------+
+  |
+  v
+Output: redacted text + placeholder IDs (safe to send to any LLM)
+```
+
+### Module Responsibilities
+
+Each module has a single responsibility. This allows contributors to optimize classifiers, redaction, or vault independently.
+
+| Module | Responsibility | Does NOT do |
+|--------|---------------|-------------|
+| **Deterministic classifier** (`classifier/deterministic/`) | Regex-based PII detection: credit cards (Luhn-validated), emails, US SSN, phone numbers. High confidence, no LLM needed. | Contextual analysis, false positive filtering |
+| **LLM classifier** (`classifier/llm/`) | Contextual PII detection via LLM: health conditions, financial info, legal matters, relationships, identity documents. Catches what regex misses. | Pattern matching (that's the deterministic classifier's job) |
+| **Combined classifier** (`classifier/combined/`) | Runs both classifiers in parallel, merges reports, deduplicates overlapping spans. Returns final `SensitivityReport`. | Entity filtering or suppression |
+| **Redaction** (`vault/redaction.ts`) | Replaces detected entities with `[SENSITIVE:type:id]` placeholders. Pure function: entities in, placeholders out. | Classification decisions, false positive filtering, heuristic checks |
+| **Vault** (`vault/sqlite/`, `vault/asymmetric-encrypt.ts`) | Encrypts original PII values (AES-256-GCM + KEK wrapping) and stores in SQLite. | Detection, redaction |
+
+**Design principle:** Classifiers decide what is PII. The redaction layer only executes replacements. Over-redaction (fail-closed) is preferred over under-redaction — if a classifier flags something, it gets redacted. False positive improvements belong in the classifier modules, not downstream.
+
+### Flow Example
 
 ```
 Input: "My email is alice@example.com and I live at 123 Main St"
@@ -332,7 +376,7 @@ Input: "My email is alice@example.com and I live at 123 Main St"
    Detected: [email_address @ 12-31, physical_address @ 45-56]
   |
   v
-2. REDACT (replace PII spans with placeholders)
+2. REDACT (replace every detected entity with placeholders)
    "My email is [SENSITIVE:email_address:abc-123] and I live at [SENSITIVE:physical_address:def-456]"
   |
   v
@@ -745,6 +789,26 @@ interface LlmClient {
 Existing implementations for reference:
 - `src/engine/llamacpp/` — in-process, grammar-constrained via `node-llama-cpp`
 - `src/engine/ollama/` — HTTP-based, structured output via Ollama API
+
+### Adding a New Classifier
+
+The combined classifier merges results from multiple sources. To add a third classifier (e.g., a rules engine or industry-specific patterns):
+
+1. Implement the `SensitivityClassifier` interface:
+
+```typescript
+// src/core/interfaces.ts
+interface SensitivityClassifier {
+  classify(text: string): Promise<SensitivityReport>;
+}
+```
+
+2. Create `src/privacy/classifier/<name>/index.ts` implementing the interface
+3. Update `src/privacy/classifier/combined/index.ts` to run your classifier in parallel with the existing two and merge the results
+
+The combined classifier's `mergeReports()` handles overlap deduplication automatically — wider spans and higher confidence entities win when two classifiers detect the same region.
+
+The redaction layer does not filter entities. If your classifier reports an entity, it will be redacted. Tune precision in your classifier, not downstream.
 
 ### Adding a New Model
 

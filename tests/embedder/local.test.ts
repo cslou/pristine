@@ -176,14 +176,13 @@ describe('LocalEmbedder', () => {
     expect(extractor).toHaveBeenCalledTimes(3);
   });
 
-  it('embedBatch() propagates extractor error as EmbedderError via embed()', async () => {
+  it('embedBatch() propagates raw extractor error to the caller', async () => {
     const extractor = vi.fn().mockRejectedValue(new Error('inference failed'));
     mockPipeline.mockResolvedValue(extractor);
 
     const embedder = new LocalEmbedder();
 
-    // embed() calls embedBatch internally, loadPipeline succeeds but extractor fails
-    // The error propagates directly since it's not caught in embedBatch
+    // loadPipeline succeeds but extractor throws — the raw error is not wrapped
     await expect(embedder.embedBatch(['will fail'])).rejects.toThrow('inference failed');
   });
 

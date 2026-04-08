@@ -106,10 +106,16 @@ class LocalConsolidator implements Consolidator {
       'Evaluate each fact below against its similar existing memories and return one decision per fact.\n\n' +
       sections.join('\n\n');
 
-    const maxTokens = withSimilar.length === 1 ? DEFAULT_SINGLE_MAX_TOKENS : DEFAULT_BATCH_MAX_TOKENS;
+    const maxTokens =
+      withSimilar.length === 1 ? DEFAULT_SINGLE_MAX_TOKENS : DEFAULT_BATCH_MAX_TOKENS;
     const validFactIndices = new Set(withSimilar.map(({ index }) => index));
 
-    const batchResults = await this.callWithRetry(prompt, maxTokens, validTargetIds, validFactIndices);
+    const batchResults = await this.callWithRetry(
+      prompt,
+      maxTokens,
+      validTargetIds,
+      validFactIndices,
+    );
     const allResults = [...autoAddResults, ...batchResults].sort(
       (a, b) => a.factIndex - b.factIndex,
     );
@@ -117,9 +123,10 @@ class LocalConsolidator implements Consolidator {
     return { results: allResults, idRemap: indexToUuid };
   }
 
-  private buildIdRemaps(
-    requests: ReadonlyArray<{ similarMemories: readonly Fact[] }>,
-  ): { uuidToIndex: Map<string, string>; indexToUuid: Map<string, string> } {
+  private buildIdRemaps(requests: ReadonlyArray<{ similarMemories: readonly Fact[] }>): {
+    uuidToIndex: Map<string, string>;
+    indexToUuid: Map<string, string>;
+  } {
     const uuidToIndex = new Map<string, string>();
     const indexToUuid = new Map<string, string>();
     let nextIndex = 0;
@@ -261,8 +268,7 @@ class LocalConsolidator implements Consolidator {
     return {
       action: typed.action,
       mergedText: typeof typed.mergedText === 'string' ? typed.mergedText : undefined,
-      targetMemoryId:
-        typeof typed.targetMemoryId === 'string' ? typed.targetMemoryId : undefined,
+      targetMemoryId: typeof typed.targetMemoryId === 'string' ? typed.targetMemoryId : undefined,
       factIndex: typed.factIndex,
       supersessionReason:
         typeof typed.supersessionReason === 'string' ? typed.supersessionReason : undefined,
@@ -274,19 +280,12 @@ class LocalConsolidator implements Consolidator {
     result: ConsolidationResult,
     validTargetIds: ReadonlySet<string>,
   ): ConsolidationResult {
-    if (
-      result.action !== 'UPDATE' &&
-      result.action !== 'DELETE' &&
-      result.action !== 'SUPERSEDE'
-    ) {
+    if (result.action !== 'UPDATE' && result.action !== 'DELETE' && result.action !== 'SUPERSEDE') {
       return result;
     }
 
     if (result.action === 'SUPERSEDE') {
-      if (
-        typeof result.targetMemoryId !== 'string' ||
-        !validTargetIds.has(result.targetMemoryId)
-      ) {
+      if (typeof result.targetMemoryId !== 'string' || !validTargetIds.has(result.targetMemoryId)) {
         return { ...result, action: 'ADD' };
       }
 

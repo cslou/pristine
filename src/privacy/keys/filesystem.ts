@@ -18,6 +18,12 @@ interface FileSystemKeyManagerOptions {
   readonly keysDir: string;
 }
 
+const validateUserId = (userId: string): void => {
+  if (userId.includes('/') || userId.includes('\\') || userId.includes('..')) {
+    throw new KeyManagerError(`Invalid userId "${userId}": must not contain "/", "\\", or ".."`);
+  }
+};
+
 const validatePem = (pem: string, kind: 'public' | 'private', filePath: string): void => {
   try {
     if (kind === 'public') {
@@ -70,6 +76,7 @@ export class FileSystemKeyManager implements KeyManager {
   }
 
   public async getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus> {
+    validateUserId(userId);
     const cached = this.cache.get(userId);
     if (cached) {
       return { ...cached, created: false };
@@ -99,6 +106,7 @@ export class FileSystemKeyManager implements KeyManager {
     userId: string,
     keyPair: { publicKey: string; privateKey: string },
   ): Promise<void> {
+    validateUserId(userId);
     validatePem(keyPair.publicKey, 'public', '(input)');
     validatePem(keyPair.privateKey, 'private', '(input)');
     this.writeToDisk(userId, keyPair.publicKey, keyPair.privateKey);

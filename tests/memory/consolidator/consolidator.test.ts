@@ -307,6 +307,37 @@ describe('batch consolidation', () => {
       ]),
     ).rejects.toThrow('Consolidator batch response contains out-of-range factIndex: 99');
   });
+
+  it('throws when LLM returns fewer decisions than requested', async () => {
+    const client = createMockClient(decisionsResponse([{ factIndex: 0, action: 'NOOP' }]));
+    const consolidator = createConsolidator(client);
+
+    await expect(
+      consolidator.consolidateBatch([
+        { newFact: { text: 'fact A' }, similarMemories: [{ id: 'uuid-1', text: 'mem A' }] },
+        { newFact: { text: 'fact B' }, similarMemories: [{ id: 'uuid-2', text: 'mem B' }] },
+      ]),
+    ).rejects.toThrow('Consolidator batch response has 1 decisions, expected 2.');
+  });
+
+  it('retries on decision count mismatch then succeeds', async () => {
+    const shortResponse = decisionsResponse([{ factIndex: 0, action: 'NOOP' }]);
+    const fullResponse = decisionsResponse([
+      { factIndex: 0, action: 'NOOP' },
+      { factIndex: 1, action: 'ADD', mergedText: 'new' },
+    ]);
+    const client: LlmClient = {
+      generate: vi.fn().mockResolvedValueOnce(shortResponse).mockResolvedValueOnce(fullResponse),
+    };
+    const consolidator = createConsolidator(client, { maxRetries: 2, baseDelayMs: 1 });
+    const batch = await consolidator.consolidateBatch([
+      { newFact: { text: 'fact A' }, similarMemories: [{ id: 'uuid-1', text: 'mem A' }] },
+      { newFact: { text: 'fact B' }, similarMemories: [{ id: 'uuid-2', text: 'mem B' }] },
+    ]);
+
+    expect(client.generate).toHaveBeenCalledTimes(2);
+    expect(batch.results).toHaveLength(2);
+  });
 });
 
 describe('SUPERSEDE validation', () => {

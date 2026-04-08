@@ -205,6 +205,9 @@ class LocalConsolidator implements Consolidator {
       if (error.message === 'Consolidator response payload is invalid.') {
         return true;
       }
+      if (error.message.startsWith('Consolidator batch response has ')) {
+        return true;
+      }
       return false;
     }
 
@@ -222,6 +225,12 @@ class LocalConsolidator implements Consolidator {
   ): ConsolidationResult[] {
     if (!response || !Array.isArray(response.decisions)) {
       throw new ConsolidationError('Consolidator batch response missing decisions array.');
+    }
+
+    if (response.decisions.length !== validFactIndices.size) {
+      throw new ConsolidationError(
+        `Consolidator batch response has ${response.decisions.length} decisions, expected ${validFactIndices.size}.`,
+      );
     }
 
     return (response.decisions as unknown[]).map((decision: unknown) => {

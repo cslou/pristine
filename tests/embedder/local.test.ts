@@ -126,4 +126,95 @@ describe('LocalEmbedder', () => {
     await embedder.embed('test again');
     expect(mockPipeline).toHaveBeenCalledTimes(2);
   });
+
+  it('embed() with empty string still calls extractor and returns vector', async () => {
+    const extractor = createMockExtractor(768);
+    mockPipeline.mockResolvedValue(extractor);
+
+    const embedder = new LocalEmbedder();
+    const vector = await embedder.embed('');
+
+    expect(extractor).toHaveBeenCalledTimes(1);
+    expect(vector).toHaveLength(768);
+  });
+
+  it('embedBatch() with single text returns single-item result', async () => {
+    const extractor = createMockExtractor(768);
+    mockPipeline.mockResolvedValue(extractor);
+
+    const embedder = new LocalEmbedder();
+    const results = await embedder.embedBatch(['single text']);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toHaveLength(768);
+    expect(extractor).toHaveBeenCalledTimes(1);
+  });
+
+  it('embed() returns plain number[] not Float32Array', async () => {
+    const extractor = createMockExtractor(768);
+    mockPipeline.mockResolvedValue(extractor);
+
+    const embedder = new LocalEmbedder();
+    const vector = await embedder.embed('test');
+
+    expect(Array.isArray(vector)).toBe(true);
+    expect(vector).not.toBeInstanceOf(Float32Array);
+  });
+
+  it('embedBatch() processes texts sequentially (one extractor call per text)', async () => {
+    const callOrder: string[] = [];
+    const extractor = vi.fn().mockImplementation((text: string) => {
+      callOrder.push(text);
+      return Promise.resolve({ data: new Float32Array(768).fill(0.1) });
+    });
+    mockPipeline.mockResolvedValue(extractor);
+
+    const embedder = new LocalEmbedder();
+    await embedder.embedBatch(['alpha', 'bravo', 'charlie']);
+
+    expect(callOrder).toEqual(['alpha', 'bravo', 'charlie']);
+    expect(extractor).toHaveBeenCalledTimes(3);
+  });
+
+  it('embedBatch() propagates extractor error as EmbedderError via embed()', async () => {
+    const extractor = vi.fn().mockRejectedValue(new Error('inference failed'));
+    mockPipeline.mockResolvedValue(extractor);
+
+    const embedder = new LocalEmbedder();
+
+    // embed() calls embedBatch internally, loadPipeline succeeds but extractor fails
+    // The error propagates directly since it's not caught in embedBatch
+    await expect(embedder.embedBatch(['will fail'])).rejects.toThrow('inference failed');
+  });
+
+  it('concurrent embed() calls share the same pipeline load', async () => {
+    const extractor = createMockExtractor(768);
+    let resolveLoad: ((value: ReturnType<typeof vi.fn>) => void) | null = null;
+    mockPipeline.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+
+    const embedder = new LocalEmbedder();
+    const p1 = embedder.embed('first');
+    const p2 = embedder.embed('second');
+
+    // Both calls should be waiting on the same pipeline promise
+    expect(mockPipeline).toHaveBeenCalledTimes(1);
+
+    // Resolve the pipeline load
+    resolveLoad!(extractor);
+    await Promise.all([p1, p2]);
+
+    // Still only one pipeline call
+    expect(mockPipeline).toHaveBeenCalledTimes(1);
+    expect(extractor).toHaveBeenCalledTimes(2);
+  });
+
+  it('dispose() is safe to call when pipeline was never loaded', async () => {
+    const embedder = new LocalEmbedder();
+    await expect(embedder.dispose()).resolves.toBeUndefined();
+  });
 });

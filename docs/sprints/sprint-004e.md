@@ -135,16 +135,16 @@ Stories 1 and 2 are independent — they touch different files and can run in pa
 
 #### Story 3: Document privacy pipeline architecture and module responsibilities
 - **Story Checklist:**
-  - [ ] Follows sprint template (acceptance criteria, testing approach, planned commits)
-  - [ ] Within size limits (max 5 commits; split if larger)
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed and have sub-agent review again until they state that it is ok (fixes applied or disagreements noted)
-  - [ ] Each AC verified against git diff and test output before marking done
-  - [ ] Ready for Lou
+  - [x] Follows sprint template (acceptance criteria, testing approach, planned commits)
+  - [x] Within size limits (max 5 commits; split if larger)
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed and have sub-agent review again until they state that it is ok (fixes applied or disagreements noted)
+  - [x] Each AC verified against git diff and test output before marking done
+  - [x] Ready for Lou
 - **Review:**
-  - Reviewer: *(sub-agent session ID)*
-  - Findings: *(summary of review feedback)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
+  - Reviewer: Greptile
+  - Findings: P2 — combined classifier not shown as separate stage in diagram; sprint checklist not checked
+  - Resolution: agreed + fixed in follow-up commit
 - **As a** developer, **I want** clear documentation of the privacy pipeline's module boundaries and each module's single responsibility, **so that** contributors can optimize classifiers, redaction, or vault independently without breaking the pipeline contract.
 - **Dependencies:** Stories 1-2
 - **Coding Agent:** claude

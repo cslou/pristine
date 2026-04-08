@@ -327,25 +327,30 @@ The privacy pipeline detects PII in text, replaces it with encrypted placeholder
 ```
 Input text
   |
-  v
+  +---> Deterministic classifier (regex: credit cards, emails, SSN, phone)
+  |     src/privacy/classifier/deterministic/
+  |
+  +---> LLM classifier (contextual: health, financial, relationships)
+  |     src/privacy/classifier/llm/
+  |
+  v (both run in parallel)
 +---------------------------+
-| CLASSIFY                  |   Deterministic (regex) + LLM (contextual)
-| src/privacy/classifier/   |   Run in parallel, merged with overlap dedup
+| MERGE + DEDUP             |   Combine results, deduplicate overlapping spans
+| classifier/combined/      |   Wider spans + higher confidence win
 +---------------------------+
   |
   | SensitivityReport (entities with type, span, confidence)
   v
 +---------------------------+
 | REDACT                    |   Replace every entity with [SENSITIVE:type:id]
-| src/privacy/vault/        |   No filtering — redacts all entities it receives
-| redaction.ts              |
+| vault/redaction.ts        |   No filtering — redacts all entities it receives
 +---------------------------+
   |
   | RedactionResult (redacted text + placeholders)
   v
 +---------------------------+
 | ENCRYPT + VAULT           |   AES-256-GCM per value, KEK wrapping (AES-256-KW)
-| src/privacy/vault/        |   Store encrypted entries in SQLite
+| vault/sqlite/             |   Store encrypted entries in SQLite
 +---------------------------+
   |
   v

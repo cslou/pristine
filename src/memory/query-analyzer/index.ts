@@ -1,5 +1,6 @@
 import type { LlmClient, QueryAnalyzer } from '../../core/interfaces.js';
 import type { AnalyzedQuery, QueryContext, QueryIntent } from '../../core/types.js';
+import { AppError } from '../../core/errors.js';
 import { assertNoLlmReentry } from '../../privacy/sanitizer/index.js';
 import { buildQueryAnalysisPrompt } from './prompts.js';
 import { QUERY_ANALYSIS_SCHEMA } from './schema.js';
@@ -74,13 +75,13 @@ class LocalQueryAnalyzer implements QueryAnalyzer {
 
   private validatePayload(payload: unknown): AnalyzedQuery {
     if (typeof payload !== 'object' || payload === null) {
-      throw new Error('Query analyzer response payload is invalid.');
+      throw new AppError('Query analyzer response payload is invalid.');
     }
 
     const typed = payload as QueryAnalysisResponse;
 
     if (!isQueryIntent(typed.intent)) {
-      throw new Error('Query analyzer payload intent is invalid.');
+      throw new AppError('Query analyzer payload intent is invalid.');
     }
 
     if (
@@ -88,11 +89,11 @@ class LocalQueryAnalyzer implements QueryAnalyzer {
       !Number.isFinite(typed.suggestedTopK) ||
       typed.suggestedTopK <= 0
     ) {
-      throw new Error('Query analyzer payload suggestedTopK must be a positive finite number.');
+      throw new AppError('Query analyzer payload suggestedTopK must be a positive finite number.');
     }
 
     if (typeof typed.rewrittenQuery !== 'string' || typed.rewrittenQuery.length === 0) {
-      throw new Error('Query analyzer payload rewrittenQuery must be a non-empty string.');
+      throw new AppError('Query analyzer payload rewrittenQuery must be a non-empty string.');
     }
 
     const filters = this.validateFilters(typed.filters);

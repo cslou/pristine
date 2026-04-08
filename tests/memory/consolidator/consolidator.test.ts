@@ -168,6 +168,7 @@ describe('consolidator', () => {
 
     expect(result.action).toBe('ADD');
     expect(result.mergedText).toBe('merged memory text');
+    expect(result.targetMemoryId).toBeUndefined();
   });
 
   it('downgrades missing targetMemoryId DELETE to NOOP', async () => {
@@ -180,6 +181,7 @@ describe('consolidator', () => {
     ]);
 
     expect(result.action).toBe('NOOP');
+    expect(result.targetMemoryId).toBeUndefined();
   });
 });
 
@@ -369,6 +371,8 @@ describe('SUPERSEDE validation', () => {
     const result = await consolidator.consolidate({ text: 'new' }, [{ id: 'uuid-1', text: 'old' }]);
 
     expect(result.action).toBe('ADD');
+    expect(result.targetMemoryId).toBeUndefined();
+    expect(result.supersessionReason).toBeUndefined();
   });
 
   it('downgrades SUPERSEDE to ADD when mergedText is missing', async () => {
@@ -386,6 +390,8 @@ describe('SUPERSEDE validation', () => {
     const result = await consolidator.consolidate({ text: 'new' }, [{ id: 'uuid-1', text: 'old' }]);
 
     expect(result.action).toBe('ADD');
+    expect(result.targetMemoryId).toBeUndefined();
+    expect(result.supersessionReason).toBeUndefined();
   });
 
   it('downgrades SUPERSEDE to ADD when supersessionReason is missing', async () => {
@@ -403,6 +409,8 @@ describe('SUPERSEDE validation', () => {
     const result = await consolidator.consolidate({ text: 'new' }, [{ id: 'uuid-1', text: 'old' }]);
 
     expect(result.action).toBe('ADD');
+    expect(result.targetMemoryId).toBeUndefined();
+    expect(result.supersessionReason).toBeUndefined();
   });
 });
 
@@ -505,6 +513,19 @@ describe('consolidation prompt content', () => {
       systemPrompt: string;
     };
     expect(call.systemPrompt).toBe(customPrompt);
+  });
+
+  it('uses maxTokens config override', async () => {
+    const client = createMockClient(decisionsResponse([{ factIndex: 0, action: 'NOOP' }]));
+    const consolidator = createConsolidator(client, { maxTokens: 2048 });
+    await consolidator.consolidateBatch([
+      { newFact: { text: 'test' }, similarMemories: [{ id: 'uuid-1', text: 'existing' }] },
+    ]);
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      maxTokens: number;
+    };
+    expect(call.maxTokens).toBe(2048);
   });
 });
 

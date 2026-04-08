@@ -29,12 +29,14 @@ interface ConsolidationDecisionsResponse {
 
 class LocalConsolidator implements Consolidator {
   private readonly client: LlmClient;
+  private readonly maxTokens: number | undefined;
   private readonly maxRetries: number;
   private readonly baseDelayMs: number;
   private readonly systemPrompt: string | undefined;
 
   public constructor(client: LlmClient, config: ConsolidatorConfig = {}) {
     this.client = client;
+    this.maxTokens = config.maxTokens;
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.baseDelayMs = config.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
     this.systemPrompt = config.systemPrompt;
@@ -107,7 +109,8 @@ class LocalConsolidator implements Consolidator {
       sections.join('\n\n');
 
     const maxTokens =
-      withSimilar.length === 1 ? DEFAULT_SINGLE_MAX_TOKENS : DEFAULT_BATCH_MAX_TOKENS;
+      this.maxTokens ??
+      (withSimilar.length === 1 ? DEFAULT_SINGLE_MAX_TOKENS : DEFAULT_BATCH_MAX_TOKENS);
     const validFactIndices = new Set(withSimilar.map(({ index }) => index));
 
     const batchResults = await this.callWithRetry(
@@ -286,15 +289,30 @@ class LocalConsolidator implements Consolidator {
 
     if (result.action === 'SUPERSEDE') {
       if (typeof result.targetMemoryId !== 'string' || !validTargetIds.has(result.targetMemoryId)) {
-        return { ...result, action: 'ADD' };
+        return {
+          ...result,
+          action: 'ADD',
+          targetMemoryId: undefined,
+          supersessionReason: undefined,
+        };
       }
 
       if (typeof result.mergedText !== 'string') {
-        return { ...result, action: 'ADD' };
+        return {
+          ...result,
+          action: 'ADD',
+          targetMemoryId: undefined,
+          supersessionReason: undefined,
+        };
       }
 
       if (typeof result.supersessionReason !== 'string') {
-        return { ...result, action: 'ADD' };
+        return {
+          ...result,
+          action: 'ADD',
+          targetMemoryId: undefined,
+          supersessionReason: undefined,
+        };
       }
 
       return result;
@@ -305,10 +323,10 @@ class LocalConsolidator implements Consolidator {
     }
 
     if (result.action === 'UPDATE') {
-      return { ...result, action: 'ADD' };
+      return { ...result, action: 'ADD', targetMemoryId: undefined };
     }
 
-    return { ...result, action: 'NOOP' };
+    return { ...result, action: 'NOOP', targetMemoryId: undefined };
   }
 
   private isAction(value: unknown): value is ConsolidationAction {

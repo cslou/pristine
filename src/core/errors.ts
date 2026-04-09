@@ -102,3 +102,10 @@ export class RetrieverError extends AppError {
     this.name = 'RetrieverError';
   }
 }
+
+export class TurnOrderViolationError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'TurnOrderViolationError';
+  }
+}

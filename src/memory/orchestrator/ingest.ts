@@ -310,7 +310,15 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
         },
       );
 
-      await store.addMemory(userRawMemory);
+      try {
+        await store.addMemory(userRawMemory);
+      } catch (error: unknown) {
+        if (isDuplicateKeyError(error)) {
+          // Conversation already ingested — skip pipeline
+          return context;
+        }
+        throw error;
+      }
 
       return appendTurnOrder(
         {

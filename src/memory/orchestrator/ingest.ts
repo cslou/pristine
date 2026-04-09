@@ -129,6 +129,8 @@ const mapMemoryToFact = (memory: Memory): Fact => {
     text: memory.text,
     sourceConversationId: memory.sourceConversationId,
     metadata: memory.metadata,
+    validFrom: memory.validFrom,
+    validUntil: memory.validUntil,
   };
 };
 

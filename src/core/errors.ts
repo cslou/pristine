@@ -109,3 +109,10 @@ export class TurnOrderViolationError extends AppError {
     this.name = 'TurnOrderViolationError';
   }
 }
+
+export class OrchestratorError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'OrchestratorError';
+  }
+}

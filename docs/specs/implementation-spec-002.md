@@ -26,7 +26,7 @@ This spec addresses that boundary directly.
 
 1. Make the privacy pipeline easier to reason about.
 2. Close concrete security gaps before further feature work.
-3. Move product policy decisions out of replacement code.
+3. Move resolution and false-positive filtering decisions out of replacement code.
 4. Add a post-redaction guardrail before vault writes.
 5. Make reveal + scrub behavior strong enough for local tool/runtime usage.
 
@@ -73,7 +73,7 @@ Current behavior strips placeholder tokens only. It does not scrub:
 - echoed sensitive output
 - obvious structured patterns reflected back from tool calls or local agents
 
-### 3.4 Policy is embedded in redaction
+### 3.4 Resolution heuristics are embedded in redaction
 
 `src/privacy/vault/redaction.ts` currently mixes:
 
@@ -108,7 +108,7 @@ The correct short-term fix is:
 - emit a warning
 - let post-redaction safety scan catch obvious survivors
 
-### 3.7 Policy context windows are too narrow
+### 3.7 Combined-classifier context windows are too narrow
 
 Current heuristics in redaction look only around ~24 characters of context. That is too short for many medical, legal, and relationship cases.
 
@@ -125,10 +125,7 @@ input text
 classifier
   |- deterministic classifier
   |- llm classifier
-  \- merge reports
-  |
-  v
-policy
+  \- combined classifier resolves final entities
   |
   v
 redaction
@@ -149,19 +146,12 @@ Owns:
 - deterministic detection
 - LLM detection
 - merging classifier outputs
+- final conflict resolution between detector outputs
+- bounded heuristic filtering for obvious false positives
+- type normalization decisions that affect the final entity set
 - failure-mode handling (`block` vs `degrade`)
 
 Returns `SensitivityReport`.
-
-#### Policy
-
-Owns:
-
-- redact vs suppress decisions
-- context-sensitive rules
-- type normalization decisions that affect whether something redacts
-
-Returns a filtered/finalized sensitivity report suitable for replacement.
 
 #### Redaction
 
@@ -171,7 +161,7 @@ Owns:
 - placeholder generation
 - placeholder metadata generation
 
-It should not contain product-policy branching.
+It should not contain replacement-time branching.
 
 #### Safety scan
 
@@ -187,7 +177,6 @@ It is a guardrail, not a primary classifier.
 Owns:
 
 - classifier lifecycle
-- policy invocation
 - redaction invocation
 - safety scan invocation
 - returning a combined pipeline result
@@ -430,7 +419,6 @@ This is a cheap defense-in-depth layer that protects against classifier or redac
 Add a standalone pipeline wrapper that composes:
 
 - classifier
-- policy
 - redactor
 - safety scan
 
@@ -445,10 +433,9 @@ createPrivacyPipeline(...)
 `classifyAndRedact(text)` should:
 
 1. call classifier
-2. call policy on classifier output
-3. call redactor if final report has entities
-4. call safety scan on redacted output
-5. return `ClassificationPipelineResult`
+2. call redactor if final report has entities
+3. call safety scan on redacted output
+4. return `ClassificationPipelineResult`
 
 #### Why
 
@@ -498,6 +485,8 @@ onLlmFailure: 'block' | 'degrade'
 
 - keep default behavior `block`
 - if degrade mode is enabled, emit report warnings
+- absorb the current keep/drop heuristics that must live upstream of redaction
+- keep all conflict resolution between deterministic and LLM outputs here
 
 #### Non-goal
 
@@ -534,7 +523,7 @@ This avoids incorrect full-text vaulting/redaction while preserving visibility t
 
 #### Change
 
-Remove product policy logic from redaction.
+Remove resolution logic from redaction.
 
 #### Required behavior
 
@@ -546,7 +535,7 @@ Redaction should only:
 
 #### Move out
 
-The following kind of logic should move into policy:
+The following kind of logic should move into the combined classifier:
 
 - travel-date suppression
 - vague-address suppression
@@ -559,21 +548,16 @@ Replacement code should be deterministic and boring.
 
 ---
 
-### 7.8 Policy module
+### 7.8 Combined-classifier resolution heuristics
 
 #### Change
 
-Add a dedicated policy module under `src/privacy/` or `src/privacy/classifier/` depending on module layout preference. Recommended location:
-
-```text
-src/privacy/policy.ts
-```
+Keep the heuristic resolution logic in the combined classifier instead of introducing a separate policy module at this stage.
 
 #### Required behavior
 
-Policy must:
+The combined classifier must:
 
-- decide redact vs suppress
 - widen context windows to approximately:
   - 200 chars leading
   - 80 chars trailing
@@ -581,7 +565,7 @@ Policy must:
 
 #### Why
 
-This is the real product logic layer. It needs a first-class home.
+This repo does not need a separate policy layer yet. The current scope is better served by a single resolver inside the combined classifier, while keeping redaction purely mechanical.
 
 ---
 
@@ -612,15 +596,15 @@ Files:
 - `src/privacy/index.ts`
 - integration tests
 
-### Step 4: Policy extraction
+### Step 4: Combined-classifier resolution cleanup
 
 Files:
 
-- `src/privacy/policy.ts` (new)
+- `src/privacy/classifier/combined/index.ts`
 - `src/privacy/vault/redaction.ts`
-- policy tests (new or ported)
+- combined-classifier tests (new or ported)
 
-### Step 5: Widen policy context windows
+### Step 5: Widen combined-classifier context windows
 
 Can be done as part of step 4, but should be explicitly verified by tests.
 
@@ -669,7 +653,7 @@ Must add or update tests for:
 - safety scan ignoring placeholder tokens
 - `reveal()` returning `{ text, revealedValues }`
 - `scrubOutput(text, revealedValues)` removing echoed plaintext
-- policy suppress vs redact decisions
+- combined-classifier suppress vs redact decisions
 - LLM grounding skip + warning behavior
 
 ### 9.2 Integration tests
@@ -697,7 +681,7 @@ Post-redaction safety-scan failures are not an exception path by default. They a
 - [ ] `reveal()` returns `{ text, revealedValues }`
 - [ ] `scrubOutput(text, revealedValues)` scrubs revealed plaintext and placeholders
 - [ ] `secureAndRedact()` uses a privacy pipeline wrapper instead of constructing a classifier inline
-- [ ] Product policy no longer lives inside `redaction.ts`
+- [ ] Resolution/filtering logic no longer lives inside `redaction.ts`
 - [ ] LLM span-grounding fallback skips + warns instead of redacting full input
 - [ ] `npm run typecheck` passes
 - [ ] `npm test` passes

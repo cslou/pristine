@@ -167,3 +167,83 @@ describe('combined classifier LLM failure modes', () => {
     );
   });
 });
+
+describe('combined classifier resolution heuristics', () => {
+  const classifyWithFindings = async (
+    text: string,
+    findings: ReadonlyArray<{
+      readonly type: string;
+      readonly confidence: number;
+      readonly reasoning: string;
+      readonly text: string;
+    }>,
+  ) => {
+    const client: LlmClient = {
+      generate: vi.fn().mockResolvedValue({ findings }),
+    };
+
+    const classifier = createCombinedClassifier(client);
+    return classifier.classify(text);
+  };
+
+  it('suppresses non-sensitive travel scheduling text', async () => {
+    const text = 'Itinerary update: next Tuesday departure is at 9am from Terminal 2.';
+    const report = await classifyWithFindings(text, [
+      {
+        type: 'travel_date',
+        confidence: 0.92,
+        reasoning: 'Travel scheduling text with a departure date/time.',
+        text: 'next Tuesday departure is at 9am',
+      },
+    ]);
+
+    expect(report.entities).toHaveLength(0);
+    expect(report.hasSensitiveContent).toBe(false);
+  });
+
+  it('keeps health-related findings even when they mention dates', async () => {
+    const text = 'Medical update: diagnosed with diabetes on March 10 after lab work.';
+    const report = await classifyWithFindings(text, [
+      {
+        type: 'health',
+        confidence: 0.94,
+        reasoning: 'Person-linked medical condition.',
+        text: 'diagnosed with diabetes on March 10',
+      },
+    ]);
+
+    expect(report.entities).toHaveLength(1);
+    expect(report.hasSensitiveContent).toBe(true);
+  });
+
+  it('suppresses vague physical addresses without address context', async () => {
+    const text = 'Meet me near Main Street later.';
+    const report = await classifyWithFindings(text, [
+      {
+        type: 'physical_address',
+        confidence: 0.9,
+        reasoning: 'Address-like phrase.',
+        text: 'Main Street',
+      },
+    ]);
+
+    expect(report.entities).toHaveLength(0);
+    expect(report.hasSensitiveContent).toBe(false);
+  });
+
+  it('keeps DOB-related findings based on wider context windows', async () => {
+    const prefix = 'Notes: '.padEnd(170, 'x');
+    const text = `${prefix}date of birth: 1990-01-01 was entered yesterday.`;
+    const report = await classifyWithFindings(text, [
+      {
+        type: 'other',
+        confidence: 0.89,
+        reasoning: 'Date-like value that may be sensitive.',
+        text: '1990-01-01',
+      },
+    ]);
+
+    expect(report.entities).toHaveLength(1);
+    expect(report.hasSensitiveContent).toBe(true);
+  });
+});

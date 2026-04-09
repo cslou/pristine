@@ -1,7 +1,6 @@
 import type { LlmClient, PrivacyPipeline, SensitivityClassifier } from '../core/interfaces.js';
 import type { ClassificationPipelineResult } from '../core/types.js';
 import { createCombinedClassifier, type CombinedClassifierConfig } from './classifier/combined/index.js';
-import { applyPrivacyPolicy } from './policy.js';
 import { findSafetyViolations } from './safety-scan.js';
 import { redactText } from './vault/redaction.js';
 
@@ -17,8 +16,7 @@ class DefaultPrivacyPipeline implements PrivacyPipeline {
   }
 
   public async classifyAndRedact(text: string): Promise<ClassificationPipelineResult> {
-    const initialReport = await this.classifier.classify(text);
-    const report = applyPrivacyPolicy(text, initialReport);
+    const report = await this.classifier.classify(text);
     const redaction = report.entities.length > 0 ? redactText(text, report) : null;
     const redactedText = redaction?.redactedText ?? text;
     const safetyViolations = findSafetyViolations(redactedText);

@@ -1,3 +1,12 @@
+import type {
+  Consolidator,
+  Embedder,
+  Extractor,
+  QueryAnalyzer,
+  Retriever,
+  Store,
+} from '../../core/interfaces.js';
+
 export type { Orchestrator } from '../../core/interfaces.js';
 export type {
   IngestOptions,
@@ -10,15 +19,6 @@ export type {
 // ---------------------------------------------------------------------------
 // Orchestrator Config (locally defined — references interfaces)
 // ---------------------------------------------------------------------------
-
-import type {
-  Consolidator,
-  Embedder,
-  Extractor,
-  QueryAnalyzer,
-  Retriever,
-  Store,
-} from '../../core/interfaces.js';
 
 export interface OrchestratorConfig {
   readonly extractor: Extractor;

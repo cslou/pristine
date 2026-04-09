@@ -17,8 +17,7 @@ export const CANONICAL_TURN_ORDER_WITHOUT_RESOLVE = Object.freeze([
 
 export type TurnStep = (typeof CANONICAL_TURN_ORDER)[number];
 
-export const CANONICAL_TURN_ORDER_STRING =
-  'store(user) -> search -> LLM -> store(assistant_pre_reveal) -> resolve';
+export const CANONICAL_TURN_ORDER_STRING = [...CANONICAL_TURN_ORDER].join(' -> ');
 
 export const getTurnOrderForMode = (includeResolve: boolean): readonly TurnStep[] =>
   includeResolve ? CANONICAL_TURN_ORDER : CANONICAL_TURN_ORDER_WITHOUT_RESOLVE;

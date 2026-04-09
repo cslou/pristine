@@ -6,7 +6,7 @@ export interface PipelineExecutionResult {
 }
 
 export interface PipelineRunner {
-  readonly steps: PipelineStep[];
+  readonly steps: readonly PipelineStep[];
   registerStep(step: PipelineStep): void;
   run(context: PipelineContext): Promise<PipelineExecutionResult>;
 }

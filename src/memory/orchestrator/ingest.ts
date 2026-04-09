@@ -141,13 +141,14 @@ const toMemoryInput = (
   fact: Fact,
   text: string,
   embedding: number[],
+  sourceConversationId?: string,
 ): AddMemoryInput => {
   return {
     userId,
     text,
     embedding,
     contentHash: createHash('sha256').update(text).digest('hex'),
-    sourceConversationId: fact.sourceConversationId,
+    sourceConversationId: sourceConversationId ?? fact.sourceConversationId,
     metadata: {
       ...fact.metadata,
       memory_origin: ASSISTANT_PRE_REVEAL_MEMORY_ORIGIN,
@@ -184,11 +185,14 @@ const createStoreDecision = async (
   embedding: number[],
   store: Store,
   embedder: Embedder,
+  sourceConversationId?: string,
 ): Promise<string> => {
   const text = memoryTextFromDecision(fact, decision);
 
   if (decision.action === 'ADD') {
-    const memory = await store.addMemory(toMemoryInput(userId, fact, text, embedding));
+    const memory = await store.addMemory(
+      toMemoryInput(userId, fact, text, embedding, sourceConversationId),
+    );
     return memory.id;
   }
 
@@ -207,7 +211,9 @@ const createStoreDecision = async (
       return memory.id;
     } catch (updateError: unknown) {
       if (isDuplicateKeyError(updateError)) {
-        const memory = await store.addMemory(toMemoryInput(userId, fact, text, embedding));
+        const memory = await store.addMemory(
+          toMemoryInput(userId, fact, text, embedding, sourceConversationId),
+        );
         return memory.id;
       }
       throw updateError;
@@ -226,7 +232,13 @@ const createStoreDecision = async (
     }
 
     const supersedeEmbedding = await embedder.embed(decision.mergedText);
-    const newMemoryInput = toMemoryInput(userId, fact, decision.mergedText, supersedeEmbedding);
+    const newMemoryInput = toMemoryInput(
+      userId,
+      fact,
+      decision.mergedText,
+      supersedeEmbedding,
+      sourceConversationId,
+    );
 
     const result = await store.supersedeMemory(
       decision.targetMemoryId,
@@ -243,7 +255,9 @@ const createStoreDecision = async (
     }
 
     await store.deleteMemory(decision.targetMemoryId, userId);
-    const memory = await store.addMemory(toMemoryInput(userId, fact, text, embedding));
+    const memory = await store.addMemory(
+      toMemoryInput(userId, fact, text, embedding, sourceConversationId),
+    );
     return memory.id;
   }
 
@@ -285,9 +299,14 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
       const userId = readUserId(ingestContext);
       const sourceConversationId = readSourceConversationId(ingestContext);
       const conversationText = createConversationText(conversation);
-      const userRawMemory = toConversationMemoryInput(userId, conversationText, sourceConversationId, {
-        memory_origin: USER_RAW_MEMORY_ORIGIN,
-      });
+      const userRawMemory = toConversationMemoryInput(
+        userId,
+        conversationText,
+        sourceConversationId,
+        {
+          memory_origin: USER_RAW_MEMORY_ORIGIN,
+        },
+      );
 
       await store.addMemory(userRawMemory);
 
@@ -351,7 +370,9 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
               limit: SIMILARITY_TOP_K,
               userId,
             })
-            .then((memories: Memory[]) => memories.map((memory: Memory) => mapMemoryToFact(memory))),
+            .then((memories: Memory[]) =>
+              memories.map((memory: Memory) => mapMemoryToFact(memory)),
+            ),
         ),
       );
 
@@ -377,7 +398,8 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
         similarMemories: similarFacts[index] ?? [],
       }));
 
-      const batchResult: ConsolidationBatchResult = await consolidator.consolidateBatch(batchRequests);
+      const batchResult: ConsolidationBatchResult =
+        await consolidator.consolidateBatch(batchRequests);
 
       return appendTurnOrder(
         {
@@ -401,7 +423,8 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
       const idRemap = ingestContext.idRemap;
 
       const memoryIds: string[] = [];
-      const stepErrors = readStepErrors(ingestContext);
+      const sourceConversationId = ingestContext.sourceConversationId;
+      const stepErrors = [...readStepErrors(ingestContext)];
 
       for (let index = 0; index < facts.length; index += 1) {
         const fact = facts[index];
@@ -427,7 +450,15 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
 
         const embedding = embeddings[index] ?? [];
         try {
-          const memoryId = await createStoreDecision(fact, resolvedDecision, userId, embedding, store, embedder);
+          const memoryId = await createStoreDecision(
+            fact,
+            resolvedDecision,
+            userId,
+            embedding,
+            store,
+            embedder,
+            sourceConversationId,
+          );
           if (memoryId.length > 0) {
             memoryIds.push(memoryId);
           }
@@ -465,5 +496,13 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     },
   };
 
-  return [storeUserStep, extractFactsStep, embedStep, searchStep, consolidateStep, storeStep, validateTurnOrderStep];
+  return [
+    storeUserStep,
+    extractFactsStep,
+    embedStep,
+    searchStep,
+    consolidateStep,
+    storeStep,
+    validateTurnOrderStep,
+  ];
 };

@@ -187,17 +187,20 @@ describe('ingest pipeline', () => {
       expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('tracks source conversation ID on stored memories', async () => {
+    it('tracks source conversation ID on all stored memories', async () => {
       const deps = createDeps();
       const pipeline = createPipelineRunner(createIngestPipeline(deps));
       const result = await pipeline.run({ userId: 'user-1', conversation });
 
-      expect(result.context.sourceConversationId).toBeDefined();
-      expect(typeof result.context.sourceConversationId).toBe('string');
+      const contextConvId = result.context.sourceConversationId as string;
+      expect(contextConvId).toBeDefined();
+      expect(typeof contextConvId).toBe('string');
 
-      // user_raw store call includes sourceConversationId
-      const firstAddCall = vi.mocked(deps.store.addMemory).mock.calls[0]?.[0];
-      expect(firstAddCall?.sourceConversationId).toBeDefined();
+      const addMemoryCalls = vi.mocked(deps.store.addMemory).mock.calls;
+      // user_raw call
+      expect(addMemoryCalls[0]?.[0]?.sourceConversationId).toBe(contextConvId);
+      // assistant_pre_reveal call (ADD action)
+      expect(addMemoryCalls[1]?.[0]?.sourceConversationId).toBe(contextConvId);
     });
 
     it('returns memory IDs from store decisions', async () => {
@@ -313,7 +316,7 @@ describe('ingest pipeline', () => {
       expect(vi.mocked(deps.embedder.embed).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('handles DELETE action', async () => {
+    it('handles DELETE action by deleting then adding replacement', async () => {
       const deps = createDeps();
       vi.mocked(deps.consolidator.consolidateBatch).mockResolvedValueOnce({
         results: [{ action: 'DELETE', factIndex: 0, targetMemoryId: 'delete-1' }],
@@ -324,6 +327,8 @@ describe('ingest pipeline', () => {
       const result = await pipeline.run({ userId: 'user-1', conversation });
       expect(result.error).toBeUndefined();
       expect(deps.store.deleteMemory).toHaveBeenCalledWith('delete-1', 'user-1');
+      // DELETE also adds a replacement memory (user_raw + replacement = 2 calls)
+      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     it('handles NOOP action by skipping', async () => {

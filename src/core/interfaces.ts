@@ -176,8 +176,10 @@ export interface Orchestrator {
     options?: IngestOptions,
   ): Promise<IngestResult>;
   retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
-  readonly ingestSteps: PipelineStep[];
-  readonly retrieveSteps: PipelineStep[];
+  store(conversation: readonly Message[], userId: string): Promise<IngestResult>;
+  search(query: string, userId: string, topK?: number): Promise<RetrieveResult>;
+  readonly ingestSteps: readonly PipelineStep[];
+  readonly retrieveSteps: readonly PipelineStep[];
   registerIngestStep(step: PipelineStep): void;
   registerRetrieveStep(step: PipelineStep): void;
 }

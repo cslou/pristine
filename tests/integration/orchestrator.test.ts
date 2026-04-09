@@ -153,7 +153,7 @@ describe.skipIf(skipSlow)(
       expect(uniqueIds.size).toBe(results.memories.length);
     }, 120_000);
 
-    it('temporal search filters by validity', async () => {
+    it('temporal search returns currently valid memories', async () => {
       const conversation: Message[] = [
         { role: 'user', content: 'I currently work at Google but I used to work at Meta.' },
       ];
@@ -161,6 +161,8 @@ describe.skipIf(skipSlow)(
       const result = await orchestrator.ingest(conversation, 'e2e-user-4');
       expect(result.facts.length).toBeGreaterThan(0);
 
+      // All ingested facts have validFrom set to now (by mock), so they are
+      // currently valid. Verify that temporalMode='current' returns them.
       const currentResults = await orchestrator.retrieve(
         'Where does the user work?',
         'e2e-user-4',
@@ -170,6 +172,12 @@ describe.skipIf(skipSlow)(
       );
 
       expect(currentResults.memories.length).toBeGreaterThan(0);
+      // Verify all returned memories have valid temporal state
+      for (const ranked of currentResults.memories) {
+        if (ranked.memory.validUntil) {
+          expect(new Date(ranked.memory.validUntil).getTime()).toBeGreaterThan(Date.now());
+        }
+      }
     }, 120_000);
   },
   600_000,

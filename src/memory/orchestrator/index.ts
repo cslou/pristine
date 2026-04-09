@@ -89,7 +89,7 @@ export const createOrchestrator = (config: OrchestratorConfig): Orchestrator => 
     userId: string,
     _options: IngestOptions = {},
   ): Promise<IngestResult> => {
-    const result = await ingestPipeline.run({ conversation, userId });
+    const result = await ingestPipeline.run({ conversation, userId, ..._options });
 
     const stepErrors = asStepErrors(result.context);
     const pipelineErrors: StepError[] = result.error ? [result.error, ...stepErrors] : stepErrors;

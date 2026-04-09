@@ -38,6 +38,7 @@ interface IngestContext extends PipelineContext {
   turnOrder?: TurnStep[];
   sourceConversationId?: string;
   stepErrors?: StepError[];
+  duplicateDetected?: boolean;
 }
 
 export interface IngestDependencies {
@@ -89,6 +90,10 @@ const readTurnOrder = (context: IngestContext): TurnStep[] => {
 
 const readStepErrors = (context: IngestContext): StepError[] => {
   return Array.isArray(context.stepErrors) ? context.stepErrors : [];
+};
+
+const isDuplicate = (context: IngestContext): boolean => {
+  return context.duplicateDetected === true;
 };
 
 const appendTurnOrder = (context: IngestContext, step: TurnStep): IngestContext => {
@@ -314,8 +319,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
         await store.addMemory(userRawMemory);
       } catch (error: unknown) {
         if (isDuplicateKeyError(error)) {
-          // Conversation already ingested — skip pipeline
-          return context;
+          return { ...context, duplicateDetected: true };
         }
         throw error;
       }
@@ -334,6 +338,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     name: 'extract',
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
       const ingestContext = context as IngestContext;
+      if (isDuplicate(ingestContext)) return context;
       const refTimestamp = ingestContext.referenceTimestamp ?? new Date().toISOString();
       const messages = readConversation(ingestContext);
       const chunks = chunkConversation(messages);
@@ -357,6 +362,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     name: 'embed',
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
       const ingestContext = context as IngestContext;
+      if (isDuplicate(ingestContext)) return context;
       const facts = readFacts(ingestContext);
       const embeddings = await Promise.all(facts.map((fact: Fact) => embedder.embed(fact.text)));
       return {
@@ -370,6 +376,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     name: 'searchSimilar',
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
       const ingestContext = context as IngestContext;
+      if (isDuplicate(ingestContext)) return context;
       const embeddings = readEmbeddings(ingestContext);
       const userId = readUserId(ingestContext);
       const similarFacts = await Promise.all(
@@ -400,6 +407,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     name: 'consolidate',
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
       const ingestContext = context as IngestContext;
+      if (isDuplicate(ingestContext)) return context;
       const facts = readFacts(ingestContext);
       const similarFacts = readSimilarFacts(ingestContext);
 
@@ -426,6 +434,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     name: 'store',
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
       const ingestContext = context as IngestContext;
+      if (isDuplicate(ingestContext)) return context;
       const facts = readFacts(ingestContext);
       const decisions = readDecisions(ingestContext);
       const embeddings = readEmbeddings(ingestContext);
@@ -501,6 +510,7 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
   const validateTurnOrderStep: PipelineStep = {
     name: 'validate-turn-order',
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
+      if (isDuplicate(context as IngestContext)) return context;
       validateConversationTurnOrder(context as IngestContext, expectedTurnOrder);
       return context;
     },

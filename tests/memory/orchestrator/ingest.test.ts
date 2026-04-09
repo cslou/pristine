@@ -250,6 +250,22 @@ describe('ingest pipeline', () => {
       expect(userRawCalls).toHaveLength(0);
     });
 
+    it('skips entire pipeline on duplicate conversation', async () => {
+      const deps = createDeps();
+      const sqliteError = new Error('UNIQUE constraint failed: memories.content_hash');
+      vi.mocked(deps.store.addMemory).mockRejectedValueOnce(sqliteError);
+
+      const pipeline = createPipelineRunner(createIngestPipeline(deps));
+      const result = await pipeline.run({ userId: 'user-1', conversation });
+
+      expect(result.error).toBeUndefined();
+      expect(result.context.duplicateDetected).toBe(true);
+      // No downstream processing — extractor, embedder, consolidator never called
+      expect(deps.extractor.extract).not.toHaveBeenCalled();
+      expect(deps.embedder.embed).not.toHaveBeenCalled();
+      expect(deps.consolidator.consolidateBatch).not.toHaveBeenCalled();
+    });
+
     it('generates content hash from conversation text', async () => {
       const deps = createDeps();
       const pipeline = createPipelineRunner(createIngestPipeline(deps));

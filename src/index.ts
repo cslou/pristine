@@ -1,2 +1,39 @@
-// Public API entry point — populated in later sprints
-export {};
+// ---------------------------------------------------------------------------
+// Client
+// ---------------------------------------------------------------------------
+
+export { PristineLocal } from './client.js';
+export type { PristineLocalConfig } from './client.js';
+export type { SecureAndRedactResult } from './privacy/index.js';
+
+// ---------------------------------------------------------------------------
+// Core types (consumer-facing)
+// ---------------------------------------------------------------------------
+
+export type {
+  AnalyzedQuery,
+  Fact,
+  IngestOptions,
+  IngestResult,
+  Memory,
+  Message,
+  MessageRole,
+  PipelineStep,
+  RankedMemory,
+  RetrieveOptions,
+  RetrieveResult,
+} from './core/types.js';
+
+// ---------------------------------------------------------------------------
+// Interfaces (for DI, custom implementations, and test mocks)
+// ---------------------------------------------------------------------------
+
+export type { Embedder, Extractor, LlmClient, Orchestrator, Store } from './core/interfaces.js';
+
+export type { LlmClients } from './engine/index.js';
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export { AppError, ConfigError, EmbedderError, OrchestratorError } from './core/errors.js';

@@ -19,7 +19,7 @@ interface ClassifySensitivityInput {
 }
 
 interface GroundedFinding {
-  readonly entity: DetectedEntity | null;
+  readonly entity: DetectedEntity;
   readonly warning?: string;
 }
 
@@ -29,8 +29,15 @@ const groundFinding = (finding: LlmSensitivityFinding, sourceText: string): Grou
 
   if (ciIdx < 0) {
     return {
-      entity: null,
-      warning: `Skipped ungroundable LLM finding for type "${finding.type}" with text "${finding.text}".`,
+      entity: {
+        type: finding.type,
+        source: 'llm',
+        confidence: finding.confidence,
+        start: 0,
+        end: sourceText.length,
+        text: sourceText,
+      },
+      warning: `Fail-closed on ungroundable LLM finding for type "${finding.type}" with text "${finding.text}" by redacting the full input span.`,
     };
   }
 
@@ -98,9 +105,7 @@ export class LlmClassifier implements SensitivityClassifier {
       )
       .map((f) => groundFinding(f, text));
 
-    const entities = groundedFindings
-      .map((finding) => finding.entity)
-      .filter((entity): entity is DetectedEntity => entity !== null);
+    const entities = groundedFindings.map((finding) => finding.entity);
     const warnings = groundedFindings
       .map((finding) => finding.warning)
       .filter((warning): warning is string => typeof warning === 'string');

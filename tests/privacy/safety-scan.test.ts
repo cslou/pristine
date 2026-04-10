@@ -50,4 +50,12 @@ describe('safety scan', () => {
     expect(scrubbed).not.toContain('4111 1111 1111 1111');
     expect(scrubbed).not.toContain('api_key=supersecret');
   });
+
+  it('strips placeholders before stand-alone structured scrubbing', () => {
+    const text = 'api_key=[SENSITIVE:secret:11111111-1111-1111-1111-111111111111]';
+    const scrubbed = scrubStructuredSensitivePatterns(text);
+
+    expect(scrubbed).not.toContain('[SENSITIVE:');
+    expect(scrubbed).toBe('api_key=');
+  });
 });

@@ -3,8 +3,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secureAndRedact, reveal, scrubOutput } from '../../src/privacy/index.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
-import type { KeyManager, LlmClient } from '../../src/core/interfaces.js';
-import type { SecureAndRedactResult } from '../../src/core/types.js';
+import type { KeyManager, LlmClient, PrivacyPipeline } from '../../src/core/interfaces.js';
+import type { ClassificationPipelineResult, SecureAndRedactResult } from '../../src/core/types.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 
@@ -182,24 +182,39 @@ describe('privacy pipeline end-to-end', () => {
   });
 
   it('fails closed when post-redaction safety scan finds survivors', async () => {
-    const text = 'Local config api_key=super-secret-value';
-    const mockClient = createMockLlmClient([]);
+    const text = 'Reach me at alice@example.com';
+    const pipeline: PrivacyPipeline = {
+      classifyAndRedact: vi.fn<PrivacyPipeline['classifyAndRedact']>().mockResolvedValue({
+        report: { entities: [], hasSensitiveContent: false },
+        redaction: null,
+        safetyViolations: [
+          {
+            type: 'email_address',
+            source: 'deterministic',
+            confidence: 0.99,
+            start: 12,
+            end: 29,
+            text: 'alice@example.com',
+          },
+        ],
+      } satisfies ClassificationPipelineResult),
+    };
 
     const result = await secureAndRedact(text, {
-      client: mockClient,
       vaultStore,
       keyManager,
       kekManager,
       userId: 'user-e2e-unsafe',
+      pipeline,
     });
 
     expect(result.ok).toBe(false);
     if (result.ok) {
       throw new Error('Expected safety scan to block vault writes');
     }
-    expect(result.redactedText).toContain('api_key=super-secret-value');
+    expect(result.redactedText).toContain('alice@example.com');
     expect(result.safetyViolations).toHaveLength(1);
-    expect(result.safetyViolations[0]!.type).toBe('secret');
+    expect(result.safetyViolations[0]!.type).toBe('email_address');
   });
 
   it('handles unicode PII in round-trip', async () => {

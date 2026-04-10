@@ -130,17 +130,13 @@ describe('PristineLocal', () => {
   });
 
   describe('dispose()', () => {
-    it('calls embedder.dispose() when client owns the embedder', async () => {
+    it('does not dispose DI-provided embedder', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         llmClients: deps.llmClients,
-        // No embedder provided — client creates and owns it
-        // But we can't test this without a real embedder downloading the model.
-        // Instead, test the DI path where we own the embedder mock.
         embedder: deps.embedder,
       });
 
-      // When all deps are DI'd, client does NOT own them
       await client.dispose();
       expect(deps.embedder.dispose).not.toHaveBeenCalled();
     });

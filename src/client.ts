@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
 import type { IngestResult, Message, RetrieveResult } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
@@ -27,6 +28,7 @@ import {
 
 export interface PristineLocalConfig {
   readonly baseDir?: string;
+  readonly keysDir?: string;
   readonly db?: Database.Database;
   readonly llmClients?: LlmClients;
   readonly embedder?: Embedder;
@@ -104,7 +106,8 @@ export class PristineLocal {
       queryAnalyzer,
     });
 
-    const keysDir = init ? `${init.baseDir}/keys` : '';
+    const keysDir =
+      config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
     const keyManager = new FileSystemKeyManager({ keysDir });
     const kekManager = new KekManager(db, keyManager);
     const vaultStore = createSqliteVaultStore(db);

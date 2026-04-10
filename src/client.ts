@@ -49,6 +49,7 @@ export class PristineLocal {
   private readonly vaultStore: VaultStore;
   private readonly ownsDb: boolean;
   private readonly ownsEmbedder: boolean;
+  private readonly ownsLlmClients: boolean;
 
   private constructor(deps: {
     orchestrator: Orchestrator;
@@ -60,6 +61,7 @@ export class PristineLocal {
     vaultStore: VaultStore;
     ownsDb: boolean;
     ownsEmbedder: boolean;
+    ownsLlmClients: boolean;
   }) {
     this.orchestrator = deps.orchestrator;
     this.db = deps.db;
@@ -70,6 +72,7 @@ export class PristineLocal {
     this.vaultStore = deps.vaultStore;
     this.ownsDb = deps.ownsDb;
     this.ownsEmbedder = deps.ownsEmbedder;
+    this.ownsLlmClients = deps.ownsLlmClients;
   }
 
   // -------------------------------------------------------------------------
@@ -86,6 +89,7 @@ export class PristineLocal {
     const db =
       config.db ?? createDefaultDatabase(init?.baseDir ? `${init.baseDir}/data` : undefined);
 
+    const ownsLlmClients = config.llmClients === undefined;
     const llmClients = config.llmClients ?? createLlmClients(init?.baseDir);
 
     const ownsEmbedder = config.embedder === undefined;
@@ -122,6 +126,7 @@ export class PristineLocal {
       vaultStore,
       ownsDb,
       ownsEmbedder,
+      ownsLlmClients,
     });
   }
 
@@ -171,6 +176,15 @@ export class PristineLocal {
   public async dispose(): Promise<void> {
     if (this.ownsEmbedder && 'dispose' in this.embedder) {
       await (this.embedder as { dispose: () => Promise<void> }).dispose();
+    }
+
+    if (this.ownsLlmClients) {
+      const clients = new Set([this.llmClients.privacyClient, this.llmClients.memoryClient]);
+      for (const client of clients) {
+        if ('dispose' in client) {
+          await (client as { dispose: () => Promise<void> }).dispose();
+        }
+      }
     }
 
     if (this.ownsDb) {

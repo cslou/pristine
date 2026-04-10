@@ -1,7 +1,7 @@
 /**
- * SDK integration test — exercises the public API surface only.
- * Imports from src/index.ts (the barrel), not internal modules.
- * Uses DI config: in-memory SQLite + mock LLM + real embedder.
+ * SDK integration test — exercises the public API surface.
+ * Imports from the barrel (src/index.ts) for all business types/classes.
+ * One internal import: createDatabase (loads sqlite-vec extension for in-memory DB).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
@@ -95,7 +95,9 @@ describe.skipIf(skipSlow)(
     });
 
     afterAll(async () => {
-      await client.dispose();
+      if (client) {
+        await client.dispose();
+      }
     });
 
     it('store() + search() round-trip returns matching facts', async () => {

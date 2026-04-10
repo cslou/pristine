@@ -5,12 +5,23 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ tests/ --no-error-on-unmatched-pattern",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "build": "tsc"
+    "build": "tsc -p tsconfig.build.json"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

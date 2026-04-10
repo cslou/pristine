@@ -135,10 +135,15 @@ describe.skipIf(skipSlow)(
     });
 
     it('dispose() completes without error', async () => {
-      // Create a separate client to test dispose independently
+      const mockEmbedder = {
+        embed: async () => Array.from({ length: 768 }, () => 0),
+        embedBatch: async (texts: readonly string[]) =>
+          texts.map(() => Array.from({ length: 768 }, () => 0)),
+      };
       const disposableClient = await PristineLocal.create({
         db: createDatabase(':memory:'),
         llmClients,
+        embedder: mockEmbedder,
       });
       await expect(disposableClient.dispose()).resolves.toBeUndefined();
     });

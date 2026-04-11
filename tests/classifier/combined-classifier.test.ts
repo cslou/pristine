@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCombinedClassifier, mergeReports } from '../../src/privacy/classifier/combined/index.js';
 import { createLlmClassifier } from '../../src/privacy/classifier/llm/index.js';
 import { resolve, clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
-import { ResolveApprovalError } from '../../src/core/errors.js';
+import { ResolveApprovalError, UngroundableLlmFindingError } from '../../src/core/errors.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
 
 describe('mergeReports', () => {
@@ -164,6 +164,27 @@ describe('combined classifier LLM failure modes', () => {
 
     await expect(classifier.classify('Reach me at alice@example.com')).rejects.toThrow(
       /Classification blocked/,
+    );
+  });
+
+  it('blocks on ungroundable LLM findings even when degrade mode is enabled', async () => {
+    const client: LlmClient = {
+      generate: vi.fn().mockResolvedValue({
+        findings: [
+          {
+            type: 'health',
+            confidence: 0.95,
+            reasoning: 'Medical information',
+            text: 'nonexistent span',
+          },
+        ],
+      }),
+    };
+
+    const classifier = createCombinedClassifier(client, { onLlmFailure: 'degrade' });
+
+    await expect(classifier.classify('Different text entirely.')).rejects.toThrow(
+      UngroundableLlmFindingError,
     );
   });
 });

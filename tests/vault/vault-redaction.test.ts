@@ -190,7 +190,7 @@ describe('redaction', () => {
     expect(result.placeholders).toHaveLength(1);
   });
 
-  it('still redacts date values when context indicates DOB', () => {
+  it('redacts date values classified as other', () => {
     const text = 'My DOB is 1990-01-01';
     const start = text.indexOf('1990-01-01');
     const report: SensitivityReport = {
@@ -237,7 +237,7 @@ describe('redaction', () => {
     expect(result.placeholders).toHaveLength(1);
   });
 
-  it('still redacts full physical addresses', () => {
+  it('redacts full physical addresses', () => {
     const text = 'Ship to 123 Main Street, Springfield, 90210';
     const start = text.indexOf('123');
     const value = '123 Main Street, Springfield, 90210';

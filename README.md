@@ -126,7 +126,7 @@ src/
   engine/                   LLM inference backends
     llamacpp/               node-llama-cpp v3 (in-process, grammar-constrained)
     ollama/                 Ollama HTTP API (structured output via format: schema)
-    index.ts                Auto-detect factory: tries Ollama, falls back to llama.cpp
+    index.ts                createLlmClients() — reads models.json, returns per-pipeline clients
 
   embedder/
     local/                  @huggingface/transformers + Nomic Embed v1.5 (768-dim)
@@ -151,7 +151,7 @@ src/
     vault/                  Encrypted PII storage
       asymmetric-crypto.ts  RSA-4096 key generation, DEK wrapping (OAEP-256)
       asymmetric-encrypt.ts AES-256-GCM envelope encryption
-      redaction.ts          Smart redaction with entity filtering
+      redaction.ts          Placeholder replacement (no filtering — redacts all entities)
       sqlite/               SQLite vault store
 
   memory/                   Memory pipeline
@@ -166,7 +166,9 @@ src/
     retriever/              Vector + keyword search + ranking (coming: Sprint 005)
 
 tests/                      Mirrors src/ structure
-  integration/              End-to-end pipeline tests
+  e2e/                      End-to-end tests with real Ollama + embeddings
+  integration/              Pipeline integration tests (mocked LLM)
+  helpers/                  Test utilities (InMemoryKeyManager, etc.)
 ```
 
 ---
@@ -220,12 +222,12 @@ curl -L -o ~/.pristine/models/llama-3.2-3b-instruct-q4_k_m.gguf \
   https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf
 ```
 
-The engine auto-detects: if Ollama is running with a model available, it uses Ollama. Otherwise, it looks for a GGUF file in `~/.pristine/models/`.
+The embedding model (Nomic Embed v1.5) downloads automatically on first use via `@huggingface/transformers` — no manual step needed.
 
 ### Verify Setup
 
 ```bash
-# Run all tests (357+ should pass)
+# Run all tests (375+ should pass)
 npm test
 
 # Type check
@@ -322,7 +324,56 @@ const llamaClient = new LlamaCppClient({ modelPath: '/path/to/model.gguf' });
 
 The privacy pipeline detects PII in text, replaces it with encrypted placeholders, and stores the original values in an encrypted vault. The original values can be recovered with the private key.
 
-### Flow
+### Pipeline Architecture
+
+```
+Input text
+  |
+  +---> Deterministic classifier (regex: credit cards, emails, SSN, phone)
+  |     src/privacy/classifier/deterministic/
+  |
+  +---> LLM classifier (contextual: health, financial, relationships)
+  |     src/privacy/classifier/llm/
+  |
+  v (both run in parallel)
++---------------------------+
+| MERGE + DEDUP             |   Combine results, deduplicate overlapping spans
+| classifier/combined/      |   Wider spans + higher confidence win
++---------------------------+
+  |
+  | SensitivityReport (entities with type, span, confidence)
+  v
++---------------------------+
+| REDACT                    |   Replace every entity with [SENSITIVE:type:id]
+| vault/redaction.ts        |   No filtering — redacts all entities it receives
++---------------------------+
+  |
+  | RedactionResult (redacted text + placeholders)
+  v
++---------------------------+
+| ENCRYPT + VAULT           |   AES-256-GCM per value, KEK wrapping (AES-256-KW)
+| vault/sqlite/             |   Store encrypted entries in SQLite
++---------------------------+
+  |
+  v
+Output: redacted text + placeholder IDs (safe to send to any LLM)
+```
+
+### Module Responsibilities
+
+Each module has a single responsibility. This allows contributors to optimize classifiers, redaction, or vault independently.
+
+| Module | Responsibility | Does NOT do |
+|--------|---------------|-------------|
+| **Deterministic classifier** (`classifier/deterministic/`) | Regex-based PII detection: credit cards (Luhn-validated), emails, US SSN, phone numbers. High confidence, no LLM needed. | Contextual analysis, false positive filtering |
+| **LLM classifier** (`classifier/llm/`) | Contextual PII detection via LLM: health conditions, financial info, legal matters, relationships, identity documents. Catches what regex misses. | Pattern matching (that's the deterministic classifier's job) |
+| **Combined classifier** (`classifier/combined/`) | Runs both classifiers in parallel, merges reports, deduplicates overlapping spans. Returns final `SensitivityReport`. | Entity filtering or suppression |
+| **Redaction** (`vault/redaction.ts`) | Replaces detected entities with `[SENSITIVE:type:id]` placeholders. Pure function: entities in, placeholders out. | Classification decisions, false positive filtering, heuristic checks |
+| **Vault** (`vault/sqlite/`, `vault/asymmetric-encrypt.ts`) | Encrypts original PII values (AES-256-GCM + KEK wrapping) and stores in SQLite. | Detection, redaction |
+
+**Design principle:** Classifiers decide what is PII. The redaction layer only executes replacements. Over-redaction (fail-closed) is preferred over under-redaction — if a classifier flags something, it gets redacted. False positive improvements belong in the classifier modules, not downstream.
+
+### Flow Example
 
 ```
 Input: "My email is alice@example.com and I live at 123 Main St"
@@ -332,7 +383,7 @@ Input: "My email is alice@example.com and I live at 123 Main St"
    Detected: [email_address @ 12-31, physical_address @ 45-56]
   |
   v
-2. REDACT (replace PII spans with placeholders)
+2. REDACT (replace every detected entity with placeholders)
    "My email is [SENSITIVE:email_address:abc-123] and I live at [SENSITIVE:physical_address:def-456]"
   |
   v
@@ -622,9 +673,7 @@ Or use separate database files per agent.
 
 ## SDK Integration Guide
 
-### Current State
-
-Pristine is a TypeScript library — you import modules directly. There is no `npm install` package yet (coming in Phase 7). The orchestrator (`orchestrator.ingest()` / `orchestrator.retrieve()`) is coming in Sprint 006. Today, you wire modules manually as shown in the usage examples above.
+> **Note:** Pristine is not yet packaged as an installable SDK. The examples below show how to wire modules directly from source. SDK packaging and a simplified public API are planned for a future release.
 
 ### How Agent Harnesses Will Use Pristine
 
@@ -679,7 +728,7 @@ async function handleTool(name: string, params: Record<string, unknown>) {
     const messages = params.messages as { role: string; content: string }[];
 
     // Optional: redact PII before extraction
-    // const { redactedText } = await secureAndRedact(text, { client, vaultStore, keyManager, userId });
+    // const { redactedText } = await secureAndRedact(text, { client: privacyClient, vaultStore, keyManager, kekManager, userId });
 
     const { facts } = await extractor.extract(messages);
     for (const fact of facts) {
@@ -746,6 +795,26 @@ Existing implementations for reference:
 - `src/engine/llamacpp/` — in-process, grammar-constrained via `node-llama-cpp`
 - `src/engine/ollama/` — HTTP-based, structured output via Ollama API
 
+### Adding a New Classifier
+
+The combined classifier merges results from multiple sources. To add a third classifier (e.g., a rules engine or industry-specific patterns):
+
+1. Implement the `SensitivityClassifier` interface:
+
+```typescript
+// src/core/interfaces.ts
+interface SensitivityClassifier {
+  classify(text: string): Promise<SensitivityReport>;
+}
+```
+
+2. Create `src/privacy/classifier/<name>/index.ts` implementing the interface
+3. Update `src/privacy/classifier/combined/index.ts` to run your classifier in parallel with the existing two and merge the results
+
+The combined classifier's `mergeReports()` handles overlap deduplication automatically — wider spans and higher confidence entities win when two classifiers detect the same region.
+
+The redaction layer does not filter entities. If your classifier reports an entity, it will be redacted. Tune precision in your classifier, not downstream.
+
 ### Adding a New Model
 
 Add a `ModelEntry` to `src/models/registry.ts`:
@@ -783,7 +852,7 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ### Commands
 
 ```bash
-npm test              # Run all tests (357+)
+npm test              # Run all tests (375+)
 npm run typecheck     # TypeScript strict mode check
 npm run lint          # ESLint + Prettier
 npm run test:watch    # Watch mode
@@ -797,21 +866,6 @@ npm run test:watch    # Watch mode
 - **Conventional commits**: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`
 - **Rebase, don't merge** — linear history
 - **One PR per story**, branch naming: `feat/<name>`, `fix/<name>`
-
-### Sprint Structure
-
-Work is organized into sprints (see `docs/sprints/`). Each sprint has stories with acceptance criteria, planned commits, and Greptile code review. The implementation spec (`docs/specs/implementation-spec-001.md`) defines all phases.
-
-| Sprint | Phase | Status |
-|--------|-------|--------|
-| 001 | Foundation (scaffold, types, interfaces) | Complete |
-| 002 | Shared Infrastructure (LLM engines, embedder, models) | Complete |
-| 003 | Privacy Pipeline (sanitizer, classifier, vault) | Complete |
-| 004 | Memory Pipeline — Foundations (temporal, extractor, store) | Complete |
-| 004b | Key Management (KeyManager interface, FileSystemKeyManager) | Complete |
-| 004c | KEK Intermediary (AES-256-KW wrapping, key rotation) | Complete |
-| 005 | Memory Pipeline — Processing (consolidator, query analyzer, retriever) | Planned |
-| 006 | Memory Pipeline — Orchestrator (ingest + retrieve pipelines) | Planned |
 
 ---
 

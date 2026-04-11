@@ -518,6 +518,7 @@ export interface PromptConfig {
   readonly classifier?: string;
   readonly extractor?: string;
   readonly consolidator?: string;
+  readonly queryAnalyzer?: string;
   readonly episodeSummary?: string;
   readonly entityExtractor?: string;
 }

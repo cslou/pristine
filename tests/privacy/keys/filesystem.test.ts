@@ -243,4 +243,43 @@ describe('FileSystemKeyManager', () => {
     const result = await manager.getOrCreateKeyPair('user-1');
     expect(result.created).toBe(false);
   });
+
+  it('rejects userId with path traversal (../)', async () => {
+    const { manager } = createManager();
+    await expect(manager.getOrCreateKeyPair('../../etc/evil')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('../../etc/evil')).rejects.toThrow(/Invalid userId/);
+  });
+
+  it('rejects userId with absolute path (/)', async () => {
+    const { manager } = createManager();
+    await expect(manager.getOrCreateKeyPair('/etc/evil')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('/etc/evil')).rejects.toThrow(/Invalid userId/);
+  });
+
+  it('rejects userId with backslash traversal', async () => {
+    const { manager } = createManager();
+    await expect(manager.getOrCreateKeyPair('..\\evil')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('..\\evil')).rejects.toThrow(/Invalid userId/);
+  });
+
+  it('rejects userId with double dots', async () => {
+    const { manager } = createManager();
+    await expect(manager.getOrCreateKeyPair('user..name')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('user..name')).rejects.toThrow(/Invalid userId/);
+  });
+
+  it('accepts normal userId values', async () => {
+    const { manager } = createManager();
+    for (const userId of ['user-1', 'user_abc', 'user.name', 'user@domain']) {
+      const result = await manager.getOrCreateKeyPair(userId);
+      expect(result.created).toBe(true);
+    }
+  });
+
+  it('saveKeyPair rejects userId with path traversal', async () => {
+    const { manager } = createManager();
+    const keyPair = await generateKeyPair();
+    await expect(manager.saveKeyPair('../../evil', keyPair)).rejects.toThrow(KeyManagerError);
+    await expect(manager.saveKeyPair('../../evil', keyPair)).rejects.toThrow(/Invalid userId/);
+  });
 });

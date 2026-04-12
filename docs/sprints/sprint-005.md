@@ -10,7 +10,7 @@
 ### Project Context
 - **Repo:** getlou-gh/pristine (local: ~/projects/pristine)
 - **Tech stack:** TypeScript, Vitest, ESLint, node-llama-cpp, @huggingface/transformers, better-sqlite3, sqlite-vec
-- **Current state:** Sprint 004 complete. Temporal validation, conversation chunker, fact extractor, and SQLite memory store (vector search + FTS5) all working. Privacy pipeline from Sprint 003 operational.
+- **Current state:** Sprints 004-004e complete. All privacy pipeline modules working: three-layer encryption (RSA -> KEK -> DEK), O(1) key rotation, `initPristine()` bootstraps `~/.pristine/` with default database and `models.json`, `createLlmClients()` reads config, SSH-style permission validation, path traversal prevention on userId. Memory pipeline foundations: temporal validation, conversation chunker, fact extractor, SQLite memory store (vector search + FTS5). 375 tests passing including 14 e2e with real Ollama.
 - **Implementation spec:** `docs/specs/implementation-spec-001.md` — Phase 3d, 3e, 3f, 3g
 - **Note:** Phase 3f (embedder test coverage) is a small story folded into this sprint
 - **Coding Session ID:** *(filled when coding session starts)*

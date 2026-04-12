@@ -242,12 +242,15 @@ Add a structured conversation store alongside the existing memory store. Every `
 CREATE TABLE conversations (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
   message_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX idx_conversations_created_at ON conversations(created_at);
+CREATE UNIQUE INDEX idx_conversations_user_content_hash
+  ON conversations(user_id, content_hash);
 
 CREATE TABLE messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -268,6 +271,10 @@ CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
 END;
 CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
   INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
 END;
 ```
 

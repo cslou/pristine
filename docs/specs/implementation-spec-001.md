@@ -1,4 +1,4 @@
-# Implementation Spec 003: Local-First Privacy & Memory
+# Implementation Spec 001: Local-First Privacy & Memory
 
 ## 1. Overview
 

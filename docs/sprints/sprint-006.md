@@ -10,7 +10,7 @@
 ### Project Context
 - **Repo:** getlou-gh/pristine (local: ~/projects/pristine)
 - **Tech stack:** TypeScript, Vitest, ESLint, node-llama-cpp, @huggingface/transformers, better-sqlite3, sqlite-vec
-- **Current state:** Sprints 004-005 complete. All memory pipeline modules built: temporal validation, chunker, extractor, store (SQLite + sqlite-vec + FTS5), consolidator, query analyzer, retriever with temporal ranking. Privacy pipeline from Sprint 003 operational. LocalEmbedder from Sprint 002 used for embedding throughout.
+- **Current state:** Sprints 004-005 complete. Full privacy pipeline with three-layer encryption, key rotation, `initPristine()`, `models.json` config, permission hardening. Memory pipeline modules: temporal validation, chunker, extractor, store (SQLite + sqlite-vec + FTS5), consolidator, query analyzer, retriever with temporal ranking. `createLlmClients()` reads `models.json` for per-pipeline LLM config. LocalEmbedder from Sprint 002 used for embedding throughout.
 - **Implementation spec:** `docs/specs/implementation-spec-001.md` — Phase 3h
 - **Coding Session ID:** *(filled when coding session starts)*
 

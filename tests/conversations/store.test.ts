@@ -12,8 +12,10 @@ const makeMessages = (contents: string[]) =>
     content,
   }));
 
-const contentHash = (contents: string[]): string =>
-  createHash('sha256').update(contents.join('\n')).digest('hex');
+const contentHash = (messages: { role: string; content: string }[]): string =>
+  createHash('sha256')
+    .update(messages.map((m, i) => `${i}:${m.role}:${m.content}`).join('\x00'))
+    .digest('hex');
 
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
@@ -56,16 +58,15 @@ describe('ConversationStore', () => {
       expect(rows[2]).toMatchObject({ sort_order: 2, content: 'Third' });
     });
 
-    it('computes content_hash from concatenated message content', () => {
-      const contents = ['Hello world', 'Goodbye world'];
-      const messages = makeMessages(contents);
+    it('computes content_hash from role, index, and content', () => {
+      const messages = makeMessages(['Hello world', 'Goodbye world']);
       const id = store.addConversation(messages, 'user-1');
 
       const row = db.prepare('SELECT content_hash FROM conversations WHERE id = ?').get(id) as {
         content_hash: string;
       };
 
-      expect(row.content_hash).toBe(contentHash(contents));
+      expect(row.content_hash).toBe(contentHash(messages));
     });
 
     it('stores message_count correctly', () => {

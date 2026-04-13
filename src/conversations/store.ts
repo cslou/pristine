@@ -180,7 +180,7 @@ export class ConversationStore {
   ): string {
     const id = randomUUID();
     const contentHash = createHash('sha256')
-      .update(messages.map((m) => m.content).join('\n'))
+      .update(messages.map((m, i) => `${i}:${m.role}:${m.content}`).join('\x00'))
       .digest('hex');
 
     const insertConversation = this.db.prepare(

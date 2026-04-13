@@ -170,7 +170,7 @@ Stories 1-2 (Ollama embedder) are sequential. Story 3 (temporalMode API) is inde
   - [ ] All tests pass: `npm run typecheck`, `npm test`, `npm run lint`
 - **Testing approach:** Two test files: (1) Ollama integration tests with real Ollama (skippable), (2) unit tests with mocked HTTP to verify factory wiring and config fallback without Ollama dependency.
 - **QA:**
-  - Lou: run `ollama pull nomic-embed-text` then `SKIP_OLLAMA_TESTS=0 npm test` to verify real Ollama round-trip
+  - Lou: run `ollama pull nomic-embed-text` then `SKIP_OLLAMA_TESTS= npm test` to verify real Ollama round-trip
   - Lou: verify `PristineLocal.create()` startup time with Ollama embedder vs LocalEmbedder
 - **Planned commits:**
   1. `test: add Ollama embedder end-to-end and regression tests` — tests/integration/ollama-embedder.test.ts, tests/e2e/embedder-config.test.ts
@@ -203,7 +203,7 @@ Stories 1-2 (Ollama embedder) are sequential. Story 3 (temporalMode API) is inde
 - `PristineLocal.create()` near-instant with Ollama embedder
 - `search()` accepts `temporalMode` and filters correctly
 - E2e smoke tests pass: Ollama round-trip, LocalEmbedder fallback, temporalMode filtering, conversation store regression
-- Lou verifies: `ollama pull nomic-embed-text && SKIP_OLLAMA_TESTS=0 npm test`
+- Lou verifies: `ollama pull nomic-embed-text && SKIP_OLLAMA_TESTS= npm test`
 - Tests + linter pass (locally and CI)
 - One or more commits per story (logical chunks), one PR per story
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`) per repo CLAUDE.md

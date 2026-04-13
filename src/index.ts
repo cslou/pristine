@@ -12,6 +12,8 @@ export type { SecureAndRedactResult } from './privacy/index.js';
 
 export type {
   AnalyzedQuery,
+  ConversationDetail,
+  ConversationSearchResult,
   Fact,
   IngestOptions,
   IngestResult,

@@ -112,6 +112,81 @@ describe('PristineLocal', () => {
     });
   });
 
+  describe('conversation API', () => {
+    it('searchConversations() returns matching conversations', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      // Store a conversation first (via store() which writes to ConversationStore)
+      await client.store([{ role: 'user', content: 'I love espresso coffee' }], 'test-user');
+
+      const results = client.searchConversations({
+        userId: 'test-user',
+        keyword: 'espresso',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].snippet).toContain('<b>espresso</b>');
+      expect(results[0].messageCount).toBe(1);
+    });
+
+    it('searchConversations() returns empty for no matches', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const results = client.searchConversations({
+        userId: 'test-user',
+        keyword: 'nonexistent',
+      });
+
+      expect(results).toHaveLength(0);
+    });
+
+    it('getConversation() returns full conversation with messages', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const messages = [
+        { role: 'user' as const, content: 'Hello' },
+        { role: 'assistant' as const, content: 'Hi there' },
+      ];
+      await client.store(messages, 'test-user');
+
+      // Find the conversation via search
+      const searchResults = client.searchConversations({ userId: 'test-user' });
+      expect(searchResults.length).toBeGreaterThan(0);
+
+      const detail = client.getConversation(searchResults[0].id);
+      expect(detail).not.toBeNull();
+      expect(detail?.userId).toBe('test-user');
+      expect(detail?.messages).toHaveLength(2);
+      expect(detail?.messages[0].role).toBe('user');
+      expect(detail?.messages[0].content).toBe('Hello');
+      expect(detail?.messages[1].role).toBe('assistant');
+      expect(detail?.messages[1].content).toBe('Hi there');
+    });
+
+    it('getConversation() returns null for nonexistent ID', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const result = client.getConversation('nonexistent-id');
+      expect(result).toBeNull();
+    });
+  });
+
   describe('privacy API', () => {
     it('scrubOutput() removes placeholder tokens', async () => {
       const client = await PristineLocal.create({

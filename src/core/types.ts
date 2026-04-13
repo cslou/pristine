@@ -12,6 +12,25 @@ export interface Message {
 }
 
 // ---------------------------------------------------------------------------
+// Conversation search
+// ---------------------------------------------------------------------------
+
+export interface ConversationSearchResult {
+  readonly id: string;
+  readonly userId: string;
+  readonly createdAt: string;
+  readonly messageCount: number;
+  readonly snippet: string;
+}
+
+export interface ConversationDetail {
+  readonly id: string;
+  readonly userId: string;
+  readonly createdAt: string;
+  readonly messages: readonly Message[];
+}
+
+// ---------------------------------------------------------------------------
 // Temporal
 // ---------------------------------------------------------------------------
 

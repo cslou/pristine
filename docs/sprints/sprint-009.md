@@ -15,9 +15,12 @@
 - **Coding Session ID:** *(filled when coding session starts)*
 
 ### Sprint-Level Technical Context
-- This sprint replaces the `user_raw` zero-vector hack with a proper conversation store: SQLite tables (`conversations` + `messages`) with FTS5 full-text search. Every `store()` call writes the conversation here first, before extraction begins.
+- This sprint adds a new module: `src/conversations/store.ts` — the `ConversationStore`. It has its own tables, own responsibility (store and search raw conversations), and no dependencies on other Pristine modules. It follows the same modular pattern as the memory store, vault store, etc.
+- The ConversationStore replaces the `user_raw` zero-vector hack. Every `store()` call writes the conversation here first, before extraction begins.
 - The conversation store enables two workflows: (1) keyword/date search across all past conversations, (2) retrieve the full conversation that produced a given fact via `sourceConversationId`.
-- The existing `storeUser` step in the ingest pipeline changes from creating a zero-vector memory to writing to the conversation store. The `USER_RAW_MEMORY_ORIGIN`, `USER_RAW_VECTOR_DIMENSION`, and `toConversationMemoryInput()` are removed.
+- **Coupling is minimal and one-directional:** the ingest pipeline writes to ConversationStore and receives a `conversationId` string back. That string is passed through the memory pipeline as `sourceConversationId` on each extracted fact. The downstream memory processing steps (extract, embed, consolidate, store) do not call ConversationStore — they only carry the ID string forward. Agents later follow the ID back to ConversationStore to get the full conversation.
+- **Interface changes:** `IngestDependencies` and `OrchestratorConfig` gain a `conversationStore` field (dependency injection, same pattern as Store/Embedder/Extractor). `PristineLocal` creates the ConversationStore and passes it through. Two new public methods: `searchConversations()` and `getConversation()`.
+- **Removals:** `USER_RAW_MEMORY_ORIGIN`, `USER_RAW_VECTOR_DIMENSION`, `toConversationMemoryInput()` from ingest.ts. The storeUser step no longer creates a zero-vector memory record.
 - FTS5 triggers keep the full-text index in sync with the messages table automatically.
 - The conversation store uses the same SQLite database file (`~/.pristine/data/pristine.db`) — tables are created on init alongside the existing memory and vault tables.
 

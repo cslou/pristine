@@ -1,6 +1,12 @@
 import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
-import type { IngestResult, Message, RetrieveResult } from './core/types.js';
+import type {
+  ConversationDetail,
+  ConversationSearchResult,
+  IngestResult,
+  Message,
+  RetrieveResult,
+} from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
@@ -42,6 +48,7 @@ export interface PristineLocalConfig {
 export class PristineLocal {
   public readonly orchestrator: Orchestrator;
 
+  private readonly conversationStore: ConversationStore;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
   private readonly llmClients: LlmClients;
@@ -54,6 +61,7 @@ export class PristineLocal {
 
   private constructor(deps: {
     orchestrator: Orchestrator;
+    conversationStore: ConversationStore;
     db: Database.Database;
     embedder: Embedder;
     llmClients: LlmClients;
@@ -65,6 +73,7 @@ export class PristineLocal {
     ownsLlmClients: boolean;
   }) {
     this.orchestrator = deps.orchestrator;
+    this.conversationStore = deps.conversationStore;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.llmClients = deps.llmClients;
@@ -121,6 +130,7 @@ export class PristineLocal {
 
     return new PristineLocal({
       orchestrator,
+      conversationStore,
       db,
       embedder,
       llmClients,
@@ -143,6 +153,35 @@ export class PristineLocal {
 
   public async search(query: string, userId: string, topK?: number): Promise<RetrieveResult> {
     return this.orchestrator.search(query, userId, topK);
+  }
+
+  // -------------------------------------------------------------------------
+  // Conversation API
+  // -------------------------------------------------------------------------
+
+  public searchConversations(params: {
+    userId: string;
+    keyword?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): ConversationSearchResult[] {
+    return this.conversationStore.searchConversations(params);
+  }
+
+  public getConversation(conversationId: string): ConversationDetail | null {
+    const stored = this.conversationStore.getConversation(conversationId);
+    if (!stored) return null;
+    return {
+      id: stored.id,
+      userId: stored.userId,
+      createdAt: stored.createdAt,
+      messages: stored.messages.map((m) => ({
+        role: m.role as Message['role'],
+        content: m.content,
+        ...(m.timestamp ? { timestamp: m.timestamp } : {}),
+      })),
+    };
   }
 
   // -------------------------------------------------------------------------

@@ -17,6 +17,7 @@ export interface Message {
 
 export interface ConversationSearchResult {
   readonly id: string;
+  readonly userId: string;
   readonly createdAt: string;
   readonly messageCount: number;
   readonly snippet: string;

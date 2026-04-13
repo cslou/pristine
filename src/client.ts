@@ -29,6 +29,8 @@ import {
   type SecureAndRedactResult,
 } from './privacy/index.js';
 
+const VALID_ROLES = new Set<string>(['system', 'user', 'assistant']);
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -177,7 +179,7 @@ export class PristineLocal {
       userId: stored.userId,
       createdAt: stored.createdAt,
       messages: stored.messages.map((m) => ({
-        role: m.role as Message['role'],
+        role: VALID_ROLES.has(m.role) ? (m.role as Message['role']) : 'user',
         content: m.content,
         ...(m.timestamp ? { timestamp: m.timestamp } : {}),
       })),

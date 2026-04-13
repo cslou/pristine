@@ -6,6 +6,7 @@ import { createConsolidator } from '../../src/memory/consolidator/index.js';
 import { createQueryAnalyzer } from '../../src/memory/query-analyzer/index.js';
 import { createRetriever } from '../../src/memory/retriever/index.js';
 import { SqliteStore } from '../../src/memory/store/sqlite/index.js';
+import { ConversationStore } from '../../src/conversations/store.js';
 import { createDatabase } from '../../src/core/database.js';
 import { createOrchestrator } from '../../src/memory/orchestrator/index.js';
 import type { LlmClient, Orchestrator } from '../../src/core/interfaces.js';
@@ -88,11 +89,13 @@ describe.skipIf(skipSlow)(
       const queryAnalyzer = createQueryAnalyzer(llmClient);
       const retriever = createRetriever({ store, embedder });
 
+      const conversationStore = new ConversationStore(db);
       orchestrator = createOrchestrator({
         extractor,
         embedder,
         store,
         consolidator,
+        conversationStore,
         retriever,
         queryAnalyzer,
       });

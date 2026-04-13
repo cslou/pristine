@@ -87,6 +87,8 @@ describe.skipIf(skipSlow)('conversation store end-to-end', () => {
 
   afterAll(async () => {
     await client.dispose();
+    await embedder.dispose();
+    db.close();
   });
 
   it('ingest -> search fact -> follow sourceConversationId -> get conversation', async () => {

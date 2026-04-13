@@ -6,6 +6,7 @@ import type {
   Retriever,
   Store,
 } from '../../core/interfaces.js';
+import type { ConversationStore } from '../../conversations/store.js';
 
 export type { Orchestrator } from '../../core/interfaces.js';
 export type {
@@ -25,6 +26,7 @@ export interface OrchestratorConfig {
   readonly embedder: Embedder;
   readonly store: Store;
   readonly consolidator: Consolidator;
+  readonly conversationStore: ConversationStore;
   readonly retriever: Retriever;
   readonly queryAnalyzer: QueryAnalyzer;
   readonly appControlledResolve?: boolean;

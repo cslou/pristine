@@ -63,6 +63,7 @@ export const createOrchestrator = (config: OrchestratorConfig): Orchestrator => 
       embedder: config.embedder,
       store: config.store,
       consolidator: config.consolidator,
+      conversationStore: config.conversationStore,
       includeResolveInTurnOrder: false,
     }),
   );

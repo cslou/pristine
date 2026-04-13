@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { PipelineContext, PipelineStep } from './types.js';
 import type {
   AddMemoryInput,
@@ -10,6 +10,7 @@ import type {
   StepError,
 } from '../../core/types.js';
 import type { Consolidator, Embedder, Extractor, Store } from '../../core/interfaces.js';
+import type { ConversationStore } from '../../conversations/store.js';
 import { OrchestratorError } from '../../core/errors.js';
 import { getTurnOrderForMode, type TurnStep, validateTurnOrder } from './turn-order.js';
 import { validateTemporalFields } from '../temporal/index.js';
@@ -17,9 +18,7 @@ import { chunkConversation } from './chunker.js';
 
 const SIMILARITY_TOP_K = 10;
 
-const USER_RAW_MEMORY_ORIGIN = 'user_raw';
 const ASSISTANT_PRE_REVEAL_MEMORY_ORIGIN = 'assistant_pre_reveal';
-const USER_RAW_VECTOR_DIMENSION = 768;
 
 // ---------------------------------------------------------------------------
 // Ingest context shape
@@ -46,6 +45,7 @@ export interface IngestDependencies {
   readonly embedder: Embedder;
   readonly store: Store;
   readonly consolidator: Consolidator;
+  readonly conversationStore: ConversationStore;
   readonly includeResolveInTurnOrder?: boolean;
 }
 
@@ -103,13 +103,6 @@ const appendTurnOrder = (context: IngestContext, step: TurnStep): IngestContext 
   };
 };
 
-const readSourceConversationId = (context: IngestContext): string => {
-  if (isNonEmptyString(context.sourceConversationId)) {
-    return context.sourceConversationId;
-  }
-  return randomUUID();
-};
-
 // ---------------------------------------------------------------------------
 // Conversion helpers
 // ---------------------------------------------------------------------------
@@ -139,10 +132,6 @@ const mapMemoryToFact = (memory: Memory): Fact => {
   };
 };
 
-const createConversationText = (conversation: readonly Message[]): string => {
-  return conversation.map((message) => message.content).join('\n');
-};
-
 const toMemoryInput = (
   userId: string,
   fact: Fact,
@@ -162,22 +151,6 @@ const toMemoryInput = (
     },
     validFrom: fact.validFrom,
     validUntil: fact.validUntil,
-  };
-};
-
-const toConversationMemoryInput = (
-  userId: string,
-  text: string,
-  sourceConversationId: string,
-  metadata: Record<string, unknown>,
-): AddMemoryInput => {
-  return {
-    userId,
-    text,
-    embedding: Array.from({ length: USER_RAW_VECTOR_DIMENSION }, () => 0),
-    contentHash: createHash('sha256').update(text).digest('hex'),
-    sourceConversationId,
-    metadata,
   };
 };
 
@@ -291,7 +264,8 @@ const validateConversationTurnOrder = (
 // ---------------------------------------------------------------------------
 
 export const createIngestPipeline = (dependencies: IngestDependencies): PipelineStep[] => {
-  const { extractor, embedder, store, consolidator, includeResolveInTurnOrder } = dependencies;
+  const { extractor, embedder, store, consolidator, conversationStore, includeResolveInTurnOrder } =
+    dependencies;
   const expectedTurnOrder = getTurnOrderForMode(includeResolveInTurnOrder ?? false);
 
   const storeUserStep: PipelineStep = {
@@ -304,33 +278,23 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
       }
 
       const userId = readUserId(ingestContext);
-      const sourceConversationId = readSourceConversationId(ingestContext);
-      const conversationText = createConversationText(conversation);
-      const userRawMemory = toConversationMemoryInput(
-        userId,
-        conversationText,
-        sourceConversationId,
-        {
-          memory_origin: USER_RAW_MEMORY_ORIGIN,
-        },
-      );
 
       try {
-        await store.addMemory(userRawMemory);
+        const conversationId = conversationStore.addConversation(conversation, userId);
+
+        return appendTurnOrder(
+          {
+            ...context,
+            sourceConversationId: conversationId,
+          },
+          'store(user)',
+        );
       } catch (error: unknown) {
         if (isDuplicateKeyError(error)) {
           return { ...context, duplicateDetected: true };
         }
         throw error;
       }
-
-      return appendTurnOrder(
-        {
-          ...context,
-          sourceConversationId,
-        },
-        'store(user)',
-      );
     },
   };
 

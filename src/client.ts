@@ -7,6 +7,7 @@ import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createLocalEmbedder } from './embedder/local/index.js';
 import { SqliteStore } from './memory/store/sqlite/index.js';
+import { ConversationStore } from './conversations/store.js';
 import { createExtractor } from './memory/extractor/index.js';
 import { createConsolidator } from './memory/consolidator/index.js';
 import { createQueryAnalyzer } from './memory/query-analyzer/index.js';
@@ -96,6 +97,7 @@ export class PristineLocal {
     const embedder = config.embedder ?? createLocalEmbedder();
 
     const store = new SqliteStore(db);
+    const conversationStore = new ConversationStore(db);
     const extractor = createExtractor(llmClients.memoryClient);
     const consolidator = createConsolidator(llmClients.memoryClient);
     const queryAnalyzer = createQueryAnalyzer(llmClients.memoryClient);
@@ -106,6 +108,7 @@ export class PristineLocal {
       embedder,
       store,
       consolidator,
+      conversationStore,
       retriever,
       queryAnalyzer,
     });

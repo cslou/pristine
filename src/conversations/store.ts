@@ -167,7 +167,8 @@ export class ConversationStore {
 
   /**
    * Store a conversation and its messages. Returns the conversation ID.
-   * Throws on duplicate (user_id, content_hash) — callers catch via isDuplicateKeyError.
+   * Throws on duplicate (user_id, content_hash) — callers should check for
+   * `error.message.includes('UNIQUE constraint failed')` to detect duplicates.
    */
   public addConversation(
     messages: readonly {
@@ -237,7 +238,10 @@ export class ConversationStore {
     const limit = params.limit ?? DEFAULT_SEARCH_LIMIT;
 
     if (params.keyword) {
-      return this.searchWithKeyword(params, limit);
+      const ftsQuery = escapeFts5Query(params.keyword);
+      if (ftsQuery.length > 0) {
+        return this.searchWithKeyword(params, limit, ftsQuery);
+      }
     }
 
     return this.searchWithoutKeyword(params, limit);
@@ -250,6 +254,7 @@ export class ConversationStore {
   private searchWithKeyword(
     params: ConversationSearchParams,
     limit: number,
+    ftsQuery: string,
   ): ConversationSearchResult[] {
     const dateConditions: string[] = [];
     const dateValues: (string | number)[] = [];
@@ -288,7 +293,6 @@ export class ConversationStore {
       LIMIT ?
     `;
 
-    const ftsQuery = escapeFts5Query(params.keyword as string);
     const values: (string | number)[] = [ftsQuery, params.userId, ...dateValues, ftsQuery, limit];
 
     const rows = this.db.prepare(sql).all(...values) as SearchRow[];

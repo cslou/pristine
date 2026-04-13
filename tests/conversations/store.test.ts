@@ -331,6 +331,16 @@ describe('ConversationStore', () => {
       expect(results).toHaveLength(1);
     });
 
+    it('treats whitespace-only keyword as no keyword', () => {
+      store.addConversation(makeMessages(['Hello world']), 'user-1');
+      store.addConversation(makeMessages(['Goodbye world']), 'user-1');
+
+      const results = store.searchConversations({ userId: 'user-1', keyword: '   ' });
+
+      expect(results).toHaveLength(2);
+      results.forEach((r) => expect(r.snippet).toBe(''));
+    });
+
     it('returns empty snippet when searching without keyword', () => {
       store.addConversation(makeMessages(['Hello']), 'user-1');
 

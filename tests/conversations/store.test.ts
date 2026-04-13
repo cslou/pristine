@@ -1,0 +1,349 @@
+import { createHash } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createDatabase } from '../../src/core/database.js';
+import { ConversationStore } from '../../src/conversations/store.js';
+
+let db: ReturnType<typeof createDatabase>;
+let store: ConversationStore;
+
+const makeMessages = (contents: string[]) =>
+  contents.map((content, i) => ({
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content,
+  }));
+
+const contentHash = (contents: string[]): string =>
+  createHash('sha256').update(contents.join('\n')).digest('hex');
+
+beforeAll(() => {
+  db = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+  store = new ConversationStore(db);
+});
+
+beforeEach(() => {
+  db.exec('DELETE FROM messages');
+  db.exec('DELETE FROM conversations');
+});
+
+afterAll(() => {
+  db.close();
+});
+
+describe('ConversationStore', () => {
+  describe('addConversation', () => {
+    it('stores and returns a conversation ID', () => {
+      const messages = makeMessages(['Hello', 'Hi there']);
+      const id = store.addConversation(messages, 'user-1');
+
+      expect(id).toBeDefined();
+      expect(typeof id).toBe('string');
+      expect(id.length).toBeGreaterThan(0);
+    });
+
+    it('stores messages with correct sort_order', () => {
+      const messages = makeMessages(['First', 'Second', 'Third']);
+      const id = store.addConversation(messages, 'user-1');
+
+      const rows = db
+        .prepare(
+          'SELECT sort_order, content FROM messages WHERE conversation_id = ? ORDER BY sort_order',
+        )
+        .all(id) as { sort_order: number; content: string }[];
+
+      expect(rows).toHaveLength(3);
+      expect(rows[0]).toMatchObject({ sort_order: 0, content: 'First' });
+      expect(rows[1]).toMatchObject({ sort_order: 1, content: 'Second' });
+      expect(rows[2]).toMatchObject({ sort_order: 2, content: 'Third' });
+    });
+
+    it('computes content_hash from concatenated message content', () => {
+      const contents = ['Hello world', 'Goodbye world'];
+      const messages = makeMessages(contents);
+      const id = store.addConversation(messages, 'user-1');
+
+      const row = db.prepare('SELECT content_hash FROM conversations WHERE id = ?').get(id) as {
+        content_hash: string;
+      };
+
+      expect(row.content_hash).toBe(contentHash(contents));
+    });
+
+    it('stores message_count correctly', () => {
+      const messages = makeMessages(['a', 'b', 'c', 'd']);
+      const id = store.addConversation(messages, 'user-1');
+
+      const row = db.prepare('SELECT message_count FROM conversations WHERE id = ?').get(id) as {
+        message_count: number;
+      };
+
+      expect(row.message_count).toBe(4);
+    });
+
+    it('throws on duplicate content_hash for same userId', () => {
+      const messages = makeMessages(['Hello', 'World']);
+      store.addConversation(messages, 'user-1');
+
+      expect(() => store.addConversation(messages, 'user-1')).toThrow('UNIQUE constraint failed');
+    });
+
+    it('allows same content_hash for different userIds', () => {
+      const messages = makeMessages(['Hello', 'World']);
+      const id1 = store.addConversation(messages, 'user-1');
+      const id2 = store.addConversation(messages, 'user-2');
+
+      expect(id1).not.toBe(id2);
+    });
+
+    it('stores message timestamps when provided', () => {
+      const timestamp = '2026-04-13T10:00:00.000Z';
+      const messages = [
+        { role: 'user', content: 'Hello', timestamp },
+        { role: 'assistant', content: 'Hi' },
+      ];
+      const id = store.addConversation(messages, 'user-1');
+
+      const rows = db
+        .prepare('SELECT timestamp FROM messages WHERE conversation_id = ? ORDER BY sort_order')
+        .all(id) as { timestamp: string | null }[];
+
+      expect(rows[0].timestamp).toBe(timestamp);
+      expect(rows[1].timestamp).toBeNull();
+    });
+  });
+
+  describe('getConversation', () => {
+    it('returns full conversation with ordered messages', () => {
+      const messages = makeMessages(['Hello', 'Hi there', 'How are you?']);
+      const id = store.addConversation(messages, 'user-1');
+
+      const result = store.getConversation(id);
+
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe(id);
+      expect(result?.userId).toBe('user-1');
+      expect(result?.messageCount).toBe(3);
+      expect(result?.messages).toHaveLength(3);
+      expect(result?.messages[0]).toMatchObject({
+        role: 'user',
+        content: 'Hello',
+        sortOrder: 0,
+      });
+      expect(result?.messages[1]).toMatchObject({
+        role: 'assistant',
+        content: 'Hi there',
+        sortOrder: 1,
+      });
+      expect(result?.messages[2]).toMatchObject({
+        role: 'user',
+        content: 'How are you?',
+        sortOrder: 2,
+      });
+    });
+
+    it('returns null for nonexistent conversationId', () => {
+      const result = store.getConversation('nonexistent-id');
+      expect(result).toBeNull();
+    });
+
+    it('includes createdAt timestamp', () => {
+      const id = store.addConversation(makeMessages(['test']), 'user-1');
+      const result = store.getConversation(id);
+
+      expect(result?.createdAt).toBeDefined();
+      expect(typeof result?.createdAt).toBe('string');
+    });
+
+    it('omits timestamp field on messages without timestamps', () => {
+      const messages = makeMessages(['Hello']);
+      const id = store.addConversation(messages, 'user-1');
+      const result = store.getConversation(id);
+
+      expect(result?.messages[0]).not.toHaveProperty('timestamp');
+    });
+  });
+
+  describe('searchConversations', () => {
+    it('finds conversations by keyword via FTS5', () => {
+      store.addConversation(makeMessages(['I love espresso coffee']), 'user-1');
+      store.addConversation(makeMessages(['I went hiking yesterday']), 'user-1');
+
+      const results = store.searchConversations({ userId: 'user-1', keyword: 'espresso' });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBeDefined();
+    });
+
+    it('returns snippet with keyword highlighted', () => {
+      store.addConversation(makeMessages(['I love espresso coffee in the morning']), 'user-1');
+
+      const results = store.searchConversations({ userId: 'user-1', keyword: 'espresso' });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].snippet).toContain('<b>espresso</b>');
+    });
+
+    it('filters by dateFrom', () => {
+      const oldId = store.addConversation(makeMessages(['old conversation']), 'user-1');
+      const newId = store.addConversation(makeMessages(['new conversation']), 'user-1');
+
+      // Manually set created_at to control dates
+      db.prepare("UPDATE conversations SET created_at = '2026-01-01 00:00:00' WHERE id = ?").run(
+        oldId,
+      );
+      db.prepare("UPDATE conversations SET created_at = '2026-06-01 00:00:00' WHERE id = ?").run(
+        newId,
+      );
+
+      const results = store.searchConversations({
+        userId: 'user-1',
+        dateFrom: '2026-03-01',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(newId);
+    });
+
+    it('filters by dateTo', () => {
+      const oldId = store.addConversation(makeMessages(['old conversation']), 'user-1');
+      const newId = store.addConversation(makeMessages(['new conversation']), 'user-1');
+
+      db.prepare("UPDATE conversations SET created_at = '2026-01-01 00:00:00' WHERE id = ?").run(
+        oldId,
+      );
+      db.prepare("UPDATE conversations SET created_at = '2026-06-01 00:00:00' WHERE id = ?").run(
+        newId,
+      );
+
+      const results = store.searchConversations({
+        userId: 'user-1',
+        dateTo: '2026-03-01',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(oldId);
+    });
+
+    it('filters by dateFrom and dateTo combined', () => {
+      const earlyId = store.addConversation(makeMessages(['early conversation']), 'user-1');
+      const middleId = store.addConversation(makeMessages(['middle conversation']), 'user-1');
+      const lateId = store.addConversation(makeMessages(['late conversation']), 'user-1');
+
+      db.prepare("UPDATE conversations SET created_at = '2026-01-01 00:00:00' WHERE id = ?").run(
+        earlyId,
+      );
+      db.prepare("UPDATE conversations SET created_at = '2026-06-01 00:00:00' WHERE id = ?").run(
+        middleId,
+      );
+      db.prepare("UPDATE conversations SET created_at = '2026-12-01 00:00:00' WHERE id = ?").run(
+        lateId,
+      );
+
+      const results = store.searchConversations({
+        userId: 'user-1',
+        dateFrom: '2026-03-01',
+        dateTo: '2026-09-01',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(middleId);
+    });
+
+    it('filters by userId', () => {
+      store.addConversation(makeMessages(['user 1 conversation']), 'user-1');
+      store.addConversation(makeMessages(['user 2 conversation']), 'user-2');
+
+      const results = store.searchConversations({ userId: 'user-1' });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].userId).toBe('user-1');
+    });
+
+    it('returns empty array when no matches', () => {
+      store.addConversation(makeMessages(['Hello world']), 'user-1');
+
+      const results = store.searchConversations({
+        userId: 'user-1',
+        keyword: 'zyxnonexistent',
+      });
+
+      expect(results).toHaveLength(0);
+    });
+
+    it('respects limit parameter', () => {
+      for (let i = 0; i < 5; i++) {
+        store.addConversation(makeMessages([`conversation ${i} about testing`]), 'user-1');
+      }
+
+      const results = store.searchConversations({
+        userId: 'user-1',
+        keyword: 'testing',
+        limit: 2,
+      });
+
+      expect(results).toHaveLength(2);
+    });
+
+    it('returns results ordered by created_at DESC', () => {
+      const id1 = store.addConversation(makeMessages(['first topic']), 'user-1');
+      const id2 = store.addConversation(makeMessages(['second topic']), 'user-1');
+      const id3 = store.addConversation(makeMessages(['third topic']), 'user-1');
+
+      db.prepare("UPDATE conversations SET created_at = '2026-01-01 00:00:00' WHERE id = ?").run(
+        id1,
+      );
+      db.prepare("UPDATE conversations SET created_at = '2026-06-01 00:00:00' WHERE id = ?").run(
+        id2,
+      );
+      db.prepare("UPDATE conversations SET created_at = '2026-12-01 00:00:00' WHERE id = ?").run(
+        id3,
+      );
+
+      const results = store.searchConversations({ userId: 'user-1' });
+
+      expect(results).toHaveLength(3);
+      expect(results[0].id).toBe(id3);
+      expect(results[1].id).toBe(id2);
+      expect(results[2].id).toBe(id1);
+    });
+
+    it('returns all conversations for userId when no keyword', () => {
+      store.addConversation(makeMessages(['Hello']), 'user-1');
+      store.addConversation(makeMessages(['World']), 'user-1');
+      store.addConversation(makeMessages(['Other user']), 'user-2');
+
+      const results = store.searchConversations({ userId: 'user-1' });
+
+      expect(results).toHaveLength(2);
+      results.forEach((r) => expect(r.userId).toBe('user-1'));
+    });
+
+    it('groups by conversation when multiple messages match keyword', () => {
+      store.addConversation(
+        makeMessages(['I love coffee in the morning', 'Coffee is great', 'More coffee please']),
+        'user-1',
+      );
+
+      const results = store.searchConversations({
+        userId: 'user-1',
+        keyword: 'coffee',
+      });
+
+      expect(results).toHaveLength(1);
+    });
+
+    it('returns empty snippet when searching without keyword', () => {
+      store.addConversation(makeMessages(['Hello']), 'user-1');
+
+      const results = store.searchConversations({ userId: 'user-1' });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].snippet).toBe('');
+    });
+  });
+
+  describe('DDL idempotency', () => {
+    it('constructing a second ConversationStore on same db does not throw', () => {
+      expect(() => new ConversationStore(db)).not.toThrow();
+    });
+  });
+});

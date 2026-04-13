@@ -140,6 +140,19 @@ const mapSearchRow = (row: SearchRow): ConversationSearchResult => ({
 
 const DEFAULT_SEARCH_LIMIT = 20;
 
+/**
+ * Escape a keyword for safe use in FTS5 MATCH expressions.
+ * Wraps each term in double quotes to prevent FTS5 syntax interpretation
+ * (e.g. hyphens treated as NOT operators).
+ */
+const escapeFts5Query = (keyword: string): string => {
+  return keyword
+    .split(/\s+/)
+    .filter((term) => term.length > 0)
+    .map((term) => `"${term.replace(/"/g, '""')}"`)
+    .join(' ');
+};
+
 // ---------------------------------------------------------------------------
 // ConversationStore
 // ---------------------------------------------------------------------------
@@ -157,7 +170,11 @@ export class ConversationStore {
    * Throws on duplicate (user_id, content_hash) — callers catch via isDuplicateKeyError.
    */
   public addConversation(
-    messages: readonly { readonly role: string; readonly content: string; readonly timestamp?: string }[],
+    messages: readonly {
+      readonly role: string;
+      readonly content: string;
+      readonly timestamp?: string;
+    }[],
     userId: string,
   ): string {
     const id = randomUUID();
@@ -234,34 +251,45 @@ export class ConversationStore {
     params: ConversationSearchParams,
     limit: number,
   ): ConversationSearchResult[] {
-    const conditions: string[] = [
-      'messages_fts MATCH ?',
-      'c.user_id = ?',
-    ];
-    const values: (string | number)[] = [params.keyword as string, params.userId];
+    const dateConditions: string[] = [];
+    const dateValues: (string | number)[] = [];
 
     if (params.dateFrom) {
-      conditions.push('c.created_at >= ?');
-      values.push(params.dateFrom);
+      dateConditions.push('c.created_at >= ?');
+      dateValues.push(params.dateFrom);
     }
     if (params.dateTo) {
-      conditions.push('c.created_at <= ?');
-      values.push(params.dateTo);
+      dateConditions.push('c.created_at <= ?');
+      dateValues.push(params.dateTo);
     }
 
-    values.push(limit);
+    const dateFilter = dateConditions.length > 0 ? ' AND ' + dateConditions.join(' AND ') : '';
 
+    // Subquery finds the best matching message rowid per conversation,
+    // then the outer query calls snippet() on that single row (no GROUP BY needed).
     const sql = `
       SELECT c.id, c.user_id, c.created_at, c.message_count,
              snippet(messages_fts, 0, '<b>', '</b>', '...', 64) AS snippet
       FROM messages_fts fts
       JOIN messages m ON m.rowid = fts.rowid
       JOIN conversations c ON c.id = m.conversation_id
-      WHERE ${conditions.join(' AND ')}
-      GROUP BY c.id
+      WHERE fts.rowid IN (
+        SELECT MIN(fts2.rowid)
+        FROM messages_fts fts2
+        JOIN messages m2 ON m2.rowid = fts2.rowid
+        JOIN conversations c2 ON c2.id = m2.conversation_id
+        WHERE messages_fts MATCH ?
+          AND c2.user_id = ?
+          ${dateFilter}
+        GROUP BY c2.id
+      )
+      AND messages_fts MATCH ?
       ORDER BY c.created_at DESC
       LIMIT ?
     `;
+
+    const ftsQuery = escapeFts5Query(params.keyword as string);
+    const values: (string | number)[] = [ftsQuery, params.userId, ...dateValues, ftsQuery, limit];
 
     const rows = this.db.prepare(sql).all(...values) as SearchRow[];
     return rows.map(mapSearchRow);

@@ -105,7 +105,8 @@ export class PristineLocal {
     const llmClients = config.llmClients ?? createLlmClients(init?.baseDir);
 
     const ownsEmbedder = config.embedder === undefined;
-    const embedder = config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
+    const embedder =
+      config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
 
     const store = new SqliteStore(db);
     const conversationStore = new ConversationStore(db);

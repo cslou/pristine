@@ -151,7 +151,7 @@ describe.skipIf(skipSlow)(
       expect(second.memoryIds.length).toBeLessThanOrEqual(firstMemoryCount);
 
       // Verify no duplicate memories created by searching
-      const results = await orchestrator.search('favorite color', 'e2e-user-3', 10);
+      const results = await orchestrator.search('favorite color', 'e2e-user-3', { topK: 10 });
       const uniqueIds = new Set(results.memories.map((m) => m.memory.id));
       expect(uniqueIds.size).toBe(results.memories.length);
     }, 120_000);

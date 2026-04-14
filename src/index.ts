@@ -24,6 +24,7 @@ export type {
   RankedMemory,
   RetrieveOptions,
   RetrieveResult,
+  SearchOptions,
 } from './core/types.js';
 
 // ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ import type {
   RelationshipInput,
   RetrieveOptions,
   RetrieveResult,
+  SearchOptions,
   SearchParams,
   SensitivityReport,
   SupersedeMemoryResult,
@@ -177,7 +178,7 @@ export interface Orchestrator {
   ): Promise<IngestResult>;
   retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
   store(conversation: readonly Message[], userId: string): Promise<IngestResult>;
-  search(query: string, userId: string, topK?: number): Promise<RetrieveResult>;
+  search(query: string, userId: string, options?: SearchOptions): Promise<RetrieveResult>;
   readonly ingestSteps: readonly PipelineStep[];
   readonly retrieveSteps: readonly PipelineStep[];
   registerIngestStep(step: PipelineStep): void;

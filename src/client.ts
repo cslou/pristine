@@ -11,7 +11,7 @@ import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/inte
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
-import { createLocalEmbedder } from './embedder/local/index.js';
+import { createEmbedder } from './embedder/index.js';
 import { SqliteStore } from './memory/store/sqlite/index.js';
 import { ConversationStore } from './conversations/store.js';
 import { createExtractor } from './memory/extractor/index.js';
@@ -105,7 +105,7 @@ export class PristineLocal {
     const llmClients = config.llmClients ?? createLlmClients(init?.baseDir);
 
     const ownsEmbedder = config.embedder === undefined;
-    const embedder = config.embedder ?? createLocalEmbedder();
+    const embedder = config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
 
     const store = new SqliteStore(db);
     const conversationStore = new ConversationStore(db);

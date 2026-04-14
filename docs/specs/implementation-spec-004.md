@@ -471,14 +471,15 @@ interface ToolResultEventResult { content?: (TextContent | ImageContent)[]; isEr
 
 ##### P3-S1: Implement Pi secret redaction extension — input handler
 
-- **What:** Create the extension file and implement the `input` event handler. On user input, detect secrets via regex, replace with placeholders, store mapping in closure-scoped `Map<string, string>`, return `{ action: "transform", text: redactedText }`.
+- **What:** Create the extension file and implement the `input` event handler. On user input, call Pristine's `secureAndRedact()` to detect secrets, encrypt originals in the vault, and replace with placeholders. A session-local `Map<string, string>` caches placeholder→ID mappings for fast `reveal()` lookups in `tool_call`, but the vault is the source of truth for encrypted secrets (matching the threat model: "secrets encrypted at rest").
 - **Acceptance criteria:**
   - [ ] Extension file at `~/projects/harness-config/extensions/secret-redactor.ts`
-  - [ ] `input` handler detects secrets and returns transformed text
-  - [ ] Placeholder mapping stored for later reveal in `tool_call` handler
+  - [ ] `input` handler calls `secureAndRedact()` — secrets encrypted in vault, text returned with placeholders
+  - [ ] Session-local Map caches placeholderId→secretType for fast lookup in `tool_call` handler
+  - [ ] `tool_call` handler calls `reveal()` to swap placeholders back to real secrets from vault
   - [ ] Configurable via `~/.pi/agent/settings.json` under `"secret-redactor"` key
   - [ ] `enabled: false` disables the extension
-  - [ ] Unit tests: input with secrets → transformed, input without secrets → continue
+  - [ ] Unit tests: input with secrets → transformed via secureAndRedact, input without secrets → continue
 - **Commits:** ≤2
 
 ##### P3-S2: Implement Pi secret redaction extension — tool_call and tool_result handlers
@@ -504,7 +505,7 @@ interface ToolResultEventResult { content?: (TextContent | ImageContent)[]; isEr
 
 #### Open Questions
 
-- Should the placeholder mapping persist across sessions (use vault) or be session-scoped (closure Map)? Session-scoped is simpler but secrets are lost on restart.
+- **Resolved: Vault vs session Map.** The extension uses the vault (via `secureAndRedact`/`reveal`) as the source of truth — secrets are encrypted at rest per the threat model. The session-local Map is a lookup cache only (placeholder IDs for fast reveal), not a replacement for vault storage.
 - **Resolved: Extension load order.** `safety-guard.ts` runs before `secret-redactor.ts` alphabetically. This is the correct order: safety-guard validates the redacted (placeholder) form of commands, which prevents it from being influenced by the actual secret value. The secret is only revealed in `tool_call` after safety checks pass. If safety-guard needs to reason about the real command structure (not the secret value itself), the placeholder preserves that structure — e.g., `curl -H 'Authorization: Bearer [SENSITIVE:api_key:uuid]'` still looks like a curl command to safety-guard.
 
 #### References

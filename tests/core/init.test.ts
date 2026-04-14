@@ -256,6 +256,124 @@ describe('loadModelConfig', () => {
       expect(result.privacy.gpu).toBe('metal');
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Embedder config
+  // -------------------------------------------------------------------------
+
+  it('loads embedder config with engine "ollama"', () => {
+    const dir = makeTmpDir('cfg-embedder-ollama');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+        embedder: { engine: 'ollama', model: 'nomic-embed-text' },
+      }),
+    );
+
+    const result = loadModelConfig(dir);
+
+    expect(result.embedder).toBeDefined();
+    expect(result.embedder?.engine).toBe('ollama');
+    if (result.embedder?.engine === 'ollama') {
+      expect(result.embedder.model).toBe('nomic-embed-text');
+    }
+  });
+
+  it('loads embedder config with engine "local"', () => {
+    const dir = makeTmpDir('cfg-embedder-local');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+        embedder: { engine: 'local' },
+      }),
+    );
+
+    const result = loadModelConfig(dir);
+
+    expect(result.embedder?.engine).toBe('local');
+  });
+
+  it('returns undefined embedder when section is missing (backward compatible)', () => {
+    const dir = makeTmpDir('cfg-no-embedder');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+      }),
+    );
+
+    const result = loadModelConfig(dir);
+
+    expect(result.embedder).toBeUndefined();
+  });
+
+  it('accepts optional host in ollama embedder config', () => {
+    const dir = makeTmpDir('cfg-embedder-host');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+        embedder: { engine: 'ollama', host: 'http://remote:9999' },
+      }),
+    );
+
+    const result = loadModelConfig(dir);
+
+    if (result.embedder?.engine === 'ollama') {
+      expect(result.embedder.host).toBe('http://remote:9999');
+    }
+  });
+
+  it('throws ConfigError for unknown embedder engine', () => {
+    const dir = makeTmpDir('cfg-embedder-bad-engine');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+        embedder: { engine: 'llamacpp' },
+      }),
+    );
+
+    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
+    expect(() => loadModelConfig(dir)).toThrow(/Unknown embedder engine "llamacpp"/);
+  });
+
+  it('throws ConfigError for non-object embedder section', () => {
+    const dir = makeTmpDir('cfg-embedder-non-obj');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+        embedder: 'ollama',
+      }),
+    );
+
+    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
+    expect(() => loadModelConfig(dir)).toThrow(/"embedder" in models.json must be an object/);
+  });
+
+  it('throws ConfigError for empty embedder model string', () => {
+    const dir = makeTmpDir('cfg-embedder-empty-model');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({
+        privacy: { engine: 'ollama', model: 'x' },
+        memory: { engine: 'ollama', model: 'x' },
+        embedder: { engine: 'ollama', model: '' },
+      }),
+    );
+
+    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
+    expect(() => loadModelConfig(dir)).toThrow(/must be a non-empty string/);
+  });
 });
 
 // ---------------------------------------------------------------------------

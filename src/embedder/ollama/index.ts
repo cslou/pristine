@@ -67,7 +67,13 @@ export class OllamaEmbedder implements Embedder {
           throw new EmbedderError(`Ollama embedding API error: ${status} ${response.statusText}`);
         }
 
-        return (await response.json()) as OllamaEmbedResponse;
+        const raw = (await response.json()) as Record<string, unknown>;
+        if (!Array.isArray(raw.embeddings)) {
+          throw new EmbedderError(
+            `Ollama embedding API returned unexpected response shape: missing "embeddings" array`,
+          );
+        }
+        return raw as unknown as OllamaEmbedResponse;
       } catch (error: unknown) {
         if (error instanceof EmbedderError) {
           throw error;
@@ -81,6 +87,8 @@ export class OllamaEmbedder implements Embedder {
       }
     }
 
+    // Unreachable — the final-attempt throw inside the loop always exits first;
+    // kept as a type-level safety net for TypeScript's exhaustiveness analysis
     throw new EmbedderError(
       'Ollama embedding request failed: max retries exceeded. ' +
         `Is Ollama running at ${this.host}?`,

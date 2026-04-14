@@ -222,6 +222,17 @@ describe('OllamaEmbedder', () => {
       expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
 
+    it('throws EmbedderError on malformed 200 response missing embeddings', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        mockFetchResponse({ error: 'model not loaded' }),
+      );
+
+      const embedder = new OllamaEmbedder(TEST_CONFIG);
+
+      await expect(embedder.embed('hello')).rejects.toThrow(EmbedderError);
+      await expect(embedder.embed('hello')).rejects.toThrow(/unexpected response shape/);
+    });
+
     it('network error message includes host URL', async () => {
       vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('fetch failed'));
 

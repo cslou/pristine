@@ -308,6 +308,12 @@ export interface RetrieveOptions {
   readonly sources?: readonly ('facts' | 'keywords' | 'episodes' | 'graph')[];
 }
 
+export interface SearchOptions {
+  readonly topK?: number;
+  readonly temporalMode?: TemporalMode;
+  readonly asOf?: string;
+}
+
 export interface RetrieveResult {
   readonly query: AnalyzedQuery;
   readonly memories: RankedMemory[];

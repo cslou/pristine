@@ -6,6 +6,7 @@ import type {
   IngestResult,
   Message,
   RetrieveResult,
+  SearchOptions,
 } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
 import { initPristine } from './core/init.js';
@@ -154,8 +155,12 @@ export class PristineLocal {
     return this.orchestrator.store(conversation, userId);
   }
 
-  public async search(query: string, userId: string, topK?: number): Promise<RetrieveResult> {
-    return this.orchestrator.search(query, userId, topK);
+  public async search(
+    query: string,
+    userId: string,
+    options?: SearchOptions,
+  ): Promise<RetrieveResult> {
+    return this.orchestrator.search(query, userId, options);
   }
 
   // -------------------------------------------------------------------------

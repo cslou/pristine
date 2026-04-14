@@ -86,9 +86,9 @@ src/privacy/
 ├── classifier/
 │   ├── deterministic/
 │   │   └── index.ts          # MODIFY — replace PII patterns with secret patterns
-│   ├── combined/              # Phase 6: REMOVE
+│   ├── combined/              # Phase 5: REMOVE
 │   │   └── index.ts
-│   └── llm/                   # Phase 6: REMOVE
+│   └── llm/                   # Phase 5: REMOVE
 │       ├── index.ts
 │       ├── schema.ts
 │       └── prompts.ts
@@ -320,11 +320,10 @@ Replace PII-focused patterns in the deterministic classifier with secret-focused
 | GitHub OAuth Token | `api_key` | `gho_[A-Za-z0-9]{36}` | 0.99 | |
 | GitHub App Token | `api_key` | `ghs_[A-Za-z0-9]{36}` | 0.99 | |
 | GitHub Fine-grained PAT | `api_key` | `github_pat_[A-Za-z0-9_]{22,}` | 0.99 | |
-| OpenAI API Key (legacy) | `api_key` | `sk-[A-Za-z0-9]{20,}` | 0.95 | min length 32 to avoid collisions with short `sk-` strings |
+| OpenAI API Key (legacy) | `api_key` | `sk-(?!ant-\|proj-)[A-Za-z0-9]{20,}` | 0.95 | negative lookahead excludes `sk-ant-` and `sk-proj-` prefixes (handled by their own patterns); min length 32 to avoid collisions |
 | OpenAI Project Key | `api_key` | `sk-proj-[A-Za-z0-9\-_]{20,}` | 0.99 | |
 | Anthropic API Key | `api_key` | `sk-ant-[A-Za-z0-9\-_]{20,}` | 0.99 | |
 | Stripe Secret Key | `api_key` | `sk_(live\|test)_[A-Za-z0-9]{24,}` | 0.99 | |
-| Stripe Publishable Key | `api_key` | `pk_(live\|test)_[A-Za-z0-9]{24,}` | 0.95 | |
 | Stripe Restricted Key | `api_key` | `rk_(live\|test)_[A-Za-z0-9]{24,}` | 0.99 | |
 | Slack Bot Token | `api_key` | `xoxb-[A-Za-z0-9\-]{20,}` | 0.99 | |
 | Slack User Token | `api_key` | `xoxp-[A-Za-z0-9\-]{20,}` | 0.99 | |
@@ -506,7 +505,7 @@ interface ToolResultEventResult { content?: (TextContent | ImageContent)[]; isEr
 #### Open Questions
 
 - Should the placeholder mapping persist across sessions (use vault) or be session-scoped (closure Map)? Session-scoped is simpler but secrets are lost on restart.
-- Extension load order: `safety-guard.ts` runs before `secret-redactor.ts` alphabetically. This means safety-guard sees the redacted version of tool calls. Is this the right order? (Probably yes — safety-guard should validate the redacted command, not the real secret.)
+- **Resolved: Extension load order.** `safety-guard.ts` runs before `secret-redactor.ts` alphabetically. This is the correct order: safety-guard validates the redacted (placeholder) form of commands, which prevents it from being influenced by the actual secret value. The secret is only revealed in `tool_call` after safety checks pass. If safety-guard needs to reason about the real command structure (not the secret value itself), the placeholder preserves that structure — e.g., `curl -H 'Authorization: Bearer [SENSITIVE:api_key:uuid]'` still looks like a curl command to safety-guard.
 
 #### References
 

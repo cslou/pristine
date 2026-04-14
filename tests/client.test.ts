@@ -110,6 +110,52 @@ describe('PristineLocal', () => {
       expect(result.memories).toBeDefined();
       expect(result.metadata).toBeDefined();
     });
+
+    it('search() accepts SearchOptions with topK', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
+
+      const result = await client.search('what does the user like?', 'test-user', { topK: 5 });
+
+      expect(result).toBeDefined();
+      expect(result.memories).toBeDefined();
+    });
+
+    it('search() accepts SearchOptions with temporalMode', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
+
+      const resultCurrent = await client.search('tea', 'test-user', { temporalMode: 'current' });
+      expect(resultCurrent).toBeDefined();
+
+      const resultFull = await client.search('tea', 'test-user', { temporalMode: 'full' });
+      expect(resultFull).toBeDefined();
+    });
+
+    it('search() without options is backward compatible', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
+
+      // Two-arg call should still work
+      const result = await client.search('tea', 'test-user');
+      expect(result).toBeDefined();
+      expect(result.memories).toBeDefined();
+    });
   });
 
   describe('conversation API', () => {

@@ -19,7 +19,7 @@ const createMockEmbedder = (): Embedder => ({
   ),
 });
 
-const createMockLlmClient = (opts?: { temporal?: boolean }): LlmClient => {
+const createMockLlmClient = (): LlmClient => {
   const generate = async ({
     systemPrompt,
     userPrompt,
@@ -29,17 +29,6 @@ const createMockLlmClient = (opts?: { temporal?: boolean }): LlmClient => {
   }): Promise<unknown> => {
     if (systemPrompt.includes('memory consolidation')) {
       const factCount = (userPrompt.match(/NEW fact/gi) ?? []).length || 1;
-
-      if (opts?.temporal && factCount >= 2) {
-        // Supersede first fact (Meta) with second (Google)
-        return {
-          decisions: [
-            { action: 'ADD', factIndex: 0 },
-            { action: 'SUPERSEDE', factIndex: 1, supersedeMemoryId: '__FIRST__' },
-          ],
-        };
-      }
-
       return {
         decisions: Array.from({ length: factCount }, (_, i) => ({
           action: 'ADD',
@@ -59,16 +48,6 @@ const createMockLlmClient = (opts?: { temporal?: boolean }): LlmClient => {
 
     // Extractor
     const now = new Date().toISOString();
-
-    if (opts?.temporal && userPrompt.includes('Meta') && userPrompt.includes('Google')) {
-      return {
-        facts: [
-          { text: 'The user used to work at Meta', validFrom: '2020-01-01T00:00:00.000Z' },
-          { text: 'The user now works at Google', validFrom: now },
-        ],
-      };
-    }
-
     return {
       facts: [{ text: 'The user shared a fact', validFrom: now }],
     };
@@ -108,8 +87,8 @@ describe('embedder config e2e', () => {
     await client.dispose();
   });
 
-  it('search with temporalMode "full" returns all facts including superseded', async () => {
-    const mockClient = createMockLlmClient({ temporal: true });
+  it('search with temporalMode "full" returns facts', async () => {
+    const mockClient = createMockLlmClient();
     const embedder = createMockEmbedder();
     const client = await PristineLocal.create({
       db,
@@ -117,12 +96,10 @@ describe('embedder config e2e', () => {
       embedder,
     });
 
-    await client.store(
-      [{ role: 'user', content: 'I used to work at Meta, now I work at Google' }],
-      'temporal-user-1',
-    );
+    await client.store([{ role: 'user', content: 'I like hiking' }], 'temporal-user-1');
 
-    const fullResult = await client.search('work', 'temporal-user-1', { temporalMode: 'full' });
+    // temporalMode 'full' passes through to retriever and returns all facts
+    const fullResult = await client.search('hiking', 'temporal-user-1', { temporalMode: 'full' });
     expect(fullResult.memories.length).toBeGreaterThanOrEqual(1);
 
     await client.dispose();

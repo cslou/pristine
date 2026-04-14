@@ -88,19 +88,22 @@ describe.skipIf(skipOllama)('Ollama embedder end-to-end', () => {
   });
 
   it('PristineLocal.create() with Ollama embedder is near-instant', async () => {
-    const start = Date.now();
     const mockClient = createMockLlmClient();
     const testDb = createDatabase(':memory:');
-    const testClient = await PristineLocal.create({
-      db: testDb,
-      llmClients: { privacyClient: mockClient, memoryClient: mockClient },
-      embedder: new OllamaEmbedder(),
-    });
-    const elapsed = Date.now() - start;
+    try {
+      const start = Date.now();
+      const testClient = await PristineLocal.create({
+        db: testDb,
+        llmClients: { privacyClient: mockClient, memoryClient: mockClient },
+        embedder: new OllamaEmbedder(),
+      });
+      const elapsed = Date.now() - start;
 
-    expect(elapsed).toBeLessThan(500);
-    await testClient.dispose();
-    testDb.close();
+      expect(elapsed).toBeLessThan(500);
+      await testClient.dispose();
+    } finally {
+      testDb.close();
+    }
   });
 
   it('store() + search() round-trip with Ollama embedding', async () => {

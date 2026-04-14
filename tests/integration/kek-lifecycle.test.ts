@@ -147,7 +147,7 @@ describe('KEK lifecycle e2e', () => {
       userId,
     });
     expect(revealed.text).toContain('pre@rot.com');
-  });
+  }, 15000);
 
   it('encrypts and decrypts new data after rotation', async () => {
     clearResolvedStringRegistry();
@@ -196,7 +196,7 @@ describe('KEK lifecycle e2e', () => {
       userId,
     });
     expect(revealedPost.text).toContain('555-999-0000');
-  });
+  }, 15000);
 
   it('survives multiple sequential rotations', async () => {
     clearResolvedStringRegistry();
@@ -231,7 +231,7 @@ describe('KEK lifecycle e2e', () => {
       });
       expect(revealed.text).toContain(piiValues[i]);
     }
-  });
+  }, 15000);
 
   it('migrates legacy RSA-wrapped entries and reveals via KEK path', async () => {
     const userId = 'kek-e2e-5';

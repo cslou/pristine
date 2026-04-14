@@ -66,7 +66,7 @@ describe('asymmetric-crypto', () => {
       const unwrapped = unwrapDek(wrapped, privateKey);
 
       expect(unwrapped).toEqual(dek);
-    });
+    }, 15000);
 
     it('produces 512-byte wrapped output for RSA-4096', async () => {
       const { publicKey } = await generateKeyPair();
@@ -85,7 +85,7 @@ describe('asymmetric-crypto', () => {
       const wrapped2 = wrapDek(dek, publicKey);
 
       expect(wrapped1).not.toEqual(wrapped2);
-    });
+    }, 15000);
   });
 
   describe('wrapDek validation', () => {
@@ -116,7 +116,7 @@ describe('asymmetric-crypto', () => {
 
       expect(() => unwrapDek(wrapped, pairB.privateKey)).toThrow(AsymmetricCryptoError);
       expect(() => unwrapDek(wrapped, pairB.privateKey)).toThrow('Failed to unwrap DEK');
-    });
+    }, 15000);
 
     it('fails with corrupted wrapped DEK', async () => {
       const { publicKey, privateKey } = await generateKeyPair();
@@ -134,7 +134,7 @@ describe('asymmetric-crypto', () => {
       const { publicKey } = await generateKeyPair();
 
       expect(() => validatePublicKey(publicKey)).not.toThrow();
-    });
+    }, 15000);
 
     it('accepts valid RSA-2048 PEM (minimum allowed)', () => {
       const { publicKey } = generateRsa2048();

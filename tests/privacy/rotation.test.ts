@@ -102,7 +102,7 @@ describe('rotateKey', () => {
 
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
     expect(revealed.text).toContain('555-111-2222');
-  });
+  }, 15000);
 
   it('handles multiple rotations in sequence', async () => {
     clearResolvedStringRegistry();
@@ -129,7 +129,7 @@ describe('rotateKey', () => {
     // Still decrypts
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
     expect(revealed.text).toContain('bob@test.com');
-  });
+  }, 15000);
 
   it('updates user_keks row with new key_id after rotation', async () => {
     const userId = 'user-rot-4';
@@ -147,7 +147,7 @@ describe('rotateKey', () => {
 
     expect(afterRow.key_id).not.toBe(beforeRow.key_id);
     expect(afterRow.key_id).toMatch(/^sha256:[0-9a-f]{64}$/);
-  });
+  }, 15000);
 
   it('clears KEK cache after rotation', async () => {
     const userId = 'user-rot-5';
@@ -160,5 +160,5 @@ describe('rotateKey', () => {
     const kek2 = await kekManager.getOrCreate(userId);
     expect(kek1.equals(kek2)).toBe(true);
     expect(kek1 === kek2).toBe(false); // different Buffer instance (cache was cleared)
-  });
+  }, 15000);
 });

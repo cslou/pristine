@@ -1,6 +1,12 @@
 import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
-import type { IngestResult, Message, RetrieveResult } from './core/types.js';
+import type {
+  IngestResult,
+  Message,
+  RetrieveResult,
+  RevealResult,
+  SecureAndRedactResult,
+} from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
@@ -19,7 +25,6 @@ import {
   secureAndRedact as privacySecureAndRedact,
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
-  type SecureAndRedactResult,
 } from './privacy/index.js';
 
 // ---------------------------------------------------------------------------
@@ -156,7 +161,7 @@ export class PristineLocal {
     });
   }
 
-  public async reveal(redactedText: string, userId: string): Promise<string> {
+  public async reveal(redactedText: string, userId: string): Promise<RevealResult> {
     return privacyReveal(redactedText, {
       vaultStore: this.vaultStore,
       keyManager: this.keyManager,
@@ -165,8 +170,8 @@ export class PristineLocal {
     });
   }
 
-  public scrubOutput(text: string): string {
-    return privacyScrubOutput(text);
+  public scrubOutput(text: string, revealedValues: readonly string[]): string {
+    return privacyScrubOutput(text, revealedValues);
   }
 
   // -------------------------------------------------------------------------

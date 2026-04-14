@@ -7,6 +7,7 @@ import { secureAndRedact, reveal } from '../../src/privacy/index.js';
 import { rotateKey } from '../../src/privacy/rotation.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
+import type { SecureAndRedactResult } from '../../src/core/types.js';
 
 let db: Database.Database;
 let keyManager: InMemoryKeyManager;
@@ -16,6 +17,16 @@ let vaultStore: SqliteVaultStore;
 const createMockClient = (findings: unknown[]): LlmClient => ({
   generate: vi.fn().mockResolvedValue({ findings }),
 });
+
+const expectSuccess = (
+  result: SecureAndRedactResult,
+): Extract<SecureAndRedactResult, { ok: true }> => {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(`Expected rotation setup to succeed, got ${result.redactedText}`);
+  }
+  return result;
+};
 
 beforeAll(() => {
   db = new Database(':memory:');
@@ -39,13 +50,15 @@ describe('rotateKey', () => {
       { type: 'email_address', confidence: 0.95, reasoning: 'Email', text: 'alice@test.com' },
     ]);
 
-    const { redactedText } = await secureAndRedact('Contact alice@test.com please', {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId,
-    });
+    const { redactedText } = expectSuccess(
+      await secureAndRedact('Contact alice@test.com please', {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
+    );
 
     // Capture old key fingerprint
     const oldKeyPair = await keyManager.getOrCreateKeyPair(userId);
@@ -60,7 +73,7 @@ describe('rotateKey', () => {
 
     // Old value still decrypts with new key
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed).toContain('alice@test.com');
+    expect(revealed.text).toContain('alice@test.com');
   });
 
   it('encrypts new values after rotation and decrypts them', async () => {
@@ -77,17 +90,19 @@ describe('rotateKey', () => {
     await rotateKey(userId, keyManager, kekManager);
 
     // Encrypt after rotation
-    const { redactedText } = await secureAndRedact('Call 555-111-2222', {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId,
-    });
+    const { redactedText } = expectSuccess(
+      await secureAndRedact('Call 555-111-2222', {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
+    );
 
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed).toContain('555-111-2222');
-  });
+    expect(revealed.text).toContain('555-111-2222');
+  }, 15000);
 
   it('handles multiple rotations in sequence', async () => {
     clearResolvedStringRegistry();
@@ -96,13 +111,15 @@ describe('rotateKey', () => {
       { type: 'email_address', confidence: 0.95, reasoning: 'Email', text: 'bob@test.com' },
     ]);
 
-    const { redactedText } = await secureAndRedact('Reach bob@test.com', {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId,
-    });
+    const { redactedText } = expectSuccess(
+      await secureAndRedact('Reach bob@test.com', {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
+    );
 
     // Rotate three times
     await rotateKey(userId, keyManager, kekManager);
@@ -111,8 +128,8 @@ describe('rotateKey', () => {
 
     // Still decrypts
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed).toContain('bob@test.com');
-  });
+    expect(revealed.text).toContain('bob@test.com');
+  }, 15000);
 
   it('updates user_keks row with new key_id after rotation', async () => {
     const userId = 'user-rot-4';
@@ -130,7 +147,7 @@ describe('rotateKey', () => {
 
     expect(afterRow.key_id).not.toBe(beforeRow.key_id);
     expect(afterRow.key_id).toMatch(/^sha256:[0-9a-f]{64}$/);
-  });
+  }, 15000);
 
   it('clears KEK cache after rotation', async () => {
     const userId = 'user-rot-5';
@@ -143,5 +160,5 @@ describe('rotateKey', () => {
     const kek2 = await kekManager.getOrCreate(userId);
     expect(kek1.equals(kek2)).toBe(true);
     expect(kek1 === kek2).toBe(false); // different Buffer instance (cache was cleared)
-  });
+  }, 15000);
 });

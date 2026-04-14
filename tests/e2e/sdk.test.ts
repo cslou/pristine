@@ -118,19 +118,27 @@ describe.skipIf(skipSlow)(
 
     it('secureAndRedact() + reveal() round-trip recovers PII', async () => {
       const original = 'My name is John Smith and I live at 123 Main St.';
-      const { redactedText, placeholderIds } = await client.secureAndRedact(original, 'sdk-user-2');
+      const result = await client.secureAndRedact(original, 'sdk-user-2');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        throw new Error(`Expected privacy success, got ${result.reason}`);
+      }
+
+      const { redactedText, placeholderIds } = result;
 
       expect(redactedText).toContain('[SENSITIVE:');
       expect(redactedText).not.toContain('John Smith');
       expect(placeholderIds.length).toBeGreaterThan(0);
 
       const revealed = await client.reveal(redactedText, 'sdk-user-2');
-      expect(revealed).toContain('John Smith');
+      expect(revealed.text).toContain('John Smith');
+      expect(revealed.revealedValues).toContain('John Smith');
     }, 120_000);
 
     it('scrubOutput() removes placeholder tokens', () => {
       const text = 'Hello [SENSITIVE:name:abc-123], how are you?';
-      const scrubbed = client.scrubOutput(text);
+      const scrubbed = client.scrubOutput(text, []);
       expect(scrubbed).toBe('Hello , how are you?');
     });
 

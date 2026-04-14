@@ -243,6 +243,7 @@ describe('PristineLocal', () => {
 
       const result = client.scrubOutput(
         'Hello [SENSITIVE:name:abc-123], your card is [SENSITIVE:credit_card:def-456]',
+        [],
       );
 
       expect(result).toBe('Hello , your card is ');

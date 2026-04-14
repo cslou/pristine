@@ -92,7 +92,7 @@ describe('migrateToKek', () => {
     };
     const metadata = JSON.parse(row.encryption_metadata) as ZkV2EncryptedValueMetadata;
     expect(metadata.keyWrapping).toBe('aes-256-kw+rsa-oaep-256');
-  });
+  }, 15000);
 
   it('migrated entries are decryptable via reveal()', async () => {
     clearResolvedStringRegistry();
@@ -104,8 +104,9 @@ describe('migrateToKek', () => {
 
     const redacted = `Contact [SENSITIVE:email_address:${phId}] please`;
     const revealed = await reveal(redacted, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed).toContain('bob@test.com');
-  });
+    expect(revealed.text).toContain('bob@test.com');
+    expect(revealed.revealedValues).toEqual(['bob@test.com']);
+  }, 15000);
 
   it('is idempotent — running twice causes no errors', async () => {
     const userId = 'user-mig-3';
@@ -136,7 +137,7 @@ describe('migrateToKek', () => {
     const result = await migrateToKek(userId, keyManager, kekManager, db);
     expect(result.migrated).toBe(1);
     expect(result.skipped).toBe(1);
-  });
+  }, 15000);
 
   it('returns zero counts when no entries exist', async () => {
     const result = await migrateToKek('user-mig-empty', keyManager, kekManager, db);

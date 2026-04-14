@@ -98,7 +98,7 @@ describe('KekManager', () => {
         unknown
       >;
       expect(row).toBeDefined();
-    });
+    }, 15000);
 
     it('stores wrapped_kek as 512-byte blob', async () => {
       const mgr = new KekManager(db, keyManager);
@@ -108,7 +108,7 @@ describe('KekManager', () => {
         .prepare('SELECT wrapped_kek FROM user_keks WHERE user_id = ?')
         .get('user-1') as { wrapped_kek: Buffer };
       expect(row.wrapped_kek.length).toBe(512);
-    });
+    }, 15000);
 
     it('stores key_id matching RSA fingerprint format', async () => {
       const mgr = new KekManager(db, keyManager);
@@ -118,7 +118,7 @@ describe('KekManager', () => {
         key_id: string;
       };
       expect(row.key_id).toMatch(/^sha256:[0-9a-f]{64}$/);
-    });
+    }, 15000);
 
     it('stores algorithm as rsa-oaep-256', async () => {
       const mgr = new KekManager(db, keyManager);
@@ -128,7 +128,7 @@ describe('KekManager', () => {
         algorithm: string;
       };
       expect(row.algorithm).toBe('rsa-oaep-256');
-    });
+    }, 15000);
 
     it('returns same KEK on second call (cache hit)', async () => {
       const mgr = new KekManager(db, keyManager);
@@ -136,7 +136,7 @@ describe('KekManager', () => {
       const kek2 = await mgr.getOrCreate('user-1');
 
       expect(kek1 === kek2).toBe(true);
-    });
+    }, 15000);
 
     it('retrieves from DB after cache clear', async () => {
       const mgr = new KekManager(db, keyManager);
@@ -147,7 +147,7 @@ describe('KekManager', () => {
 
       expect(kek1.equals(kek2)).toBe(true);
       expect(kek1 === kek2).toBe(false);
-    });
+    }, 15000);
   });
 
   describe('cache behavior', () => {

@@ -26,6 +26,7 @@ import type {
   RetrieveResult,
   SearchOptions,
   SearchParams,
+  ClassificationPipelineResult,
   SensitivityReport,
   SupersedeMemoryResult,
   TraversalResult,
@@ -99,6 +100,10 @@ export interface Consolidator {
 
 export interface SensitivityClassifier {
   classify(text: string): Promise<SensitivityReport>;
+}
+
+export interface PrivacyPipeline {
+  classifyAndRedact(text: string): Promise<ClassificationPipelineResult>;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,19 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SensitivityReport } from '../../core/types.js';
-
-export interface RedactionResult {
-  readonly redactedText: string;
-  readonly placeholders: readonly RedactionPlaceholder[];
-}
-
-export interface RedactionPlaceholder {
-  readonly id: string;
-  readonly type: string;
-  readonly label?: string;
-  readonly originalText: string;
-  readonly start: number;
-  readonly end: number;
-}
+import type { RedactionPlaceholder, RedactionResult, SensitivityReport } from '../../core/types.js';
 
 const buildPlaceholder = (type: string, id: string): string => `[SENSITIVE:${type}:${id}]`;
 

@@ -9,6 +9,7 @@ import { rotateKey } from '../../src/privacy/rotation.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import { createDatabase } from '../../src/core/database.js';
 import { isOllamaAvailable } from './helpers.js';
+import type { SecureAndRedactResult } from '../../src/core/types.js';
 
 const ollamaAvailable = await isOllamaAvailable();
 
@@ -17,6 +18,16 @@ let vaultStore: SqliteVaultStore;
 let keyManager: InMemoryKeyManager;
 let kekManager: KekManager;
 let client: OllamaClient;
+
+const expectSuccess = (
+  result: SecureAndRedactResult,
+): Extract<SecureAndRedactResult, { ok: true }> => {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(`Expected privacy pipeline success but got ${result.redactedText}`);
+  }
+  return result;
+};
 
 describe.skipIf(!ollamaAvailable)(
   'e2e: privacy pipeline with real Ollama',
@@ -37,13 +48,15 @@ describe.skipIf(!ollamaAvailable)(
       clearResolvedStringRegistry();
 
       const text = 'My email is alice@example.com and my phone is 555-867-5309.';
-      const result = await secureAndRedact(text, {
-        client,
-        vaultStore,
-        keyManager,
-        kekManager,
-        userId: 'e2e-priv-1',
-      });
+      const result = expectSuccess(
+        await secureAndRedact(text, {
+          client,
+          vaultStore,
+          keyManager,
+          kekManager,
+          userId: 'e2e-priv-1',
+        }),
+      );
 
       expect(result.redactedText).not.toContain('alice@example.com');
       expect(result.redactedText).not.toContain('555-867-5309');
@@ -57,20 +70,22 @@ describe.skipIf(!ollamaAvailable)(
         userId: 'e2e-priv-1',
       });
 
-      expect(revealed).toContain('alice@example.com');
-      expect(revealed).toContain('555-867-5309');
+      expect(revealed.text).toContain('alice@example.com');
+      expect(revealed.text).toContain('555-867-5309');
     }, 120000);
 
     it('vault entries use KEK wrapping scheme', async () => {
       clearResolvedStringRegistry();
 
-      const result = await secureAndRedact('SSN is 123-45-6789', {
-        client,
-        vaultStore,
-        keyManager,
-        kekManager,
-        userId: 'e2e-priv-2',
-      });
+      const result = expectSuccess(
+        await secureAndRedact('SSN is 123-45-6789', {
+          client,
+          vaultStore,
+          keyManager,
+          kekManager,
+          userId: 'e2e-priv-2',
+        }),
+      );
 
       const entries = await vaultStore.getEntriesByPlaceholderIds(
         'e2e-priv-2',
@@ -85,13 +100,15 @@ describe.skipIf(!ollamaAvailable)(
     it('key rotation preserves access to encrypted data', async () => {
       clearResolvedStringRegistry();
 
-      const { redactedText } = await secureAndRedact('Contact bob@test.com', {
-        client,
-        vaultStore,
-        keyManager,
-        kekManager,
-        userId: 'e2e-priv-3',
-      });
+      const { redactedText } = expectSuccess(
+        await secureAndRedact('Contact bob@test.com', {
+          client,
+          vaultStore,
+          keyManager,
+          kekManager,
+          userId: 'e2e-priv-3',
+        }),
+      );
 
       await rotateKey('e2e-priv-3', keyManager, kekManager);
 
@@ -102,20 +119,22 @@ describe.skipIf(!ollamaAvailable)(
         userId: 'e2e-priv-3',
       });
 
-      expect(revealed).toContain('bob@test.com');
+      expect(revealed.text).toContain('bob@test.com');
     }, 120000);
 
     it('deterministic classifier detects credit card alongside LLM', async () => {
       clearResolvedStringRegistry();
 
       const text = 'Card number 4111111111111111 for John.';
-      const result = await secureAndRedact(text, {
-        client,
-        vaultStore,
-        keyManager,
-        kekManager,
-        userId: 'e2e-priv-4',
-      });
+      const result = expectSuccess(
+        await secureAndRedact(text, {
+          client,
+          vaultStore,
+          keyManager,
+          kekManager,
+          userId: 'e2e-priv-4',
+        }),
+      );
 
       expect(result.redactedText).not.toContain('4111111111111111');
       expect(result.redactedText).toMatch(/\[SENSITIVE:/);

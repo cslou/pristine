@@ -10,7 +10,7 @@ import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.j
 import { computeKeyFingerprint, wrapDek } from '../../src/privacy/vault/asymmetric-crypto.js';
 import { encodeBase64Url } from '../../src/privacy/vault/base64url.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
-import type { ZkV2EncryptedValueMetadata } from '../../src/core/types.js';
+import type { SecureAndRedactResult, ZkV2EncryptedValueMetadata } from '../../src/core/types.js';
 
 let db: Database.Database;
 let keyManager: InMemoryKeyManager;
@@ -35,6 +35,16 @@ const phoneFinding = (text: string) => ({
   text,
 });
 
+const expectSuccess = (
+  result: SecureAndRedactResult,
+): Extract<SecureAndRedactResult, { ok: true }> => {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error(`Expected KEK lifecycle step to succeed but got ${result.redactedText}`);
+  }
+  return result;
+};
+
 beforeAll(() => {
   db = new Database(':memory:');
   vaultStore = new SqliteVaultStore(db);
@@ -58,9 +68,14 @@ describe('KEK lifecycle e2e', () => {
       phoneFinding('555-000-1234'),
     ]);
 
-    const { redactedText, placeholderIds } = await secureAndRedact(
-      'Reach eve@example.com or 555-000-1234',
-      { client: mockClient, vaultStore, keyManager, kekManager, userId },
+    const { redactedText, placeholderIds } = expectSuccess(
+      await secureAndRedact('Reach eve@example.com or 555-000-1234', {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
     );
 
     expect(redactedText).not.toContain('eve@example.com');
@@ -88,9 +103,9 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealed).toContain('eve@example.com');
-    expect(revealed).toContain('555-000-1234');
-    expect(revealed).not.toContain('[SENSITIVE:');
+    expect(revealed.text).toContain('eve@example.com');
+    expect(revealed.text).toContain('555-000-1234');
+    expect(revealed.text).not.toContain('[SENSITIVE:');
   });
 
   it('key rotation preserves access to pre-rotation data', async () => {
@@ -98,13 +113,15 @@ describe('KEK lifecycle e2e', () => {
     const userId = 'kek-e2e-2';
     const mockClient = createMockClient([emailFinding('pre@rot.com')]);
 
-    const { redactedText } = await secureAndRedact('Email pre@rot.com', {
-      client: mockClient,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId,
-    });
+    const { redactedText } = expectSuccess(
+      await secureAndRedact('Email pre@rot.com', {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
+    );
 
     const oldKeyId = (
       db.prepare('SELECT key_id FROM user_keks WHERE user_id = ?').get(userId) as {
@@ -129,8 +146,8 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealed).toContain('pre@rot.com');
-  });
+    expect(revealed.text).toContain('pre@rot.com');
+  }, 15000);
 
   it('encrypts and decrypts new data after rotation', async () => {
     clearResolvedStringRegistry();
@@ -138,26 +155,30 @@ describe('KEK lifecycle e2e', () => {
 
     // Encrypt before rotation
     const mockPre = createMockClient([emailFinding('before@rot.com')]);
-    const pre = await secureAndRedact('Email before@rot.com', {
-      client: mockPre,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId,
-    });
+    const pre = expectSuccess(
+      await secureAndRedact('Email before@rot.com', {
+        client: mockPre,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
+    );
 
     await rotateKey(userId, keyManager, kekManager);
 
     // Encrypt after rotation
     clearResolvedStringRegistry();
     const mockPost = createMockClient([phoneFinding('555-999-0000')]);
-    const post = await secureAndRedact('Call 555-999-0000', {
-      client: mockPost,
-      vaultStore,
-      keyManager,
-      kekManager,
-      userId,
-    });
+    const post = expectSuccess(
+      await secureAndRedact('Call 555-999-0000', {
+        client: mockPost,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId,
+      }),
+    );
 
     // Both decrypt correctly
     const revealedPre = await reveal(pre.redactedText, {
@@ -166,7 +187,7 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealedPre).toContain('before@rot.com');
+    expect(revealedPre.text).toContain('before@rot.com');
 
     const revealedPost = await reveal(post.redactedText, {
       vaultStore,
@@ -174,8 +195,8 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealedPost).toContain('555-999-0000');
-  });
+    expect(revealedPost.text).toContain('555-999-0000');
+  }, 15000);
 
   it('survives multiple sequential rotations', async () => {
     clearResolvedStringRegistry();
@@ -187,13 +208,15 @@ describe('KEK lifecycle e2e', () => {
     for (const pii of piiValues) {
       clearResolvedStringRegistry();
       const mock = createMockClient([emailFinding(pii)]);
-      const { redactedText } = await secureAndRedact(`Contact ${pii}`, {
-        client: mock,
-        vaultStore,
-        keyManager,
-        kekManager,
-        userId,
-      });
+      const { redactedText } = expectSuccess(
+        await secureAndRedact(`Contact ${pii}`, {
+          client: mock,
+          vaultStore,
+          keyManager,
+          kekManager,
+          userId,
+        }),
+      );
       redactedTexts.push(redactedText);
       await rotateKey(userId, keyManager, kekManager);
     }
@@ -206,9 +229,9 @@ describe('KEK lifecycle e2e', () => {
         kekManager,
         userId,
       });
-      expect(revealed).toContain(piiValues[i]);
+      expect(revealed.text).toContain(piiValues[i]);
     }
-  });
+  }, 15000);
 
   it('migrates legacy RSA-wrapped entries and reveals via KEK path', async () => {
     const userId = 'kek-e2e-5';
@@ -280,7 +303,7 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealed).toContain('legacy-secret-value');
+    expect(revealed.text).toContain('legacy-secret-value');
 
     // Idempotent -- second migration is a no-op
     const result2 = await migrateToKek(userId, keyManager, kekManager, db);

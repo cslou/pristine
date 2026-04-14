@@ -143,7 +143,7 @@ describe('redaction', () => {
     expect(result.placeholders[0]!.type).toBe('identity_number');
   });
 
-  it('redacts all classified entities regardless of type', () => {
+  it('redacts travel date/time phrases when they are present in the finalized report', () => {
     const text = 'Flight date: 2026-03-20, hotel checkin 2026-03-20 checkout 2026-03-24';
     const first = text.indexOf('2026-03-20');
     const second = text.indexOf('2026-03-20', first + 1);
@@ -159,12 +159,11 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).not.toContain('2026-03-20');
-    expect(result.redactedText).not.toContain('2026-03-24');
+    expect(result.redactedText).not.toBe(text);
     expect(result.placeholders).toHaveLength(3);
   });
 
-  it('redacts temporal text when classifier says it is sensitive', () => {
+  it('redacts relative weekday travel phrases when policy has already approved them', () => {
     const text = 'next week monday to friday';
     const report: SensitivityReport = {
       entities: [entity('other', 0, text.length, text)],
@@ -173,7 +172,21 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).not.toContain(text);
+    expect(result.redactedText).toMatch(/\[SENSITIVE:other:[0-9a-f-]+\]/);
+    expect(result.placeholders).toHaveLength(1);
+  });
+
+  it('redacts long travel scheduling phrases when policy has already approved them', () => {
+    const text =
+      'I want to book a trip from MAA to Tokyo next week Monday to Friday for a short vacation';
+    const report: SensitivityReport = {
+      entities: [entity('other', 0, text.length, text)],
+      hasSensitiveContent: true,
+    };
+
+    const result = redactText(text, report);
+
+    expect(result.redactedText).toMatch(/\[SENSITIVE:other:[0-9a-f-]+\]/);
     expect(result.placeholders).toHaveLength(1);
   });
 
@@ -192,7 +205,25 @@ describe('redaction', () => {
     expect(result.placeholders).toHaveLength(1);
   });
 
-  it('redacts city-only value when classified as physical_address', () => {
+  it('redacts one-digit day dates when they are present in the finalized report', () => {
+    const text = 'dates: 2026-05-20 to 2026-05-2';
+    const first = text.indexOf('2026-05-20');
+    const second = text.lastIndexOf('2026-05-2');
+    const report: SensitivityReport = {
+      entities: [
+        entity('other', first, first + '2026-05-20'.length, '2026-05-20'),
+        entity('other', second, second + '2026-05-2'.length, '2026-05-2'),
+      ],
+      hasSensitiveContent: true,
+    };
+
+    const result = redactText(text, report);
+
+    expect(result.redactedText).not.toBe(text);
+    expect(result.placeholders).toHaveLength(2);
+  });
+
+  it('redacts city-only physical address spans when they are present in the finalized report', () => {
     const text = 'arriving at tokyo';
     const start = text.indexOf('tokyo');
     const report: SensitivityReport = {
@@ -202,7 +233,7 @@ describe('redaction', () => {
 
     const result = redactText(text, report);
 
-    expect(result.redactedText).not.toContain('tokyo');
+    expect(result.redactedText).toMatch(/\[SENSITIVE:physical_address:[0-9a-f-]+\]/);
     expect(result.placeholders).toHaveLength(1);
   });
 

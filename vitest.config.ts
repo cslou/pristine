@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
 
-export default defineConfig({
+export const baseVitestConfig = defineConfig({
   resolve: {
     alias: {
       '@': resolve(import.meta.dirname, 'src'),
@@ -13,3 +13,5 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
   },
 });
+
+export default baseVitestConfig;

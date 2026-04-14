@@ -92,6 +92,21 @@ describe('deterministic classifier', () => {
     });
   });
 
+  describe('secret detection', () => {
+    it('detects secret keyword/value pairs', async () => {
+      const classifier = createDeterministicClassifier();
+      const report = await classifier.classify('Local config api_key=supersecret');
+
+      expect(report.hasSensitiveContent).toBe(true);
+      expect(report.entities).toHaveLength(1);
+      expect(report.entities[0]).toMatchObject({
+        type: 'secret',
+        source: 'deterministic',
+        text: 'api_key=supersecret',
+      });
+    });
+  });
+
   describe('clean text', () => {
     it('returns no entities for non-sensitive text', async () => {
       const classifier = createDeterministicClassifier();

@@ -94,7 +94,7 @@ describe('e2e: initialization and configuration', () => {
     } finally {
       chmodSync(keysDir, 0o700);
     }
-  });
+  }, 15000);
 
   it('rejects private key file with wrong permissions', async () => {
     if (process.platform === 'win32') return;

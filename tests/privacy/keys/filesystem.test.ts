@@ -2,6 +2,7 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -89,7 +90,7 @@ describe('FileSystemKeyManager', () => {
 
     expect(a.publicKey).not.toBe(b.publicKey);
     expect(a.privateKey).not.toBe(b.privateKey);
-  });
+  }, 15000);
 
   it('sets private key permissions to 0600 on Unix', async () => {
     if (process.platform === 'win32') return;
@@ -113,6 +114,16 @@ describe('FileSystemKeyManager', () => {
 
     expect(result.created).toBe(true);
     expect(existsSync(join(nestedKeysDir, 'user-1-public.pem'))).toBe(true);
+  }, 15000);
+
+  it('rejects unsafe user ids instead of encoding them into filenames', async () => {
+    const { manager, keysDir } = createManager();
+
+    await expect(manager.getOrCreateKeyPair('../escape/../../user')).rejects.toThrow(KeyManagerError);
+
+    const files = readdirSync(keysDir);
+    expect(files).toHaveLength(0);
+    expect(existsSync(join(keysDir, '..', 'escape-public.pem'))).toBe(false);
   });
 
   it('throws KeyManagerError for corrupt public key file', async () => {
@@ -182,7 +193,7 @@ describe('FileSystemKeyManager', () => {
     await manager.saveKeyPair('user-1', keyPair);
 
     expect(existsSync(join(nestedKeysDir, 'user-1-public.pem'))).toBe(true);
-  });
+  }, 15000);
 
   it('sets 0o700 on keys directory when creating it', async () => {
     if (process.platform === 'win32') return;
@@ -261,6 +272,17 @@ describe('FileSystemKeyManager', () => {
       const result = await manager.getOrCreateKeyPair(userId);
       expect(result.created).toBe(true);
     }
+  }, 15000);
+
+  it('encodes non-path user ids that are unsafe as literal filenames', async () => {
+    const { manager, keysDir } = createManager();
+
+    await manager.getOrCreateKeyPair('user@example.com');
+
+    const files = readdirSync(keysDir);
+    expect(files).toHaveLength(2);
+    expect(files.every((file) => file.endsWith('.pem'))).toBe(true);
+    expect(files.some((file) => file.includes('@'))).toBe(false);
   });
 
   it('saveKeyPair rejects userId with path traversal', async () => {

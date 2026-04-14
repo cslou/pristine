@@ -4,7 +4,6 @@
 
 export { PristineLocal } from './client.js';
 export type { PristineLocalConfig } from './client.js';
-export type { SecureAndRedactResult } from './privacy/index.js';
 
 // ---------------------------------------------------------------------------
 // Core types (consumer-facing)
@@ -21,6 +20,8 @@ export type {
   Message,
   MessageRole,
   PipelineStep,
+  SecureAndRedactResult,
+  RevealResult,
   RankedMemory,
   RetrieveOptions,
   RetrieveResult,

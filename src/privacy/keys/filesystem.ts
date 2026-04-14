@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { KeyManagerError } from '../../core/errors.js';
 import type { KeyManager } from '../../core/interfaces.js';
 import type { KeyPairWithStatus } from '../../core/types.js';
@@ -18,6 +18,7 @@ interface FileSystemKeyManagerOptions {
   readonly keysDir: string;
 }
 
+const SAFE_USER_ID_RE = /^[A-Za-z0-9._-]+$/;
 const validateUserId = (userId: string): void => {
   if (userId.includes('/') || userId.includes('\\') || userId.includes('..')) {
     throw new KeyManagerError(`Invalid userId "${userId}": must not contain "/", "\\", or ".."`);
@@ -68,11 +69,11 @@ const atomicWriteFile = (filePath: string, content: string, mode = 0o644): void 
 };
 
 export class FileSystemKeyManager implements KeyManager {
-  private readonly keysDir: string;
+  private readonly resolvedKeysDir: string;
   private readonly cache = new Map<string, { publicKey: string; privateKey: string }>();
 
   public constructor(options: FileSystemKeyManagerOptions) {
-    this.keysDir = options.keysDir;
+    this.resolvedKeysDir = resolve(options.keysDir);
   }
 
   public async getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus> {
@@ -86,7 +87,7 @@ export class FileSystemKeyManager implements KeyManager {
     const privateKeyPath = this.privateKeyPath(userId);
 
     if (existsSync(publicKeyPath) && existsSync(privateKeyPath)) {
-      validateDirectoryPermissions(this.keysDir);
+      validateDirectoryPermissions(this.resolvedKeysDir);
       validateFilePermissions(privateKeyPath);
       const publicKey = readFileSync(publicKeyPath, 'utf-8');
       const privateKey = readFileSync(privateKeyPath, 'utf-8');
@@ -113,18 +114,37 @@ export class FileSystemKeyManager implements KeyManager {
     this.cache.delete(userId);
   }
 
+  private userFilenameComponent(userId: string): string {
+    if (SAFE_USER_ID_RE.test(userId)) {
+      return userId;
+    }
+
+    return `u-${Buffer.from(userId, 'utf8').toString('base64url')}`;
+  }
+
+  private resolvePathInsideKeysDir(fileName: string): string {
+    const resolvedPath = resolve(this.resolvedKeysDir, fileName);
+    if (
+      resolvedPath !== this.resolvedKeysDir &&
+      !resolvedPath.startsWith(`${this.resolvedKeysDir}${sep}`)
+    ) {
+      throw new KeyManagerError(`Resolved key path escaped keysDir: ${resolvedPath}`);
+    }
+    return resolvedPath;
+  }
+
   private publicKeyPath(userId: string): string {
-    return join(this.keysDir, `${userId}-public.pem`);
+    return this.resolvePathInsideKeysDir(`${this.userFilenameComponent(userId)}-public.pem`);
   }
 
   private privateKeyPath(userId: string): string {
-    return join(this.keysDir, `${userId}-private.pem`);
+    return this.resolvePathInsideKeysDir(`${this.userFilenameComponent(userId)}-private.pem`);
   }
 
   private writeToDisk(userId: string, publicKey: string, privateKey: string): void {
-    mkdirSync(this.keysDir, { recursive: true, mode: 0o700 });
+    mkdirSync(this.resolvedKeysDir, { recursive: true });
     if (process.platform !== 'win32') {
-      chmodSync(this.keysDir, 0o700);
+      chmodSync(this.resolvedKeysDir, 0o700);
     }
     atomicWriteFile(this.publicKeyPath(userId), publicKey);
     atomicWriteFile(this.privateKeyPath(userId), privateKey, 0o600);

@@ -11,6 +11,7 @@ import type {
   UpdateMemoryInput,
 } from '../../../src/core/types.js';
 import type { Consolidator, Embedder, Extractor, Store } from '../../../src/core/interfaces.js';
+import type { ConversationStore } from '../../../src/conversations/store.js';
 import {
   createIngestPipeline,
   type IngestDependencies,
@@ -40,6 +41,7 @@ const createDeps = (): IngestDependencies & {
   embedder: Embedder;
   store: Store;
   consolidator: Consolidator;
+  conversationStore: ConversationStore;
 } => {
   const extractor: Extractor = {
     extract: vi.fn(
@@ -104,7 +106,13 @@ const createDeps = (): IngestDependencies & {
     ),
   };
 
-  return { extractor, embedder, store, consolidator };
+  const conversationStore = {
+    addConversation: vi.fn((): string => `conv-${Math.random().toString(36).slice(2, 8)}`),
+    getConversation: vi.fn(() => null),
+    searchConversations: vi.fn(() => []),
+  } as unknown as ConversationStore;
+
+  return { extractor, embedder, store, consolidator, conversationStore };
 };
 
 const conversation: readonly Message[] = [{ role: 'user', content: 'User likes tea.' }];
@@ -183,8 +191,8 @@ describe('ingest pipeline', () => {
       const pipeline = createPipelineRunner(createIngestPipeline(deps));
       await pipeline.run({ userId: 'user-1', conversation });
 
-      // Called at least twice: once for user_raw, once for the ADD decision
-      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(2);
+      // At least one addMemory call for the ADD decision (no user_raw)
+      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(1);
     });
 
     it('tracks source conversation ID on all stored memories', async () => {
@@ -196,11 +204,12 @@ describe('ingest pipeline', () => {
       expect(contextConvId).toBeDefined();
       expect(typeof contextConvId).toBe('string');
 
+      // sourceConversationId comes from conversationStore.addConversation
+      expect(deps.conversationStore.addConversation).toHaveBeenCalled();
+
+      // Fact-level addMemory carries the conversationId
       const addMemoryCalls = vi.mocked(deps.store.addMemory).mock.calls;
-      // user_raw call
       expect(addMemoryCalls[0]?.[0]?.sourceConversationId).toBe(contextConvId);
-      // assistant_pre_reveal call (ADD action)
-      expect(addMemoryCalls[1]?.[0]?.sourceConversationId).toBe(contextConvId);
     });
 
     it('returns memory IDs from store decisions', async () => {
@@ -215,67 +224,50 @@ describe('ingest pipeline', () => {
   });
 
   describe('storeUser step', () => {
-    it('stores user_raw memory with correct origin', async () => {
+    it('stores conversation in ConversationStore', async () => {
       const deps = createDeps();
       const pipeline = createPipelineRunner(createIngestPipeline(deps));
       await pipeline.run({ userId: 'user-1', conversation });
 
-      const addMemory = vi.mocked(deps.store.addMemory);
-      const firstCall = addMemory.mock.calls[0]?.[0];
-      expect(firstCall?.metadata).toEqual(expect.objectContaining({ memory_origin: 'user_raw' }));
+      expect(deps.conversationStore.addConversation).toHaveBeenCalledWith(conversation, 'user-1');
     });
 
-    it('uses zero-vector embedding for user_raw memories', async () => {
+    it('sets sourceConversationId from ConversationStore return value', async () => {
       const deps = createDeps();
-      const pipeline = createPipelineRunner(createIngestPipeline(deps));
-      await pipeline.run({ userId: 'user-1', conversation });
+      vi.mocked(deps.conversationStore.addConversation).mockReturnValueOnce('conv-fixed-id');
 
-      const addMemory = vi.mocked(deps.store.addMemory);
-      const firstCall = addMemory.mock.calls[0]?.[0];
-      expect(firstCall?.embedding).toHaveLength(768);
-      expect(firstCall?.embedding.every((v: number) => v === 0)).toBe(true);
+      const pipeline = createPipelineRunner(createIngestPipeline(deps));
+      const result = await pipeline.run({ userId: 'user-1', conversation });
+
+      expect(result.context.sourceConversationId).toBe('conv-fixed-id');
     });
 
-    it('skips user_raw store when conversation is empty', async () => {
+    it('skips conversation store when conversation is empty', async () => {
       const deps = createDeps();
       const pipeline = createPipelineRunner(createIngestPipeline(deps));
       const result = await pipeline.run({ userId: 'user-1', conversation: [] });
 
       expect(result.error).toBeUndefined();
-      // No user_raw memory stored, but pipeline continues (extract may still produce facts)
-      const addMemoryCalls = vi.mocked(deps.store.addMemory).mock.calls;
-      const userRawCalls = addMemoryCalls.filter(
-        (call) => (call[0]?.metadata as Record<string, unknown>)?.memory_origin === 'user_raw',
-      );
-      expect(userRawCalls).toHaveLength(0);
+      expect(deps.conversationStore.addConversation).not.toHaveBeenCalled();
     });
 
     it('skips entire pipeline on duplicate conversation', async () => {
       const deps = createDeps();
-      const sqliteError = new Error('UNIQUE constraint failed: memories.content_hash');
-      vi.mocked(deps.store.addMemory).mockRejectedValueOnce(sqliteError);
+      const sqliteError = new Error(
+        'UNIQUE constraint failed: conversations.user_id, conversations.content_hash',
+      );
+      vi.mocked(deps.conversationStore.addConversation).mockImplementationOnce(() => {
+        throw sqliteError;
+      });
 
       const pipeline = createPipelineRunner(createIngestPipeline(deps));
       const result = await pipeline.run({ userId: 'user-1', conversation });
 
       expect(result.error).toBeUndefined();
       expect(result.context.duplicateDetected).toBe(true);
-      // No downstream processing — extractor, embedder, consolidator never called
       expect(deps.extractor.extract).not.toHaveBeenCalled();
       expect(deps.embedder.embed).not.toHaveBeenCalled();
       expect(deps.consolidator.consolidateBatch).not.toHaveBeenCalled();
-    });
-
-    it('generates content hash from conversation text', async () => {
-      const deps = createDeps();
-      const pipeline = createPipelineRunner(createIngestPipeline(deps));
-      await pipeline.run({ userId: 'user-1', conversation });
-
-      const addMemory = vi.mocked(deps.store.addMemory);
-      const firstCall = addMemory.mock.calls[0]?.[0];
-      expect(firstCall?.contentHash).toBeDefined();
-      expect(typeof firstCall?.contentHash).toBe('string');
-      expect(firstCall?.contentHash.length).toBe(64); // SHA-256 hex
     });
   });
 
@@ -343,8 +335,8 @@ describe('ingest pipeline', () => {
       const result = await pipeline.run({ userId: 'user-1', conversation });
       expect(result.error).toBeUndefined();
       expect(deps.store.deleteMemory).toHaveBeenCalledWith('delete-1', 'user-1');
-      // DELETE also adds a replacement memory (user_raw + replacement = 2 calls)
-      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(2);
+      // DELETE adds a replacement memory
+      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(1);
     });
 
     it('handles NOOP action by skipping', async () => {
@@ -358,9 +350,9 @@ describe('ingest pipeline', () => {
       const result = await pipeline.run({ userId: 'user-1', conversation });
       expect(result.error).toBeUndefined();
 
-      // Only the user_raw addMemory, no fact-level addMemory
+      // No fact-level addMemory for NOOP (conversation goes to conversationStore, not addMemory)
       const addMemory = vi.mocked(deps.store.addMemory);
-      expect(addMemory).toHaveBeenCalledTimes(1);
+      expect(addMemory).not.toHaveBeenCalled();
     });
 
     it('resolves idRemap for targetMemoryId', async () => {
@@ -424,8 +416,8 @@ describe('ingest pipeline', () => {
       const result = await pipeline.run({ userId: 'user-1', conversation });
 
       expect(result.error).toBeUndefined();
-      // Falls back to addMemory (user_raw + fallback ADD)
-      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(2);
+      // Falls back to addMemory for the fact
+      expect(vi.mocked(deps.store.addMemory).mock.calls.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -476,25 +468,14 @@ describe('ingest pipeline', () => {
   });
 
   describe('memory origin tagging', () => {
-    it('tags user_raw memories correctly', async () => {
-      const deps = createDeps();
-      const pipeline = createPipelineRunner(createIngestPipeline(deps));
-      await pipeline.run({ userId: 'user-1', conversation });
-
-      const addMemory = vi.mocked(deps.store.addMemory);
-      expect(addMemory.mock.calls[0]?.[0]).toMatchObject({
-        metadata: { memory_origin: 'user_raw' },
-      });
-    });
-
     it('tags assistant_pre_reveal memories from fact extraction', async () => {
       const deps = createDeps();
       const pipeline = createPipelineRunner(createIngestPipeline(deps));
       await pipeline.run({ userId: 'user-1', conversation });
 
       const addMemory = vi.mocked(deps.store.addMemory);
-      // Second call is the fact-level store (ADD action)
-      expect(addMemory.mock.calls[1]?.[0]).toMatchObject({
+      // First addMemory call is the fact-level store (ADD action)
+      expect(addMemory.mock.calls[0]?.[0]).toMatchObject({
         metadata: expect.objectContaining({ memory_origin: 'assistant_pre_reveal' }),
       });
     });

@@ -12,6 +12,25 @@ export interface Message {
 }
 
 // ---------------------------------------------------------------------------
+// Conversation search
+// ---------------------------------------------------------------------------
+
+export interface ConversationSearchResult {
+  readonly id: string;
+  readonly userId: string;
+  readonly createdAt: string;
+  readonly messageCount: number;
+  readonly snippet: string;
+}
+
+export interface ConversationDetail {
+  readonly id: string;
+  readonly userId: string;
+  readonly createdAt: string;
+  readonly messages: readonly Message[];
+}
+
+// ---------------------------------------------------------------------------
 // Temporal
 // ---------------------------------------------------------------------------
 
@@ -330,6 +349,12 @@ export interface RetrieveOptions {
   readonly temporalMode?: TemporalMode;
   readonly asOf?: string;
   readonly sources?: readonly ('facts' | 'keywords' | 'episodes' | 'graph')[];
+}
+
+export interface SearchOptions {
+  readonly topK?: number;
+  readonly temporalMode?: TemporalMode;
+  readonly asOf?: string;
 }
 
 export interface RetrieveResult {

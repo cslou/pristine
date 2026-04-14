@@ -14,6 +14,8 @@ Pristine gives agents persistent memory (remember facts from conversations) and 
 - [Model Configuration](#model-configuration)
 - [How Privacy Works](#how-privacy-works)
 - [How Memory Works](#how-memory-works)
+  - [Conversation Store](#conversation-store)
+  - [Fact Extraction Pipeline](#fact-extraction-pipeline)
 - [Multi-User and Multi-Agent](#multi-user-and-multi-agent)
 - [SDK Integration Guide](#sdk-integration-guide)
 - [Extension Guide](#extension-guide)
@@ -24,7 +26,7 @@ Pristine gives agents persistent memory (remember facts from conversations) and 
 
 ## Architecture
 
-Pristine has two pipelines that share common infrastructure:
+Pristine has three layers — conversation storage, memory extraction, and privacy — accessed through a single `PristineLocal` SDK client:
 
 ```
                     +-------------------+
@@ -32,17 +34,23 @@ Pristine has two pipelines that share common infrastructure:
                     | (Claude Code, Pi) |
                     +--------+----------+
                              |
-              +--------------+--------------+
-              |                             |
-     +--------v--------+          +--------v--------+
-     |  Privacy Pipeline |          |  Memory Pipeline |
-     +------------------+          +------------------+
-     | secureAndRedact()|          | extract()        |
-     | reveal()         |          | store.addMemory()|
-     | scrubOutput()    |          | searchSimilar()  |
-     +--------+---------+          +--------+---------+
-              |                             |
-              +--------------+--------------+
+                    +--------v----------+
+                    |  PristineLocal    |
+                    |  SDK Client       |
+                    |  store() search() |
+                    +--------+----------+
+                             |
+         +-------------------+-------------------+
+         |                   |                   |
++--------v--------+ +-------v--------+ +--------v--------+
+| Conversation    | | Memory Pipeline| | Privacy Pipeline |
+| Store           | | (Ingest)       | | secureAndRedact()|
+| SQLite + FTS5   | | extract, embed,| | reveal()         |
+| searchConvs()   | | consolidate,   | | scrubOutput()    |
+| getConv()       | | store facts    | |                  |
++-----------------+ +----------------+ +-----------------+
+         |                   |                   |
+         +-------------------+-------------------+
                              |
               +--------------+--------------+
               |              |              |
@@ -52,6 +60,11 @@ Pristine has two pipelines that share common infrastructure:
      |  llama.cpp)|  |  Embed 1.5)|  |  sqlite3)    |
      +-----------+  +------------+  +--------------+
 ```
+
+**Layers:**
+- **Conversation Store** (`src/conversations/`) — Persists raw conversations in SQLite with FTS5 full-text search. Every `store()` call writes the conversation here first, before any extraction. Searchable by keyword and date. Each extracted fact links back to its source conversation via `sourceConversationId`.
+- **Memory Pipeline** (`src/memory/`) — 7-step ingest pipeline: store conversation, extract facts via LLM, embed, find similar, consolidate (dedup/supersede), store facts, validate. Retrieval via vector similarity + temporal filtering.
+- **Privacy Pipeline** (`src/privacy/`) — Detect PII (regex + LLM), redact with encrypted placeholders, store originals in AES-256-GCM vault, reveal on demand.
 
 **Shared infrastructure:**
 - **LLM Engine** (`src/engine/`) — Two backends: `node-llama-cpp` (in-process GGUF) or Ollama (HTTP). Both implement the `LlmClient` interface with grammar-constrained JSON output via `generate<T>()`.
@@ -72,9 +85,14 @@ Pristine has two pipelines that share common infrastructure:
     {userId}-public.pem              (0o644) RSA-4096 public key
   data/                              (0o700) SQLite database
     pristine.db                      WAL-mode database containing:
+      conversations table              Raw conversations (id, user_id, content_hash)
+      messages table                   Conversation messages (role, content, sort_order)
+      messages_fts table               FTS5 full-text index on message content
+      memories table                   Extracted facts + embeddings
+      memory_vectors table             sqlite-vec vector index (768-dim)
+      memories_fts table               FTS5 full-text index on fact text
       user_keks table                  Wrapped KEK per user (512-byte RSA-wrapped blob)
       vault_entries table              Wrapped DEK + encrypted PII per value
-      memories table                   Memory facts + embeddings
   models/                            GGUF model files (optional, for llama.cpp)
 ```
 
@@ -116,12 +134,18 @@ Run: chmod 700 ~/.pristine/keys/
 
 ```
 src/
+  client.ts                 PristineLocal SDK client — create(), store(), search(), etc.
+  index.ts                  Public API barrel exports
+
   core/                     Shared types, interfaces, errors, SQLite factory
     init.ts                 initPristine(), ModelConfig types, loadModelConfig()
-    types.ts                All type definitions (Fact, Memory, Message, etc.)
+    types.ts                All type definitions (Fact, Memory, Message, ConversationDetail, etc.)
     interfaces.ts           All module contracts (LlmClient, Embedder, Store, etc.)
     errors.ts               Domain error hierarchy (AppError + subclasses)
     database.ts             createDatabase(), createDefaultDatabase()
+
+  conversations/            Conversation store
+    store.ts                ConversationStore — addConversation(), getConversation(), searchConversations()
 
   engine/                   LLM inference backends
     llamacpp/               node-llama-cpp v3 (in-process, grammar-constrained)
@@ -157,17 +181,21 @@ src/
   memory/                   Memory pipeline
     temporal/               Temporal field validation (ISO dates, bounds, confidence)
     extractor/              Fact extraction from conversations via LLM
+    consolidator/           Fact deduplication and supersession via LLM
+    query-analyzer/         Search query rewriting and intent classification via LLM
+    retriever/              Vector similarity search + temporal ranking
     store/
       sqlite/               Memory persistence (SQLite + sqlite-vec + FTS5)
-    orchestrator/
+    orchestrator/           Pipeline coordination
+      index.ts              createOrchestrator() factory
+      ingest.ts             7-step ingest pipeline (storeUser, extract, embed, search, consolidate, store, validate)
+      retrieve.ts           2-step retrieve pipeline (analyze query, retrieve memories)
+      pipeline.ts           Generic pipeline runner
       chunker.ts            Conversation chunking with overlap
-    consolidator/           Fact deduplication (coming: Sprint 005)
-    query-analyzer/         Search query classification (coming: Sprint 005)
-    retriever/              Vector + keyword search + ranking (coming: Sprint 005)
 
 tests/                      Mirrors src/ structure
-  e2e/                      End-to-end tests with real Ollama + embeddings
-  integration/              Pipeline integration tests (mocked LLM)
+  e2e/                      End-to-end tests via PristineLocal public API
+  integration/              Pipeline integration tests (mocked LLM, real embedder)
   helpers/                  Test utilities (InMemoryKeyManager, etc.)
 ```
 
@@ -227,7 +255,7 @@ The embedding model (Nomic Embed v1.5) downloads automatically on first use via 
 ### Verify Setup
 
 ```bash
-# Run all tests (375+ should pass)
+# Run all tests (585+ should pass)
 npm test
 
 # Type check
@@ -523,87 +551,87 @@ const { migrated, skipped } = await migrateToKek(userId, keyManager, kekManager,
 
 ## How Memory Works
 
-The memory pipeline extracts facts from conversations, embeds them as vectors, and stores them in SQLite for semantic search.
+Memory has two layers: a **conversation store** that persists raw conversations, and a **fact extraction pipeline** that produces searchable, temporally-aware memories. Both are written to on every `store()` call.
 
-### Flow
+### Conversation Store
+
+Every `store()` call writes the raw conversation to SQLite first, before any LLM processing. This gives you:
+- **Keyword search** across all past conversations via FTS5 (`searchConversations()`)
+- **Date filtering** — find conversations from a specific time range
+- **Full context retrieval** — when you find a fact via semantic search, follow `sourceConversationId` back to the original conversation (`getConversation()`)
+
+This replaces the need for episodic memory — conversations are directly searchable without LLM-generated summaries.
+
+### Fact Extraction Pipeline
+
+After the conversation is stored, the ingest pipeline runs a 7-step process:
 
 ```
-Input: [{ role: 'user', content: 'I just moved to Tokyo and started at Google' }]
+store() called with conversation + userId
   |
   v
-1. CHUNK (split long conversations into overlapping windows of 20 messages)
+1. STORE CONVERSATION (write raw messages to conversation store, get conversationId)
   |
   v
 2. EXTRACT (LLM extracts atomic facts with temporal metadata)
    Facts: [
-     { text: "The user lives in Tokyo", validFrom: "2026-04-06T...", temporalConfidence: "implied" },
-     { text: "The user works at Google", validFrom: "2026-04-06T...", temporalConfidence: "implied" }
+     { text: "The user lives in Tokyo", validFrom: "2026-04-13T..." },
+     { text: "The user works at Google", validFrom: "2026-04-13T..." }
    ]
   |
   v
-3. VALIDATE (temporal field validation — reject bad dates, apply confidence policies)
+3. EMBED (768-dim vectors via Nomic Embed v1.5)
   |
   v
-4. EMBED (768-dim vector via Nomic Embed v1.5)
+4. SEARCH SIMILAR (find existing memories that overlap with new facts)
   |
   v
-5. STORE (SQLite: memories table + sqlite-vec for vectors + FTS5 for keywords)
-   Content hash dedup prevents duplicate facts
+5. CONSOLIDATE (LLM decides: ADD new, UPDATE existing, SUPERSEDE outdated, or NOOP)
   |
   v
-6. SEARCH (vector similarity + keyword match + temporal filtering)
-   Query: "Where does the user live?" -> "The user lives in Tokyo" (score: 0.94)
+6. STORE FACTS (execute consolidation decisions — write to memories table)
+   Each fact carries sourceConversationId linking back to the conversation
+  |
+  v
+7. VALIDATE (turn-order validation — verify pipeline steps ran correctly)
 ```
 
 ### Usage
 
 ```typescript
-import { createHash } from 'node:crypto';
-import Database from 'better-sqlite3';
-import { OllamaClient } from './src/engine/ollama/index.js';
-import { LocalEmbedder } from './src/embedder/local/index.js';
-import { createDatabase } from './src/core/database.js';
-import { SqliteStore } from './src/memory/store/sqlite/index.js';
-import { createExtractor } from './src/memory/extractor/index.js';
+import { PristineLocal } from '@pristine/shield-local';
 
-// Setup
-const db = createDatabase({ path: './memory.db' });
-const client = new OllamaClient({ model: 'llama3.2:latest' });
-const embedder = new LocalEmbedder();
-const store = new SqliteStore(db);
-const extractor = createExtractor(client);
+// Create client — wires all modules automatically
+const client = await PristineLocal.create();
 
-// STORE: Extract facts from a conversation
-const conversation = [
-  { role: 'user' as const, content: 'I just moved to Tokyo and started working at Google.' },
-  { role: 'assistant' as const, content: 'That sounds exciting! How are you settling in?' },
-];
+// Store a conversation (writes to conversation store + extracts facts)
+const result = await client.store(
+  [
+    { role: 'user', content: 'I just moved to Tokyo and started working at Google.' },
+    { role: 'assistant', content: 'That sounds exciting! How are you settling in?' },
+  ],
+  'user-1',
+);
+// result.facts -> extracted facts
+// result.memoryIds -> IDs of stored memories
+// result.errors -> any pipeline step errors (partial failures are non-fatal)
 
-const { facts } = await extractor.extract(conversation);
+// Search for relevant facts (semantic vector search)
+const searchResult = await client.search('Where does the user live?', 'user-1');
+// searchResult.memories[0].memory.text -> "The user lives in Tokyo"
 
-for (const fact of facts) {
-  const embedding = await embedder.embed(fact.text);
-  const contentHash = createHash('sha256').update(fact.text).digest('hex');
-  await store.addMemory({
-    userId: 'user-1',
-    text: fact.text,
-    embedding,
-    contentHash,
-    validFrom: fact.validFrom,
-    validUntil: fact.validUntil,
-  });
-}
+// Follow sourceConversationId to get the full original conversation
+const convId = searchResult.memories[0].memory.sourceConversationId;
+const conversation = client.getConversation(convId);
+// conversation.messages -> the original user + assistant messages
 
-// RECALL: Search for relevant memories
-const queryEmbedding = await embedder.embed('Where does the user live?');
-const results = await store.searchSimilar({
-  embedding: queryEmbedding,
-  limit: 5,
+// Search conversations by keyword (no embeddings, pure FTS5)
+const convResults = client.searchConversations({
   userId: 'user-1',
-  temporalMode: 'current',
+  keyword: 'Tokyo',
+  dateFrom: '2026-04-01',
 });
-
-// results[0].text -> "The user lives in Tokyo"
+// convResults[0].snippet -> "...moved to <b>Tokyo</b> and started..."
 ```
 
 ### Temporal Modes
@@ -616,9 +644,11 @@ Every fact can have `validFrom` and `validUntil` timestamps, extracted by the LL
 | `as_of` | Facts valid at a specific date | "Where did the user live in 2024?" |
 | `full` | All facts including expired/superseded | Debug, audit, history |
 
+Temporal modes are available via `client.orchestrator.retrieve(query, userId, { temporalMode: 'as_of', asOf: '2024-06-01' })`. The convenience `search()` method uses `current` mode by default.
+
 ### Supersession
 
-When a fact changes ("User moved from Tokyo to London"), the old memory is superseded:
+When a fact changes ("User moved from Tokyo to London"), the consolidation step detects the contradiction and supersedes the old memory:
 - Old memory gets `validUntil` + `supersededBy` link
 - New memory gets `supersedes` link back
 - `getSupersessionChain()` traverses the full history
@@ -629,143 +659,141 @@ When a fact changes ("User moved from Tokyo to London"), the old memory is super
 
 ### User isolation
 
-Every memory and vault entry is scoped by `userId`. Two users sharing the same database file are fully isolated — queries always filter by `userId`.
+Every memory, conversation, and vault entry is scoped by `userId`. Two users sharing the same database file are fully isolated — queries always filter by `userId`.
 
 ```typescript
-// Agent A stores a memory for user-1
-await store.addMemory({ userId: 'user-1', text: 'Likes sushi', ... });
+// Agent stores a conversation for user-1
+await client.store([{ role: 'user', content: 'I like sushi' }], 'user-1');
 
-// Agent B searches for user-2 — sees nothing from user-1
-const results = await store.searchSimilar({ userId: 'user-2', ... });
-// results: []
+// Searching for user-2 sees nothing from user-1
+const results = await client.search('food preferences', 'user-2');
+// results.memories: []
 ```
 
 ### Shared memory across agents
 
-Multiple agents serving the **same user** share the same memory pool automatically — they all read from and write to the same SQLite file. SQLite WAL mode handles concurrent reads safely.
+Multiple agents serving the **same user** share the same memory pool automatically — they all read from and write to the same SQLite file (`~/.pristine/data/pristine.db`). SQLite WAL mode handles concurrent reads safely.
 
 ```typescript
-// Agent A (personal assistant) stores a fact
-await store.addMemory({ userId: 'user-1', text: 'User is vegetarian on weekdays', ... });
+// Agent A (personal assistant) stores a conversation
+await client.store(
+  [{ role: 'user', content: 'I am vegetarian on weekdays' }],
+  'user-1',
+);
 
 // Agent B (meal planner) searches — finds the fact stored by Agent A
-const results = await store.searchSimilar({ userId: 'user-1', ... });
-// results[0].text -> "User is vegetarian on weekdays"
+const results = await client.search('dietary preferences', 'user-1');
+// results.memories[0].memory.text -> "The user is vegetarian on weekdays"
 ```
-
-No configuration needed — if both agents point to the same database path (`~/.pristine/data/memory.db`), memories are shared.
 
 ### Per-agent memory (if needed)
 
 If you want isolated memory per agent, use different `userId` values:
 
 ```typescript
-// Personal assistant uses "user-1:assistant"
-await store.addMemory({ userId: 'user-1:assistant', ... });
-
-// Meal planner uses "user-1:meal-planner"
-await store.addMemory({ userId: 'user-1:meal-planner', ... });
+await client.store(conversation, 'user-1:assistant');   // personal assistant
+await client.store(conversation, 'user-1:meal-planner'); // meal planner
 ```
 
-Or use separate database files per agent.
+Or point each agent at a separate database file via `PristineLocal.create({ baseDir })` with different base directories.
 
 ---
 
 ## SDK Integration Guide
 
-> **Note:** Pristine is not yet packaged as an installable SDK. The examples below show how to wire modules directly from source. SDK packaging and a simplified public API are planned for a future release.
-
-### How Agent Harnesses Will Use Pristine
-
-Agent harnesses (Claude Code, Pi, custom agents) integrate Pristine as **tools** the agent can call. Here's the pattern:
-
-**Tool definitions:**
+### Quick Start
 
 ```typescript
-const pristineTools = [
-  {
-    name: 'remember',
-    description: 'Store facts from the current conversation into long-term memory',
-    parameters: {
-      type: 'object',
-      properties: {
-        messages: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              role: { type: 'string', enum: ['user', 'assistant'] },
-              content: { type: 'string' },
-            },
-          },
-          description: 'The conversation messages to extract facts from',
-        },
-      },
-      required: ['messages'],
-    },
-  },
-  {
-    name: 'recall',
-    description: 'Search long-term memory for facts relevant to a query',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'What to search for in memory' },
-      },
-      required: ['query'],
-    },
-  },
-];
+import { PristineLocal } from '@pristine/shield-local';
+
+const client = await PristineLocal.create();
+
+// Store a conversation (extracts facts + stores raw conversation)
+await client.store(conversation, userId);
+
+// Search memories (semantic vector search)
+const result = await client.search('query', userId);
+
+// Search conversations (keyword + date, no embeddings)
+const convs = client.searchConversations({ userId, keyword: 'Tokyo' });
+
+// Get full conversation by ID
+const detail = client.getConversation(conversationId);
+
+// Privacy: redact PII
+const { redactedText } = await client.secureAndRedact(text, userId);
+const original = await client.reveal(redactedText, userId);
+const clean = client.scrubOutput(text);
+
+// Cleanup
+await client.dispose();
 ```
 
-**Tool handler:**
+### Public API
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `store(conversation, userId)` | `IngestResult` | Store conversation + extract facts. Returns `{ facts, memoryIds, decisions, errors }` |
+| `search(query, userId, topK?)` | `RetrieveResult` | Semantic search for relevant facts. Returns `{ memories, metadata }` |
+| `searchConversations(params)` | `ConversationSearchResult[]` | FTS5 keyword + date search across raw conversations |
+| `getConversation(id)` | `ConversationDetail \| null` | Retrieve full conversation with messages by ID |
+| `secureAndRedact(text, userId)` | `SecureAndRedactResult` | Detect and encrypt PII, return redacted text |
+| `reveal(redactedText, userId)` | `string` | Decrypt PII placeholders back to original text |
+| `scrubOutput(text)` | `string` | Strip any remaining `[SENSITIVE:...]` placeholders |
+| `dispose()` | `void` | Clean up embedder, LLM clients, and database connections |
+
+**Advanced access:** `client.orchestrator` exposes the full pipeline API for temporal queries, custom pipeline steps, and direct `ingest()`/`retrieve()` calls with options.
+
+### Configuration
+
+`PristineLocal.create()` accepts an optional config for testing and custom deployments:
 
 ```typescript
-import { createHash } from 'node:crypto';
-
-async function handleTool(name: string, params: Record<string, unknown>) {
-  if (name === 'remember') {
-    const messages = params.messages as { role: string; content: string }[];
-
-    // Optional: redact PII before extraction
-    // const { redactedText } = await secureAndRedact(text, { client: privacyClient, vaultStore, keyManager, kekManager, userId });
-
-    const { facts } = await extractor.extract(messages);
-    for (const fact of facts) {
-      const embedding = await embedder.embed(fact.text);
-      const contentHash = createHash('sha256').update(fact.text).digest('hex');
-      await store.addMemory({ userId, text: fact.text, embedding, contentHash, ...fact });
-    }
-    return { stored: facts.length };
-  }
-
-  if (name === 'recall') {
-    const query = params.query as string;
-    const embedding = await embedder.embed(query);
-    const memories = await store.searchSimilar({
-      embedding, limit: 10, userId, temporalMode: 'current',
-    });
-    return { memories: memories.map((m) => ({ text: m.text })) };
-  }
+interface PristineLocalConfig {
+  baseDir?: string;      // Root directory (default: ~/.pristine)
+  keysDir?: string;      // RSA key directory (default: ~/.pristine/keys)
+  db?: Database;         // Inject database (for testing with :memory:)
+  llmClients?: LlmClients; // Inject LLM clients (for mocking)
+  embedder?: Embedder;   // Inject embedder (for mocking)
 }
 ```
 
-**After Sprint 006** (orchestrator), this simplifies to:
+When all three DI fields (`db`, `llmClients`, `embedder`) are provided, `create()` skips filesystem initialization entirely — no `~/.pristine/` directory needed. This is how tests run without side effects.
 
+### Agent Integration Pattern
+
+Agent harnesses (Claude Code, Pi, custom agents) integrate Pristine via hooks and tools:
+
+**Hook (after every agent response — stores conversation):**
 ```typescript
-async function handleTool(name: string, params: Record<string, unknown>) {
-  if (name === 'remember') {
-    return orchestrator.ingest(params.messages, userId);
-  }
-  if (name === 'recall') {
-    return orchestrator.retrieve(params.query, userId);
-  }
-}
+// Runs in ~0.1s — just the SQLite write. Fact extraction runs in background.
+await client.store(conversationMessages, userId);
 ```
 
-### MCP Server Pattern
+**Tool/skill (when the agent needs context):**
+```typescript
+// Semantic search — ~0.2s (embed query + vector search)
+const result = await client.search('What does the user prefer?', userId);
 
-For harnesses that support [Model Context Protocol](https://modelcontextprotocol.io), Pristine can be exposed as an MCP server with `remember` and `recall` tools. The MCP server is not built yet but would wrap the same tool handler above.
+// Keyword search — ~0.05s (pure SQL, no embedding)
+const convs = client.searchConversations({ userId, keyword: 'preferences' });
+```
+
+### Exported Types
+
+The barrel (`src/index.ts`) exports types that consumers need for typing tool handlers, test mocks, and DI overrides:
+
+```typescript
+// Core types
+import type { Message, Fact, Memory, IngestResult, RetrieveResult } from '@pristine/shield-local';
+import type { ConversationSearchResult, ConversationDetail } from '@pristine/shield-local';
+
+// Interfaces for DI and test mocks
+import type { LlmClient, Embedder, Orchestrator, Store } from '@pristine/shield-local';
+
+// Errors
+import { AppError, ConfigError, EmbedderError, OrchestratorError } from '@pristine/shield-local';
+```
 
 ---
 
@@ -852,7 +880,7 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ### Commands
 
 ```bash
-npm test              # Run all tests (375+)
+npm test              # Run all tests (585+)
 npm run typecheck     # TypeScript strict mode check
 npm run lint          # ESLint + Prettier
 npm run test:watch    # Watch mode

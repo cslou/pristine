@@ -11,6 +11,8 @@ export type { PristineLocalConfig } from './client.js';
 
 export type {
   AnalyzedQuery,
+  ConversationDetail,
+  ConversationSearchResult,
   Fact,
   IngestOptions,
   IngestResult,
@@ -23,6 +25,7 @@ export type {
   RankedMemory,
   RetrieveOptions,
   RetrieveResult,
+  SearchOptions,
 } from './core/types.js';
 
 // ---------------------------------------------------------------------------

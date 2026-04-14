@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError } from './errors.js';
 import { createDefaultDatabase } from './database.js';
+import type { EmbedderConfig } from '../embedder/index.js';
 
 // ---------------------------------------------------------------------------
 // ModelConfig types (discriminated union on 'engine')
@@ -25,6 +26,7 @@ export type ModelEntry = OllamaModelEntry | LlamaCppModelEntry;
 export interface ModelConfig {
   readonly privacy: ModelEntry;
   readonly memory: ModelEntry;
+  readonly embedder?: EmbedderConfig;
 }
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
@@ -94,6 +96,47 @@ function validateModelEntry(value: unknown, section: string): ModelEntry {
   };
 }
 
+const VALID_EMBEDDER_ENGINES = new Set(['ollama', 'local']);
+
+function validateEmbedderEntry(value: unknown): EmbedderConfig {
+  if (typeof value !== 'object' || value === null) {
+    throw new ConfigError(
+      `"embedder" in models.json must be an object. Example: { "engine": "ollama", "model": "nomic-embed-text" }`,
+    );
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  if (typeof obj.engine !== 'string' || !VALID_EMBEDDER_ENGINES.has(obj.engine)) {
+    throw new ConfigError(
+      `Unknown embedder engine "${String(obj.engine)}" in "embedder". Valid engines: ollama, local`,
+    );
+  }
+
+  if (obj.engine === 'ollama') {
+    if (obj.model !== undefined && (typeof obj.model !== 'string' || obj.model.length === 0)) {
+      throw new ConfigError(`"embedder.model" must be a non-empty string if provided`);
+    }
+    if (obj.host !== undefined && (typeof obj.host !== 'string' || obj.host.length === 0)) {
+      throw new ConfigError(`"embedder.host" must be a non-empty string if provided`);
+    }
+    return {
+      engine: 'ollama',
+      ...(obj.model !== undefined ? { model: obj.model as string } : {}),
+      ...(obj.host !== undefined ? { host: obj.host as string } : {}),
+    };
+  }
+
+  // engine === 'local'
+  if (obj.model !== undefined && (typeof obj.model !== 'string' || obj.model.length === 0)) {
+    throw new ConfigError(`"embedder.model" must be a non-empty string if provided`);
+  }
+  return {
+    engine: 'local',
+    ...(obj.model !== undefined ? { model: obj.model as string } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // loadModelConfig
 // ---------------------------------------------------------------------------
@@ -137,8 +180,9 @@ export function loadModelConfig(configDir?: string): ModelConfig {
 
   const privacy = validateModelEntry(obj.privacy, 'privacy');
   const memory = validateModelEntry(obj.memory, 'memory');
+  const embedder = 'embedder' in obj ? validateEmbedderEntry(obj.embedder) : undefined;
 
-  return { privacy, memory };
+  return { privacy, memory, ...(embedder ? { embedder } : {}) };
 }
 
 // ---------------------------------------------------------------------------

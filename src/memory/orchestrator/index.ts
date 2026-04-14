@@ -8,6 +8,7 @@ import type {
   PipelineStep,
   RetrieveOptions,
   RetrieveResult,
+  SearchOptions,
   StepError,
 } from '../../core/types.js';
 import type { Orchestrator } from '../../core/interfaces.js';
@@ -63,6 +64,7 @@ export const createOrchestrator = (config: OrchestratorConfig): Orchestrator => 
       embedder: config.embedder,
       store: config.store,
       consolidator: config.consolidator,
+      conversationStore: config.conversationStore,
       includeResolveInTurnOrder: false,
     }),
   );
@@ -126,8 +128,12 @@ export const createOrchestrator = (config: OrchestratorConfig): Orchestrator => 
     return ingest(conversation, userId);
   };
 
-  const search = async (query: string, userId: string, topK?: number): Promise<RetrieveResult> => {
-    return retrieve(query, userId, topK !== undefined ? { topK } : undefined);
+  const search = async (
+    query: string,
+    userId: string,
+    options?: SearchOptions,
+  ): Promise<RetrieveResult> => {
+    return retrieve(query, userId, options);
   };
 
   return {

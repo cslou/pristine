@@ -6,13 +6,20 @@ import type {
   RetrieveResult,
   RevealResult,
   SecureAndRedactResult,
+  ConversationDetail,
+  ConversationSearchResult,
+  IngestResult,
+  Message,
+  RetrieveResult,
+  SearchOptions,
 } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
-import { createLocalEmbedder } from './embedder/local/index.js';
+import { createEmbedder } from './embedder/index.js';
 import { SqliteStore } from './memory/store/sqlite/index.js';
+import { ConversationStore } from './conversations/store.js';
 import { createExtractor } from './memory/extractor/index.js';
 import { createConsolidator } from './memory/consolidator/index.js';
 import { createQueryAnalyzer } from './memory/query-analyzer/index.js';
@@ -26,6 +33,8 @@ import {
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
 } from './privacy/index.js';
+
+const VALID_ROLES = new Set<string>(['system', 'user', 'assistant']);
 
 // ---------------------------------------------------------------------------
 // Config
@@ -46,6 +55,7 @@ export interface PristineLocalConfig {
 export class PristineLocal {
   public readonly orchestrator: Orchestrator;
 
+  private readonly conversationStore: ConversationStore;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
   private readonly llmClients: LlmClients;
@@ -58,6 +68,7 @@ export class PristineLocal {
 
   private constructor(deps: {
     orchestrator: Orchestrator;
+    conversationStore: ConversationStore;
     db: Database.Database;
     embedder: Embedder;
     llmClients: LlmClients;
@@ -69,6 +80,7 @@ export class PristineLocal {
     ownsLlmClients: boolean;
   }) {
     this.orchestrator = deps.orchestrator;
+    this.conversationStore = deps.conversationStore;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.llmClients = deps.llmClients;
@@ -98,9 +110,11 @@ export class PristineLocal {
     const llmClients = config.llmClients ?? createLlmClients(init?.baseDir);
 
     const ownsEmbedder = config.embedder === undefined;
-    const embedder = config.embedder ?? createLocalEmbedder();
+    const embedder =
+      config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
 
     const store = new SqliteStore(db);
+    const conversationStore = new ConversationStore(db);
     const extractor = createExtractor(llmClients.memoryClient);
     const consolidator = createConsolidator(llmClients.memoryClient);
     const queryAnalyzer = createQueryAnalyzer(llmClients.memoryClient);
@@ -111,6 +125,7 @@ export class PristineLocal {
       embedder,
       store,
       consolidator,
+      conversationStore,
       retriever,
       queryAnalyzer,
     });
@@ -123,6 +138,7 @@ export class PristineLocal {
 
     return new PristineLocal({
       orchestrator,
+      conversationStore,
       db,
       embedder,
       llmClients,
@@ -143,8 +159,41 @@ export class PristineLocal {
     return this.orchestrator.store(conversation, userId);
   }
 
-  public async search(query: string, userId: string, topK?: number): Promise<RetrieveResult> {
-    return this.orchestrator.search(query, userId, topK);
+  public async search(
+    query: string,
+    userId: string,
+    options?: SearchOptions,
+  ): Promise<RetrieveResult> {
+    return this.orchestrator.search(query, userId, options);
+  }
+
+  // -------------------------------------------------------------------------
+  // Conversation API
+  // -------------------------------------------------------------------------
+
+  public searchConversations(params: {
+    userId: string;
+    keyword?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): ConversationSearchResult[] {
+    return this.conversationStore.searchConversations(params);
+  }
+
+  public getConversation(conversationId: string): ConversationDetail | null {
+    const stored = this.conversationStore.getConversation(conversationId);
+    if (!stored) return null;
+    return {
+      id: stored.id,
+      userId: stored.userId,
+      createdAt: stored.createdAt,
+      messages: stored.messages.map((m) => ({
+        role: VALID_ROLES.has(m.role) ? (m.role as Message['role']) : 'user',
+        content: m.content,
+        ...(m.timestamp ? { timestamp: m.timestamp } : {}),
+      })),
+    };
   }
 
   // -------------------------------------------------------------------------

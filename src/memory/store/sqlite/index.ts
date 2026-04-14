@@ -370,10 +370,10 @@ export class SqliteStore implements Store {
 
     if (mode === 'current') {
       temporalClause =
-        " AND (m.valid_from IS NULL OR m.valid_from <= datetime('now')) AND (m.valid_until IS NULL)";
+        " AND (m.valid_from IS NULL OR datetime(m.valid_from) <= datetime('now')) AND (m.valid_until IS NULL)";
     } else if (mode === 'as_of') {
       temporalClause =
-        ' AND (m.valid_from IS NULL OR m.valid_from <= ?) AND (m.valid_until IS NULL OR m.valid_until > ?)';
+        ' AND (m.valid_from IS NULL OR datetime(m.valid_from) <= datetime(?)) AND (m.valid_until IS NULL OR datetime(m.valid_until) > datetime(?))';
       filterValues.push(params.asOf, params.asOf);
     }
 
@@ -404,7 +404,7 @@ export class SqliteStore implements Store {
          WHERE memories_fts MATCH ?
            AND m.user_id = ?
            AND m.is_deleted = 0
-           AND (m.valid_from IS NULL OR m.valid_from <= datetime('now'))
+           AND (m.valid_from IS NULL OR datetime(m.valid_from) <= datetime('now'))
            AND m.valid_until IS NULL
          ORDER BY fts.rank
          LIMIT ?`,

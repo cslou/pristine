@@ -22,22 +22,28 @@ const unusedKekManager = {
 } as unknown as KekManager;
 
 describe('secureAndRedact blocked results', () => {
-  it('returns a structured blocked result for ungroundable LLM findings', async () => {
+  it('returns a structured blocked result for safety-scan survivors', async () => {
     const pipeline: PrivacyPipeline = {
       classifyAndRedact: vi.fn<PrivacyPipeline['classifyAndRedact']>().mockResolvedValue({
         report: {
           entities: [],
           hasSensitiveContent: false,
-          warnings: ['Classification blocked: Ungroundable LLM finding for type "health".'],
         },
         redaction: null,
-        safetyViolations: [],
-        blockedReason: 'ungroundable_llm_finding',
-        blockedWarnings: ['Classification blocked: Ungroundable LLM finding for type "health".'],
+        safetyViolations: [
+          {
+            type: 'email_address',
+            source: 'deterministic',
+            confidence: 0.99,
+            start: 12,
+            end: 29,
+            text: 'alice@example.com',
+          },
+        ],
       } satisfies ClassificationPipelineResult),
     };
 
-    const result = await secureAndRedact('Different text entirely.', {
+    const result = await secureAndRedact('Reach me at alice@example.com', {
       pipeline,
       vaultStore: unusedVaultStore,
       keyManager: unusedKeyManager,
@@ -49,12 +55,11 @@ describe('secureAndRedact blocked results', () => {
     if (result.ok) {
       throw new Error('Expected blocked privacy result');
     }
-    expect(result.reason).toBe('ungroundable_llm_finding');
-    expect(result.redactedText).toBe('Different text entirely.');
-    expect(result.safetyViolations).toEqual([]);
-    expect(result.warnings).toEqual([
-      'Classification blocked: Ungroundable LLM finding for type "health".',
-    ]);
+    expect(result.reason).toBe('safety_scan');
+    expect(result.redactedText).toBe('Reach me at alice@example.com');
+    expect(result.safetyViolations).toHaveLength(1);
+    expect(result.safetyViolations[0]!.type).toBe('email_address');
+    expect(result.warnings).toBeUndefined();
     expect(unusedVaultStore.addEntries).not.toHaveBeenCalled();
     expect(unusedKeyManager.getOrCreateKeyPair).not.toHaveBeenCalled();
   });

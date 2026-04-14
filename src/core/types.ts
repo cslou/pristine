@@ -168,7 +168,7 @@ export interface LlmClassifierConfig {
 }
 
 export type LlmFailureMode = 'block' | 'degrade';
-export type PrivacyBlockReason = 'safety_scan' | 'ungroundable_llm_finding';
+export type PrivacyBlockReason = 'safety_scan';
 
 export interface RedactionPlaceholder {
   readonly id: string;
@@ -193,8 +193,6 @@ export interface ClassificationPipelineResult {
   readonly report: SensitivityReport;
   readonly redaction: RedactionResult | null;
   readonly safetyViolations: readonly DetectedEntity[];
-  readonly blockedReason?: PrivacyBlockReason;
-  readonly blockedWarnings?: readonly string[];
 }
 
 export type SecureAndRedactResult =

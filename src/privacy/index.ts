@@ -106,19 +106,8 @@ export async function secureAndRedact(
   config: SecureAndRedactConfig,
 ): Promise<SecureAndRedactResult> {
   const pipeline = resolvePrivacyPipeline(config);
-  const { redaction, safetyViolations, blockedReason, blockedWarnings } =
-    await pipeline.classifyAndRedact(text);
+  const { redaction, safetyViolations } = await pipeline.classifyAndRedact(text);
   const redactedText = redaction?.redactedText ?? text;
-
-  if (blockedReason === 'ungroundable_llm_finding') {
-    return {
-      ok: false,
-      reason: 'ungroundable_llm_finding',
-      redactedText,
-      warnings: blockedWarnings,
-      safetyViolations: [],
-    };
-  }
 
   if (safetyViolations.length > 0) {
     return {
@@ -126,7 +115,6 @@ export async function secureAndRedact(
       reason: 'safety_scan',
       redactedText,
       safetyViolations,
-      ...(blockedWarnings && blockedWarnings.length > 0 ? { warnings: blockedWarnings } : {}),
     };
   }
 

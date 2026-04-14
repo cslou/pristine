@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createLlmClassifier } from '../../src/privacy/classifier/llm/index.js';
-import { LlmClassificationError, UngroundableLlmFindingError } from '../../src/core/errors.js';
+import { LlmClassificationError } from '../../src/core/errors.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
 
 const createMockClient = (result: unknown): LlmClient => ({
@@ -271,7 +271,7 @@ describe('LLM classifier', () => {
       );
     });
 
-    it('blocks when text is not found in the source', async () => {
+    it('fails closed when text is not found in the source and emits a warning', async () => {
       const sourceText = 'Different text entirely.';
       const client = createMockClient({
         findings: [
@@ -285,7 +285,14 @@ describe('LLM classifier', () => {
       });
 
       const classifier = createLlmClassifier(client);
-      await expect(classifier.classify(sourceText)).rejects.toThrow(UngroundableLlmFindingError);
+      const report = await classifier.classify(sourceText);
+
+      expect(report.entities).toHaveLength(1);
+      expect(report.entities[0]!.start).toBe(0);
+      expect(report.entities[0]!.end).toBe(sourceText.length);
+      expect(report.entities[0]!.text).toBe(sourceText);
+      expect(report.warnings).toHaveLength(1);
+      expect(report.warnings?.[0]).toMatch(/Fail-closed on ungroundable LLM finding/);
     });
   });
 

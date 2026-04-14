@@ -6,7 +6,7 @@ import type {
   LlmClassifierConfig,
 } from '../../../core/types.js';
 import type { SensitivityClassifier } from '../../../core/interfaces.js';
-import { LlmClassificationError, UngroundableLlmFindingError } from '../../../core/errors.js';
+import { LlmClassificationError } from '../../../core/errors.js';
 import { assertNoLlmReentry } from '../../sanitizer/index.js';
 import { buildClassificationPrompt } from './prompts.js';
 import { CLASSIFY_SENSITIVITY_SCHEMA } from './schema.js';
@@ -19,7 +19,7 @@ interface ClassifySensitivityInput {
 }
 
 interface GroundedFinding {
-  readonly entity: DetectedEntity | null;
+  readonly entity: DetectedEntity;
   readonly warning?: string;
 }
 
@@ -29,8 +29,15 @@ const groundFinding = (finding: LlmSensitivityFinding, sourceText: string): Grou
 
   if (ciIdx < 0) {
     return {
-      entity: null,
-      warning: `Ungroundable LLM finding for type "${finding.type}" with text "${finding.text}" (text not found in source).`,
+      entity: {
+        type: finding.type,
+        source: 'llm',
+        confidence: finding.confidence,
+        start: 0,
+        end: sourceText.length,
+        text: sourceText,
+      },
+      warning: `Fail-closed on ungroundable LLM finding for type "${finding.type}" with text "${finding.text}" by redacting the full input span.`,
     };
   }
 
@@ -98,23 +105,15 @@ export class LlmClassifier implements SensitivityClassifier {
       )
       .map((f) => groundFinding(f, text));
 
-    const ungroundableWarnings = groundedFindings
+    const entities = groundedFindings.map((finding) => finding.entity);
+    const warnings = groundedFindings
       .map((finding) => finding.warning)
       .filter((warning): warning is string => typeof warning === 'string');
-
-    if (ungroundableWarnings.length > 0) {
-      throw new UngroundableLlmFindingError(
-        `Classification blocked: ${ungroundableWarnings[0] ?? 'LLM returned an ungroundable finding.'}`,
-      );
-    }
-
-    const entities = groundedFindings
-      .map((finding) => finding.entity)
-      .filter((entity): entity is DetectedEntity => entity !== null);
 
     return {
       entities,
       hasSensitiveContent: entities.length > 0,
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   }
 }

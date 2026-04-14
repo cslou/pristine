@@ -5,7 +5,7 @@ import type {
   SensitivityReport,
   LlmClassifierConfig,
 } from '../../../core/types.js';
-import { LlmClassificationError, UngroundableLlmFindingError } from '../../../core/errors.js';
+import { LlmClassificationError } from '../../../core/errors.js';
 import { createLlmClassifier } from '../llm/index.js';
 import {
   createDeterministicClassifier,
@@ -201,10 +201,6 @@ class CombinedClassifier implements SensitivityClassifier {
     try {
       return await this.llm.classify(text);
     } catch (error: unknown) {
-      if (error instanceof UngroundableLlmFindingError) {
-        throw error;
-      }
-
       if (this.onLlmFailure === 'degrade') {
         const message =
           error instanceof LlmClassificationError

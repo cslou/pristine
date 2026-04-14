@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCombinedClassifier, mergeReports } from '../../src/privacy/classifier/combined/index.js';
 import { createLlmClassifier } from '../../src/privacy/classifier/llm/index.js';
 import { resolve, clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
-import { ResolveApprovalError, UngroundableLlmFindingError } from '../../src/core/errors.js';
+import { ResolveApprovalError } from '../../src/core/errors.js';
 import type { LlmClient } from '../../src/core/interfaces.js';
 
 describe('mergeReports', () => {
@@ -167,7 +167,7 @@ describe('combined classifier LLM failure modes', () => {
     );
   });
 
-  it('blocks on ungroundable LLM findings even when degrade mode is enabled', async () => {
+  it('keeps fail-closed ungroundable findings as full-span entities even when degrade mode is enabled', async () => {
     const client: LlmClient = {
       generate: vi.fn().mockResolvedValue({
         findings: [
@@ -182,10 +182,13 @@ describe('combined classifier LLM failure modes', () => {
     };
 
     const classifier = createCombinedClassifier(client, { onLlmFailure: 'degrade' });
+    const report = await classifier.classify('Different text entirely.');
 
-    await expect(classifier.classify('Different text entirely.')).rejects.toThrow(
-      UngroundableLlmFindingError,
-    );
+    expect(report.entities).toHaveLength(1);
+    expect(report.entities[0]!.start).toBe(0);
+    expect(report.entities[0]!.end).toBe('Different text entirely.'.length);
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings?.[0]).toMatch(/Fail-closed on ungroundable LLM finding/);
   });
 });
 

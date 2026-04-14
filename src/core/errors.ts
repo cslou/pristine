@@ -12,13 +12,6 @@ export class LlmClassificationError extends AppError {
   }
 }
 
-export class UngroundableLlmFindingError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'UngroundableLlmFindingError';
-  }
-}
-
 export class DownloadError extends AppError {
   public constructor(message: string) {
     super(message);

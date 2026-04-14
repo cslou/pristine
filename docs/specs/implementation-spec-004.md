@@ -598,21 +598,30 @@ Integrate Pristine secret redaction into Claude Code via the hooks system. Claud
 }
 ```
 
-#### PreToolUse Response Shape (the key modification path)
+#### PreToolUse Response Shapes
+
+**Reveal (primary path):** Tool input contains a placeholder from a prior redaction. The hook swaps it to the real secret so the command executes correctly. The LLM never sees the real value — only the tool runtime does.
 
 ```json
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "permissionDecisionReason": "Secrets redacted from command",
+    "permissionDecisionReason": "Placeholder revealed for execution",
     "updatedInput": {
-      "command": "curl -H 'Authorization: Bearer [SENSITIVE:api_key:uuid]' https://api.example.com",
+      "command": "curl -H 'Authorization: Bearer sk-ant-api03-real-secret-value' https://api.example.com",
       "description": "original description preserved",
       "timeout": 120000
     }
   }
 }
+```
+
+**Redact guard (edge case):** Tool input contains a raw secret (user typed it directly into a tool argument, not via prompt). The hook blocks execution — since Claude Code has no post-execution reveal, allowing a placeholder through would silently break the command.
+
+```json
+// stderr: "Command contains a raw API key. Use an environment variable instead."
+// exit code 2 (block)
 ```
 
 #### Open Questions

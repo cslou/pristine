@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 export { PristineLocal } from './client.js';
-export type { PristineLocalConfig } from './client.js';
+export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 
 // ---------------------------------------------------------------------------
 // Core types (consumer-facing)
@@ -40,4 +40,17 @@ export type { LlmClients } from './engine/index.js';
 // Errors
 // ---------------------------------------------------------------------------
 
-export { AppError, ConfigError, EmbedderError, OrchestratorError } from './core/errors.js';
+export {
+  AppError,
+  ConfigError,
+  EmbedderError,
+  IngestQueueError,
+  OrchestratorError,
+} from './core/errors.js';
+
+// ---------------------------------------------------------------------------
+// Queue
+// ---------------------------------------------------------------------------
+
+export { IngestQueue } from './queue/ingest-queue.js';
+export type { IngestTask, IngestQueueConfig } from './queue/ingest-queue.js';

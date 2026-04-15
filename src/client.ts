@@ -11,6 +11,7 @@ import type {
   SecureAndRedactResult,
 } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
+import { IngestQueueError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
@@ -22,6 +23,7 @@ import { createConsolidator } from './memory/consolidator/index.js';
 import { createQueryAnalyzer } from './memory/query-analyzer/index.js';
 import { createRetriever } from './memory/retriever/index.js';
 import { createOrchestrator } from './memory/orchestrator/index.js';
+import { IngestQueue } from './queue/ingest-queue.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
@@ -45,12 +47,18 @@ export interface PristineLocalConfig {
   readonly embedder?: Embedder;
 }
 
+export interface PristineLiteConfig {
+  readonly db?: Database.Database;
+  readonly baseDir?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
 export class PristineLocal {
   public readonly orchestrator: Orchestrator;
+  public readonly ingestQueue: IngestQueue;
 
   private readonly conversationStore: ConversationStore;
   private readonly db: Database.Database;
@@ -62,9 +70,11 @@ export class PristineLocal {
   private readonly ownsDb: boolean;
   private readonly ownsEmbedder: boolean;
   private readonly ownsLlmClients: boolean;
+  private readonly isLite: boolean;
 
   private constructor(deps: {
     orchestrator: Orchestrator;
+    ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
     db: Database.Database;
     embedder: Embedder;
@@ -75,8 +85,10 @@ export class PristineLocal {
     ownsDb: boolean;
     ownsEmbedder: boolean;
     ownsLlmClients: boolean;
+    isLite: boolean;
   }) {
     this.orchestrator = deps.orchestrator;
+    this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
     this.db = deps.db;
     this.embedder = deps.embedder;
@@ -87,6 +99,7 @@ export class PristineLocal {
     this.ownsDb = deps.ownsDb;
     this.ownsEmbedder = deps.ownsEmbedder;
     this.ownsLlmClients = deps.ownsLlmClients;
+    this.isLite = deps.isLite;
   }
 
   // -------------------------------------------------------------------------
@@ -127,6 +140,8 @@ export class PristineLocal {
       queryAnalyzer,
     });
 
+    const ingestQueue = new IngestQueue({ db, orchestrator, conversationStore });
+
     const keysDir =
       config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
     const keyManager = new FileSystemKeyManager({ keysDir });
@@ -135,6 +150,7 @@ export class PristineLocal {
 
     return new PristineLocal({
       orchestrator,
+      ingestQueue,
       conversationStore,
       db,
       embedder,
@@ -145,6 +161,42 @@ export class PristineLocal {
       ownsDb,
       ownsEmbedder,
       ownsLlmClients,
+      isLite: false,
+    });
+  }
+
+  /**
+   * Lightweight client with only DB, ConversationStore, and IngestQueue.
+   * No Ollama connection, no embedder, no LLM clients.
+   * Supports storeAsync(), searchConversations(), and getConversation().
+   * Throws IngestQueueError on store() or search() (those need full client).
+   */
+  public static createLite(config: PristineLiteConfig = {}): PristineLocal {
+    const ownsDb = config.db === undefined;
+    const db =
+      config.db ?? createDefaultDatabase(config.baseDir ? `${config.baseDir}/data` : undefined);
+
+    const conversationStore = new ConversationStore(db);
+    const ingestQueue = new IngestQueue({
+      db,
+      orchestrator: null as unknown as Orchestrator,
+      conversationStore,
+    });
+
+    return new PristineLocal({
+      orchestrator: null as unknown as Orchestrator,
+      ingestQueue,
+      conversationStore,
+      db,
+      embedder: null as unknown as Embedder,
+      llmClients: null as unknown as LlmClients,
+      keyManager: null as unknown as KeyManager,
+      kekManager: null as unknown as KekManager,
+      vaultStore: null as unknown as VaultStore,
+      ownsDb,
+      ownsEmbedder: false,
+      ownsLlmClients: false,
+      isLite: true,
     });
   }
 
@@ -153,7 +205,21 @@ export class PristineLocal {
   // -------------------------------------------------------------------------
 
   public async store(conversation: readonly Message[], userId: string): Promise<IngestResult> {
+    if (this.isLite) {
+      throw new IngestQueueError(
+        'store() requires a full client via PristineLocal.create(). ' +
+          'Use storeAsync() for fire-and-forget enqueuing with lite clients.',
+      );
+    }
     return this.orchestrator.store(conversation, userId);
+  }
+
+  /**
+   * Fire-and-forget: enqueue a conversation for background extraction.
+   * Returns the task ID, or empty string if duplicate conversation.
+   */
+  public storeAsync(conversation: readonly Message[], userId: string): string {
+    return this.ingestQueue.enqueue(conversation, userId);
   }
 
   public async search(
@@ -161,6 +227,12 @@ export class PristineLocal {
     userId: string,
     options?: SearchOptions,
   ): Promise<RetrieveResult> {
+    if (this.isLite) {
+      throw new IngestQueueError(
+        'search() requires a full client via PristineLocal.create(). ' +
+          'Lite clients support searchConversations() and getConversation().',
+      );
+    }
     return this.orchestrator.search(query, userId, options);
   }
 

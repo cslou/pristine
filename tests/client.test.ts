@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
+import { IngestQueueError } from '../src/core/errors.js';
 import type { LlmClient, Embedder } from '../src/core/interfaces.js';
 import type { LlmClients } from '../src/engine/index.js';
 
@@ -289,6 +290,135 @@ describe('PristineLocal', () => {
       expect(client.orchestrator.retrieve).toBeTypeOf('function');
       expect(client.orchestrator.ingestSteps).toBeDefined();
       expect(client.orchestrator.retrieveSteps).toBeDefined();
+    });
+  });
+
+  describe('ingestQueue property', () => {
+    it('exposes ingestQueue on full client', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      expect(client.ingestQueue).toBeDefined();
+      expect(client.ingestQueue.enqueue).toBeTypeOf('function');
+      expect(client.ingestQueue.claimNext).toBeTypeOf('function');
+      expect(client.ingestQueue.processNext).toBeTypeOf('function');
+    });
+  });
+
+  describe('storeAsync()', () => {
+    it('enqueues a conversation and returns task ID', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const taskId = client.storeAsync([{ role: 'user', content: 'I like coffee' }], 'test-user');
+
+      expect(taskId).toBeTruthy();
+      expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(client.ingestQueue.pending).toBe(1);
+    });
+
+    it('returns empty string for duplicate conversation', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      client.storeAsync([{ role: 'user', content: 'I like coffee' }], 'test-user');
+      const result = client.storeAsync([{ role: 'user', content: 'I like coffee' }], 'test-user');
+
+      expect(result).toBe('');
+    });
+  });
+
+  describe('createLite()', () => {
+    it('creates a lite client with in-memory DB', () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      expect(client).toBeInstanceOf(PristineLocal);
+      expect(client.ingestQueue).toBeDefined();
+
+      liteDb.close();
+    });
+
+    it('storeAsync() works on lite clients', () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      const taskId = client.storeAsync([{ role: 'user', content: 'Hello from lite' }], 'lite-user');
+
+      expect(taskId).toBeTruthy();
+      expect(client.ingestQueue.pending).toBe(1);
+
+      liteDb.close();
+    });
+
+    it('searchConversations() works on lite clients', () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      client.storeAsync([{ role: 'user', content: 'I love espresso coffee' }], 'lite-user');
+
+      const results = client.searchConversations({
+        userId: 'lite-user',
+        keyword: 'espresso',
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].snippet).toContain('<b>espresso</b>');
+
+      liteDb.close();
+    });
+
+    it('getConversation() works on lite clients', () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      client.storeAsync([{ role: 'user', content: 'Test message' }], 'lite-user');
+
+      const conversations = client.searchConversations({ userId: 'lite-user' });
+      const detail = client.getConversation(conversations[0].id);
+
+      expect(detail).not.toBeNull();
+      expect(detail!.messages).toHaveLength(1);
+      expect(detail!.messages[0].content).toBe('Test message');
+
+      liteDb.close();
+    });
+
+    it('store() throws IngestQueueError on lite client', async () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      await expect(client.store([{ role: 'user', content: 'test' }], 'lite-user')).rejects.toThrow(
+        IngestQueueError,
+      );
+
+      await expect(client.store([{ role: 'user', content: 'test' }], 'lite-user')).rejects.toThrow(
+        'store() requires a full client',
+      );
+
+      liteDb.close();
+    });
+
+    it('search() throws IngestQueueError on lite client', async () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      await expect(client.search('query', 'lite-user')).rejects.toThrow(IngestQueueError);
+
+      await expect(client.search('query', 'lite-user')).rejects.toThrow(
+        'search() requires a full client',
+      );
+
+      liteDb.close();
     });
   });
 });

@@ -200,6 +200,13 @@ export class IngestQueue {
    * Returns the claimed task, or null if queue is empty.
    */
   public async processNext(): Promise<IngestTask | null> {
+    if (!this.orchestrator) {
+      throw new IngestQueueError(
+        'processNext() requires a full client with an orchestrator. ' +
+          'Lite clients can only call enqueue().',
+      );
+    }
+
     const task = this.claimNext();
     if (!task) return null;
 

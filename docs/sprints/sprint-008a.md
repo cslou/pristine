@@ -179,8 +179,8 @@ Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplicat
 - **Planned commits:**
   1. `docs: document verification run results for sprint 008a` — add run output summary to sprint completion section
 - **Technical notes:**
-  - Run command: `cd benchmarks/memorybench && bun run src/index.ts run -p pristine -b locomo --limit 5`
-  - This runs ingest + search phases. Answer + judge phases will fail without a judge model configured — that's expected and OK for 008a. We're verifying plumbing, not accuracy. If the framework requires a judge to proceed, use `--skip-answer --skip-judge` if available, or verify via the unit tests from Story 2 + Story 3 instead.
+  - Run command: `cd benchmarks/memorybench && bun run src/index.ts run -p pristine -b locomo --limit 5`. If `--limit 5` takes questions sequentially from one conversation, use `--sample 1` (1 per category) or manually select questions from 2+ conversations to satisfy AC1. Check the LOCOMO dataset structure and the framework's `--limit` behavior before running.
+  - **Answer + judge phases:** The framework may require a judge model to run the full pipeline. Options in order of preference: (1) check if the framework supports `--phases ingest,search` or similar to run only ingest + search, (2) if not, use the `filesystem` reference provider with an OpenAI API key for one quick run to verify the ingestion fix, then verify the Pristine provider via its unit tests from Story 3, (3) as a last resort, temporarily stub the answer/judge phases to return dummy values so the pipeline completes.
   - The key metric is: **total ingestions = sum of unique sessions per conversation**, not questions x sessions.
 - **Priority:** Must-have
 - **Owner:** Coding Agent

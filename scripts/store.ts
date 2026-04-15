@@ -107,7 +107,14 @@ export async function main(argv: string[]): Promise<void> {
     ? PristineLocal.createLite({ db: createDatabase(args.dbPath) })
     : PristineLocal.createLite();
 
-  const messages = parsed.messages as Message[];
+  const messages: Message[] = parsed.messages.map((m) => ({
+    role:
+      m.role === 'system' || m.role === 'user' || m.role === 'assistant'
+        ? (m.role as Message['role'])
+        : 'user',
+    content: m.content,
+    ...(m.timestamp ? { timestamp: m.timestamp } : {}),
+  }));
   const taskId = client.storeAsync(messages, args.userId);
 
   if (taskId === '') {

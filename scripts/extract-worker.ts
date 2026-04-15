@@ -7,6 +7,7 @@
  * Usage:
  *   npx tsx scripts/extract-worker.ts [--db-path <path>] [--all] [--retry-failed]
  */
+import { fileURLToPath } from 'node:url';
 import pLimit from 'p-limit';
 import { createDatabase } from '../src/core/database.js';
 import { PristineLocal } from '../src/index.js';
@@ -17,7 +18,7 @@ import { PristineLocal } from '../src/index.js';
 
 const POLL_INTERVAL_MS = 2000;
 const IDLE_TIMEOUT_MS = 30_000;
-const QUEUE_THRESHOLDS = [100, 50, 10];
+const QUEUE_THRESHOLDS = [10, 50, 100];
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -64,15 +65,20 @@ export async function runWorker(
 
   let processed = 0;
   let lastActivityAt = Date.now();
-  let warningThresholdIndex = 0;
+  let lastWarningThreshold = 0;
 
   const logQueueDepth = (pending: number): void => {
-    for (let t = warningThresholdIndex; t < QUEUE_THRESHOLDS.length; t += 1) {
-      if (pending >= QUEUE_THRESHOLDS[t]) {
-        process.stderr.write(`[extract-worker] Warning: ${pending} tasks pending in queue\n`);
-        warningThresholdIndex = t + 1;
-        break;
+    // Find the highest threshold that is exceeded
+    let highest = 0;
+    for (const threshold of QUEUE_THRESHOLDS) {
+      if (pending >= threshold) {
+        highest = threshold;
       }
+    }
+    // Only warn if we crossed into a new (higher) threshold band
+    if (highest > lastWarningThreshold) {
+      process.stderr.write(`[extract-worker] Warning: ${pending} tasks pending in queue\n`);
+      lastWarningThreshold = highest;
     }
   };
 
@@ -128,8 +134,6 @@ export async function main(argv: string[]): Promise<void> {
 }
 
 // Entry point — only runs when executed directly (not when imported by tests)
-import { fileURLToPath } from 'node:url';
-
 const isDirectRun =
   process.argv[1] &&
   fileURLToPath(import.meta.url).endsWith(process.argv[1].replace(/^.*[\\/]/, ''));

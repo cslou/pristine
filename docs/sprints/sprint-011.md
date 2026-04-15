@@ -221,23 +221,37 @@ Stories are sequential: Story 1 (ingest queue module) → Story 2 (wire into Pri
 - **Dependencies:** Stories 3, 4
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] E2e test: `storeAsync()` enqueues → `processNext()` extracts facts → `search()` finds them
-  - [ ] E2e test: crash recovery — enqueue task, set status to `processing` with stale timestamp, call `claimNext()`, verify it resets and re-claims the task
-  - [ ] E2e test: Ollama connection error leaves task as `pending` (not `failed`)
-  - [ ] E2e test: `store.ts` stdin → `extract-worker.ts --all` → `search.ts` stdout produces correct results (full CLI round-trip)
-  - [ ] E2e test: `search-conversations.ts` finds stored conversations by keyword
-  - [ ] E2e test: spawn-on-demand — `store.ts` spawns worker, worker processes task and eventually exits
+  - [ ] **Happy path:** `storeAsync()` enqueues → `processNext()` extracts facts → `search()` finds them
+  - [ ] **CLI round-trip:** `store.ts` stdin → `extract-worker.ts --all` → `search.ts` stdout produces correct results
+  - [ ] **Conversation search:** `search-conversations.ts` finds stored conversations by keyword
+  - [ ] **Crash recovery (worker dies mid-extraction):** Enqueue task, set status to `processing` with stale `started_at` (>30s ago), call `claimNext()` → resets to `pending` and re-claims
+  - [ ] **Crash recovery (SIGKILL):** Same as above — stale `processing` row recovered on next claim
+  - [ ] **Ollama unreachable:** Mock orchestrator to throw connection error → task stays `pending` (not `failed`), worker keeps polling
+  - [ ] **Ollama returns garbage:** Mock orchestrator to throw extraction error (non-retryable) → task marked `failed` with error message
+  - [ ] **Duplicate conversation:** Enqueue same conversation twice → second enqueue catches UNIQUE constraint, no duplicate pending task
+  - [ ] **Two workers race:** Enqueue 5 tasks, run two `claimNext()` calls concurrently → each claims a different task, no double-processing
+  - [ ] **SQLITE_BUSY under concurrent writes:** Two processes write simultaneously → `busy_timeout` retries, both succeed (no SQLITE_BUSY error)
+  - [ ] **Worker spawn failure:** Mock `PristineLocal.create()` to throw in worker context → worker exits, pending tasks remain for next spawn attempt
+  - [ ] **Spawn-on-demand lifecycle:** `store.ts` spawns worker → worker processes task → worker idles 30s → worker exits
+  - [ ] **Queue backlog warning:** Enqueue 15 tasks → worker logs warning at threshold (>10 pending)
+  - [ ] **--retry-failed:** Mark tasks as `failed`, run `extract-worker.ts --retry-failed` → tasks reset to `pending` and processed
+  - [ ] **Transaction atomicity:** If pending task insert fails, conversation write is rolled back (neither persisted)
   - [ ] Tests skippable via `SKIP_SLOW_TESTS=1`
   - [ ] All tests pass: `npm run typecheck`, `npm test`, `npm run lint`
-- **Testing approach:** E2e tests with in-memory SQLite, mocked LlmClient, mock or real embedder. CLI tests spawn child processes with `child_process.execFile`. Spawn-on-demand test verifies `store.ts` spawns a detached process (check that the spawn call was made, not that the process completes — that's covered by the CLI round-trip test).
+- **Testing approach:** E2e tests with in-memory SQLite, mocked LlmClient, mock or real embedder. CLI tests spawn child processes with `child_process.execFile`. Failure mode tests use direct DB manipulation (set stale timestamps, inject concurrent claims) and mock injection (throw errors from orchestrator/Ollama). SQLITE_BUSY test uses two separate `better-sqlite3` connections to the same DB file (not in-memory — needs a real file for multi-process).
 - **QA:** N/A
 - **Planned commits:**
-  1. `test: add ingest queue and CLI end-to-end tests` — tests/integration/ingest-queue.test.ts, tests/e2e/cli-scripts.test.ts
+  1. `test: add ingest queue failure mode tests` — tests/integration/ingest-queue.test.ts (crash recovery, error classification, concurrent claims, SQLITE_BUSY, transaction atomicity, queue backlog warnings)
+  2. `test: add CLI script end-to-end tests` — tests/e2e/cli-scripts.test.ts (CLI round-trip, spawn-on-demand lifecycle, --retry-failed, spawn failure)
 - **Technical notes:**
-  - Crash recovery test: enqueue a task, directly update its status to `processing` with a stale `started_at` (>30s ago), then call `claimNext()` and verify it resets the task to `pending` and claims it.
-  - Ollama connection error test: mock the orchestrator's ingest to throw a connection error, verify the task stays `pending` (not `failed`).
-  - CLI round-trip: use `child_process.execFile('npx', ['tsx', 'scripts/store.ts', ...])` with stdin pipe for store, then `execFile` for extract-worker and search. Verify correct JSON output.
-  - Use `SKIP_SLOW_TESTS=1` guard since these tests involve real pipeline execution or process spawning.
+  - **Crash recovery test:** Enqueue a task, directly `UPDATE pending_ingest_tasks SET status = 'processing', started_at = datetime('now', '-60 seconds') WHERE id = ?`, then call `claimNext()` and verify it resets and claims.
+  - **Two workers race test:** Use two separate IngestQueue instances on the same DB. Call `claimNext()` on both — verify they claim different task IDs.
+  - **SQLITE_BUSY test:** Requires a real DB file (not `:memory:`) and two `better-sqlite3` connections. One holds a write transaction, the other attempts a write — verify it retries (due to `busy_timeout`) rather than throwing immediately.
+  - **Spawn failure test:** Mock `child_process.spawn` to verify it's called by `store.ts`, then verify pending tasks are still in the queue after the mock worker "fails."
+  - **Transaction atomicity test:** Mock the pending task INSERT to throw, verify the conversation is NOT in the conversation store (transaction rolled back).
+  - **Ollama connection error test:** Mock the orchestrator's ingest to throw `new EmbedderError('fetch failed')`, verify task status remains `pending`.
+  - **Queue backlog warning test:** Spy on console/logger, enqueue 15 tasks, run one `processNext()` cycle, verify warning was logged.
+  - Use `SKIP_SLOW_TESTS=1` guard since these tests involve process spawning and real DB files.
 - **Priority:** Must-have
 - **Owner:** Coding Agent
 

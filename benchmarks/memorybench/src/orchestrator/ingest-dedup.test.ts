@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import { getConversationId } from "./index"
 import type { RunCheckpoint } from "../types/checkpoint"
 import type { Provider, IngestResult } from "../types/provider"
@@ -192,7 +192,7 @@ describe("containerTag per-conversation deduplication", () => {
       )
 
       // Should ingest 3 sessions total (2 for conv-42 + 1 for conv-99),
-      // NOT 7 (2*3 + 1*2 per question)
+      // NOT 8 (2*3 + 1*2 per question)
       expect(ingestCallCount).toBe(3)
 
       // Should use only 2 unique containerTags (one per conversation)

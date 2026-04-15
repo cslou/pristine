@@ -95,7 +95,7 @@ export class PristineProvider implements Provider {
       this.clients.delete(containerTag)
     }
 
-    const dbPath = this.getDbPath(containerTag)
+    const dbPath = this.getDbPath(containerTag, false)
     try {
       rmSync(dbPath, { force: true })
       logger.info(`Cleared Pristine data for: ${containerTag}`)
@@ -104,11 +104,17 @@ export class PristineProvider implements Provider {
     }
   }
 
-  private getDbPath(containerTag: string): string {
-    const parts = containerTag.split("-")
-    const runId = parts.length >= 3 ? parts.slice(2).join("-") : "default"
+  private parseContainerTag(containerTag: string): { runId: string } {
+    // containerTag format: "conv-{conversationId}-{runId}"
+    // Use regex to handle conversationIds and runIds that may contain hyphens
+    const match = containerTag.match(/^conv-(.+?)-(.+)$/)
+    return { runId: match ? match[2] : "default" }
+  }
+
+  private getDbPath(containerTag: string, ensureDir = true): string {
+    const { runId } = this.parseContainerTag(containerTag)
     const runDir = join(RUNS_DIR, runId)
-    if (!existsSync(runDir)) {
+    if (ensureDir && !existsSync(runDir)) {
       mkdirSync(runDir, { recursive: true })
     }
     const safeName = containerTag.replace(/[^a-zA-Z0-9_.-]/g, "_")
@@ -121,7 +127,7 @@ export class PristineProvider implements Provider {
 
     if (!this.pristineModule) throw new Error("Provider not initialized")
 
-    const dbPath = this.getDbPath(containerTag)
+    const dbPath = this.getDbPath(containerTag, true)
     const db = this.pristineModule.createDatabase(dbPath)
     client = await this.pristineModule.PristineLocal.create({ db })
     this.clients.set(containerTag, client)

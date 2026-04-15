@@ -2,7 +2,7 @@
  * Ingest queue integration tests: failure modes, crash recovery, concurrency.
  * Skippable via SKIP_SLOW_TESTS=1.
  */
-import { existsSync, mkdtempSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -239,21 +239,23 @@ describe.skipIf(skipSlow)('IngestQueue integration', () => {
   describe('duplicate handling', () => {
     it('second enqueue returns empty string, no duplicate task', () => {
       const db = createDatabase(':memory:');
-      const conversationStore = new ConversationStore(db);
-      const queue = new IngestQueue({
-        db,
-        orchestrator: createMockOrchestrator(),
-        conversationStore,
-      });
+      try {
+        const conversationStore = new ConversationStore(db);
+        const queue = new IngestQueue({
+          db,
+          orchestrator: createMockOrchestrator(),
+          conversationStore,
+        });
 
-      const first = queue.enqueue(sampleConversation, 'user-1');
-      const second = queue.enqueue(sampleConversation, 'user-1');
+        const first = queue.enqueue(sampleConversation, 'user-1');
+        const second = queue.enqueue(sampleConversation, 'user-1');
 
-      expect(first).toBeTruthy();
-      expect(second).toBe('');
-      expect(queue.pending).toBe(1);
-
-      db.close();
+        expect(first).toBeTruthy();
+        expect(second).toBe('');
+        expect(queue.pending).toBe(1);
+      } finally {
+        db.close();
+      }
     });
   });
 
@@ -262,27 +264,41 @@ describe.skipIf(skipSlow)('IngestQueue integration', () => {
   // -------------------------------------------------------------------------
 
   describe('concurrent claims', () => {
-    it('two claimNext calls get different tasks', () => {
-      const db = createDatabase(':memory:');
-      const conversationStore = new ConversationStore(db);
-      const queue = new IngestQueue({
-        db,
-        orchestrator: createMockOrchestrator(),
-        conversationStore,
-      });
+    it('two separate connections claim different tasks', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'pristine-race-'));
+      const racePath = join(dir, 'test.db');
+      const db1 = createDatabase(racePath);
+      const db2 = createDatabase(racePath);
+      try {
+        const convStore1 = new ConversationStore(db1);
+        const queue1 = new IngestQueue({
+          db: db1,
+          orchestrator: createMockOrchestrator(),
+          conversationStore: convStore1,
+        });
+        const convStore2 = new ConversationStore(db2);
+        const queue2 = new IngestQueue({
+          db: db2,
+          orchestrator: createMockOrchestrator(),
+          conversationStore: convStore2,
+        });
 
-      for (let i = 0; i < 5; i += 1) {
-        queue.enqueue(makeConversation(`task-${i}`), 'user-1');
+        for (let i = 0; i < 5; i += 1) {
+          queue1.enqueue(makeConversation(`task-${i}`), 'user-1');
+        }
+
+        // Two separate connections claim — SQLite write lock ensures atomicity
+        const first = queue1.claimNext();
+        const second = queue2.claimNext();
+
+        expect(first).not.toBeNull();
+        expect(second).not.toBeNull();
+        expect(first!.id).not.toBe(second!.id);
+      } finally {
+        db1.close();
+        db2.close();
+        rmSync(dir, { recursive: true, force: true });
       }
-
-      const first = queue.claimNext();
-      const second = queue.claimNext();
-
-      expect(first).not.toBeNull();
-      expect(second).not.toBeNull();
-      expect(first!.id).not.toBe(second!.id);
-
-      db.close();
     });
   });
 
@@ -292,19 +308,15 @@ describe.skipIf(skipSlow)('IngestQueue integration', () => {
 
   describe('SQLITE_BUSY', () => {
     let dbPath: string;
+    let tempDir: string;
 
     beforeEach(() => {
-      const dir = mkdtempSync(join(tmpdir(), 'pristine-busy-'));
-      dbPath = join(dir, 'test.db');
+      tempDir = mkdtempSync(join(tmpdir(), 'pristine-busy-'));
+      dbPath = join(tempDir, 'test.db');
     });
 
     afterEach(() => {
-      for (const suffix of ['', '-wal', '-shm']) {
-        const file = dbPath + suffix;
-        if (existsSync(file)) {
-          unlinkSync(file);
-        }
-      }
+      rmSync(tempDir, { recursive: true, force: true });
     });
 
     it('busy_timeout allows concurrent writes without SQLITE_BUSY', () => {
@@ -344,35 +356,37 @@ describe.skipIf(skipSlow)('IngestQueue integration', () => {
   describe('transaction atomicity', () => {
     it('rolls back conversation if pending task insert fails', () => {
       const db = createDatabase(':memory:');
-      const conversationStore = new ConversationStore(db);
-      const queue = new IngestQueue({
-        db,
-        orchestrator: createMockOrchestrator(),
-        conversationStore,
-      });
+      try {
+        const conversationStore = new ConversationStore(db);
+        const queue = new IngestQueue({
+          db,
+          orchestrator: createMockOrchestrator(),
+          conversationStore,
+        });
 
-      // First enqueue succeeds
-      queue.enqueue(sampleConversation, 'user-1');
+        // First enqueue succeeds
+        queue.enqueue(sampleConversation, 'user-1');
 
-      // Break the pending_ingest_tasks table
-      db.exec('DROP TABLE pending_ingest_tasks');
-      db.exec(`CREATE TABLE pending_ingest_tasks (
-        id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, user_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending', error TEXT,
-        created_at TEXT DEFAULT (datetime('now')), started_at TEXT, completed_at TEXT,
-        CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
-      )`);
-      db.exec(`CREATE TRIGGER fail_insert BEFORE INSERT ON pending_ingest_tasks
-        BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`);
+        // Break the pending_ingest_tasks table
+        db.exec('DROP TABLE pending_ingest_tasks');
+        db.exec(`CREATE TABLE pending_ingest_tasks (
+          id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, user_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending', error TEXT,
+          created_at TEXT DEFAULT (datetime('now')), started_at TEXT, completed_at TEXT,
+          CHECK (status IN ('pending', 'processing', 'completed', 'failed'))
+        )`);
+        db.exec(`CREATE TRIGGER fail_insert BEFORE INSERT ON pending_ingest_tasks
+          BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`);
 
-      const newConv = [{ role: 'user' as const, content: 'Should be rolled back' }];
-      expect(() => queue.enqueue(newConv, 'user-2')).toThrow('simulated failure');
+        const newConv = [{ role: 'user' as const, content: 'Should be rolled back' }];
+        expect(() => queue.enqueue(newConv, 'user-2')).toThrow('simulated failure');
 
-      // Conversation should NOT be in the store
-      const results = conversationStore.searchConversations({ userId: 'user-2' });
-      expect(results).toHaveLength(0);
-
-      db.close();
+        // Conversation should NOT be in the store
+        const results = conversationStore.searchConversations({ userId: 'user-2' });
+        expect(results).toHaveLength(0);
+      } finally {
+        db.close();
+      }
     });
   });
 
@@ -383,31 +397,33 @@ describe.skipIf(skipSlow)('IngestQueue integration', () => {
   describe('queue backlog warning', () => {
     it('logs warning when queue exceeds threshold', async () => {
       const db = createDatabase(':memory:');
-      const mockClient = createMockLlmClient();
-      const llmClients: LlmClients = { privacyClient: mockClient, memoryClient: mockClient };
-      const client = await PristineLocal.create({
-        db,
-        llmClients,
-        embedder: createMockEmbedder(),
-      });
-
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      try {
+        const mockClient = createMockLlmClient();
+        const llmClients: LlmClients = { privacyClient: mockClient, memoryClient: mockClient };
+        const client = await PristineLocal.create({
+          db,
+          llmClients,
+          embedder: createMockEmbedder(),
+        });
 
-      for (let i = 0; i < 15; i += 1) {
-        client.storeAsync(makeConversation(`backlog-${i}`), 'user-1');
+        for (let i = 0; i < 15; i += 1) {
+          client.storeAsync(makeConversation(`backlog-${i}`), 'user-1');
+        }
+
+        await runWorker(client, { all: true, retryFailed: false });
+
+        const warnings = stderrSpy.mock.calls.filter(
+          (call) => typeof call[0] === 'string' && call[0].includes('Warning'),
+        );
+        expect(warnings.length).toBeGreaterThan(0);
+        expect(warnings[0][0]).toContain('tasks pending in queue');
+
+        await client.dispose();
+      } finally {
+        stderrSpy.mockRestore();
+        db.close();
       }
-
-      await runWorker(client, { all: true, retryFailed: false });
-
-      const warnings = stderrSpy.mock.calls.filter(
-        (call) => typeof call[0] === 'string' && call[0].includes('Warning'),
-      );
-      expect(warnings.length).toBeGreaterThan(0);
-      expect(warnings[0][0]).toContain('tasks pending in queue');
-
-      stderrSpy.mockRestore();
-      await client.dispose();
-      db.close();
     });
   });
 
@@ -418,28 +434,31 @@ describe.skipIf(skipSlow)('IngestQueue integration', () => {
   describe('--retry-failed', () => {
     it('resets failed tasks to pending and processes them', async () => {
       const db = createDatabase(':memory:');
-      const mockClient = createMockLlmClient();
-      const llmClients: LlmClients = { privacyClient: mockClient, memoryClient: mockClient };
-      const client = await PristineLocal.create({
-        db,
-        llmClients,
-        embedder: createMockEmbedder(),
-      });
+      try {
+        const mockClient = createMockLlmClient();
+        const llmClients: LlmClients = { privacyClient: mockClient, memoryClient: mockClient };
+        const client = await PristineLocal.create({
+          db,
+          llmClients,
+          embedder: createMockEmbedder(),
+        });
 
-      // Enqueue and manually fail tasks
-      client.storeAsync(sampleConversation, 'user-1');
-      const task = client.ingestQueue.claimNext();
-      db.prepare(
-        "UPDATE pending_ingest_tasks SET status = 'failed', error = 'test' WHERE id = ?",
-      ).run(task!.id);
+        // Enqueue and manually fail tasks
+        client.storeAsync(sampleConversation, 'user-1');
+        const task = client.ingestQueue.claimNext();
+        db.prepare(
+          "UPDATE pending_ingest_tasks SET status = 'failed', error = 'test' WHERE id = ?",
+        ).run(task!.id);
 
-      expect(client.ingestQueue.pending).toBe(0);
+        expect(client.ingestQueue.pending).toBe(0);
 
-      const result = await runWorker(client, { all: true, retryFailed: true });
-      expect(result.processed).toBe(1);
+        const result = await runWorker(client, { all: true, retryFailed: true });
+        expect(result.processed).toBe(1);
 
-      await client.dispose();
-      db.close();
+        await client.dispose();
+      } finally {
+        db.close();
+      }
     });
   });
 });

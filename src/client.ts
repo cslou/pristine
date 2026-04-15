@@ -1,17 +1,14 @@
 import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
 import type {
-  IngestResult,
-  Message,
-  RetrieveResult,
-  RevealResult,
-  SecureAndRedactResult,
   ConversationDetail,
   ConversationSearchResult,
   IngestResult,
   Message,
   RetrieveResult,
+  RevealResult,
   SearchOptions,
+  SecureAndRedactResult,
 } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
 import { initPristine } from './core/init.js';

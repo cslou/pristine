@@ -124,7 +124,7 @@ Stories are sequential: Story 1 (ingest queue module) → Story 2 (wire into Pri
 - **Coding Agent:** claude
 - **Acceptance criteria:**
   - [ ] `scripts/store.ts` reads conversation JSON from stdin, enqueues via `createLite()`, exits in <0.5s
-  - [ ] `scripts/store.ts` spawns detached `extract-worker.ts` if queue depth was 0 before enqueue (i.e., this is new work, likely no worker running)
+  - [ ] `scripts/store.ts` always spawns a detached `extract-worker.ts` after enqueue (no heuristic — avoids deadlock when stale `processing` rows prevent spawn)
   - [ ] `scripts/store.ts` accepts `--user-id <userId>` and optional `--db-path <path>`
   - [ ] Detached spawn uses `child_process.spawn` with `detached: true, stdio: 'ignore'`, `unref()`'d so `store.ts` exits immediately
   - [ ] `scripts/extract-worker.ts` runs a poll loop: `claimNext()` → `processNext()` → repeat. Exits when queue is empty and idle for 30s.
@@ -148,7 +148,7 @@ Stories are sequential: Story 1 (ingest queue module) → Story 2 (wire into Pri
   2. `feat: implement extract-worker.ts CLI script with poll loop` — scripts/extract-worker.ts
   3. `test: add CLI script tests` — tests/scripts/store.test.ts, tests/scripts/extract-worker.test.ts
 - **Technical notes:**
-  - **Spawn-on-demand pattern:** `store.ts` checks `queue.pending` before enqueue. If it was 0 (no prior work), spawn a worker after enqueue. If >0, a worker is likely already running (or will be spawned by another `store.ts` invocation). This is a heuristic, not a guarantee — if two `store.ts` calls race, two workers may spawn briefly. That's fine: atomic `claimNext()` prevents double-processing, and both workers self-terminate when idle.
+  - **Spawn-on-demand pattern:** `store.ts` always spawns a detached `extract-worker.ts` after enqueue. No heuristic check — this avoids a deadlock where stale `processing` rows (from crashed workers) keep `queue.pending > 0`, preventing new worker spawns while `claimNext()` (which resets stale rows) is never called. The cost of always spawning is an extra idle Node process (~50MB for 30s) when a worker is already running. The duplicate worker claims a different task (atomic `claimNext()`) or idles and exits. Harmless.
   - **Worker lifecycle:** `extract-worker.ts` starts → creates full `PristineLocal.create()` → polls `claimNext()` every 2s → processes claimed tasks → when queue empty, starts 30s idle countdown → exits on timeout. Any new enqueue resets the idle countdown (worker checks queue on each poll).
   - `--all` mode: skip idle wait, exit immediately when no pending tasks. For batch recovery and cron jobs.
   - `--retry-failed`: `UPDATE pending_ingest_tasks SET status = 'pending' WHERE status = 'failed'` before starting the poll loop.

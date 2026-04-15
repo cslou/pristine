@@ -514,7 +514,7 @@ queue.pending;    // number of pending + processing tasks
 
 - `scripts/store.ts` — CLI entry point for hooks
   - Uses `PristineLocal.createLite()` (DB + ConversationStore + IngestQueue only)
-  - Calls `queue.enqueue()`, then spawns detached `extract-worker.ts` if queue was empty before enqueue
+  - Calls `queue.enqueue()`, then always spawns detached `extract-worker.ts` (no heuristic — avoids deadlock from stale `processing` rows)
   - Exits in <0.5s
 
 - `scripts/extract-worker.ts` — self-terminating worker process
@@ -529,7 +529,7 @@ queue.pending;    // number of pending + processing tasks
 ```
 Normal: store.ts enqueues → worker claims → extract/embed/consolidate → completed
 Crash:  store.ts enqueues → worker claims → worker process dies mid-extraction
-        Next store.ts: enqueues new task → sees queue depth > 0 → may spawn worker
+        Next store.ts: enqueues new task → always spawns worker (no heuristic)
         New worker: claimNext() resets stale row → picks up crashed task + new task
 ```
 
@@ -636,7 +636,7 @@ npx tsx ~/.pristine/scripts/get-conversation.ts <conversationId>
 - [ ] 6.6: Tests: store.ts enqueues + spawns worker, extract-worker.ts claims + processes, search.ts returns JSON, all scripts handle missing args gracefully
 - [ ] 6.7: Document agent framework configuration examples (hook + skill definitions)
 
-**Exit criteria:** An agent can store conversations via a hook and search memory via a skill using these scripts. All scripts are stateless, output JSON to stdout, and require only Ollama running. No daemon.
+**Exit criteria:** An agent can store conversations via a hook and search memory via a skill using these scripts. All scripts are stateless and output JSON to stdout. Fast-path scripts (`store.ts`, `search-conversations.ts`, `get-conversation.ts`) require no Ollama. Full-path scripts (`search.ts`, `extract-worker.ts`) require Ollama running. No daemon.
 
 ---
 
@@ -842,5 +842,5 @@ Suggested sprint grouping:
 | Ollama embedder quality differs from HuggingFace local | Search quality regression | Both use Nomic Embed v1.5 — same model, same dimensions. Verify with benchmark before switching default. |
 | Conversation store grows unbounded | Disk usage on long-running agents | Add optional retention policy (delete conversations older than N days). Not in this spec — future work. |
 | Memorybench per-conversation ingest changes scoring semantics | Benchmark results not comparable to upstream | Document the change. Per-conversation is semantically correct — a user's memory persists across questions. The upstream per-question isolation is the bug. |
-| Ingest queue drain timeout | Agent hangs on shutdown if LLM is slow | Add configurable timeout to drain (default: 15s). After timeout, log warning and exit. Remaining tasks stay in `processing` and are recovered on next startup. |
+| Worker idle timeout too short | Worker exits while tasks are still being enqueued | Default 30s idle timeout. Worker polls every 2s, so new tasks are caught within one poll cycle. If worker exits and new tasks arrive, next `store.ts` always spawns a new worker. |
 | Process crash during extraction | In-flight extraction lost | Conversation + pending task are safe in SQLite (written atomically before extraction starts). Stale `processing` rows are automatically recovered on next claim attempt — no manual intervention needed. |

@@ -245,6 +245,21 @@ export class IngestQueue {
   }
 
   /**
+   * Reset all failed tasks to pending so they can be retried.
+   * Returns the number of tasks reset.
+   */
+  public resetFailed(): number {
+    const result = this.db
+      .prepare(
+        `UPDATE pending_ingest_tasks
+       SET status = 'pending', started_at = NULL
+       WHERE status = 'failed'`,
+      )
+      .run();
+    return result.changes;
+  }
+
+  /**
    * Number of tasks that are pending or currently being processed.
    */
   public get pending(): number {

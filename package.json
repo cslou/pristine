@@ -42,6 +42,7 @@
     "@huggingface/transformers": "4.0.1",
     "better-sqlite3": "12.8.0",
     "node-llama-cpp": "3.18.1",
+    "p-limit": "6.2.0",
     "sqlite-vec": "0.1.9"
   }
 }

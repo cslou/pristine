@@ -66,11 +66,18 @@ export function parseSearchArgs(argv: string[]): SearchArgs {
     process.exit(1);
   }
 
+  if (temporalMode === 'as_of') {
+    process.stderr.write(
+      'Error: --temporal-mode as_of requires --as-of <ISO date> (not yet supported)\n',
+    );
+    process.exit(1);
+  }
+
   return {
     userId,
     query,
     temporalMode: temporalMode as SearchArgs['temporalMode'],
-    topK: topK && !isNaN(topK) ? topK : undefined,
+    topK: topK !== undefined && !isNaN(topK) && topK > 0 ? topK : undefined,
     dbPath,
   };
 }

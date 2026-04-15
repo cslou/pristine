@@ -67,7 +67,7 @@ export function parseSearchConversationsArgs(argv: string[]): SearchConversation
     keyword,
     dateFrom,
     dateTo,
-    limit: limit && !isNaN(limit) ? limit : undefined,
+    limit: limit !== undefined && !isNaN(limit) && limit > 0 ? limit : undefined,
     dbPath,
   };
 }

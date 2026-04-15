@@ -53,14 +53,15 @@ Store conversations via a Pi extension that hooks `tool_result` events:
 
 ```typescript
 // extensions/pristine-store.ts
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 export default {
   event: 'tool_result',
   handler({ messages, userId }) {
-    const input = JSON.stringify({ messages });
-    execSync(
-      `echo '${input}' | npx tsx ~/projects/pristine/scripts/store.ts --user-id ${userId}`,
+    spawnSync(
+      'npx',
+      ['tsx', '~/projects/pristine/scripts/store.ts', '--user-id', userId],
+      { input: JSON.stringify({ messages }), encoding: 'utf8' },
     );
   },
 };

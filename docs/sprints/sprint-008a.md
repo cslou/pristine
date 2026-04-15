@@ -21,7 +21,7 @@
 - The memorybench source is at `~/projects/memory/benchmarks/memorybench/`. We port `src/`, `data/`, configs, strip vendor-specific providers (ourmemory, supermemory, mem0, zep), keep `filesystem` and `rag` as reference implementations.
 
 ### Parallelization
-Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplication) -> Story 3 (Pristine provider).
+Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplication) -> Story 3 (Pristine provider) -> Story 4 (verification run).
 
 ### Stories
 **Constraints:** Max 5 stories per sprint. Max 5 commits per story. If a story needs 6+ commits during planning, split it.
@@ -91,7 +91,7 @@ Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplicat
   - [ ] Ingest phase skips conversations that are already ingested (checkpoint tracks per-conversation, not per-question)
   - [ ] Search phase uses the conversation-level containerTag to query the shared namespace
   - [ ] `clear()` uses conversation-level containerTag (not per-question)
-  - [ ] Total session ingestions for a full LOCOMO run is 272 (not 55,014)
+  - [ ] Total session ingestions for a full LOCOMO run is 272 (not 55,014). Verified via unit test that counts ingestion calls.
   - [ ] Old-format checkpoints (per-question containerTag) are rejected with a clear error message instructing to use `--force` for a fresh run
   - [ ] Existing checkpoint/resume logic still works for new-format checkpoints
 - **Testing approach:** Add a unit test that verifies containerTag generation is per-conversation. Run a dry-run with `--limit 5` from two different conversations and verify ingest count matches expected sessions (not questions x sessions).
@@ -150,6 +150,41 @@ Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplicat
 - **Priority:** Must-have
 - **Owner:** Coding Agent
 
+#### Story 4: Verification run — prove ingestion fix and provider work end-to-end
+- **Story Checklist:**
+  - [ ] Follows sprint template (acceptance criteria, testing approach, automated QAs for agents, manual QAs for Lou, planned commits)
+  - [ ] Within size limits (max 5 commits; split if larger)
+  - [ ] Reviewed by sub-agent
+  - [ ] Review findings addressed and have sub-agent review again until they state that it is ok (fixes applied or disagreements noted)
+  - [ ] Each AC verified against git diff and test output before marking done
+  - [ ] Ready for Lou
+- **Review:**
+  - Reviewer: *(sub-agent session ID)*
+  - Findings: *(summary of review feedback)*
+  - Resolution: *(agreed + fixed / disagreed + reason)*
+- **As a** developer, **I want** to run the benchmark with a small subset and verify the ingestion fix and Pristine provider work, **so that** I know the sprint's changes are correct before moving to scoring/baseline.
+- **Dependencies:** Stories 2, 3
+- **Coding Agent:** claude
+- **Acceptance criteria:**
+  - [ ] **Ingestion count verified:** Run with `--limit 5` (5 questions spanning at least 2 conversations). Count total session ingestions. Must equal the number of unique sessions across those conversations (e.g., ~50), NOT questions x sessions. Log the count explicitly.
+  - [ ] **No 202x duplication:** If conv-42 has 29 sessions and 3 of the 5 questions come from conv-42, verify conv-42 is ingested exactly once (29 session ingestions), not 3 times (87).
+  - [ ] **Pristine provider ingest works:** Conversations are stored in file-backed SQLite DBs at `data/runs/{runId}/`. Verify DB files exist after ingest.
+  - [ ] **Pristine provider search works:** Search phase returns results (non-empty) for the ingested questions. At least 1 question gets a non-empty search result.
+  - [ ] **Checkpoint resume works:** Interrupt the run after 3 questions, restart with the same run ID. Verify it resumes from question 4 (not re-ingesting).
+  - [ ] **Run completes without crashes:** All 5 questions go through ingest -> search without errors.
+  - [ ] Results logged to stdout/file for Lou to inspect.
+- **Testing approach:** This IS the test — run the benchmark CLI with `--limit 5`, inspect output, verify ingestion count. This is a manual verification step, not an automated test.
+- **QA:**
+  - Lou: Inspect the run output — verify ingestion count matches expected sessions, search returns results, no crashes.
+- **Planned commits:**
+  1. `docs: document verification run results for sprint 008a` — add run output summary to sprint completion section
+- **Technical notes:**
+  - Run command: `cd benchmarks/memorybench && bun run src/index.ts run -p pristine -b locomo --limit 5`
+  - This runs ingest + search phases. Answer + judge phases will fail without a judge model configured — that's expected and OK for 008a. We're verifying plumbing, not accuracy. If the framework requires a judge to proceed, use `--skip-answer --skip-judge` if available, or verify via the unit tests from Story 2 + Story 3 instead.
+  - The key metric is: **total ingestions = sum of unique sessions per conversation**, not questions x sessions.
+- **Priority:** Must-have
+- **Owner:** Coding Agent
+
 ### Rules
 - Follow repo's `CLAUDE.md` for branching, rebase, and PR conventions
 - Follow PR template (`.github/PULL_REQUEST_TEMPLATE.md`) when opening PRs
@@ -183,6 +218,7 @@ Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplicat
 - :white_check_mark: Story 1: Port memorybench framework — PR #, status
 - :white_check_mark: Story 2: Fix 202x ingestion duplication — PR #, status
 - :white_check_mark: Story 3: Pristine provider — PR #, status
+- :white_check_mark: Story 4: Verification run — PR #, status
 
 ### New Dependencies
 

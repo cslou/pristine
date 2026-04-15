@@ -136,31 +136,33 @@ Pristine ships scripts that agents (hooks, skills, tools) call directly:
 
 ```bash
 # Store a conversation (hook — after every turn)
-# Writes to conversation store, spawns background extraction
-node ~/.pristine/scripts/store.js --user-id <userId> < conversation.json
+# Enqueues to SQLite + spawns background extraction worker
+npx tsx ~/.pristine/scripts/store.ts --user-id <userId> < conversation.json
 
 # Search memories (skill/tool — when agent needs context)
 # Returns ranked facts or embedded messages as JSON
-node ~/.pristine/scripts/search.js --user-id <userId> --query "where does the user live?"
-node ~/.pristine/scripts/search.js --user-id <userId> --query "current job" --temporal-mode current
+npx tsx ~/.pristine/scripts/search.ts --user-id <userId> --query "where does the user live?"
+npx tsx ~/.pristine/scripts/search.ts --user-id <userId> --query "current job" --temporal-mode current
 
 # Search conversations (skill/tool — keyword/date search, no embeddings)
-node ~/.pristine/scripts/search-conversations.js --user-id <userId> --keyword "Tokyo"
-node ~/.pristine/scripts/search-conversations.js --user-id <userId> --date-from 2026-04-01
+npx tsx ~/.pristine/scripts/search-conversations.ts --user-id <userId> --keyword "Tokyo"
+npx tsx ~/.pristine/scripts/search-conversations.ts --user-id <userId> --date-from 2026-04-01
 
 # Get full conversation by ID (after finding sourceConversationId from a fact)
-node ~/.pristine/scripts/get-conversation.js <conversationId>
+npx tsx ~/.pristine/scripts/get-conversation.ts <conversationId>
 
 # Privacy
-node ~/.pristine/scripts/secure-and-redact.js --user-id <userId> < text.txt
-node ~/.pristine/scripts/reveal.js --user-id <userId> < redacted.txt
+npx tsx ~/.pristine/scripts/secure-and-redact.ts --user-id <userId> < text.txt
+npx tsx ~/.pristine/scripts/reveal.ts --user-id <userId> < redacted.txt
 ```
 
 All scripts:
+- TypeScript files run via `tsx` (no build step needed)
 - Read input from stdin or CLI args
 - Output JSON to stdout
 - Exit after completion (stateless)
-- Require Ollama running for any embedding or LLM operations
+- Fast-path scripts (`store.ts`, `search-conversations.ts`, `get-conversation.ts`) use `createLite()` — no Ollama needed
+- Full-path scripts (`search.ts`, `extract-worker.ts`) use `PristineLocal.create()` — require Ollama running
 - Use `~/.pristine/data/pristine.db` by default (configurable via `--db-path`)
 
 Agent framework configuration example (Claude Code):
@@ -168,7 +170,10 @@ Agent framework configuration example (Claude Code):
 ```json
 {
   "hooks": {
-    "afterResponse": "node ~/.pristine/scripts/store.js --user-id $USER_ID < $CONVERSATION_JSON"
+    "PostToolUse": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "npx tsx ~/.pristine/scripts/store.ts --user-id $USER_ID < $CONVERSATION_JSON" }]
+    }]
   }
 }
 ```
@@ -178,7 +183,7 @@ Skill definition example:
 ```yaml
 name: search-memory
 description: Search the user's long-term memory for relevant facts
-command: node ~/.pristine/scripts/search.js --user-id $USER_ID --query "$QUERY"
+command: npx tsx ~/.pristine/scripts/search.ts --user-id $USER_ID --query "$QUERY"
 ```
 
 ### Recovery
@@ -222,8 +227,8 @@ Default behavior when `embedder` is not present: fall back to `"engine": "local"
 | 2 | Conversation Search | `searchConversations()` and `getConversation()` API. Keyword + date search via FTS5/SQL. | 009 |
 | 3 | Embedder Engine Support | Configurable embedder via `models.json` — Ollama (recommended), llamacpp, local HuggingFace. Eliminates daemon. | 010 |
 | 4 | Search API — temporalMode | Expose `temporalMode` and `asOf` options on `search()` convenience method. | 010 |
-| 5 | Ingest Queue with Drain | Tracked promise set for background `store()` calls. `drain()` for graceful shutdown. | 011 |
-| 6 | CLI Scripts | `store.js`, `extract-worker.js`, `search.js`, `search-conversations.js`, `get-conversation.js`. Agent integration surface. | 011 |
+| 5 | Durable Ingest Queue with Crash Recovery | SQLite outbox + spawn-on-demand worker for background extraction. Crash recovery via stale-row reset. | 011 |
+| 6 | CLI Scripts | `store.ts`, `extract-worker.ts`, `search.ts`, `search-conversations.ts`, `get-conversation.ts`. Agent integration surface. | 011 |
 | 7 | Drop Superseded Phases | Remove episodic, relational, retrieval fusion, two-phase ingestion from roadmap. Documentation only. | Any |
 | 8 | Memorybench Fixes | Port framework, fix 202x ingestion duplication (55,014 → 272 sessions), create Pristine provider. | 008 |
 | 9 | Memorybench Local Models | Ollama judge + answering model. $0/run. Baseline accuracy report. | 008 |
@@ -454,43 +459,94 @@ Backward compatible — `topK` was the only option before, and it moves into the
 
 ---
 
-### Phase 5: Ingest Queue with Graceful Drain
+### Phase 5: Durable Ingest Queue with Crash Recovery
 
-When agents fire `store()` as fire-and-forget after each turn, in-flight ingestions are lost if the session ends abruptly. The ingest queue tracks pending work and provides a `drain()` method for graceful shutdown.
+When agents fire `store()` as fire-and-forget after each turn, in-flight ingestions are lost if the session ends abruptly. A durable SQLite-backed queue ensures pending work survives process crashes and is automatically recovered on next startup.
+
+#### Design: SQLite Outbox + Spawn-on-Demand Worker
+
+Write the intent to a `pending_ingest_tasks` table in the same transaction as the conversation store write. A **separate worker process** (spawned on demand by `store.ts`) polls the table, claims tasks, runs the slow path (extract/embed/consolidate), marks them complete, and self-terminates when idle for 30s. No persistent daemon — the worker starts when there's work and stops when there isn't.
+
+Crash recovery is built into every claim attempt — stale `processing` rows (from crashed workers) are automatically reset to `pending`. No coordination between workers (no PID files, no heartbeats). If two workers briefly run in parallel (race condition on spawn), the atomic `claimNext()` prevents double-processing.
+
+This pattern is well-established in local-first apps (plainjob, liteque, claude-mem).
+
+#### Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS pending_ingest_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  error TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  started_at TEXT,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pending_tasks_status ON pending_ingest_tasks(status);
+```
 
 #### API
 
 ```typescript
 const queue = pristine.ingestQueue;
 
-// After each turn — non-blocking, returns immediately
+// After each turn — writes conversation + pending task atomically, returns immediately
 queue.enqueue(conversation, userId);
 
-// On shutdown — blocks until all pending ingests complete
-await queue.drain();
+// Claim and process the next pending task (used by extract-worker.ts)
+await queue.processNext();
 
 // Observability
-queue.pending;   // number of in-flight ingestions
-queue.on('error', (err, conversation) => { /* log or retry */ });
+queue.pending;    // number of pending + processing tasks
 ```
 
 #### Implementation
 
 - `src/queue/ingest-queue.ts` — `IngestQueue` class
-  - Wraps `pristine.store()` with a tracked `Set<Promise>`
-  - `enqueue()` fires store() and adds the promise to the set, removes on completion
-  - `drain()` awaits `Promise.all()` on the current set
-  - Optional max concurrency to prevent overloading Ollama during catch-up
-  - Error events emitted, not thrown — one failed ingestion doesn't crash the queue
+  - **Enqueue:** In a single `better-sqlite3` transaction: write conversation to `ConversationStore`, insert `pending` row into `pending_ingest_tasks`. Returns immediately (~0.1s).
+  - **claimNext():** Reset stale `processing` rows (older than 30s) to `pending` (crash recovery), then atomically claim next `pending` row (`pending` → `processing`). Returns the claimed task or null.
+  - **processNext():** Calls `claimNext()`, runs the full ingest pipeline on the claimed task, marks `completed` on success. Ollama connection errors → leave as `pending` (retryable). Other errors → mark `failed`.
+  - **Concurrency:** `p-limit(1)` within the worker process — one Ollama pipeline at a time.
+  - **No in-process worker/poller.** The polling loop lives in `scripts/extract-worker.ts` (a separate process, spawned on demand by `store.ts`).
+
+- `scripts/store.ts` — CLI entry point for hooks
+  - Uses `PristineLocal.createLite()` (DB + ConversationStore + IngestQueue only)
+  - Calls `queue.enqueue()`, then always spawns detached `extract-worker.ts` (no heuristic — avoids deadlock from stale `processing` rows)
+  - Exits in <0.5s
+
+- `scripts/extract-worker.ts` — self-terminating worker process
+  - Uses full `PristineLocal.create()` (needs Ollama)
+  - Polls: `claimNext()` every 2s → `processNext()` → repeat
+  - Self-terminates after 30s idle (queue empty, no new work)
+  - `--all` mode: process all pending, exit immediately when empty
+  - `--retry-failed`: reset failed tasks to pending before processing
+
+#### Crash Recovery Flow
+
+```
+Normal: store.ts enqueues → worker claims → extract/embed/consolidate → completed
+Crash:  store.ts enqueues → worker claims → worker process dies mid-extraction
+        Next store.ts: enqueues new task → always spawns worker (no heuristic)
+        New worker: claimNext() resets stale row → picks up crashed task + new task
+```
+
+No data is lost because the conversation is already in SQLite (written in the same transaction as the pending task). The slow path (fact extraction) is idempotent — re-running it on the same conversation produces the same facts (content hash dedup prevents duplicates).
 
 #### Tasks
 
-- [ ] 5.1: Implement `IngestQueue` in `src/queue/ingest-queue.ts`
-- [ ] 5.2: Expose `ingestQueue` property on PristineLocal
-- [ ] 5.3: Tests: enqueue multiple, drain waits for all, errors emitted not thrown, pending count accurate
-- [ ] 5.4: Test: max concurrency limits parallel ingestions
+- [ ] 5.1: Implement `IngestQueue` with SQLite pending_ingest_tasks table, enqueue, claimNext, processNext
+- [ ] 5.2: Implement atomic enqueue (conversation + pending task in one transaction)
+- [ ] 5.3: Implement self-healing claim (reset stale processing rows on every claim attempt)
+- [ ] 5.4: Implement error classification: Ollama connection errors → leave as pending (retryable), other errors → mark failed
+- [ ] 5.5: Expose `ingestQueue` property on PristineLocal + `createLite()` for fast-path scripts
+- [ ] 5.6: Implement `store.ts` with enqueue + spawn-on-demand worker
+- [ ] 5.7: Implement `extract-worker.ts` with poll loop + self-termination + --all + --retry-failed
+- [ ] 5.8: Tests: enqueue, claim, crash recovery, error classification, spawn-on-demand, CLI round-trip
 
-**Exit criteria:** Agents can fire-and-forget `store()` calls with confidence that `drain()` on shutdown will complete all pending work. No lost memories on session end.
+**Exit criteria:** Agents can fire-and-forget `store()` calls via CLI hooks. Pending work survives process crashes and is automatically recovered. Worker self-terminates when idle. No persistent daemon. No lost memories.
 
 ---
 
@@ -500,79 +556,87 @@ Ship the scripts that agents (hooks, skills, tools) call to use Pristine. These 
 
 #### Scripts
 
-**`store.js`** — called by hooks after every agent turn
+**`store.ts`** — called by hooks after every agent turn
 
 ```bash
-node ~/.pristine/scripts/store.js --user-id <userId> < conversation.json
+npx tsx ~/.pristine/scripts/store.ts --user-id <userId> < conversation.json
 ```
 
 1. Reads conversation JSON from stdin
-2. Opens SQLite, writes to conversation store (~0.1s)
-3. Spawns detached `extract-worker.js` child process
-4. Exits immediately (~0.1s total)
+2. Opens SQLite via `createLite()` (no Ollama, no embedder — fast path only)
+3. Writes conversation + pending ingest task atomically (via `IngestQueue.enqueue()`)
+4. Always spawns a detached `extract-worker.ts` after enqueue (no heuristic — avoids deadlock from stale `processing` rows)
+5. Exits immediately (<0.5s total)
 
-**`extract-worker.js`** — spawned by store.js, runs in background
-
-1. Opens SQLite, reads conversation back
-2. Calls Ollama (llama3.2) for fact extraction
-3. Calls Ollama (nomic-embed-text) for embedding
-4. Calls Ollama (llama3.2) for consolidation
-5. Writes facts to SQLite
-6. Exits when done (8-12s total, invisible to agent)
-
-**`search.js`** — called by skills/tools when agent needs memory
+**`extract-worker.ts`** — spawn-on-demand worker (spawned by `store.ts`, self-terminates when idle)
 
 ```bash
-node ~/.pristine/scripts/search.js --user-id <userId> --query "where does the user live?"
-node ~/.pristine/scripts/search.js --user-id <userId> --query "current job" --temporal-mode current
+npx tsx ~/.pristine/scripts/extract-worker.ts                # poll loop, exit after 30s idle
+npx tsx ~/.pristine/scripts/extract-worker.ts --all          # process all pending, exit immediately
+npx tsx ~/.pristine/scripts/extract-worker.ts --retry-failed # reset failed tasks, then process
 ```
 
-1. Calls Ollama (nomic-embed-text) for query embedding (~0.1s)
-2. SQLite vector search (~0.05s)
+1. Opens SQLite, creates full `PristineLocal.create()` (Ollama embedder + LLM)
+2. Default mode: polls `claimNext()` every 2s → processes claimed tasks → self-terminates after 30s idle
+3. `--all` mode: processes all pending tasks, exits immediately when queue empty (no idle wait)
+4. `--retry-failed`: resets failed tasks to pending before processing
+5. Uses `p-limit(1)` for Ollama calls — one pipeline at a time
+
+**`search.ts`** — called by skills/tools when agent needs memory
+
+```bash
+npx tsx ~/.pristine/scripts/search.ts --user-id <userId> --query "where does the user live?"
+npx tsx ~/.pristine/scripts/search.ts --user-id <userId> --query "current job" --temporal-mode current
+```
+
+1. Creates full `PristineLocal.create()` (needs Ollama for query embedding)
+2. Calls `search()` with options (~0.2s)
 3. Outputs JSON results to stdout
-4. Exits (~0.2s total)
+4. Exits (<2s total including init)
 
-**`search-conversations.js`** — keyword/date search over raw conversations
-
-```bash
-node ~/.pristine/scripts/search-conversations.js --user-id <userId> --keyword "Tokyo"
-node ~/.pristine/scripts/search-conversations.js --user-id <userId> --date-from 2026-04-01
-```
-
-1. SQLite FTS5 query (~0.01s)
-2. Outputs JSON results to stdout
-3. Exits (~0.05s total — no Ollama call)
-
-**`get-conversation.js`** — retrieve full conversation by ID
+**`search-conversations.ts`** — keyword/date search over raw conversations
 
 ```bash
-node ~/.pristine/scripts/get-conversation.js <conversationId>
+npx tsx ~/.pristine/scripts/search-conversations.ts --user-id <userId> --keyword "Tokyo"
+npx tsx ~/.pristine/scripts/search-conversations.ts --user-id <userId> --date-from 2026-04-01
 ```
 
-1. SQLite lookup by primary key (~instant)
-2. Outputs full conversation JSON to stdout
+1. Opens SQLite via `createLite()` (no Ollama needed)
+2. FTS5 query (~0.01s)
+3. Outputs JSON results to stdout
+4. Exits (<0.5s total)
+
+**`get-conversation.ts`** — retrieve full conversation by ID
+
+```bash
+npx tsx ~/.pristine/scripts/get-conversation.ts <conversationId>
+```
+
+1. Opens SQLite via `createLite()` (no Ollama needed)
+2. Primary key lookup (~instant)
+3. Outputs full conversation JSON to stdout
 
 #### Implementation
 
-- `scripts/store.js` — uses `ConversationStore` for SQLite write, `child_process.spawn` for detached worker
-- `scripts/extract-worker.js` — uses `PristineLocal.create()` with Ollama embedder (no cold start), runs full ingest pipeline
-- `scripts/search.js` — uses `PristineLocal.create()`, calls `search()`, outputs JSON
-- `scripts/search-conversations.js` — uses `ConversationStore` directly, FTS5 query
-- `scripts/get-conversation.js` — uses `ConversationStore` directly, primary key lookup
-- All scripts read `~/.pristine/models.json` for engine config
+- `scripts/store.ts` — uses `PristineLocal.createLite()` (DB + ConversationStore + IngestQueue only). Enqueues and spawns detached worker.
+- `scripts/extract-worker.ts` — uses full `PristineLocal.create()` (Ollama embedder + LLM). Polls queue, processes tasks, self-terminates.
+- `scripts/search.ts` — uses full `PristineLocal.create()`. Reads `~/.pristine/models.json` for engine config.
+- `scripts/search-conversations.ts` — uses `PristineLocal.createLite()`. No Ollama needed.
+- `scripts/get-conversation.ts` — uses `PristineLocal.createLite()`. No Ollama needed.
+- Only `extract-worker.ts` and `search.ts` read `~/.pristine/models.json` (they need Ollama). Lite scripts skip it.
 - All scripts use `~/.pristine/data/pristine.db` by default, configurable via `--db-path`
 
 #### Tasks
 
-- [ ] 6.1: Implement `scripts/store.js` with conversation store write + detached worker spawn
-- [ ] 6.2: Implement `scripts/extract-worker.js` with full SDK pipeline
-- [ ] 6.3: Implement `scripts/search.js` with memory search + JSON output
-- [ ] 6.4: Implement `scripts/search-conversations.js` with FTS5 + JSON output
-- [ ] 6.5: Implement `scripts/get-conversation.js` with conversation retrieval
-- [ ] 6.6: Tests: store.js writes conversation and spawns worker, search.js returns JSON, all scripts handle missing args gracefully
+- [ ] 6.1: Implement `scripts/store.ts` with `createLite()` enqueue + detached worker spawn
+- [ ] 6.2: Implement `scripts/extract-worker.ts` with poll loop + self-termination + --all + --retry-failed
+- [ ] 6.3: Implement `scripts/search.ts` with memory search + JSON output
+- [ ] 6.4: Implement `scripts/search-conversations.ts` with FTS5 + JSON output via `createLite()`
+- [ ] 6.5: Implement `scripts/get-conversation.ts` with conversation retrieval via `createLite()`
+- [ ] 6.6: Tests: store.ts enqueues + spawns worker, extract-worker.ts claims + processes, search.ts returns JSON, all scripts handle missing args gracefully
 - [ ] 6.7: Document agent framework configuration examples (hook + skill definitions)
 
-**Exit criteria:** An agent can store conversations via a hook and search memory via a skill using these scripts. All scripts are stateless, output JSON to stdout, and require only Ollama running. No daemon.
+**Exit criteria:** An agent can store conversations via a hook and search memory via a skill using these scripts. All scripts are stateless and output JSON to stdout. Fast-path scripts (`store.ts`, `search-conversations.ts`, `get-conversation.ts`) require no Ollama. Full-path scripts (`search.ts`, `extract-worker.ts`) require Ollama running. No daemon.
 
 ---
 
@@ -778,5 +842,5 @@ Suggested sprint grouping:
 | Ollama embedder quality differs from HuggingFace local | Search quality regression | Both use Nomic Embed v1.5 — same model, same dimensions. Verify with benchmark before switching default. |
 | Conversation store grows unbounded | Disk usage on long-running agents | Add optional retention policy (delete conversations older than N days). Not in this spec — future work. |
 | Memorybench per-conversation ingest changes scoring semantics | Benchmark results not comparable to upstream | Document the change. Per-conversation is semantically correct — a user's memory persists across questions. The upstream per-question isolation is the bug. |
-| Ingest queue drain timeout | Agent hangs on shutdown if LLM is slow | Add configurable timeout to drain (default: 30s). After timeout, log warning and exit. |
-| Detached child process crash | Extraction lost for that turn | Conversation is safe in SQLite (written before child spawns). Recovery sweep detects unextracted conversations and reprocesses them. |
+| Worker idle timeout too short | Worker exits while tasks are still being enqueued | Default 30s idle timeout. Worker polls every 2s, so new tasks are caught within one poll cycle. If worker exits and new tasks arrive, next `store.ts` always spawns a new worker. |
+| Process crash during extraction | In-flight extraction lost | Conversation + pending task are safe in SQLite (written atomically before extraction starts). Stale `processing` rows are automatically recovered on next claim attempt — no manual intervention needed. |

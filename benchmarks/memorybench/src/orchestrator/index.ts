@@ -17,6 +17,15 @@ import { runAnswerPhase } from "./phases/answer"
 import { runEvaluatePhase } from "./phases/evaluate"
 import { generateReport, saveReport, printReport } from "./phases/report"
 
+/**
+ * Extract conversationId from a questionId.
+ * LOCOMO format: "{sampleId}-q{index}" → returns "{sampleId}"
+ */
+export function getConversationId(questionId: string): string {
+  const match = questionId.match(/^(.+)-q\d+$/)
+  return match ? match[1] : questionId
+}
+
 export interface OrchestratorOptions {
   provider: ProviderName
   benchmark: BenchmarkName
@@ -251,7 +260,8 @@ export class Orchestrator {
         : allQuestions
 
       for (const q of questionsToInit) {
-        const containerTag = `${q.questionId}-${checkpoint.dataSourceRunId}`
+        const conversationId = getConversationId(q.questionId)
+        const containerTag = `conv-${conversationId}-${checkpoint.dataSourceRunId}`
         this.checkpointManager.initQuestion(checkpoint, q.questionId, containerTag, {
           question: q.question,
           groundTruth: q.groundTruth,

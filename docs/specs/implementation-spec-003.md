@@ -707,15 +707,15 @@ Add Ollama as a judge and answering model backend so the full benchmark runs for
 | Configuration | Judge | Answering Model | Cost/run | Time (LOCOMO sampled) |
 |--------------|-------|-----------------|----------|----------------------|
 | Current | GPT-4o | GPT-4o | ~$50 | ~3-4 hours |
-| Local | ollama:llama3.2 | ollama:llama3.2 | $0 | ~4-5 hours |
-| Hybrid | Haiku (API) | ollama:llama3.2 | ~$3-5 | ~3-4 hours |
+| Local | ollama:gemma4:e4b | ollama:gemma4:e4b | $0 | ~4-5 hours |
+| Hybrid | Haiku (API) | ollama:gemma4:e4b | ~$3-5 | ~3-4 hours |
 
 #### Implementation
 
 - `benchmarks/memorybench/src/judges/ollama.ts` — Ollama judge backend calling `/api/chat` with `format: "json"`
 - Answering model support for `ollama:modelname` format in the answer phase
 - Retry logic for malformed JSON from local models (3 attempts)
-- CLI: `bun run src/index.ts run -p pristine -b locomo -j ollama -m ollama:llama3.2`
+- CLI: `bun run src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b`
 
 #### Tasks
 

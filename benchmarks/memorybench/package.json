@@ -14,7 +14,7 @@
     "@ai-sdk/openai": "2.0.88",
     "ai": "5.0.115",
     "pristine": "file:../../",
-    "zod": "3.24.4"
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@types/bun": "1.2.14",

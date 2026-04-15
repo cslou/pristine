@@ -106,8 +106,8 @@ export class PristineProvider implements Provider {
 
   private parseContainerTag(containerTag: string): { runId: string } {
     // containerTag format: "conv-{conversationId}-{runId}"
-    // Use regex to handle conversationIds and runIds that may contain hyphens
-    const match = containerTag.match(/^conv-(.+?)-(.+)$/)
+    // conversationId is numeric (LOCOMO sampleId), runId may contain hyphens
+    const match = containerTag.match(/^conv-(\d+)-(.+)$/)
     return { runId: match ? match[2] : "default" }
   }
 

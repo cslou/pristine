@@ -49,4 +49,4 @@ export interface Provider {
   clear(containerTag: string): Promise<void>
 }
 
-export type ProviderName = "filesystem" | "rag"
+export type ProviderName = "filesystem" | "rag" | "pristine"

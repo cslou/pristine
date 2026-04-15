@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDatabase } from '../src/core/database.js';
 import { PristineLocal } from '../src/index.js';
+import type { Message } from '../src/core/types.js';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -106,7 +107,8 @@ export async function main(argv: string[]): Promise<void> {
     ? PristineLocal.createLite({ db: createDatabase(args.dbPath) })
     : PristineLocal.createLite();
 
-  const taskId = client.storeAsync(parsed.messages, args.userId);
+  const messages = parsed.messages as Message[];
+  const taskId = client.storeAsync(messages, args.userId);
 
   if (taskId === '') {
     process.stdout.write(JSON.stringify({ status: 'duplicate', taskId: null }) + '\n');
@@ -117,9 +119,15 @@ export async function main(argv: string[]): Promise<void> {
   spawnWorker(args.dbPath);
 }
 
-// Entry point
-main(process.argv.slice(2)).catch((error: unknown) => {
-  const msg = error instanceof Error ? error.message : 'unknown error';
-  process.stderr.write(JSON.stringify({ error: msg }) + '\n');
-  process.exit(1);
-});
+// Entry point — only runs when executed directly (not when imported by tests)
+const isDirectRun =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url).endsWith(process.argv[1].replace(/^.*[\\/]/, ''));
+
+if (isDirectRun) {
+  main(process.argv.slice(2)).catch((error: unknown) => {
+    const msg = error instanceof Error ? error.message : 'unknown error';
+    process.stderr.write(JSON.stringify({ error: msg }) + '\n');
+    process.exit(1);
+  });
+}

@@ -127,9 +127,17 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
-// Entry point
-main(process.argv.slice(2)).catch((error: unknown) => {
-  const msg = error instanceof Error ? error.message : 'unknown error';
-  process.stderr.write(JSON.stringify({ error: msg }) + '\n');
-  process.exit(1);
-});
+// Entry point — only runs when executed directly (not when imported by tests)
+import { fileURLToPath } from 'node:url';
+
+const isDirectRun =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url).endsWith(process.argv[1].replace(/^.*[\\/]/, ''));
+
+if (isDirectRun) {
+  main(process.argv.slice(2)).catch((error: unknown) => {
+    const msg = error instanceof Error ? error.message : 'unknown error';
+    process.stderr.write(JSON.stringify({ error: msg }) + '\n');
+    process.exit(1);
+  });
+}

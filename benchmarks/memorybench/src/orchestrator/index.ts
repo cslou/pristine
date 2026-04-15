@@ -362,18 +362,18 @@ export class Orchestrator {
     }
 
     const summary = this.checkpointManager.getSummary(checkpoint)
-    console.log("\n" + "=".repeat(50))
-    console.log(`Run: ${runId}`)
-    console.log(`Provider: ${checkpoint.provider}`)
-    console.log(`Benchmark: ${checkpoint.benchmark}`)
-    console.log("=".repeat(50))
-    console.log(`Total Questions: ${summary.total}`)
-    console.log(`Ingested: ${summary.ingested}`)
-    console.log(`Indexed: ${summary.indexed}`)
-    console.log(`Searched: ${summary.searched}`)
-    console.log(`Answered: ${summary.answered}`)
-    console.log(`Evaluated: ${summary.evaluated}`)
-    console.log("=".repeat(50) + "\n")
+    logger.info("\n" + "=".repeat(50))
+    logger.info(`Run: ${runId}`)
+    logger.info(`Provider: ${checkpoint.provider}`)
+    logger.info(`Benchmark: ${checkpoint.benchmark}`)
+    logger.info("=".repeat(50))
+    logger.info(`Total Questions: ${summary.total}`)
+    logger.info(`Ingested: ${summary.ingested}`)
+    logger.info(`Indexed: ${summary.indexed}`)
+    logger.info(`Searched: ${summary.searched}`)
+    logger.info(`Answered: ${summary.answered}`)
+    logger.info(`Evaluated: ${summary.evaluated}`)
+    logger.info("=".repeat(50) + "\n")
   }
 }
 

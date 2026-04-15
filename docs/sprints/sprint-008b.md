@@ -115,23 +115,27 @@ Stories are sequential: Story 1 (Ollama judge) -> Story 2 (Ollama answering mode
 - **Dependencies:** Stories 1, 2
 - **Coding Agent:** claude
 - **Acceptance criteria:**
-  - [ ] Run: `bun run src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b --sample 10`
+  - [ ] Run full LOCOMO: `bun run src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b`
   - [ ] Ingestion completes for all 10 conversations (272 sessions, not 55K)
-  - [ ] Total ingest time < 30 minutes
-  - [ ] All sampled questions get scores (no crashes)
+  - [ ] Total ingest time < 30 minutes (approximate — GPU vs CPU may vary)
+  - [ ] All sampled questions get scores (no crashes mid-run)
   - [ ] `report.json` generated with accuracy breakdown by question type
   - [ ] Baseline report committed to `benchmarks/memorybench/data/baselines/pristine-local-v1.json`
-  - [ ] Total run time < 2 hours for the sampled run
+  - [ ] Total run time < 4 hours for the full run (approximate — M4 Max with gemma4:e4b)
   - [ ] Benchmark run instructions documented in `benchmarks/memorybench/README.md`
-- **Testing approach:** This IS the test — run the benchmark end-to-end, verify it completes, commit the baseline.
+  - [ ] **Ollama judge produces valid JSON scores:** Spot-check 5 judge responses — each has `score` (0 or 1), `label`, and `explanation` fields
+  - [ ] **Gemma4:e4b answering model produces answers:** Spot-check 5 answers — each is a non-empty string that references the retrieved memories
+  - [ ] **No question type has 0% accuracy across the board:** Every category in the report has at least 1 correct answer (>0.0 accuracy). If a category scores 0.0, investigate and document why.
+  - [ ] **Checkpoint resume verified:** Interrupt the run after ~10 questions, restart with same run ID. Verify it resumes (does not re-ingest, does not re-answer already-scored questions).
+- **Testing approach:** This IS the test — run the benchmark end-to-end, verify it completes, commit the baseline. The coding agent MUST run the benchmark and inspect the output before committing.
 - **QA:**
-  - Manual: Inspect `report.json` — verify accuracy numbers are in a reasonable range (>0.2 for any question type, should not be 0 across the board). Inspect latency stats for obvious outliers.
+  - Lou: Inspect `report.json` — verify accuracy numbers are in a reasonable range (>0.2 for any question type). Inspect latency stats for obvious outliers. Compare ingestion count (should be 272 sessions). Review the exact command documented in README to confirm it's reproducible.
 - **Planned commits:**
   1. `docs: add benchmark run instructions to benchmarks/memorybench/README.md`
   2. `feat: commit baseline report for pristine-local-v1` — data/baselines/pristine-local-v1.json
 - **Technical notes:**
-  - `--sample 10` — verify the actual sampling semantics in the orchestrator source before running. It may mean 10 questions per category (50 total) or 10 total questions. Adjust the AC time bounds accordingly.
-  - Time bounds (30 min ingest, 2 hour total) are approximate targets for a machine with GPU. On CPU-only, local models will be slower — treat these as guidelines, not hard pass/fail.
+  - Run the full LOCOMO benchmark (all 1,986 questions, 10 conversations, 272 sessions). It's $0 with local Ollama and gives a complete baseline rather than a sampled approximation. Expected ~3 hours on M4 Max with gemma4:e4b.
+  - Time bounds are approximate targets. The checkpoint system allows resuming if interrupted — no need to restart from scratch.
   - If accuracy is very low (<10% overall), that's still a valid baseline — it establishes where we are, not where we need to be
   - The baseline report is the reference point for all future regression checks
   - Document the exact command used to produce the baseline so it's reproducible

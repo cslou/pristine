@@ -19,7 +19,7 @@
 - **Architecture: SQLite outbox + spawn-on-demand worker.** The fast path (`store.ts`) writes conversation + pending task to SQLite atomically and always spawns a detached worker process (no coordination — duplicates are harmless). The worker polls the `pending_ingest_tasks` table, claims tasks, runs the slow extraction path via Ollama, and exits when the queue is empty and idle for 30s. No persistent daemon — the worker self-terminates. No coordination mechanism (PID files, heartbeats) — if two workers run briefly in parallel, the atomic `claimNext()` prevents double-processing. The outbox table ensures crash recovery: stale `processing` rows are automatically reset on the next claim attempt.
 - CLI scripts are stateless TypeScript executables (run via `tsx`) that open SQLite, talk to Ollama, output JSON, and exit. They are the integration surface — agents call these via hooks (store) and skills/tools (search).
 - **New dependency:** `p-limit` (1KB, zero deps, 100M+ weekly downloads) for concurrency control on Ollama calls within the worker.
-- All scripts use `~/.pristine/data/pristine.db` by default (configurable via `--db-path`), read `~/.pristine/models.json` for engine config.
+- All scripts use `~/.pristine/data/pristine.db` by default (configurable via `--db-path`). Only full-path scripts (`extract-worker.ts`, `search.ts`) read `~/.pristine/models.json` for engine config; lite scripts (`store.ts`, `search-conversations.ts`, `get-conversation.ts`) skip it.
 
 ### Parallelization
 Stories are sequential: Story 1 (ingest queue module) → Story 2 (wire into PristineLocal) → Story 3 (CLI store + extract-worker scripts) → Story 4 (CLI search scripts) → Story 5 (integration tests).

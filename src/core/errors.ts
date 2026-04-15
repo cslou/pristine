@@ -123,3 +123,10 @@ export class OrchestratorError extends AppError {
     this.name = 'OrchestratorError';
   }
 }
+
+export class IngestQueueError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'IngestQueueError';
+  }
+}

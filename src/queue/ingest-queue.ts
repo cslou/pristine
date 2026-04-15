@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Message } from '../core/types.js';
 import type { Orchestrator } from '../core/interfaces.js';
 import type { ConversationStore } from '../conversations/store.js';
+import { IngestQueueError } from '../core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -147,7 +148,8 @@ export class IngestQueue {
         if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
           return null;
         }
-        throw error;
+        const msg = error instanceof Error ? error.message : 'unknown error';
+        throw new IngestQueueError(`Failed to enqueue conversation: ${msg}`);
       }
       insertTask.run(taskId, conversationId, userId);
       return taskId;
@@ -204,7 +206,8 @@ export class IngestQueue {
     try {
       const stored = this.conversationStore.getConversation(task.conversationId);
       if (!stored) {
-        this.markFailed(task.id, `Conversation ${task.conversationId} not found`);
+        const errorMsg = `Conversation ${task.conversationId} not found`;
+        this.markFailed(task.id, errorMsg);
         return task;
       }
 

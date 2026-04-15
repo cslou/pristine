@@ -279,8 +279,8 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
 
       // If sourceConversationId is already provided (e.g., from IngestQueue),
       // skip conversation storage — it was persisted during enqueue().
-      if (typeof context.sourceConversationId === 'string') {
-        return appendTurnOrder(context, 'store(user)');
+      if (isNonEmptyString(ingestContext.sourceConversationId)) {
+        return appendTurnOrder(ingestContext, 'store(user)');
       }
 
       const userId = readUserId(ingestContext);

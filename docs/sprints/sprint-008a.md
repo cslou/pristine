@@ -218,7 +218,7 @@ Ported memorybench framework into `benchmarks/memorybench/`, fixed the 202x inge
 - :white_check_mark: Story 1: Port memorybench framework — PR #77, merged
 - :white_check_mark: Story 2: Fix 202x ingestion duplication — PR #78, merged
 - :white_check_mark: Story 3: Pristine provider — PR #79, merged
-- :white_check_mark: Story 4: Verification run — PR #80, merged
+- :white_check_mark: Story 4: Verification run — PR #80, open
 
 ### Verification Run Results (Story 4)
 - **Run command:** `cd benchmarks/memorybench && npx tsx src/index.ts run -p pristine -b locomo -r verify-008a --limit 5 --force`

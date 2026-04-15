@@ -63,9 +63,14 @@ Available providers for storing and retrieving memories:
                  Extracts memories via LLM, chunks + embeds extracted content, hybrid BM25 + vector search.
                  Requires: OPENAI_API_KEY (for memory extraction via gpt-4o-mini + embeddings)
 
+  pristine       Pristine Local SDK (direct import, no HTTP)
+                 Local-first memory with extract/embed/consolidate pipeline, SQLite + sqlite-vec.
+                 Requires: Running Ollama (local LLM + embeddings, no API key needed)
+
 Usage:
   -p filesystem     Use file-based memory (CLAUDE.md style)
   -p rag            Use hybrid RAG memory (OpenClaw/QMD style)
+  -p pristine       Use Pristine Local SDK (local-first, no API key)
 `)
 }
 

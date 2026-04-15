@@ -2,10 +2,12 @@ import type { Provider, ProviderName } from "../types/provider"
 import type { ConcurrencyConfig } from "../types/concurrency"
 import { FilesystemProvider } from "./filesystem"
 import { RAGProvider } from "./rag"
+import { PristineProvider } from "./pristine"
 
 const providers: Record<ProviderName, new () => Provider> = {
   filesystem: FilesystemProvider,
   rag: RAGProvider,
+  pristine: PristineProvider,
 }
 
 export function createProvider(name: ProviderName): Provider {
@@ -33,4 +35,4 @@ export function getProviderInfo(name: ProviderName): {
   }
 }
 
-export { FilesystemProvider, RAGProvider }
+export { FilesystemProvider, RAGProvider, PristineProvider }

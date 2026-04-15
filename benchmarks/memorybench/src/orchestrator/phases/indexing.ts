@@ -1,6 +1,7 @@
 import type { Provider, IndexingProgress } from "../../types/provider"
 import type { RunCheckpoint, QuestionCheckpoint } from "../../types/checkpoint"
 import { CheckpointManager } from "../checkpoint"
+import { getConversationId } from "../index"
 import { logger } from "../../utils/logger"
 import { ConcurrentExecutor } from "../concurrent"
 import { resolveConcurrency } from "../../types/concurrency"
@@ -105,19 +106,45 @@ export async function runIndexingPhase(
     return
   }
 
+  // Deduplicate by conversation: only one question per conversation needs awaitIndexing
+  const indexedConversations = new Set<string>()
+  for (const q of targetQuestions) {
+    if (q.phases.indexing.status === "completed") {
+      indexedConversations.add(getConversationId(q.questionId))
+    }
+  }
+
+  const conversationPrimary = new Map<string, string>()
+  for (const q of toIndex) {
+    const convId = getConversationId(q.questionId)
+    if (indexedConversations.has(convId)) continue
+    if (!conversationPrimary.has(convId)) {
+      conversationPrimary.set(convId, q.questionId)
+    }
+  }
+
+  const primaryToIndex = toIndex.filter((q) => {
+    const convId = getConversationId(q.questionId)
+    return conversationPrimary.get(convId) === q.questionId
+  })
+  const siblingToIndex = toIndex.filter((q) => {
+    const convId = getConversationId(q.questionId)
+    return conversationPrimary.get(convId) !== q.questionId
+  })
+
   const concurrency = resolveConcurrency("indexing", checkpoint.concurrency, provider.concurrency)
 
-  const tracker = new IndexingProgressTracker(toIndex)
+  const tracker = new IndexingProgressTracker(primaryToIndex)
   const totalEpisodes = tracker.getTotalEpisodes()
 
   logger.info(
-    `Awaiting indexing for ${toIndex.length} questions, ${totalEpisodes} episodes (concurrency: ${concurrency})...`
+    `Awaiting indexing for ${primaryToIndex.length} conversations, ${totalEpisodes} episodes (concurrency: ${concurrency})...`
   )
 
   tracker.display()
 
   await ConcurrentExecutor.execute(
-    toIndex,
+    primaryToIndex,
     concurrency,
     checkpoint.runId,
     "indexing",
@@ -186,6 +213,32 @@ export async function runIndexingPhase(
       }
     }
   )
+
+  // Mark sibling questions' indexing as completed
+  for (const q of siblingToIndex) {
+    const convId = getConversationId(q.questionId)
+    const primaryQId = conversationPrimary.get(convId)
+
+    const completedQId =
+      primaryQId &&
+      checkpointManager.getPhaseStatus(checkpoint, primaryQId, "indexing") === "completed"
+        ? primaryQId
+        : targetQuestions.find(
+            (tq) =>
+              getConversationId(tq.questionId) === convId &&
+              checkpointManager.getPhaseStatus(checkpoint, tq.questionId, "indexing") === "completed"
+          )?.questionId
+
+    if (completedQId) {
+      checkpointManager.updatePhase(checkpoint, q.questionId, "indexing", {
+        status: "completed",
+        completedIds: [],
+        failedIds: [],
+        completedAt: new Date().toISOString(),
+        durationMs: 0,
+      })
+    }
+  }
 
   tracker.finish()
   logger.success("Indexing phase complete")

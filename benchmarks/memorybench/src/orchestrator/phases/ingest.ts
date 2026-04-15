@@ -2,11 +2,23 @@ import type { Provider, IngestResult } from "../../types/provider"
 import type { Benchmark } from "../../types/benchmark"
 import type { RunCheckpoint } from "../../types/checkpoint"
 import { CheckpointManager } from "../checkpoint"
+import { getConversationId } from "../index"
 import { logger } from "../../utils/logger"
 import { ConcurrentExecutor } from "../concurrent"
 import { resolveConcurrency } from "../../types/concurrency"
 
 const RATE_LIMIT_MS = 1000
+
+/**
+ * Detect old-format checkpoints where containerTag was per-question.
+ * Old format: "{questionId}-{runId}" e.g. "42-q0-run123"
+ * New format: "conv-{conversationId}-{runId}" e.g. "conv-42-run123"
+ */
+function detectOldCheckpointFormat(checkpoint: RunCheckpoint): boolean {
+  const questions = Object.values(checkpoint.questions)
+  if (questions.length === 0) return false
+  return questions.some((q) => !q.containerTag.startsWith("conv-"))
+}
 
 export async function runIngestPhase(
   provider: Provider,
@@ -15,11 +27,42 @@ export async function runIngestPhase(
   checkpointManager: CheckpointManager,
   questionIds?: string[]
 ): Promise<void> {
+  if (detectOldCheckpointFormat(checkpoint)) {
+    throw new Error(
+      "Checkpoint uses old per-question containerTag format. " +
+        "Use --force to start a fresh run with per-conversation deduplication."
+    )
+  }
+
   const questions = benchmark.getQuestions()
   const targetQuestions = questionIds
     ? questions.filter((q) => questionIds.includes(q.questionId))
     : questions
 
+  // Group questions by conversation. Only the first question per conversation
+  // actually ingests; siblings are marked completed immediately.
+  const conversationPrimary = new Map<string, string>()
+  const ingestedConversations = new Set<string>()
+
+  // Check which conversations already have a completed ingestion
+  for (const q of targetQuestions) {
+    const convId = getConversationId(q.questionId)
+    const status = checkpointManager.getPhaseStatus(checkpoint, q.questionId, "ingest")
+    if (status === "completed") {
+      ingestedConversations.add(convId)
+    }
+  }
+
+  // Assign primary question per conversation (first pending question)
+  for (const q of targetQuestions) {
+    const convId = getConversationId(q.questionId)
+    if (ingestedConversations.has(convId)) continue
+    if (!conversationPrimary.has(convId)) {
+      conversationPrimary.set(convId, q.questionId)
+    }
+  }
+
+  // Filter to: primary questions that need ingestion + sibling questions that need marking
   const pendingQuestions = targetQuestions.filter((q) => {
     const status = checkpointManager.getPhaseStatus(checkpoint, q.questionId, "ingest")
     return status !== "completed"
@@ -30,19 +73,33 @@ export async function runIngestPhase(
     return
   }
 
+  // Separate primary (actually ingest) from siblings (mark completed after primary)
+  const primaryQuestions = pendingQuestions.filter((q) => {
+    const convId = getConversationId(q.questionId)
+    return conversationPrimary.get(convId) === q.questionId
+  })
+  const siblingQuestions = pendingQuestions.filter((q) => {
+    const convId = getConversationId(q.questionId)
+    return conversationPrimary.get(convId) !== q.questionId
+  })
+
+  const uniqueConversations = new Set(primaryQuestions.map((q) => getConversationId(q.questionId)))
+  logger.info(
+    `Ingesting ${uniqueConversations.size} conversations for ${pendingQuestions.length} questions...`
+  )
+
   const concurrency = resolveConcurrency("ingest", checkpoint.concurrency, provider.concurrency)
 
-  logger.info(`Ingesting ${pendingQuestions.length} questions (concurrency: ${concurrency})...`)
-
+  // Ingest primary questions (one per conversation)
   await ConcurrentExecutor.executeBatched({
-    items: pendingQuestions,
+    items: primaryQuestions,
     concurrency,
     rateLimitMs: RATE_LIMIT_MS,
     runId: checkpoint.runId,
     phaseName: "ingest",
     continueOnError: true,
     executeTask: async ({ item: question, index, total }) => {
-      const containerTag = `${question.questionId}-${checkpoint.dataSourceRunId}`
+      const containerTag = checkpoint.questions[question.questionId].containerTag
       const sessions = benchmark.getHaystackSessions(question.questionId)
 
       const sessionsMetadata = sessions.map((s) => ({
@@ -107,7 +164,12 @@ export async function runIngestPhase(
           durationMs,
         })
 
-        logger.progress(index + 1, total, `Ingested ${question.questionId} (${durationMs}ms)`)
+        const convId = getConversationId(question.questionId)
+        logger.progress(
+          index + 1,
+          total,
+          `Ingested conversation ${convId} (${sessions.length} sessions, ${durationMs}ms)`
+        )
 
         return { questionId: question.questionId, durationMs }
       } catch (e) {
@@ -121,6 +183,33 @@ export async function runIngestPhase(
       }
     },
   })
+
+  // Mark sibling questions as completed (they share the conversation container)
+  for (const q of siblingQuestions) {
+    const convId = getConversationId(q.questionId)
+    const primaryQId = conversationPrimary.get(convId)
+
+    // Find a completed primary or any completed sibling for this conversation
+    const completedQId =
+      primaryQId && checkpointManager.getPhaseStatus(checkpoint, primaryQId, "ingest") === "completed"
+        ? primaryQId
+        : targetQuestions.find(
+            (tq) =>
+              getConversationId(tq.questionId) === convId &&
+              checkpointManager.getPhaseStatus(checkpoint, tq.questionId, "ingest") === "completed"
+          )?.questionId
+
+    if (completedQId) {
+      const sourceCheckpoint = checkpoint.questions[completedQId].phases.ingest
+      checkpointManager.updatePhase(checkpoint, q.questionId, "ingest", {
+        status: "completed",
+        completedSessions: [...sourceCheckpoint.completedSessions],
+        ingestResult: sourceCheckpoint.ingestResult,
+        completedAt: new Date().toISOString(),
+        durationMs: 0,
+      })
+    }
+  }
 
   logger.success("Ingest phase complete")
 }

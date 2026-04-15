@@ -565,7 +565,7 @@ npx tsx ~/.pristine/scripts/store.ts --user-id <userId> < conversation.json
 1. Reads conversation JSON from stdin
 2. Opens SQLite via `createLite()` (no Ollama, no embedder — fast path only)
 3. Writes conversation + pending ingest task atomically (via `IngestQueue.enqueue()`)
-4. Spawns detached `extract-worker.ts` if queue was empty before enqueue (likely no worker running)
+4. Always spawns a detached `extract-worker.ts` after enqueue (no heuristic — avoids deadlock from stale `processing` rows)
 5. Exits immediately (<0.5s total)
 
 **`extract-worker.ts`** — spawn-on-demand worker (spawned by `store.ts`, self-terminates when idle)

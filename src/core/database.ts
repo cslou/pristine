@@ -24,6 +24,8 @@ export function createDatabase(options: DatabaseOptions | string): Database.Data
 
   const db = new Database(config.path);
 
+  db.pragma('busy_timeout = 5000');
+
   if (config.enableWal) {
     db.pragma('journal_mode = WAL');
   }

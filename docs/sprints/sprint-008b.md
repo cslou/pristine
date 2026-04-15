@@ -47,7 +47,7 @@ Stories are sequential: Story 1 (Ollama judge) -> Story 2 (Ollama answering mode
   - [ ] `benchmarks/memorybench/src/judges/ollama.ts` implements the judge interface
   - [ ] Judge calls local Ollama API (`localhost:11434/api/chat`) with the same judge prompts as existing judges
   - [ ] Judge parses JSON response from Ollama with retry (up to 3 attempts on malformed JSON)
-  - [ ] Configurable model name (default: `gemma4:e4b:latest`)
+  - [ ] Configurable model name (default: `gemma4:e4b`)
   - [ ] CLI accepts `--judge ollama` or `--judge ollama:gemma4:e4b`
   - [ ] `getModel()` returns an `ollama-ai-provider` LanguageModel instance, OR if incompatible, retrieval evaluation is skipped with a warning
   - [ ] Judge registered in `src/judges/index.ts`

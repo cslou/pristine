@@ -128,7 +128,7 @@ Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplicat
 - **Coding Agent:** claude
 - **Acceptance criteria:**
   - [ ] `benchmarks/memorybench/src/providers/pristine/index.ts` implements the `Provider` interface
-  - [ ] Provider creates `PristineLocal` client with per-conversation SQLite databases (in-memory or file-backed)
+  - [ ] Provider creates `PristineLocal` client with per-conversation file-backed SQLite databases at `data/runs/{runId}/{conversationId}.db`
   - [ ] `ingest()` maps `UnifiedSession` messages to Pristine `Message[]` and calls `client.store()`
   - [ ] `search()` calls `client.search()` and returns results in the benchmark's expected format
   - [ ] `clear()` disposes the client and removes the conversation's database
@@ -142,7 +142,7 @@ Stories are sequential: Story 1 (port framework) -> Story 2 (fix ingest duplicat
   3. `test: add pristine provider unit test` — verify ingest/search lifecycle
 - **Technical notes:**
   - Import `PristineLocal` from pristine's built output. Run `npm run build` in the pristine root first. Recommended approach: add `"pristine": "file:../../"` as a dependency in memorybench's `package.json`, then import as `import { PristineLocal } from 'pristine'`. Alternative: use a relative import path to `../../dist/index.js` or add a `paths` alias in memorybench's `tsconfig.json`.
-  - Each conversation gets its own `PristineLocal` instance with a separate in-memory DB (or file DB at `benchmarks/memorybench/data/runs/{runId}/{conversationId}.db`)
+  - **Must use file-backed DBs**, not in-memory. The benchmark orchestrator runs multiple phases (ingest -> indexing -> search -> answer) and the provider instance must persist data across phases. File DBs at `benchmarks/memorybench/data/runs/{runId}/{conversationId}.db` ensure ingested data survives across phases. In-memory DBs would be destroyed between phases, causing search to return zero results.
   - Map `UnifiedMessage` to Pristine's `Message` type: `{ role: msg.role, content: msg.content, timestamp: msg.timestamp }`
   - The provider manages a `Map<containerTag, PristineLocal>` of client instances
   - `awaitIndexing` is a no-op (Pristine's `store()` is synchronous from the caller's perspective)

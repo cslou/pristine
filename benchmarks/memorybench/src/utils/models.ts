@@ -1,6 +1,6 @@
 export interface ModelConfig {
   id: string
-  provider: "openai" | "anthropic" | "google"
+  provider: "openai" | "anthropic" | "google" | "ollama"
   displayName: string
   supportsTemperature: boolean
   defaultTemperature: number
@@ -216,6 +216,18 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   },
 
   // Google - Gemini 3 (MUST use temperature=1, lower causes issues)
+  // Ollama - Local models
+  ollama: {
+    id: "gemma4:e4b",
+    provider: "ollama",
+    displayName: "Ollama (gemma4:e4b)",
+    supportsTemperature: true,
+    defaultTemperature: 0,
+    maxTokensParam: "maxTokens",
+    defaultMaxTokens: 1000,
+  },
+
+  // Google - Gemini 3 (MUST use temperature=1, lower causes issues)
   "gemini-3-pro-preview": {
     id: "gemini-3-pro-preview",
     provider: "google",
@@ -232,6 +244,7 @@ export const DEFAULT_JUDGE_MODELS: Record<string, string> = {
   openai: "gpt-4o",
   anthropic: "sonnet-4",
   google: "gemini-2.5-flash",
+  ollama: "ollama",
 }
 
 export function getModelConfig(alias: string): ModelConfig {
@@ -303,6 +316,19 @@ export function getModelConfig(alias: string): ModelConfig {
     }
   }
 
+  if (alias.startsWith("ollama:")) {
+    const modelId = alias.slice("ollama:".length)
+    return {
+      id: modelId,
+      provider: "ollama",
+      displayName: `Ollama (${modelId})`,
+      supportsTemperature: true,
+      defaultTemperature: 0,
+      maxTokensParam: "maxTokens",
+      defaultMaxTokens: 1000,
+    }
+  }
+
   // Default fallback
   return {
     id: alias,
@@ -326,7 +352,7 @@ export function getModelId(alias: string): string {
   return getModelConfig(alias).id
 }
 
-export function getModelProvider(alias: string): "openai" | "anthropic" | "google" {
+export function getModelProvider(alias: string): "openai" | "anthropic" | "google" | "ollama" {
   return getModelConfig(alias).provider
 }
 

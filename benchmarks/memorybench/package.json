@@ -13,6 +13,7 @@
     "@ai-sdk/google": "2.0.49",
     "@ai-sdk/openai": "2.0.88",
     "ai": "5.0.115",
+    "ollama-ai-provider-v2": "^1.5.5",
     "pristine": "file:../../",
     "zod": "4.3.6"
   },

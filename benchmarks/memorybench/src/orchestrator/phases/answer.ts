@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "fs"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { createOllama } from "ollama-ai-provider-v2"
 import { generateText } from "ai"
 import type { Benchmark } from "../../types/benchmark"
 import type { RunCheckpoint } from "../../types/checkpoint"
@@ -19,6 +20,7 @@ type LanguageModel =
   | ReturnType<typeof createOpenAI>
   | ReturnType<typeof createAnthropic>
   | ReturnType<typeof createGoogleGenerativeAI>
+  | ReturnType<typeof createOllama>
 
 function getAnsweringModel(modelAlias: string): {
   client: LanguageModel
@@ -40,6 +42,11 @@ function getAnsweringModel(modelAlias: string): {
     case "google":
       return {
         client: createGoogleGenerativeAI({ apiKey: config.googleApiKey }),
+        modelConfig,
+      }
+    case "ollama":
+      return {
+        client: createOllama(),
         modelConfig,
       }
   }

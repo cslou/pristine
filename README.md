@@ -779,6 +779,34 @@ const result = await client.search('What does the user prefer?', userId);
 const convs = client.searchConversations({ userId, keyword: 'preferences' });
 ```
 
+### Hook Timestamp Contract
+
+Pristine uses `REFERENCE_TIME` to resolve relative temporal expressions ("yesterday", "last month") during fact extraction. If `REFERENCE_TIME` is always "now", facts from historical conversations get wrong dates. Every hook that feeds conversations into Pristine must pass timestamps.
+
+**Two timestamp patterns:**
+
+| Pattern | When to use | How |
+|---------|-------------|-----|
+| Per-message | Each message has its own timestamp (Claude Code, Pi.dev) | Set `Message.timestamp` on each message |
+| Per-session | All messages share one date (LOCOMO benchmark) | Pass `{ referenceTimestamp: date }` via `IngestOptions` to `orchestrator.ingest()` |
+
+**Three-tier resolution chain** (in `extractFactsStep`):
+1. Explicit `referenceTimestamp` from `IngestOptions` (caller wins)
+2. `deriveTimestamp(messages)` — chronologically latest `Message.timestamp`
+3. `new Date().toISOString()` — fallback to "now"
+
+**Hook status:**
+
+| Hook | Source | Timestamp Location | Status |
+|------|--------|--------------------|--------|
+| Claude Code | `.jsonl` transcript at `transcript_path` | `entry.timestamp` per message | Documented (future implementation) |
+| Pi.dev | `.jsonl` sessions at `~/.pi/agent/sessions/` | `entry.timestamp` per message | Documented (future implementation) |
+| LOCOMO benchmark | `locomo10.json` | `session.metadata.date` per session | Implemented |
+
+**Timestamp format:** ISO 8601 UTC with Z suffix (e.g., `"2023-05-08T13:56:00.000Z"`).
+
+**Reference implementation:** See `benchmarks/memorybench/src/providers/pristine/index.ts` for the LOCOMO per-session pattern using `orchestrator.ingest()` with `referenceTimestamp`.
+
 ### Exported Types
 
 The barrel (`src/index.ts`) exports types that consumers need for typing tool handlers, test mocks, and DI overrides:

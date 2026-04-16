@@ -64,7 +64,7 @@ export class PristineProvider implements Provider {
     _containerTag: string,
     onProgress?: IndexingProgressCallback
   ): Promise<void> {
-    // Pristine's store() is synchronous from the caller's perspective — no async indexing
+    // Pristine's orchestrator.ingest() completes synchronously — no async indexing needed
     onProgress?.({
       completedIds: result.documentIds,
       failedIds: [],

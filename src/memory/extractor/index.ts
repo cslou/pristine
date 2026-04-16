@@ -53,7 +53,13 @@ const parseFacts = (result: ExtractFactsInput): Fact[] => {
 };
 
 const buildUserPrompt = (conversation: readonly Message[]): string =>
-  conversation.map((message) => `${message.role}: ${message.content}`).join('\n');
+  conversation
+    .map((message) =>
+      message.timestamp
+        ? `[${message.timestamp}] ${message.role}: ${message.content}`
+        : `${message.role}: ${message.content}`,
+    )
+    .join('\n');
 
 export class LocalExtractor implements Extractor {
   private readonly client: LlmClient;

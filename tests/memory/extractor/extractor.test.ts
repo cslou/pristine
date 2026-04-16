@@ -275,6 +275,53 @@ describe('extraction prompt and referenceTimestamp', () => {
   });
 });
 
+describe('message timestamps in prompt', () => {
+  it('includes [timestamp] prefix for messages with timestamps', async () => {
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract(
+      [{ role: 'user', content: 'I moved yesterday', timestamp: '2023-05-08T14:00:00.000Z' }],
+      '2023-05-08T14:00:00.000Z',
+    );
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      userPrompt: string;
+    };
+    expect(call.userPrompt).toBe('[2023-05-08T14:00:00.000Z] user: I moved yesterday');
+  });
+
+  it('omits prefix for messages without timestamps', async () => {
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract([{ role: 'user', content: 'hello' }], '2026-03-15T00:00:00.000Z');
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      userPrompt: string;
+    };
+    expect(call.userPrompt).toBe('user: hello');
+  });
+
+  it('handles mixed timestamps — only timestamped messages get prefix', async () => {
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract(
+      [
+        { role: 'user', content: 'first', timestamp: '2023-05-08T10:00:00.000Z' },
+        { role: 'assistant', content: 'response' },
+        { role: 'user', content: 'second', timestamp: '2023-05-08T10:05:00.000Z' },
+      ],
+      '2023-05-08T10:05:00.000Z',
+    );
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      userPrompt: string;
+    };
+    expect(call.userPrompt).toBe(
+      '[2023-05-08T10:00:00.000Z] user: first\nassistant: response\n[2023-05-08T10:05:00.000Z] user: second',
+    );
+  });
+});
+
 describe('temporal field extraction', () => {
   it('parses validFrom and temporalConfidence from response', async () => {
     const client = createMockClient({

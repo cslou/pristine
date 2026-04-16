@@ -89,9 +89,9 @@ export const createOrchestrator = (config: OrchestratorConfig): Orchestrator => 
   const ingest = async (
     conversation: readonly Message[],
     userId: string,
-    _options: IngestOptions = {},
+    options: IngestOptions = {},
   ): Promise<IngestResult> => {
-    const result = await ingestPipeline.run({ conversation, userId, ..._options });
+    const result = await ingestPipeline.run({ conversation, userId, ...options });
 
     const stepErrors = asStepErrors(result.context);
     const pipelineErrors: StepError[] = result.error ? [result.error, ...stepErrors] : stepErrors;

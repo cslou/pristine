@@ -96,6 +96,16 @@ const isDuplicate = (context: IngestContext): boolean => {
   return context.duplicateDetected === true;
 };
 
+export const deriveTimestamp = (messages: readonly Message[]): string | undefined => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const ts = messages[i]?.timestamp;
+    if (typeof ts === 'string' && ts.length > 0) {
+      return ts;
+    }
+  }
+  return undefined;
+};
+
 const appendTurnOrder = (context: IngestContext, step: TurnStep): IngestContext => {
   return {
     ...context,
@@ -309,8 +319,9 @@ export const createIngestPipeline = (dependencies: IngestDependencies): Pipeline
     execute: async (context: PipelineContext): Promise<PipelineContext> => {
       const ingestContext = context as IngestContext;
       if (isDuplicate(ingestContext)) return context;
-      const refTimestamp = ingestContext.referenceTimestamp ?? new Date().toISOString();
       const messages = readConversation(ingestContext);
+      const refTimestamp =
+        ingestContext.referenceTimestamp ?? deriveTimestamp(messages) ?? new Date().toISOString();
       const chunks = chunkConversation(messages);
       const extractions = await Promise.all(
         chunks.map((chunk) => extractor.extract(chunk, refTimestamp)),

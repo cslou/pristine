@@ -78,6 +78,7 @@ function printModelsHelp(): void {
   const openaiModels = listModelsByProvider("openai")
   const anthropicModels = listModelsByProvider("anthropic")
   const googleModels = listModelsByProvider("google")
+  const ollamaModels = listModelsByProvider("ollama")
 
   console.log(`
 Available Models
@@ -110,9 +111,21 @@ Google Models:
   }
 
   console.log(`
+Ollama Models (local, $0):
+`)
+  for (const alias of ollamaModels) {
+    const info = MODEL_ALIASES[alias]
+    console.log(`  ${alias.padEnd(20)} ${info.displayName} (${info.id})`)
+  }
+  console.log(`  ollama:<model>       Any Ollama model (e.g., ollama:llama3.2, ollama:mistral)`)
+
+  console.log(`
 Examples:
   -j gpt-4o              Use GPT-4o as judge
   -j sonnet-4.5          Use Claude Sonnet 4.5 as judge
+  -j ollama              Use local Ollama judge (gemma4:e4b)
+  -j ollama:mistral      Use local Ollama judge with custom model
+  -m ollama:gemma4:e4b   Use local Ollama for answering
   -m gemini-2.5-flash    Use Gemini 2.5 Flash for answering
   -m opus-4.5            Use Claude Opus 4.5 for answering
 

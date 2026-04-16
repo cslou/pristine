@@ -120,11 +120,15 @@ export async function runCommand(args: string[]): Promise<void> {
     console.log("Options:")
     console.log(`  -p, --provider         Memory provider: ${getAvailableProviders().join(", ")}`)
     console.log(`  -b, --benchmark        Benchmark: ${getAvailableBenchmarks().join(", ")}`)
-    console.log(`  -j, --judge            Judge model (default: ${DEFAULT_JUDGE_MODEL})`)
+    console.log(
+      `  -j, --judge            Judge model (default: ${DEFAULT_JUDGE_MODEL}). Use "ollama" or "ollama:<model>" for local`
+    )
     console.log(
       "  -r, --run-id           Run identifier (required for continuation, auto-generated for new runs)"
     )
-    console.log(`  -m, --answering-model  Answering model (default: ${DEFAULT_ANSWERING_MODEL})`)
+    console.log(
+      `  -m, --answering-model  Answering model (default: ${DEFAULT_ANSWERING_MODEL}). Use "ollama:<model>" for local`
+    )
     console.log("  -s, --sample           Sample N questions per category")
     console.log("  --sample-type          Sample type: consecutive (default), random")
     console.log("  -l, --limit            Limit total number of questions to process")

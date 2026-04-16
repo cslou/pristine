@@ -31,6 +31,8 @@ export function getJudgeConfig(judge: string): { apiKey: string; model?: string 
       return { apiKey: config.anthropicApiKey }
     case "google":
       return { apiKey: config.googleApiKey }
+    case "ollama":
+      return { apiKey: "none" }
     default:
       throw new Error(`Unknown judge: ${judge}`)
   }

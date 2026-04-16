@@ -81,6 +81,58 @@ Retry previously failed tasks:
 npx tsx scripts/extract-worker.ts --retry-failed --all
 ```
 
+## Timestamp Guidance
+
+Pristine uses a `REFERENCE_TIME` anchor to resolve relative temporal expressions ("yesterday", "two weeks ago") during fact extraction. Without correct timestamps, all extracted facts default to today's date, making temporal queries useless for historical conversations.
+
+### The `Message.timestamp` Field
+
+Each `Message` has an optional `timestamp?: string` field (ISO 8601 UTC). When set, Pristine includes it in the extraction prompt as a `[timestamp]` prefix:
+
+```
+[2023-05-08T14:00:00.000Z] user: I moved to Tokyo yesterday
+assistant: That's exciting! How are you settling in?
+```
+
+This gives the LLM per-message temporal context. Messages without timestamps render normally.
+
+### The `referenceTimestamp` IngestOption
+
+For sources where messages lack individual timestamps but the session has a date (e.g., LOCOMO benchmark), pass the session date explicitly:
+
+```typescript
+await client.orchestrator.ingest(messages, userId, {
+  referenceTimestamp: '2023-05-08T13:56:00.000Z',
+});
+```
+
+### Three-Tier Resolution Chain
+
+The extraction pipeline resolves `REFERENCE_TIME` in this order:
+
+1. **Explicit `referenceTimestamp`** from `IngestOptions` — the caller knows best
+2. **`deriveTimestamp(messages)`** — scans for the chronologically latest `Message.timestamp`
+3. **`new Date().toISOString()`** — fallback to "now" (last resort)
+
+### Hook Timestamp Sources
+
+| Hook | Source Format | Timestamp Location | Pattern |
+|------|-------------|-------------------|---------|
+| Claude Code | `.jsonl` transcript at `transcript_path` | `entry.timestamp` on each entry | Per-message: set `Message.timestamp` |
+| Pi.dev | `.jsonl` sessions at `~/.pi/agent/sessions/` | `entry.timestamp` on each entry | Per-message: set `Message.timestamp` |
+| LOCOMO benchmark | `locomo10.json` dataset | `session.metadata.date` per session | Per-session: pass `referenceTimestamp` via `IngestOptions` |
+
+**Claude Code** and **Pi.dev** hooks are documented for future implementation. The **LOCOMO** provider is the reference implementation: see `benchmarks/memorybench/src/providers/pristine/index.ts`.
+
+### Timestamp Format
+
+All timestamps must be ISO 8601 UTC with Z suffix:
+```
+2023-05-08T13:56:00.000Z
+```
+
+Do not use timezone offsets (`+05:30`) — always normalize to UTC.
+
 ## Database Location
 
 All scripts default to `~/.pristine/data/pristine.db`. Override with `--db-path`:

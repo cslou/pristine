@@ -45,7 +45,7 @@ describe.skipIf(!ollamaAvailable)(
         },
       ];
 
-      const { facts } = await extractor.extract(conversation);
+      const { facts } = await extractor.extract(conversation, '2023-05-08T14:00:00.000Z');
       expect(facts.length).toBeGreaterThan(0);
 
       const firstFact = facts[0]!;

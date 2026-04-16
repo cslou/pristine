@@ -14,6 +14,7 @@ import type { Consolidator, Embedder, Extractor, Store } from '../../../src/core
 import type { ConversationStore } from '../../../src/conversations/store.js';
 import {
   createIngestPipeline,
+  deriveTimestamp,
   type IngestDependencies,
 } from '../../../src/memory/orchestrator/ingest.js';
 import { createPipelineRunner } from '../../../src/memory/orchestrator/pipeline.js';
@@ -45,7 +46,10 @@ const createDeps = (): IngestDependencies & {
 } => {
   const extractor: Extractor = {
     extract: vi.fn(
-      async (): Promise<ExtractionResult> => ({
+      async (
+        _conversation: readonly Message[],
+        _referenceTimestamp: string,
+      ): Promise<ExtractionResult> => ({
         facts: [{ text: 'fact one' }],
       }),
     ),
@@ -478,6 +482,95 @@ describe('ingest pipeline', () => {
       expect(addMemory.mock.calls[0]?.[0]).toMatchObject({
         metadata: expect.objectContaining({ memory_origin: 'assistant_pre_reveal' }),
       });
+    });
+  });
+
+  describe('timestamp derivation', () => {
+    it('returns latest message timestamp', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'hello', timestamp: '2023-05-08T10:00:00.000Z' },
+        { role: 'assistant', content: 'hi', timestamp: '2023-05-08T10:01:00.000Z' },
+        { role: 'user', content: 'bye', timestamp: '2023-05-08T10:02:00.000Z' },
+      ];
+      expect(deriveTimestamp(messages)).toBe('2023-05-08T10:02:00.000Z');
+    });
+
+    it('returns undefined when no messages have timestamps', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'hi' },
+      ];
+      expect(deriveTimestamp(messages)).toBeUndefined();
+    });
+
+    it('returns undefined for empty array', () => {
+      expect(deriveTimestamp([])).toBeUndefined();
+    });
+
+    it('returns chronologically latest timestamp even if out of array order', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'a', timestamp: '2023-05-08T10:05:00.000Z' },
+        { role: 'assistant', content: 'b', timestamp: '2023-05-08T10:01:00.000Z' },
+        { role: 'user', content: 'c', timestamp: '2023-05-08T10:03:00.000Z' },
+      ];
+      expect(deriveTimestamp(messages)).toBe('2023-05-08T10:05:00.000Z');
+    });
+
+    it('skips messages without timestamps and returns latest timestamped', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'a', timestamp: '2023-05-08T09:00:00.000Z' },
+        { role: 'assistant', content: 'b' },
+        { role: 'user', content: 'c' },
+      ];
+      expect(deriveTimestamp(messages)).toBe('2023-05-08T09:00:00.000Z');
+    });
+
+    it('extractFactsStep uses explicit referenceTimestamp over message timestamps', async () => {
+      const deps = createDeps();
+      const pipeline = createPipelineRunner(createIngestPipeline(deps));
+      const timestampedConversation: Message[] = [
+        { role: 'user', content: 'hello', timestamp: '2023-05-08T10:00:00.000Z' },
+      ];
+
+      await pipeline.run({
+        userId: 'user-1',
+        conversation: timestampedConversation,
+        referenceTimestamp: '2020-01-01T00:00:00.000Z',
+      });
+
+      const extractCalls = vi.mocked(deps.extractor.extract).mock.calls;
+      expect(extractCalls[0]?.[1]).toBe('2020-01-01T00:00:00.000Z');
+    });
+
+    it('extractFactsStep falls back to message timestamps when no explicit timestamp', async () => {
+      const deps = createDeps();
+      const pipeline = createPipelineRunner(createIngestPipeline(deps));
+      const timestampedConversation: Message[] = [
+        { role: 'user', content: 'hello', timestamp: '2023-05-08T10:00:00.000Z' },
+        { role: 'assistant', content: 'hi', timestamp: '2023-05-08T10:01:00.000Z' },
+      ];
+
+      await pipeline.run({
+        userId: 'user-1',
+        conversation: timestampedConversation,
+      });
+
+      const extractCalls = vi.mocked(deps.extractor.extract).mock.calls;
+      expect(extractCalls[0]?.[1]).toBe('2023-05-08T10:01:00.000Z');
+    });
+
+    it('extractFactsStep falls back to now when no timestamps at all', async () => {
+      const deps = createDeps();
+      const pipeline = createPipelineRunner(createIngestPipeline(deps));
+
+      const before = new Date().toISOString();
+      await pipeline.run({ userId: 'user-1', conversation });
+      const after = new Date().toISOString();
+
+      const extractCalls = vi.mocked(deps.extractor.extract).mock.calls;
+      const usedTimestamp = extractCalls[0]?.[1] as string;
+      expect(usedTimestamp >= before).toBe(true);
+      expect(usedTimestamp <= after).toBe(true);
     });
   });
 });

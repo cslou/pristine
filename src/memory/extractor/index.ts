@@ -53,7 +53,13 @@ const parseFacts = (result: ExtractFactsInput): Fact[] => {
 };
 
 const buildUserPrompt = (conversation: readonly Message[]): string =>
-  conversation.map((message) => `${message.role}: ${message.content}`).join('\n');
+  conversation
+    .map((message) =>
+      message.timestamp
+        ? `[${message.timestamp}] ${message.role}: ${message.content}`
+        : `${message.role}: ${message.content}`,
+    )
+    .join('\n');
 
 export class LocalExtractor implements Extractor {
   private readonly client: LlmClient;
@@ -68,7 +74,7 @@ export class LocalExtractor implements Extractor {
 
   public async extract(
     conversation: readonly Message[],
-    referenceTimestamp?: string,
+    referenceTimestamp: string,
   ): Promise<ExtractionResult> {
     assertNoLlmReentry(conversation, 'extractor conversation payload');
 
@@ -76,8 +82,7 @@ export class LocalExtractor implements Extractor {
       return { facts: [] };
     }
 
-    const effectiveTimestamp = referenceTimestamp ?? new Date().toISOString();
-    const systemPrompt = this.systemPrompt ?? buildExtractionPrompt(effectiveTimestamp);
+    const systemPrompt = this.systemPrompt ?? buildExtractionPrompt(referenceTimestamp);
 
     let result: ExtractFactsInput;
     try {

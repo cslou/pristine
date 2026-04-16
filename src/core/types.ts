@@ -417,6 +417,7 @@ export interface IngestResult {
 }
 
 export interface IngestOptions {
+  readonly referenceTimestamp?: string;
   readonly [key: string]: unknown;
 }
 

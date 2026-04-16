@@ -97,13 +97,16 @@ const isDuplicate = (context: IngestContext): boolean => {
 };
 
 export const deriveTimestamp = (messages: readonly Message[]): string | undefined => {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const ts = messages[i]?.timestamp;
+  let latest: string | undefined;
+  for (const msg of messages) {
+    const ts = msg.timestamp;
     if (typeof ts === 'string' && ts.length > 0) {
-      return ts;
+      if (latest === undefined || ts > latest) {
+        latest = ts;
+      }
     }
   }
-  return undefined;
+  return latest;
 };
 
 const appendTurnOrder = (context: IngestContext, step: TurnStep): IngestContext => {

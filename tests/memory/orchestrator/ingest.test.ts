@@ -507,6 +507,15 @@ describe('ingest pipeline', () => {
       expect(deriveTimestamp([])).toBeUndefined();
     });
 
+    it('returns chronologically latest timestamp even if out of array order', () => {
+      const messages: Message[] = [
+        { role: 'user', content: 'a', timestamp: '2023-05-08T10:05:00.000Z' },
+        { role: 'assistant', content: 'b', timestamp: '2023-05-08T10:01:00.000Z' },
+        { role: 'user', content: 'c', timestamp: '2023-05-08T10:03:00.000Z' },
+      ];
+      expect(deriveTimestamp(messages)).toBe('2023-05-08T10:05:00.000Z');
+    });
+
     it('skips messages without timestamps and returns latest timestamped', () => {
       const messages: Message[] = [
         { role: 'user', content: 'a', timestamp: '2023-05-08T09:00:00.000Z' },

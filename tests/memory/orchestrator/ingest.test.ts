@@ -48,7 +48,7 @@ const createDeps = (): IngestDependencies & {
     extract: vi.fn(
       async (
         _conversation: readonly Message[],
-        _referenceTimestamp?: string,
+        _referenceTimestamp: string,
       ): Promise<ExtractionResult> => ({
         facts: [{ text: 'fact one' }],
       }),

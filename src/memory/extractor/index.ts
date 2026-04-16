@@ -74,7 +74,7 @@ export class LocalExtractor implements Extractor {
 
   public async extract(
     conversation: readonly Message[],
-    referenceTimestamp?: string,
+    referenceTimestamp: string,
   ): Promise<ExtractionResult> {
     assertNoLlmReentry(conversation, 'extractor conversation payload');
 
@@ -82,8 +82,7 @@ export class LocalExtractor implements Extractor {
       return { facts: [] };
     }
 
-    const effectiveTimestamp = referenceTimestamp ?? new Date().toISOString();
-    const systemPrompt = this.systemPrompt ?? buildExtractionPrompt(effectiveTimestamp);
+    const systemPrompt = this.systemPrompt ?? buildExtractionPrompt(referenceTimestamp);
 
     let result: ExtractFactsInput;
     try {

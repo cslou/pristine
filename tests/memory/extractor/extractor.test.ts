@@ -4,6 +4,8 @@ import { ExtractionError } from '../../../src/core/errors.js';
 import { resolve, clearResolvedStringRegistry } from '../../../src/privacy/sanitizer/index.js';
 import type { LlmClient } from '../../../src/core/interfaces.js';
 
+const TEST_TIMESTAMP = '2026-03-15T00:00:00.000Z';
+
 const createMockClient = (result: unknown): LlmClient => ({
   generate: vi.fn().mockResolvedValue(result),
 });
@@ -33,7 +35,10 @@ describe('extractor', () => {
     );
 
     await expect(
-      extractor.extract(resolvedConversation as { role: 'user'; content: string }[]),
+      extractor.extract(
+        resolvedConversation as { role: 'user'; content: string }[],
+        TEST_TIMESTAMP,
+      ),
     ).rejects.toThrow('Resolved payload is not allowed for extractor conversation payload.');
 
     expect(client.generate).not.toHaveBeenCalled();
@@ -42,7 +47,7 @@ describe('extractor', () => {
   it('returns { facts: [] } for empty conversation without LLM call', async () => {
     const client: LlmClient = { generate: vi.fn() };
     const extractor = createExtractor(client);
-    const result = await extractor.extract([]);
+    const result = await extractor.extract([], TEST_TIMESTAMP);
 
     expect(client.generate).not.toHaveBeenCalled();
     expect(result).toEqual({ facts: [] });
@@ -51,7 +56,10 @@ describe('extractor', () => {
   it('parses generate<T>() response', async () => {
     const client = createMockClient({ facts: [{ text: 'User likes espresso.' }] });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'espresso.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'espresso.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(client.generate).toHaveBeenCalledTimes(1);
     expect(result.facts).toHaveLength(1);
@@ -63,7 +71,7 @@ describe('extractor', () => {
       facts: [{ text: '' }, { text: 'User likes cold brew.' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'coffee.' }]);
+    const result = await extractor.extract([{ role: 'user', content: 'coffee.' }], TEST_TIMESTAMP);
 
     expect(result.facts).toHaveLength(1);
     expect(result.facts[0]!.text).toBe('User likes cold brew.');
@@ -73,18 +81,18 @@ describe('extractor', () => {
     const client = createMockClient({ items: [] });
     const extractor = createExtractor(client);
 
-    await expect(extractor.extract([{ role: 'user', content: 'I like tea.' }])).rejects.toThrow(
-      'Extractor response missing facts array.',
-    );
+    await expect(
+      extractor.extract([{ role: 'user', content: 'I like tea.' }], TEST_TIMESTAMP),
+    ).rejects.toThrow('Extractor response missing facts array.');
   });
 
   it('throws ExtractionError when facts is not an array', async () => {
     const client = createMockClient({ facts: { text: 'bad' } });
     const extractor = createExtractor(client);
 
-    await expect(extractor.extract([{ role: 'user', content: 'I like tea.' }])).rejects.toThrow(
-      'Extractor response missing facts array.',
-    );
+    await expect(
+      extractor.extract([{ role: 'user', content: 'I like tea.' }], TEST_TIMESTAMP),
+    ).rejects.toThrow('Extractor response missing facts array.');
   });
 
   it('drops fact missing text field silently', async () => {
@@ -92,7 +100,10 @@ describe('extractor', () => {
       facts: [{ metadata: { source: 'chat' } }, { text: 'User likes espresso.' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'I like espresso.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I like espresso.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts).toHaveLength(1);
     expect(result.facts[0]!.text).toBe('User likes espresso.');
@@ -103,7 +114,7 @@ describe('extractor', () => {
       facts: [{ text: 123 }, { text: 'User likes cold brew.' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'coffee.' }]);
+    const result = await extractor.extract([{ role: 'user', content: 'coffee.' }], TEST_TIMESTAMP);
 
     expect(result.facts).toHaveLength(1);
     expect(result.facts[0]!.text).toBe('User likes cold brew.');
@@ -114,7 +125,10 @@ describe('extractor', () => {
       facts: [{ text: 'User likes oat milk.', metadata: { source: 'voice', confidence: 0.9 } }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'I drink oat milk.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I drink oat milk.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.metadata).toEqual({ source: 'voice', confidence: 0.9 });
   });
@@ -124,7 +138,10 @@ describe('extractor', () => {
       facts: [{ text: 'User likes espresso.', sourceConversationId: 'conv-123' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'Espresso.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'Espresso.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.sourceConversationId).toBe('conv-123');
   });
@@ -141,7 +158,7 @@ describe('extractor', () => {
       ],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'test' }]);
+    const result = await extractor.extract([{ role: 'user', content: 'test' }], TEST_TIMESTAMP);
 
     expect(result.facts.map((fact) => fact.text)).toEqual([
       'The user likes cold brew.',
@@ -156,7 +173,10 @@ describe('extractor', () => {
       facts: [{ text: 'The therapist is available.' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'talking about therapist' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'talking about therapist' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]).toMatchObject({ text: 'The therapist is available.' });
   });
@@ -166,7 +186,10 @@ describe('extractor', () => {
       facts: [{ text: 'User has another coffee mug.' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'I have another mug.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I have another mug.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]).toMatchObject({ text: 'User has another coffee mug.' });
   });
@@ -175,15 +198,18 @@ describe('extractor', () => {
     const client = createFailingClient(new Error('upstream failure'));
     const extractor = createExtractor(client);
 
-    await expect(extractor.extract([{ role: 'user', content: 'I like tea.' }])).rejects.toThrow(
-      ExtractionError,
-    );
+    await expect(
+      extractor.extract([{ role: 'user', content: 'I like tea.' }], TEST_TIMESTAMP),
+    ).rejects.toThrow(ExtractionError);
   });
 
   it('passes through empty facts arrays', async () => {
     const client = createMockClient({ facts: [] });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'I have no facts.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I have no facts.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result).toEqual({ facts: [] });
   });
@@ -207,7 +233,7 @@ describe('extraction prompt and referenceTimestamp', () => {
   it('prompt includes all 5 temporal signal types', async () => {
     const client = createMockClient({ facts: [] });
     const extractor = createExtractor(client);
-    await extractor.extract([{ role: 'user', content: 'hello' }]);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
 
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       systemPrompt: string;
@@ -222,7 +248,7 @@ describe('extraction prompt and referenceTimestamp', () => {
   it('prompt includes all 4 confidence levels', async () => {
     const client = createMockClient({ facts: [] });
     const extractor = createExtractor(client);
-    await extractor.extract([{ role: 'user', content: 'hello' }]);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
 
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       systemPrompt: string;
@@ -244,29 +270,11 @@ describe('extraction prompt and referenceTimestamp', () => {
     expect(call.systemPrompt).toContain('REFERENCE_TIME: 2025-12-25T10:00:00.000Z');
   });
 
-  it('defaults referenceTimestamp to current time when omitted', async () => {
-    const client = createMockClient({ facts: [] });
-    const extractor = createExtractor(client);
-
-    const before = new Date().toISOString();
-    await extractor.extract([{ role: 'user', content: 'hello' }]);
-    const after = new Date().toISOString();
-
-    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
-      systemPrompt: string;
-    };
-    const match = call.systemPrompt.match(/REFERENCE_TIME: (.+)/);
-    expect(match).not.toBeNull();
-    const usedTimestamp = match![1]!;
-    expect(usedTimestamp >= before).toBe(true);
-    expect(usedTimestamp <= after).toBe(true);
-  });
-
   it('uses custom systemPrompt when provided', async () => {
     const client = createMockClient({ facts: [] });
     const customPrompt = 'Extract only food preferences.';
     const extractor = createExtractor(client, { systemPrompt: customPrompt });
-    await extractor.extract([{ role: 'user', content: 'hello' }]);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
 
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       systemPrompt: string;
@@ -293,7 +301,7 @@ describe('message timestamps in prompt', () => {
   it('omits prefix for messages without timestamps', async () => {
     const client = createMockClient({ facts: [] });
     const extractor = createExtractor(client);
-    await extractor.extract([{ role: 'user', content: 'hello' }], '2026-03-15T00:00:00.000Z');
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
 
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       userPrompt: string;
@@ -334,9 +342,10 @@ describe('temporal field extraction', () => {
       ],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([
-      { role: 'user', content: 'I started at Google in January.' },
-    ]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I started at Google in January.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.validFrom).toBe('2026-01-01T00:00:00.000Z');
     expect(result.facts[0]!.temporalConfidence).toBe('explicit');
@@ -354,9 +363,10 @@ describe('temporal field extraction', () => {
       ],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([
-      { role: 'user', content: 'I used to work at Facebook.' },
-    ]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I used to work at Facebook.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.validUntil).toBe('2025-06-01T00:00:00.000Z');
     expect(result.facts[0]!.temporalConfidence).toBe('implied');
@@ -366,7 +376,10 @@ describe('temporal field extraction', () => {
   it('handles facts with no temporal fields (backward compatible)', async () => {
     const client = createMockClient({ facts: [{ text: 'User likes espresso.' }] });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'I like espresso.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I like espresso.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.validFrom).toBeUndefined();
     expect(result.facts[0]!.validUntil).toBeUndefined();
@@ -378,7 +391,10 @@ describe('temporal field extraction', () => {
       facts: [{ text: 'User likes tea.', temporalConfidence: 'maybe' }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'I like tea.' }]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I like tea.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.temporalConfidence).toBeUndefined();
   });
@@ -388,7 +404,7 @@ describe('temporal field extraction', () => {
       facts: [{ text: 'User likes coffee.', validFrom: 12345, validUntil: true }],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([{ role: 'user', content: 'coffee.' }]);
+    const result = await extractor.extract([{ role: 'user', content: 'coffee.' }], TEST_TIMESTAMP);
 
     expect(result.facts[0]!.validFrom).toBeUndefined();
     expect(result.facts[0]!.validUntil).toBeUndefined();
@@ -406,9 +422,10 @@ describe('temporal field extraction', () => {
       ],
     });
     const extractor = createExtractor(client);
-    const result = await extractor.extract([
-      { role: 'user', content: 'I worked at Meta from 2024 to 2025.' },
-    ]);
+    const result = await extractor.extract(
+      [{ role: 'user', content: 'I worked at Meta from 2024 to 2025.' }],
+      TEST_TIMESTAMP,
+    );
 
     expect(result.facts[0]!.validFrom).toBe('2024-01-01T00:00:00.000Z');
     expect(result.facts[0]!.validUntil).toBe('2025-01-01T00:00:00.000Z');

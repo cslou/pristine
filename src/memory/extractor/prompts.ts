@@ -46,15 +46,13 @@ CONFIDENCE LEVELS:
 
 If temporal extraction is ambiguous or contradictory, set temporalConfidence = "none" and omit dates. Do not guess.`;
 
-export function buildExtractionPrompt(referenceTimestamp?: string): string {
-  const effectiveTimestamp = referenceTimestamp ?? new Date().toISOString();
-
+export function buildExtractionPrompt(referenceTimestamp: string): string {
   return (
     'Extract factual statements from the conversation. Return each fact as a standalone sentence with no unresolved pronouns. ' +
     SENSITIVE_PLACEHOLDER_RULES +
     ' ' +
     CATEGORY_GUIDANCE +
     '\n\n' +
-    buildTemporalRules(effectiveTimestamp)
+    buildTemporalRules(referenceTimestamp)
   );
 }

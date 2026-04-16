@@ -82,7 +82,7 @@ export interface Store {
 // ---------------------------------------------------------------------------
 
 export interface Extractor {
-  extract(conversation: readonly Message[], referenceTimestamp?: string): Promise<ExtractionResult>;
+  extract(conversation: readonly Message[], referenceTimestamp: string): Promise<ExtractionResult>;
 }
 
 // ---------------------------------------------------------------------------

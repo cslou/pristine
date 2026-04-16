@@ -49,7 +49,10 @@ export class PristineProvider implements Provider {
         ...(m.timestamp ? { timestamp: m.timestamp } : {}),
       }))
 
-      await client.store(messages, options.containerTag)
+      const sessionDate = session.metadata?.date as string | undefined
+      await client.orchestrator.ingest(messages, options.containerTag, {
+        ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
+      })
       documentIds.push(session.sessionId)
     }
 
@@ -61,7 +64,7 @@ export class PristineProvider implements Provider {
     _containerTag: string,
     onProgress?: IndexingProgressCallback
   ): Promise<void> {
-    // Pristine's store() is synchronous from the caller's perspective — no async indexing
+    // Pristine's orchestrator.ingest() completes synchronously — no async indexing needed
     onProgress?.({
       completedIds: result.documentIds,
       failedIds: [],

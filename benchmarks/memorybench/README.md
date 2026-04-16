@@ -114,7 +114,7 @@ Run the full LOCOMO benchmark locally with no API costs:
 
 ```bash
 cd benchmarks/memorybench
-npx tsx src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b -r baseline-v1
+npx tsx src/index.ts run -p pristine -b locomo -j ollama:gemma4:e4b -m ollama:gemma4:e4b -r baseline-v1
 ```
 
 This ingests all 10 LOCOMO conversations (272 sessions), extracts facts via llama3.2:3b, generates answers via gemma4:e4b, and scores via gemma4:e4b as judge. Expected runtime: ~3 hours on M4 Max.
@@ -122,7 +122,7 @@ This ingests all 10 LOCOMO conversations (272 sessions), extracts facts via llam
 ### Quick Validation (2 questions)
 
 ```bash
-npx tsx src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b -r quick-test --limit 2 --force
+npx tsx src/index.ts run -p pristine -b locomo -j ollama:gemma4:e4b -m ollama:gemma4:e4b -r quick-test --limit 2 --force
 ```
 
 ### Resume After Interruption
@@ -130,7 +130,7 @@ npx tsx src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b -r
 The checkpoint system auto-saves progress. Resume with the same run ID:
 
 ```bash
-npx tsx src/index.ts run -r baseline-v1 -j ollama -m ollama:gemma4:e4b
+npx tsx src/index.ts run -r baseline-v1 -j ollama:gemma4:e4b -m ollama:gemma4:e4b
 ```
 
 ### Important Notes

@@ -215,7 +215,6 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
     defaultMaxTokens: 1000,
   },
 
-  // Google - Gemini 3 (MUST use temperature=1, lower causes issues)
   // Ollama - Local models
   ollama: {
     id: "gemma4:e4b",

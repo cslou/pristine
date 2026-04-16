@@ -49,7 +49,10 @@ export class PristineProvider implements Provider {
         ...(m.timestamp ? { timestamp: m.timestamp } : {}),
       }))
 
-      await client.store(messages, options.containerTag)
+      const sessionDate = session.metadata?.date as string | undefined
+      await client.orchestrator.ingest(messages, options.containerTag, {
+        ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
+      })
       documentIds.push(session.sessionId)
     }
 

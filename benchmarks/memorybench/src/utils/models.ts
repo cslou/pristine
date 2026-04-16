@@ -360,7 +360,7 @@ export function listAvailableModels(): string[] {
   return Object.keys(MODEL_CONFIGS)
 }
 
-export function listModelsByProvider(provider: "openai" | "anthropic" | "google"): string[] {
+export function listModelsByProvider(provider: "openai" | "anthropic" | "google" | "ollama"): string[] {
   return Object.entries(MODEL_CONFIGS)
     .filter(([_, config]) => config.provider === provider)
     .map(([alias]) => alias)

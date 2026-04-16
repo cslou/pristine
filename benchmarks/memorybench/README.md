@@ -61,11 +61,11 @@ GOOGLE_API_KEY=
 ## Options
 
 ```
--p, --provider         Memory provider (filesystem, rag)
+-p, --provider         Memory provider (filesystem, rag, pristine)
 -b, --benchmark        Benchmark (locomo, longmemeval, convomem)
--j, --judge            Judge model (gpt-4o, sonnet-4, gemini-2.5-flash, etc.)
+-j, --judge            Judge model (gpt-4o, sonnet-4, ollama, ollama:<model>)
 -r, --run-id           Run identifier (auto-generated if omitted)
--m, --answering-model  Model for answer generation (default: gpt-4o)
+-m, --answering-model  Model for answer generation (default: gpt-4o, or ollama:<model>)
 -l, --limit            Limit number of questions
 -q, --question-id      Specific question (for test command)
 --force                Clear checkpoint and restart
@@ -96,6 +96,48 @@ bun run src/index.ts test -r my-test -q question_42
 bun run src/index.ts status -r my-test
 bun run src/index.ts show-failures -r my-test
 ```
+
+## Running Pristine + Ollama ($0 Local)
+
+Run the full LOCOMO benchmark locally with no API costs:
+
+### Prerequisites
+
+1. [Ollama](https://ollama.com) installed and running
+2. Pull the required models:
+   ```bash
+   ollama pull llama3.2:3b    # Pristine's extraction model
+   ollama pull gemma4:e4b     # Judge + answering model (9.6 GB)
+   ```
+
+### Full LOCOMO Baseline
+
+```bash
+cd benchmarks/memorybench
+npx tsx src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b -r baseline-v1
+```
+
+This ingests all 10 LOCOMO conversations (272 sessions), extracts facts via llama3.2:3b, generates answers via gemma4:e4b, and scores via gemma4:e4b as judge. Expected runtime: ~3 hours on M4 Max.
+
+### Quick Validation (2 questions)
+
+```bash
+npx tsx src/index.ts run -p pristine -b locomo -j ollama -m ollama:gemma4:e4b -r quick-test --limit 2 --force
+```
+
+### Resume After Interruption
+
+The checkpoint system auto-saves progress. Resume with the same run ID:
+
+```bash
+npx tsx src/index.ts run -r baseline-v1 -j ollama -m ollama:gemma4:e4b
+```
+
+### Important Notes
+
+- Use `npx tsx` instead of `bun run` — better-sqlite3 is not compatible with Bun
+- Do NOT set `think=false` with Ollama's `format` parameter (Ollama issue #15260)
+- Gemma 4 E4B requires ~7 GB VRAM; runs comfortably on M4 Max 64 GB alongside normal workloads
 
 ## Pipeline
 

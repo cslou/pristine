@@ -42,6 +42,7 @@ export type { LlmClients } from './engine/index.js';
 // ---------------------------------------------------------------------------
 
 export { buildExtractionPrompt } from './memory/extractor/prompts.js';
+export type { ExtractorConfig } from './memory/extractor/index.js';
 
 // ---------------------------------------------------------------------------
 // Errors

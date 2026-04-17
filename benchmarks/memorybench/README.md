@@ -196,7 +196,7 @@ to preserve `[SENSITIVE:type:id]` placeholders verbatim, compose your own
 prompt and pass it through `PristineLocalConfig.extractor`:
 
 ```ts
-import { PristineLocal } from "pristine";
+import { PristineLocal, buildExtractionPrompt } from "pristine";
 
 const SENSITIVE_RULE = `When a fact you extract mentions a [SENSITIVE:type:id]
 placeholder, preserve the placeholder exactly as-is. Never paraphrase or drop
@@ -204,7 +204,7 @@ it — these are redacted values that must pass through unchanged.`;
 
 const client = await PristineLocal.create({
   extractor: {
-    systemPrompt: `${SENSITIVE_RULE}\n\n${YOUR_BASE_EXTRACTION_PROMPT}`,
+    systemPrompt: `${SENSITIVE_RULE}\n\n${buildExtractionPrompt(new Date().toISOString())}`,
   },
 });
 ```
@@ -214,6 +214,17 @@ domain-specific (e.g. software-dev or clinical-notes presets). The full
 override replaces the Pristine default — both category guidance and temporal
 rules — so make sure your prompt covers whatever the downstream fact schema
 expects (especially `validFrom`, `validUntil`, `temporalConfidence`).
+
+**Caveat — `REFERENCE_TIME` is baked in at client-creation time.** When
+`extractor.systemPrompt` is set, `LocalExtractor.extract()` skips the default
+`buildExtractionPrompt(referenceTimestamp)` call and uses your string
+verbatim. Any `referenceTimestamp` passed to `ingest()` after that point is
+ignored in the prompt — the temporal rules will keep pointing at whatever
+time you composed at setup, so relative expressions like "last month" /
+"recently" resolve against a stale anchor. Two workarounds: (1) recreate the
+client per session if per-call temporal accuracy matters, or (2) omit the
+temporal rules section from your custom prompt if your facts don't depend
+on temporal resolution.
 
 ### Diagnostic scripts
 

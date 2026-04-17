@@ -120,8 +120,14 @@ async function runPristineProbe(name, messages) {
 }
 
 /**
- * Build the extraction system prompt exactly like Pristine does. Must stay
- * aligned with src/memory/extractor/prompts.ts.
+ * Build the PRE-FIX extraction system prompt (with the toxic
+ * SENSITIVE_PLACEHOLDER_RULES chunk still in place). This intentionally
+ * does NOT match src/memory/extractor/prompts.ts — the current default
+ * has that chunk removed. Probes P6/P7 use this older prompt to
+ * reproduce the original gemma4:e4b failure mode for comparison. If you
+ * want to test the CURRENT Pristine default, use
+ * scripts/debug-failing-sessions.mjs which imports buildExtractionPrompt
+ * from the built dist/.
  */
 function buildExtractionSystemPrompt(referenceTimestamp) {
   const sensitive =

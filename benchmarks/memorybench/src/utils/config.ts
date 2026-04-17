@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+
 export interface Config {
   openaiApiKey: string
   anthropicApiKey: string
@@ -10,17 +14,37 @@ export const config: Config = {
   googleApiKey: process.env.GOOGLE_API_KEY || "",
 }
 
+/**
+ * Read the Pristine extraction model from ~/.pristine/models.json. Returns
+ * null when the file is missing or malformed. Exposed so the orchestrator
+ * can inject the value into the provider's config instead of each provider
+ * duplicating file-reading logic.
+ */
+export function readPristineExtractionModel(): string | null {
+  try {
+    const raw = readFileSync(join(homedir(), ".pristine", "models.json"), "utf8")
+    const parsed = JSON.parse(raw) as { memory?: { model?: unknown } }
+    const model = parsed.memory?.model
+    return typeof model === "string" ? model : null
+  } catch {
+    return null
+  }
+}
+
 export function getProviderConfig(
   provider: string,
   dataSourceRunId: string,
   resumeMode = false,
-  concurrency?: import("../types/concurrency").ConcurrencyConfig
+  concurrency?: import("../types/concurrency").ConcurrencyConfig,
+  benchmark?: string
 ): {
   apiKey: string
   baseUrl?: string
   dataSourceRunId: string
   resumeMode: boolean
   concurrency?: import("../types/concurrency").ConcurrencyConfig
+  benchmark?: string
+  extractionModel: string | null
 } {
   const base = (() => {
     switch (provider) {
@@ -34,7 +58,14 @@ export function getProviderConfig(
         throw new Error(`Unknown provider: ${provider}`)
     }
   })()
-  return { ...base, dataSourceRunId, resumeMode, concurrency }
+  return {
+    ...base,
+    dataSourceRunId,
+    resumeMode,
+    concurrency,
+    benchmark,
+    extractionModel: provider === "pristine" ? readPristineExtractionModel() : null,
+  }
 }
 
 export function getJudgeConfig(judge: string): { apiKey: string; model?: string } {

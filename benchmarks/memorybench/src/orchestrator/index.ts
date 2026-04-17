@@ -349,7 +349,8 @@ export class Orchestrator {
         providerName,
         checkpoint.dataSourceRunId,
         !isNewRun,
-        checkpoint.concurrency
+        checkpoint.concurrency,
+        benchmarkName
       )
     )
 

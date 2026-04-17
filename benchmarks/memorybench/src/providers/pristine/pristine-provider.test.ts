@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach, spyOn } from "bun:test"
 import { PristineProvider } from "./index"
 import { logger } from "../../utils/logger"
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const PRISTINE_DB_ROOT = join(process.cwd(), "data", "pristine-dbs")
@@ -213,6 +213,154 @@ describe("PristineProvider path derivation", () => {
       expect(warnSpy).not.toHaveBeenCalled()
     } finally {
       warnSpy.mockRestore()
+    }
+  })
+})
+
+describe("PristineProvider metadata.json stamp", () => {
+  test("cold-start: folder absent → writes fresh stamp silently", async () => {
+    const provider = new PristineProvider()
+    const runId = `meta-cold-${Date.now()}`
+    testRuns.push(runId)
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        extractionModel: "gemma4:e4b",
+        benchmark: "locomo",
+      })
+
+      const metaPath = join(PRISTINE_DB_ROOT, runId, "metadata.json")
+      expect(existsSync(metaPath)).toBe(true)
+      const stamp = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>
+      expect(stamp.extractionModel).toBe("gemma4:e4b")
+      expect(stamp.benchmark).toBe("locomo")
+      expect(typeof stamp.createdAt).toBe("string")
+      // Mismatch warn must NOT fire when there was nothing to compare against.
+      const mismatchWarns = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("Reusing DB folder"))
+      expect(mismatchWarns).toHaveLength(0)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("legacy folder without metadata.json → info log, writes fresh stamp, no warn", async () => {
+    const provider = new PristineProvider()
+    const runId = `meta-legacy-${Date.now()}`
+    testRuns.push(runId)
+
+    // Pre-create folder to simulate a legacy state without metadata.json.
+    mkdirSync(join(PRISTINE_DB_ROOT, runId), { recursive: true })
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    const infoSpy = spyOn(logger, "info").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        extractionModel: "gemma4:e4b",
+        benchmark: "locomo",
+      })
+
+      const metaPath = join(PRISTINE_DB_ROOT, runId, "metadata.json")
+      expect(existsSync(metaPath)).toBe(true)
+      // Info log announces the legacy path; no warn because the user didn't
+      // cause the missing-metadata state.
+      const infoMsgs = infoSpy.mock.calls.map((c) => String(c[0]))
+      expect(infoMsgs.some((m) => m.includes("metadata.json missing"))).toBe(true)
+      const mismatchWarns = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("Reusing DB folder"))
+      expect(mismatchWarns).toHaveLength(0)
+    } finally {
+      warnSpy.mockRestore()
+      infoSpy.mockRestore()
+    }
+  })
+
+  test("model mismatch → warn with prior createdAt + prior model + --force guidance", async () => {
+    const provider = new PristineProvider()
+    const runId = `meta-mismatch-${Date.now()}`
+    testRuns.push(runId)
+
+    // Pre-seed a metadata.json written by a prior run with a different model.
+    const runDir = join(PRISTINE_DB_ROOT, runId)
+    mkdirSync(runDir, { recursive: true })
+    const priorStamp = {
+      createdAt: "2026-04-10T12:00:00.000Z",
+      extractionModel: "llama3.2:3b",
+      benchmark: "locomo",
+    }
+    writeFileSync(join(runDir, "metadata.json"), JSON.stringify(priorStamp))
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        extractionModel: "gemma4:e4b", // different from prior
+        benchmark: "locomo",
+      })
+
+      const mismatchWarn = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .find((m) => m.includes("Reusing DB folder"))
+      expect(mismatchWarn).toBeDefined()
+      expect(mismatchWarn).toContain("2026-04-10T12:00:00.000Z")
+      expect(mismatchWarn).toContain("llama3.2:3b")
+      expect(mismatchWarn).toContain("gemma4:e4b")
+      expect(mismatchWarn).toContain("--force")
+    } finally {
+      warnSpy.mockRestore()
+    }
+
+    // Original stamp should NOT be overwritten on a pure mismatch — we only
+    // rewrite the stamp when the prior one is unreadable.
+    const contents = JSON.parse(
+      readFileSync(join(runDir, "metadata.json"), "utf8")
+    ) as Record<string, unknown>
+    expect(contents.extractionModel).toBe("llama3.2:3b")
+    expect(contents.createdAt).toBe("2026-04-10T12:00:00.000Z")
+  })
+
+  test("model match → silent proceed (no warn, no info)", async () => {
+    const provider = new PristineProvider()
+    const runId = `meta-match-${Date.now()}`
+    testRuns.push(runId)
+
+    const runDir = join(PRISTINE_DB_ROOT, runId)
+    mkdirSync(runDir, { recursive: true })
+    writeFileSync(
+      join(runDir, "metadata.json"),
+      JSON.stringify({
+        createdAt: "2026-04-10T12:00:00.000Z",
+        extractionModel: "gemma4:e4b",
+        benchmark: "locomo",
+      })
+    )
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    const infoSpy = spyOn(logger, "info").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        extractionModel: "gemma4:e4b",
+        benchmark: "locomo",
+      })
+
+      const metaMsgs = [
+        ...warnSpy.mock.calls.map((c) => String(c[0])),
+        ...infoSpy.mock.calls.map((c) => String(c[0])),
+      ].filter((m) => m.includes("metadata.json") || m.includes("Reusing DB folder"))
+      expect(metaMsgs).toHaveLength(0)
+    } finally {
+      warnSpy.mockRestore()
+      infoSpy.mockRestore()
     }
   })
 })

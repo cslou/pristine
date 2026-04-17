@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, rmSync } from "node:fs"
+import { mkdirSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type {
   Provider,
@@ -14,6 +14,17 @@ import { logger } from "../../utils/logger"
 import { PRISTINE_PROMPTS } from "./prompts"
 
 const PRISTINE_DB_ROOT = join(process.cwd(), "data", "pristine-dbs")
+
+/**
+ * Shape of the per-run metadata.json stamp written alongside Pristine DBs.
+ * Read back on subsequent runs to detect config drift (extraction model
+ * mismatches) that would silently skew benchmark results.
+ */
+interface PristineRunMetadata {
+  createdAt: string
+  extractionModel: string | null
+  benchmark: string | null
+}
 
 /**
  * Pristine Provider
@@ -92,6 +103,71 @@ export class PristineProvider implements Provider {
             `Re-run with --force to reset, or manually migrate data into the new folder.`
         )
       }
+    }
+
+    // Metadata stamp: record {createdAt, extractionModel, benchmark} so a
+    // re-run against the same dataSourceRunId with a different extraction
+    // model surfaces a warning instead of silently reusing the prior model's
+    // extractions. Four cases handled distinctly:
+    //  - Folder missing: create + write fresh stamp, no warn.
+    //  - Folder exists, metadata missing (legacy/cold-start): info log, write
+    //    fresh stamp. The user didn't cause this so don't warn.
+    //  - Folder exists, metadata present, model matches: silent proceed.
+    //  - Folder exists, metadata present, model mismatches: WARN with the
+    //    prior createdAt + prior model + remediation ("Pass --force").
+    this.stampMetadata(
+      newRunId,
+      config.benchmark ?? null,
+      config.extractionModel ?? null
+    )
+  }
+
+  private stampMetadata(
+    dataSourceRunId: string,
+    benchmark: string | null,
+    extractionModel: string | null
+  ): void {
+    const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
+    const metaPath = join(runDir, "metadata.json")
+    const fresh: PristineRunMetadata = {
+      createdAt: new Date().toISOString(),
+      extractionModel,
+      benchmark,
+    }
+
+    if (!existsSync(runDir)) {
+      mkdirSync(runDir, { recursive: true })
+      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
+      return
+    }
+
+    if (!existsSync(metaPath)) {
+      logger.info(
+        `metadata.json missing in ${runDir} (legacy or cold-start). Writing fresh stamp.`
+      )
+      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
+      return
+    }
+
+    try {
+      const prior = JSON.parse(readFileSync(metaPath, "utf8")) as Partial<PristineRunMetadata>
+      if (
+        extractionModel &&
+        prior.extractionModel &&
+        prior.extractionModel !== extractionModel
+      ) {
+        logger.warn(
+          `Reusing DB folder created at ${prior.createdAt ?? "unknown"} with model ` +
+            `${prior.extractionModel}. Current configured extraction model is ${extractionModel}. ` +
+            `Pass --force to reset.`
+        )
+      }
+      // Match or unknown prior — don't overwrite the original createdAt.
+    } catch {
+      logger.info(
+        `metadata.json in ${runDir} is unreadable. Overwriting with fresh stamp.`
+      )
+      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
     }
   }
 

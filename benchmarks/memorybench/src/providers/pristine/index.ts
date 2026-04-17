@@ -208,6 +208,18 @@ export class PristineProvider implements Provider {
       }
 
       const sessionDate = session.metadata?.date as string | undefined
+      // Surface silent regressions in the LOCOMO loader: every LOCOMO session
+      // should carry metadata.date (Sprint 008c Story 2). A missing field here
+      // means the loader dropped it, and Pristine will fall back to the
+      // latest message timestamp or `new Date()` — producing 2026-ish validFrom
+      // dates on 2023 conversations. Warn rather than silently drift.
+      if (!sessionDate && messages.length > 0) {
+        logger.warn(
+          `Session ${session.sessionId} (containerTag=${options.containerTag}) ` +
+            `has no metadata.date — extraction will fall back to message timestamps ` +
+            `or current time. Check the benchmark loader.`
+        )
+      }
       const result = await client.orchestrator.ingest(messages, options.containerTag, {
         ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
       })

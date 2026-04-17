@@ -562,19 +562,20 @@ describe("PristineProvider silent no-op detection", () => {
           {
             sessionId: "sess-1",
             messages: [{ role: "user", content: "hi" }],
-            metadata: {},
+            metadata: { date: "2023-05-08T13:56:00.000Z" },
           },
         ],
         { containerTag }
       )
 
       expect(result.memoryCount).toBe(0)
-      expect(warnSpy).toHaveBeenCalledTimes(1)
-      const warnArg = String(warnSpy.mock.calls[0][0])
-      expect(warnArg).toContain("0 memories")
-      expect(warnArg).toContain("sess-1")
-      expect(warnArg).toContain(containerTag)
-      expect(warnArg).toContain("--force")
+      const noopWarns = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("0 memories"))
+      expect(noopWarns).toHaveLength(1)
+      expect(noopWarns[0]).toContain("sess-1")
+      expect(noopWarns[0]).toContain(containerTag)
+      expect(noopWarns[0]).toContain("--force")
     } finally {
       warnSpy.mockRestore()
     }
@@ -590,8 +591,16 @@ describe("PristineProvider silent no-op detection", () => {
 
     const result = await provider.ingest(
       [
-        { sessionId: "s1", messages: [{ role: "user", content: "a" }], metadata: {} },
-        { sessionId: "s2", messages: [{ role: "user", content: "b" }], metadata: {} },
+        {
+          sessionId: "s1",
+          messages: [{ role: "user", content: "a" }],
+          metadata: { date: "2023-05-08T13:56:00.000Z" },
+        },
+        {
+          sessionId: "s2",
+          messages: [{ role: "user", content: "b" }],
+          metadata: { date: "2023-05-09T14:00:00.000Z" },
+        },
       ],
       { containerTag }
     )
@@ -616,6 +625,38 @@ describe("PristineProvider silent no-op detection", () => {
         { containerTag }
       )
       expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("warns when a non-empty session is missing metadata.date (LOCOMO loader regression)", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    installFakeClient(provider, containerTag, ["m1"])
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.ingest(
+        [
+          {
+            sessionId: "sess-no-date",
+            messages: [{ role: "user", content: "hi" }],
+            metadata: {}, // deliberately missing date
+          },
+        ],
+        { containerTag }
+      )
+
+      const dateWarns = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("no metadata.date"))
+      expect(dateWarns).toHaveLength(1)
+      expect(dateWarns[0]).toContain("sess-no-date")
+      expect(dateWarns[0]).toContain(containerTag)
     } finally {
       warnSpy.mockRestore()
     }
@@ -663,7 +704,7 @@ describe("PristineProvider partial-ingest recovery (Option B)", () => {
   const sampleSession = {
     sessionId: "s1",
     messages: [{ role: "user" as const, content: "hi" }],
-    metadata: {},
+    metadata: { date: "2023-05-08T13:56:00.000Z" },
   }
 
   test("path 1 — not-exists: ingest proceeds normally", async () => {

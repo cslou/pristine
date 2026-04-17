@@ -58,9 +58,16 @@ export interface Provider {
    * Purges all persisted data for a specific dataSourceRunId. Called by the
    * orchestrator when --force is passed, so a clean re-run does not reuse
    * prior extraction state. Distinct from shutdown: this wipes persistent
-   * data; shutdown (future) releases in-memory resources.
+   * data; shutdown releases in-memory resources.
    */
   purgeRunData?(dataSourceRunId: string): Promise<void>
+  /**
+   * Releases in-memory resources held by the provider (DB connections,
+   * cached clients, open file handles). Called by the orchestrator at the
+   * end of a run or on SIGINT/SIGTERM. Must be idempotent — may be invoked
+   * from both the finally block and the signal handler.
+   */
+  shutdown?(): Promise<void>
 }
 
 export type ProviderName = "filesystem" | "rag" | "pristine"

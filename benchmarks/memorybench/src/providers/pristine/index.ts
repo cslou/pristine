@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, rmSync } from "node:fs"
+import { mkdirSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type {
   Provider,
@@ -14,6 +14,17 @@ import { logger } from "../../utils/logger"
 import { PRISTINE_PROMPTS } from "./prompts"
 
 const PRISTINE_DB_ROOT = join(process.cwd(), "data", "pristine-dbs")
+
+/**
+ * Shape of the per-run metadata.json stamp written alongside Pristine DBs.
+ * Read back on subsequent runs to detect config drift (extraction model
+ * mismatches) that would silently skew benchmark results.
+ */
+interface PristineRunMetadata {
+  createdAt: string
+  extractionModel: string | null
+  benchmark: string | null
+}
 
 /**
  * Pristine Provider
@@ -54,6 +65,29 @@ export class PristineProvider implements Provider {
     this.pristineModule = await import("pristine")
     logger.info(`Initialized Pristine provider for dataSourceRunId=${newRunId}`)
 
+    // Concurrency warning: Pristine extracts memories via a single in-process
+    // LlmClient. When that client points at Ollama (the common local setup)
+    // Ollama serializes requests internally, so concurrency > 1 just adds
+    // coordination overhead without improving throughput. Soften the message:
+    // against API-backed LLMs (future config) higher concurrency may help.
+    if (config.concurrency) {
+      const values = [
+        config.concurrency.default,
+        config.concurrency.ingest,
+        config.concurrency.indexing,
+        config.concurrency.search,
+        config.concurrency.answer,
+        config.concurrency.evaluate,
+      ].filter((v): v is number => typeof v === "number")
+      const maxConcurrency = values.length ? Math.max(...values) : 0
+      if (maxConcurrency > 1) {
+        logger.warn(
+          `Note: concurrency > 1 (effective=${maxConcurrency}) with Ollama as the LLM backend may ` +
+            `not improve throughput (Ollama serializes requests).`
+        )
+      }
+    }
+
     // Migration warning: when resuming an existing run, the per-run DB folder
     // should exist. If it does not, the checkpoint likely predates Sprint
     // 008c Story 3 (PR #86) — when Pristine DBs moved from the shared
@@ -69,6 +103,71 @@ export class PristineProvider implements Provider {
             `Re-run with --force to reset, or manually migrate data into the new folder.`
         )
       }
+    }
+
+    // Metadata stamp: record {createdAt, extractionModel, benchmark} so a
+    // re-run against the same dataSourceRunId with a different extraction
+    // model surfaces a warning instead of silently reusing the prior model's
+    // extractions. Four cases handled distinctly:
+    //  - Folder missing: create + write fresh stamp, no warn.
+    //  - Folder exists, metadata missing (legacy/cold-start): info log, write
+    //    fresh stamp. The user didn't cause this so don't warn.
+    //  - Folder exists, metadata present, model matches: silent proceed.
+    //  - Folder exists, metadata present, model mismatches: WARN with the
+    //    prior createdAt + prior model + remediation ("Pass --force").
+    this.stampMetadata(
+      newRunId,
+      config.benchmark ?? null,
+      config.extractionModel ?? null
+    )
+  }
+
+  private stampMetadata(
+    dataSourceRunId: string,
+    benchmark: string | null,
+    extractionModel: string | null
+  ): void {
+    const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
+    const metaPath = join(runDir, "metadata.json")
+    const fresh: PristineRunMetadata = {
+      createdAt: new Date().toISOString(),
+      extractionModel,
+      benchmark,
+    }
+
+    if (!existsSync(runDir)) {
+      mkdirSync(runDir, { recursive: true })
+      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
+      return
+    }
+
+    if (!existsSync(metaPath)) {
+      logger.info(
+        `metadata.json missing in ${runDir} (legacy or cold-start). Writing fresh stamp.`
+      )
+      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
+      return
+    }
+
+    try {
+      const prior = JSON.parse(readFileSync(metaPath, "utf8")) as Partial<PristineRunMetadata>
+      if (
+        extractionModel &&
+        prior.extractionModel &&
+        prior.extractionModel !== extractionModel
+      ) {
+        logger.warn(
+          `Reusing DB folder created at ${prior.createdAt ?? "unknown"} with model ` +
+            `${prior.extractionModel}. Current configured extraction model is ${extractionModel}. ` +
+            `Pass --force to reset.`
+        )
+      }
+      // Match or unknown prior — don't overwrite the original createdAt.
+    } catch {
+      logger.info(
+        `metadata.json in ${runDir} is unreadable. Overwriting with fresh stamp.`
+      )
+      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
     }
   }
 
@@ -109,6 +208,18 @@ export class PristineProvider implements Provider {
       }
 
       const sessionDate = session.metadata?.date as string | undefined
+      // Surface silent regressions in the LOCOMO loader: every LOCOMO session
+      // should carry metadata.date (Sprint 008c Story 2). A missing field here
+      // means the loader dropped it, and Pristine will fall back to the
+      // latest message timestamp or `new Date()` — producing 2026-ish validFrom
+      // dates on 2023 conversations. Warn rather than silently drift.
+      if (!sessionDate && messages.length > 0) {
+        logger.warn(
+          `Session ${session.sessionId} (containerTag=${options.containerTag}) ` +
+            `has no metadata.date — extraction will fall back to message timestamps ` +
+            `or current time. Check the benchmark loader.`
+        )
+      }
       const result = await client.orchestrator.ingest(messages, options.containerTag, {
         ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
       })

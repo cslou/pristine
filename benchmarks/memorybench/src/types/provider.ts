@@ -19,6 +19,26 @@ export interface ProviderConfig {
    * current code no longer produces (migration case).
    */
   resumeMode?: boolean
+  /**
+   * Effective concurrency for this run (CLI overrides merged with provider
+   * defaults). Providers can use this to warn about configurations that are
+   * unlikely to help — e.g. Pristine with Ollama serializes LLM calls, so
+   * setting concurrency > 1 just adds latency without improving throughput.
+   */
+  concurrency?: ConcurrencyConfig
+  /**
+   * Benchmark name for this run (e.g. "locomo"). Used by providers that
+   * stamp per-run metadata so later re-runs can detect config drift.
+   */
+  benchmark?: string
+  /**
+   * Pre-resolved extraction model identifier (e.g. "gemma4:e4b"). Providers
+   * that stamp per-run metadata compare this against the stamp's prior
+   * value to detect config drift. Typically read by the orchestrator from
+   * ~/.pristine/models.json; passed in so the provider does not need to
+   * duplicate file-reading logic and so tests can inject directly.
+   */
+  extractionModel?: string | null
   [key: string]: unknown
 }
 

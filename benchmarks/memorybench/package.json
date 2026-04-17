@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "prebench": "cd ../.. && npm run build",
+    "bench": "npx --yes tsx src/index.ts",
     "start": "bun run src/index.ts",
     "test": "bun test",
     "format": "prettier --write \"src/**/*.ts\"",

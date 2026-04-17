@@ -31,9 +31,40 @@ A pluggable benchmarking framework for evaluating memory and context systems.
 ## Quick Start
 
 ```bash
-bun install
-bun run src/index.ts run -p filesystem -b locomo -j gpt-4o -r run-fs
+# 1. Install benchmark deps AND build the local `pristine` package
+#    (the memorybench package depends on `pristine` via a file: link).
+npm install
+npm run bench -- run -p filesystem -b locomo -j gpt-4o -r run-fs
+
+# Equivalent explicit form (no prebench helper, e.g. when debugging):
+cd ../..                     # repo root
+npm install && npm run build # builds dist/ that the file: dep resolves to
+cd benchmarks/memorybench
+npx tsx src/index.ts run -p filesystem -b locomo -j gpt-4o -r run-fs
 ```
+
+## Setup gotchas
+
+The benchmark does NOT run under Bun even though `package.json` has a `bun test`
+script. These constraints are load-bearing; violating them produces failures
+that look like bugs but are tooling mismatches.
+
+- **Do not invoke with `bun run` or `bun test` for anything that imports
+  `pristine`.** Pristine uses `better-sqlite3`, a native addon that is not
+  compatible with Bun's runtime (`oven-sh/bun#4290`). Use `npx tsx` to run
+  benchmark commands; use `bun test` only for files that do not import
+  Pristine (e.g. the memorybench orchestrator unit tests).
+- **The Pristine SDK must be built before the benchmark starts.**
+  `memorybench` depends on `pristine` via `file:../../`, which resolves to
+  the repo-root `dist/` directory. `npm run build` at the repo root is a
+  prerequisite — the `prebench` script (added in Story 8a Commit 2) runs
+  this automatically for `npm run bench`.
+- **Run from the memorybench directory** (or use the `bench` npm script
+  which does the `cd` for you). The relative paths in
+  `data/pristine-dbs/{dataSourceRunId}/` and `data/runs/{runId}/` are
+  resolved against `process.cwd()`, not the script location. Running from
+  the repo root will create these folders at the repo root — not what you
+  want.
 
 ## Configuration
 
@@ -73,28 +104,33 @@ GOOGLE_API_KEY=
 
 ## Examples
 
+All commands below assume CWD is `benchmarks/memorybench` and `npm run build`
+has been run at the repo root (the `bench` script handles this automatically).
+Use `npx tsx` for any command that exercises the Pristine provider; `bun run`
+is only safe for files that do not import Pristine.
+
 ```bash
 # Full run with filesystem provider
-bun run src/index.ts run -p filesystem -b locomo -j gpt-4o -r run-fs
+npx tsx src/index.ts run -p filesystem -b locomo -j gpt-4o -r run-fs
 
 # Full run with RAG provider
-bun run src/index.ts run -p rag -b locomo -j gpt-4o -r run-rag
+npx tsx src/index.ts run -p rag -b locomo -j gpt-4o -r run-rag
 
 # Resume existing run
-bun run src/index.ts run -r my-test
+npx tsx src/index.ts run -r my-test
 
 # Limited questions
-bun run src/index.ts run -p filesystem -b locomo -l 10
+npx tsx src/index.ts run -p filesystem -b locomo -l 10
 
 # Compare providers
-bun run src/index.ts compare -p filesystem,rag -b locomo -j gpt-4o -r compare1
+npx tsx src/index.ts compare -p filesystem,rag -b locomo -j gpt-4o -r compare1
 
 # Test single question
-bun run src/index.ts test -r my-test -q question_42
+npx tsx src/index.ts test -r my-test -q question_42
 
 # Debug
-bun run src/index.ts status -r my-test
-bun run src/index.ts show-failures -r my-test
+npx tsx src/index.ts status -r my-test
+npx tsx src/index.ts show-failures -r my-test
 ```
 
 ## Pipeline
@@ -118,6 +154,33 @@ Runs persist to `data/runs/{runId}/`:
 - `report.json` - Final report
 
 Re-running same ID resumes. Use `--force` to restart.
+
+The Pristine provider stores its own per-run SQLite databases in a separate
+namespace: `data/pristine-dbs/{dataSourceRunId}/`. The split exists so that
+`--force` can cleanly purge Pristine state without racing the checkpoint
+manager's cleanup of `data/runs/`. `dataSourceRunId` matches `runId` on
+fresh runs; it only diverges when a checkpoint is copied (used to swap
+judges or answering models without re-ingesting).
+
+## Migration from earlier Sprint 008c builds
+
+Pristine provider DBs used to land in the shared `data/runs/default/` folder
+because of a regex bug in how containerTags were parsed (Sprint 008c Story 3,
+PR #86). Runs with different extraction models silently reused each other's
+memories. If you have legacy checkpoints or DB files from that era:
+
+```bash
+# Safe to delete — all pre-Story-3 Pristine state lived in this shared folder.
+rm -rf data/runs/default/
+
+# Any in-flight runs must be restarted with --force so the provider rebuilds
+# the per-run folder under data/pristine-dbs/{dataSourceRunId}/.
+npx tsx src/index.ts run -r baseline-v1 --force ...
+```
+
+On resume, the Pristine provider will warn if it detects a checkpoint whose
+DB path does not exist (a sign of a pre-Story-3 checkpoint) and prompt for
+`--force`.
 
 ## Extending
 

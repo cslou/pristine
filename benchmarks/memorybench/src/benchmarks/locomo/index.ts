@@ -159,6 +159,14 @@ export class LoCoMoBenchmark implements Benchmark {
       const messages = conv[sessionKey] as LoCoMoMessage[]
       if (!Array.isArray(messages)) continue
 
+      // Role-mapping bias (documented, not a bug): LOCOMO conversations are
+      // peer-to-peer human chats — both speakers are on equal footing in the
+      // source. Memory providers like Pristine treat "user" turns as the
+      // primary subject of extraction, so facts about speakerA will be
+      // extracted more directly than facts about speakerB. Results are still
+      // meaningful for cross-provider comparison because every provider sees
+      // the same mapping; they are NOT directly comparable to LLM-chat
+      // baselines where "user" and "assistant" have distinct semantics.
       const unifiedMessages: UnifiedMessage[] = messages.map((m) => ({
         role: m.speaker === speakerA ? ("user" as const) : ("assistant" as const),
         content: m.text,

@@ -262,4 +262,54 @@ describe('OllamaClient', () => {
     // 1 initial + 3 retries = 4 calls
     expect(globalThis.fetch).toHaveBeenCalledTimes(4);
   }, 15000);
+
+  it('throws a clear AppError when a request times out', async () => {
+    // Simulate a fetch that honors AbortSignal.timeout: reject with a
+    // DOMException-shaped TimeoutError when the signal aborts.
+    vi.mocked(globalThis.fetch).mockImplementation((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit).signal as AbortSignal | undefined;
+        if (!signal) {
+          reject(new Error('test harness: expected signal'));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          const err = new Error('The operation was aborted due to timeout');
+          err.name = 'TimeoutError';
+          reject(err);
+        });
+      });
+    });
+
+    const client = new OllamaClient({ ...TEST_CONFIG, timeoutMs: 50 });
+
+    await expect(client.generate(TEST_PARAMS)).rejects.toThrow(
+      /Ollama request timed out after 50ms for model qwen2\.5:7b/,
+    );
+    await expect(client.generate(TEST_PARAMS)).rejects.toBeInstanceOf(AppError);
+  }, 5000);
+
+  it('does NOT retry on timeout (timeout cancels the attempt, no more attempts made)', async () => {
+    vi.mocked(globalThis.fetch).mockImplementation((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit).signal as AbortSignal | undefined;
+        if (!signal) {
+          reject(new Error('test harness: expected signal'));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          const err = new Error('aborted');
+          err.name = 'TimeoutError';
+          reject(err);
+        });
+      });
+    });
+
+    const client = new OllamaClient({ ...TEST_CONFIG, timeoutMs: 30 });
+
+    await expect(client.generate(TEST_PARAMS)).rejects.toThrow(/timed out/);
+    // One call only — the prompt is slow, not the network, so retrying
+    // would just multiply the wait time. 1 call = no retries.
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  }, 5000);
 });

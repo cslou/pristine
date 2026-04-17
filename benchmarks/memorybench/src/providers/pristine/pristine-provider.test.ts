@@ -327,6 +327,52 @@ describe("PristineProvider metadata.json stamp", () => {
     expect(contents.createdAt).toBe("2026-04-10T12:00:00.000Z")
   })
 
+  test("unreadable metadata.json → info log, overwrites with fresh stamp", async () => {
+    // Fifth AC case: the try/catch in stampMetadata must handle a prior
+    // stamp that is present but unparseable (truncated write, manual edit,
+    // disk corruption). A regression here — e.g. accidentally re-throwing
+    // instead of overwriting — would be silent under the other four tests.
+    const provider = new PristineProvider()
+    const runId = `meta-unreadable-${Date.now()}`
+    testRuns.push(runId)
+
+    const runDir = join(PRISTINE_DB_ROOT, runId)
+    mkdirSync(runDir, { recursive: true })
+    const metaPath = join(runDir, "metadata.json")
+    writeFileSync(metaPath, "{ not valid json")
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    const infoSpy = spyOn(logger, "info").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        extractionModel: "gemma4:e4b",
+        benchmark: "locomo",
+      })
+
+      // Info log announces the overwrite path.
+      const infoMsgs = infoSpy.mock.calls.map((c) => String(c[0]))
+      expect(infoMsgs.some((m) => m.includes("unreadable"))).toBe(true)
+
+      // Stamp was overwritten with a fresh, parseable object that reflects
+      // the current run's model.
+      const parsed = JSON.parse(readFileSync(metaPath, "utf8")) as Record<string, unknown>
+      expect(parsed.extractionModel).toBe("gemma4:e4b")
+      expect(typeof parsed.createdAt).toBe("string")
+
+      // No "Reusing DB folder" warn — we couldn't compare models, so the
+      // mismatch path must NOT fire.
+      const mismatchWarns = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("Reusing DB folder"))
+      expect(mismatchWarns).toHaveLength(0)
+    } finally {
+      warnSpy.mockRestore()
+      infoSpy.mockRestore()
+    }
+  })
+
   test("model match → silent proceed (no warn, no info)", async () => {
     const provider = new PristineProvider()
     const runId = `meta-match-${Date.now()}`

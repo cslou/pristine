@@ -48,9 +48,10 @@ describe("ollama:<model> alias parsing", () => {
 
   test("does NOT alter non-ollama aliases when they contain colons", () => {
     // Sanity guard: only `ollama:` prefix triggers the slice; other aliases
-    // with colons (none exist today, but might in future) should not be
-    // accidentally stripped.
-    const cfg = resolveModel("gpt-4o")
-    expect(cfg.id).toBe("gpt-4o")
+    // with colons (hypothetical future — e.g. `provider:model`) must not
+    // be accidentally stripped. Use an alias with a colon so a future
+    // regression that strips on ANY colon would actually fail this test.
+    const cfg = resolveModel("hypothetical:variant")
+    expect(cfg.id).toBe("hypothetical:variant")
   })
 })

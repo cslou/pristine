@@ -273,7 +273,7 @@ export class Orchestrator {
     }
 
     const provider = createProvider(providerName)
-    await provider.initialize(getProviderConfig(providerName))
+    await provider.initialize(getProviderConfig(providerName, checkpoint.dataSourceRunId))
 
     if (phases.includes("ingest")) {
       await runIngestPhase(

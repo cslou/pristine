@@ -13,13 +13,15 @@ import type { PristineLocal, Message } from "pristine"
 import { logger } from "../../utils/logger"
 import { PRISTINE_PROMPTS } from "./prompts"
 
-const RUNS_DIR = join(process.cwd(), "data", "runs")
+const PRISTINE_DB_ROOT = join(process.cwd(), "data", "pristine-dbs")
 
 /**
  * Pristine Provider
  *
  * Uses PristineLocal SDK directly (no HTTP server). Each conversation gets
- * its own file-backed SQLite database at data/runs/{runId}/{containerTag}.db.
+ * its own file-backed SQLite database at data/pristine-dbs/{dataSourceRunId}/{containerTag}.db.
+ * The isolated namespace (separate from memorybench's data/runs/) avoids cleanup
+ * races with CheckpointManager and keeps ownership unambiguous.
  * Data persists across benchmark phases (ingest -> indexing -> search -> answer).
  */
 export class PristineProvider implements Provider {
@@ -32,10 +34,25 @@ export class PristineProvider implements Provider {
 
   private clients = new Map<string, PristineLocal>()
   private pristineModule: typeof import("pristine") | null = null
+  private dataSourceRunId: string | null = null
 
-  async initialize(_config: ProviderConfig): Promise<void> {
+  async initialize(config: ProviderConfig): Promise<void> {
+    const newRunId = config.dataSourceRunId as string | undefined
+    if (!newRunId) {
+      throw new Error("Pristine provider requires dataSourceRunId in ProviderConfig")
+    }
+
+    // Idempotency: if reinitializing with a different run, dispose cached clients first
+    if (this.dataSourceRunId && this.dataSourceRunId !== newRunId && this.clients.size > 0) {
+      for (const client of this.clients.values()) {
+        await client.dispose()
+      }
+      this.clients.clear()
+    }
+
+    this.dataSourceRunId = newRunId
     this.pristineModule = await import("pristine")
-    logger.info("Initialized Pristine provider (direct SDK import, no HTTP)")
+    logger.info(`Initialized Pristine provider for dataSourceRunId=${newRunId}`)
   }
 
   async ingest(sessions: UnifiedSession[], options: IngestOptions): Promise<IngestResult> {
@@ -107,16 +124,11 @@ export class PristineProvider implements Provider {
     }
   }
 
-  private parseContainerTag(containerTag: string): { runId: string } {
-    // containerTag format: "conv-{conversationId}-{runId}"
-    // conversationId is numeric (LOCOMO sampleId), runId may contain hyphens
-    const match = containerTag.match(/^conv-(\d+)-(.+)$/)
-    return { runId: match ? match[2] : "default" }
-  }
-
   private getDbPath(containerTag: string, ensureDir = true): string {
-    const { runId } = this.parseContainerTag(containerTag)
-    const runDir = join(RUNS_DIR, runId)
+    if (!this.dataSourceRunId) {
+      throw new Error("Pristine provider not initialized. Call initialize() first.")
+    }
+    const runDir = join(PRISTINE_DB_ROOT, this.dataSourceRunId)
     if (ensureDir && !existsSync(runDir)) {
       mkdirSync(runDir, { recursive: true })
     }

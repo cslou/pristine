@@ -39,6 +39,58 @@ export function getConversationId(questionId: string): string {
   return match ? match[1] : questionId
 }
 
+/**
+ * Fail-fast guard: after the ingest phase completes, aggregate the memoryCount
+ * values stored on each question's ingest checkpoint. Sum only ONE value per
+ * unique conversationId because sibling questions share the value (benchmark
+ * dedupes ingest at the conversation level).
+ *
+ * Abort the run when every reporting provider returned 0 and at least one
+ * did report a count — that pattern almost always means stale DBs or
+ * content-hash duplicate detection, and letting downstream phases run
+ * would produce misleading baseline numbers.
+ *
+ * Silently no-op when no provider reported a count (filesystem, rag) so
+ * those pipelines are unaffected.
+ */
+export function assertIngestProducedMemories(
+  checkpoint: RunCheckpoint,
+  targetQuestionIds?: string[]
+): void {
+  const questionIds = targetQuestionIds ?? Object.keys(checkpoint.questions)
+  const perConversation = new Map<string, number | undefined>()
+
+  for (const qid of questionIds) {
+    const q = checkpoint.questions[qid]
+    if (!q) continue
+    const convId = getConversationId(qid)
+    // Take the first reported count for each conversation (primary question).
+    // Sibling entries carry the same value, so any would do, but this also
+    // handles the case where the primary reports but a sibling doesn't.
+    if (!perConversation.has(convId)) {
+      perConversation.set(convId, q.phases.ingest.memoryCount)
+    } else if (perConversation.get(convId) === undefined) {
+      perConversation.set(convId, q.phases.ingest.memoryCount)
+    }
+  }
+
+  let total = 0
+  let reported = 0
+  for (const count of perConversation.values()) {
+    if (typeof count === "number") {
+      total += count
+      reported += 1
+    }
+  }
+
+  if (reported > 0 && total === 0) {
+    throw new Error(
+      "Ingest produced 0 memories across all conversations. This usually " +
+        "means stale DBs or content-hash duplicate detection. Run with --force to reset."
+    )
+  }
+}
+
 export interface OrchestratorOptions {
   provider: ProviderName
   benchmark: BenchmarkName
@@ -314,6 +366,7 @@ export class Orchestrator {
           this.checkpointManager,
           targetQuestionIds
         )
+        assertIngestProducedMemories(checkpoint, targetQuestionIds)
       }
 
       if (phases.includes("indexing")) {

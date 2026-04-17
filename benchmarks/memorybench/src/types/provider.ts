@@ -5,6 +5,13 @@ import type { ConcurrencyConfig } from "./concurrency"
 export interface ProviderConfig {
   apiKey: string
   baseUrl?: string
+  /**
+   * Identifies the run that owns any data this provider persists. Passed
+   * through from the orchestrator (checkpoint.dataSourceRunId) so providers
+   * can scope storage per run. Optional for provider implementations that
+   * do not persist per-run data (e.g. filesystem, rag).
+   */
+  dataSourceRunId?: string
   [key: string]: unknown
 }
 

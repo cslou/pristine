@@ -37,7 +37,7 @@ export class PristineProvider implements Provider {
   private dataSourceRunId: string | null = null
 
   async initialize(config: ProviderConfig): Promise<void> {
-    const newRunId = config.dataSourceRunId as string | undefined
+    const newRunId = config.dataSourceRunId
     if (!newRunId) {
       throw new Error("Pristine provider requires dataSourceRunId in ProviderConfig")
     }
@@ -126,11 +126,13 @@ export class PristineProvider implements Provider {
 
   async purgeRunData(dataSourceRunId: string): Promise<void> {
     // Dispose cached clients first: better-sqlite3 holds file handles that
-    // can block rmSync cleanup on some platforms.
-    for (const [containerTag, client] of this.clients.entries()) {
+    // can block rmSync cleanup on some platforms. The cache only ever holds
+    // clients for a single active run (initialize clears on run-id change),
+    // so disposing all cached entries is equivalent to disposing the run's.
+    for (const client of this.clients.values()) {
       await client.dispose()
-      this.clients.delete(containerTag)
     }
+    this.clients.clear()
 
     const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
     if (existsSync(runDir)) {

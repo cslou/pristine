@@ -129,6 +129,30 @@ describe("PristineProvider path derivation", () => {
       warnSpy.mockRestore()
     }
   })
+
+  test("does NOT warn when resumeMode is true but DB folder already exists (normal resume)", async () => {
+    // Happy path: a legitimate checkpoint resume should NOT emit the
+    // migration warn. Regression guard for "always warn on resume" where
+    // the existsSync check is accidentally removed.
+    const provider = new PristineProvider()
+    const runId = `normal-resume-${Date.now()}`
+    testRuns.push(runId)
+
+    // Pre-create the run folder to simulate a prior ingest having completed.
+    mkdirSync(join(PRISTINE_DB_ROOT, runId), { recursive: true })
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        resumeMode: true,
+      })
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
 })
 
 describe("PristineProvider.initialize idempotency", () => {

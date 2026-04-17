@@ -124,6 +124,21 @@ export class PristineProvider implements Provider {
     }
   }
 
+  async purgeRunData(dataSourceRunId: string): Promise<void> {
+    // Dispose cached clients first: better-sqlite3 holds file handles that
+    // can block rmSync cleanup on some platforms.
+    for (const [containerTag, client] of this.clients.entries()) {
+      await client.dispose()
+      this.clients.delete(containerTag)
+    }
+
+    const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
+    if (existsSync(runDir)) {
+      rmSync(runDir, { recursive: true, force: true })
+      logger.info(`Purged Pristine DB folder for dataSourceRunId=${dataSourceRunId}`)
+    }
+  }
+
   private getDbPath(containerTag: string, ensureDir = true): string {
     if (!this.dataSourceRunId) {
       throw new Error("Pristine provider not initialized. Call initialize() first.")

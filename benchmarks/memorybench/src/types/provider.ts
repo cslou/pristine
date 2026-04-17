@@ -47,6 +47,13 @@ export interface Provider {
   ): Promise<void>
   search(query: string, options: SearchOptions): Promise<unknown[]>
   clear(containerTag: string): Promise<void>
+  /**
+   * Purges all persisted data for a specific dataSourceRunId. Called by the
+   * orchestrator when --force is passed, so a clean re-run does not reuse
+   * prior extraction state. Distinct from shutdown: this wipes persistent
+   * data; shutdown (future) releases in-memory resources.
+   */
+  purgeRunData?(dataSourceRunId: string): Promise<void>
 }
 
 export type ProviderName = "filesystem" | "rag" | "pristine"

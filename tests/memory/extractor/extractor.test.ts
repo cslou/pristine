@@ -329,7 +329,8 @@ describe('extraction prompt and referenceTimestamp', () => {
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       systemPrompt: string;
     };
-    expect(call.systemPrompt).toContain('Schema:');
+    expect(call.systemPrompt).toContain('Schema');
+    expect(call.systemPrompt).toContain('no markdown fences');
     expect(call.systemPrompt).toContain('"facts"');
     expect(call.systemPrompt).toContain('"properties"');
     expect(call.systemPrompt).toContain('"temporalConfidence"');

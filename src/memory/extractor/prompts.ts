@@ -80,7 +80,7 @@ export function buildExtractionPrompt(referenceTimestamp: string): string {
   return [
     ROLE_AND_GOAL,
     MODE_FRAMING,
-    `Schema:\n\`\`\`json\n${schemaJson}\n\`\`\``,
+    `Schema (your response must match this exact shape, with no markdown fences or prose wrapper):\n${schemaJson}`,
     TASK_DESCRIPTION,
     CATEGORY_GUIDANCE,
     EMPTY_CLAUSE,

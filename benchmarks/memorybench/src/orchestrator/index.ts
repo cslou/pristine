@@ -345,7 +345,12 @@ export class Orchestrator {
 
     const provider = createProvider(providerName)
     await provider.initialize(
-      getProviderConfig(providerName, checkpoint.dataSourceRunId, !isNewRun)
+      getProviderConfig(
+        providerName,
+        checkpoint.dataSourceRunId,
+        !isNewRun,
+        checkpoint.concurrency
+      )
     )
 
     // Purge AFTER initialize so the provider has its run context, and using

@@ -54,6 +54,29 @@ export class PristineProvider implements Provider {
     this.pristineModule = await import("pristine")
     logger.info(`Initialized Pristine provider for dataSourceRunId=${newRunId}`)
 
+    // Concurrency warning: Pristine extracts memories via a single in-process
+    // LlmClient. When that client points at Ollama (the common local setup)
+    // Ollama serializes requests internally, so concurrency > 1 just adds
+    // coordination overhead without improving throughput. Soften the message:
+    // against API-backed LLMs (future config) higher concurrency may help.
+    if (config.concurrency) {
+      const values = [
+        config.concurrency.default,
+        config.concurrency.ingest,
+        config.concurrency.indexing,
+        config.concurrency.search,
+        config.concurrency.answer,
+        config.concurrency.evaluate,
+      ].filter((v): v is number => typeof v === "number")
+      const maxConcurrency = values.length ? Math.max(...values) : 0
+      if (maxConcurrency > 1) {
+        logger.warn(
+          `Note: concurrency > 1 (effective=${maxConcurrency}) with Ollama as the LLM backend may ` +
+            `not improve throughput (Ollama serializes requests).`
+        )
+      }
+    }
+
     // Migration warning: when resuming an existing run, the per-run DB folder
     // should exist. If it does not, the checkpoint likely predates Sprint
     // 008c Story 3 (PR #86) — when Pristine DBs moved from the shared

@@ -153,6 +153,68 @@ describe("PristineProvider path derivation", () => {
       warnSpy.mockRestore()
     }
   })
+
+  test("warns when concurrency > 1 (any phase) is passed", async () => {
+    const provider = new PristineProvider()
+    const runId = `conc-warn-${Date.now()}`
+    mkdirSync(join(PRISTINE_DB_ROOT, runId), { recursive: true })
+    testRuns.push(runId)
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        concurrency: { default: 1, ingest: 4 },
+      })
+
+      const calls = warnSpy.mock.calls.map((c) => String(c[0]))
+      const concurrencyCalls = calls.filter((m) => m.includes("concurrency > 1"))
+      expect(concurrencyCalls).toHaveLength(1)
+      expect(concurrencyCalls[0]).toContain("effective=4")
+      expect(concurrencyCalls[0]).toContain("Ollama")
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("does NOT warn when all concurrency values are <= 1", async () => {
+    const provider = new PristineProvider()
+    const runId = `conc-noop-${Date.now()}`
+    mkdirSync(join(PRISTINE_DB_ROOT, runId), { recursive: true })
+    testRuns.push(runId)
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        concurrency: { default: 1, ingest: 1 },
+      })
+      expect(
+        warnSpy.mock.calls
+          .map((c) => String(c[0]))
+          .filter((m) => m.includes("concurrency > 1"))
+      ).toHaveLength(0)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("does NOT warn when concurrency is absent entirely", async () => {
+    const provider = new PristineProvider()
+    const runId = `conc-absent-${Date.now()}`
+    mkdirSync(join(PRISTINE_DB_ROOT, runId), { recursive: true })
+    testRuns.push(runId)
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({ apiKey: "none", dataSourceRunId: runId })
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
 })
 
 describe("PristineProvider.initialize idempotency", () => {

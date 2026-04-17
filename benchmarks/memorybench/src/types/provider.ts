@@ -19,6 +19,13 @@ export interface ProviderConfig {
    * current code no longer produces (migration case).
    */
   resumeMode?: boolean
+  /**
+   * Effective concurrency for this run (CLI overrides merged with provider
+   * defaults). Providers can use this to warn about configurations that are
+   * unlikely to help — e.g. Pristine with Ollama serializes LLM calls, so
+   * setting concurrency > 1 just adds latency without improving throughput.
+   */
+  concurrency?: ConcurrencyConfig
   [key: string]: unknown
 }
 

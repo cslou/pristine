@@ -13,12 +13,14 @@ export const config: Config = {
 export function getProviderConfig(
   provider: string,
   dataSourceRunId: string,
-  resumeMode = false
+  resumeMode = false,
+  concurrency?: import("../types/concurrency").ConcurrencyConfig
 ): {
   apiKey: string
   baseUrl?: string
   dataSourceRunId: string
   resumeMode: boolean
+  concurrency?: import("../types/concurrency").ConcurrencyConfig
 } {
   const base = (() => {
     switch (provider) {
@@ -32,7 +34,7 @@ export function getProviderConfig(
         throw new Error(`Unknown provider: ${provider}`)
     }
   })()
-  return { ...base, dataSourceRunId, resumeMode }
+  return { ...base, dataSourceRunId, resumeMode, concurrency }
 }
 
 export function getJudgeConfig(judge: string): { apiKey: string; model?: string } {

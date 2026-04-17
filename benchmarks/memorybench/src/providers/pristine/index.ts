@@ -125,24 +125,24 @@ export class PristineProvider implements Provider {
   }
 
   async shutdown(): Promise<void> {
-    // Idempotent: if already shut down, the clients map is empty and this loop
-    // is a no-op. Each better-sqlite3 client closes its own DB handle (and
-    // triggers WAL checkpoint) via PristineLocal.dispose().
-    for (const client of this.clients.values()) {
+    // Drain-before-dispose: snapshot the clients and clear the map BEFORE
+    // awaiting any dispose(), so a concurrent second invocation (e.g. a
+    // SIGINT firing between two awaits in the loop) finds an empty map and
+    // is a true no-op. Without this, a racing caller would call dispose()
+    // on already-disposed clients, and better-sqlite3 throws on double-close.
+    const clients = [...this.clients.values()]
+    this.clients.clear()
+    for (const client of clients) {
       await client.dispose()
     }
-    this.clients.clear()
   }
 
   async purgeRunData(dataSourceRunId: string): Promise<void> {
-    // Dispose cached clients first: better-sqlite3 holds file handles that
-    // can block rmSync cleanup on some platforms. The cache only ever holds
-    // clients for a single active run (initialize clears on run-id change),
-    // so disposing all cached entries is equivalent to disposing the run's.
-    for (const client of this.clients.values()) {
-      await client.dispose()
-    }
-    this.clients.clear()
+    // Release in-memory resources first: better-sqlite3 holds file handles
+    // that can block rmSync cleanup on some platforms. The cache only ever
+    // holds clients for a single active run (initialize clears on run-id
+    // change), so a full shutdown is equivalent to disposing this run's.
+    await this.shutdown()
 
     const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
     if (existsSync(runDir)) {

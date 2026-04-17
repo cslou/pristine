@@ -163,6 +163,39 @@ describe("PristineProvider.shutdown", () => {
     await expect(provider.shutdown!()).resolves.toBeUndefined()
     expect(asPrivate(provider).clients.size).toBe(0)
   })
+
+  test("is concurrent-idempotent: racing second call sees empty map", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    // Build a client whose dispose resolves on a shared latch. While the first
+    // shutdown is awaiting dispose, a second shutdown fires — it must observe
+    // an already-cleared map and skip the already-in-flight dispose.
+    let resolveDispose: () => void = () => {}
+    const disposePromise = new Promise<void>((r) => {
+      resolveDispose = r
+    })
+    let disposeCalls = 0
+    const slowClient = {
+      dispose: async () => {
+        disposeCalls += 1
+        await disposePromise
+      },
+    }
+    asPrivate(provider).clients.set("conv-1-run-A", slowClient)
+
+    const first = provider.shutdown!()
+    // At this point shutdown has already snapshotted and cleared the map.
+    expect(asPrivate(provider).clients.size).toBe(0)
+    const second = provider.shutdown!()
+
+    resolveDispose()
+    await Promise.all([first, second])
+
+    // dispose() runs exactly once even though shutdown() was called twice.
+    expect(disposeCalls).toBe(1)
+  })
 })
 
 describe("PristineProvider.purgeRunData", () => {

@@ -182,64 +182,6 @@ On resume, the Pristine provider will warn if it detects a checkpoint whose
 DB path does not exist (a sign of a pre-Story-3 checkpoint) and prompt for
 `--force`.
 
-## Recommended Ollama models
-
-For a Pristine + Ollama baseline run you configure two roles:
-
-1. **Pristine's memory + privacy engines** (via `~/.pristine/models.json`) —
-   used to extract facts, consolidate memories, classify sensitive fields.
-   This role needs a model that handles **strict JSON Schema structured
-   output on nested objects** reliably.
-2. **Memorybench's judge + answering model** (via the `-j` / `-m` flags) —
-   used to answer LOCOMO questions and grade the answers. This role tolerates
-   a wider range of models since the prompts are simpler.
-
-Recommended split:
-
-```jsonc
-// ~/.pristine/models.json
-{
-  "privacy": { "engine": "ollama", "model": "llama3.2:latest" },
-  "memory":  { "engine": "ollama", "model": "llama3.2:latest" }
-}
-```
-
-```bash
-npm run bench -- run -p pristine -b locomo \
-  -j ollama:gemma4:e4b -m ollama:gemma4:e4b \
-  -r baseline-v1 --force
-```
-
-### Why `llama3.2:latest` for Pristine's memory role
-
-`gemma4:e4b` has weak structured-output compliance on Pristine's extraction
-schema. When asked to emit `{facts: [...]}` with nested `validFrom` /
-`validUntil` / `temporalConfidence` items, gemma4:e4b collapses to
-`{"facts": []}` on inputs longer than ~3 messages — even when the content
-obviously contains extractable facts. Loosening the Ollama `format`
-parameter to plain `"json"` does let gemma4 produce content, but in a
-malformed nested shape that Pristine's parser rejects.
-
-`llama3.2:latest` handles the same extraction schema on the same LOCOMO
-sessions without issue (10 facts on an 18-msg session in ~25s on M4 Max).
-
-Reproduce / debug the behavior:
-
-```bash
-cd benchmarks/memorybench
-npx tsx scripts/debug-extract.mjs
-```
-
-The script runs 7 probes of increasing complexity (synthetic control,
-LOCOMO-style, real LOCOMO at 3/6/18 messages, plus raw Ollama calls with
-the full schema and with `format: "json"`) against whatever is configured
-in `~/.pristine/models.json`. Use it to evaluate any Ollama model before
-committing to it for a full LOCOMO run.
-
-Using `gemma4:e4b` as the memorybench judge and answering model (the `-j`
-/ `-m` flags above) is fine — those roles use simpler prompts and do not
-exercise the extraction schema.
-
 ## Extending
 
 | Component | Guide |

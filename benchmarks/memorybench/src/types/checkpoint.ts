@@ -25,6 +25,15 @@ export interface IngestPhaseCheckpoint {
   status: PhaseStatus
   completedSessions: string[]
   ingestResult?: IngestResult
+  /**
+   * Total memories created by the provider across all sessions of this
+   * question's conversation. Populated by providers that report memoryCount
+   * via IngestResult (Pristine). Since the benchmark dedupes ingest at the
+   * conversation level, sibling questions sharing a conversation get the
+   * same value when their checkpoints are cloned from the primary question.
+   * Undefined for providers that do not report counts (filesystem, rag).
+   */
+  memoryCount?: number
   startedAt?: string
   completedAt?: string
   durationMs?: number

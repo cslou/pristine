@@ -58,6 +58,7 @@ export class PristineProvider implements Provider {
   async ingest(sessions: UnifiedSession[], options: IngestOptions): Promise<IngestResult> {
     const client = await this.getOrCreateClient(options.containerTag)
     const documentIds: string[] = []
+    let memoryCount = 0
 
     for (const session of sessions) {
       const messages: Message[] = session.messages.map((m: UnifiedMessage) => ({
@@ -67,13 +68,29 @@ export class PristineProvider implements Provider {
       }))
 
       const sessionDate = session.metadata?.date as string | undefined
-      await client.orchestrator.ingest(messages, options.containerTag, {
+      const result = await client.orchestrator.ingest(messages, options.containerTag, {
         ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
       })
+
+      // Warn on silent no-op: the Pristine pipeline skips extract/embed/store
+      // when the conversation's content hash matches an existing row for the
+      // same user (containerTag). In the benchmark that usually means a stale
+      // DB from a prior run with a different extraction model. Without this
+      // warning the failure looks identical to a successful ingest.
+      if (result.memoryIds.length === 0 && messages.length > 0) {
+        logger.warn(
+          `Pristine ingest produced 0 memories for session ${session.sessionId} ` +
+            `(containerTag=${options.containerTag}, ${messages.length} messages). ` +
+            `Likely cause: content-hash duplicate detection against a stale DB. ` +
+            `Run with --force to reset.`
+        )
+      }
+
+      memoryCount += result.memoryIds.length
       documentIds.push(session.sessionId)
     }
 
-    return { documentIds }
+    return { documentIds, memoryCount }
   }
 
   async awaitIndexing(

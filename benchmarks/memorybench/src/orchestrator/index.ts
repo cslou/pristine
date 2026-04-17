@@ -344,7 +344,9 @@ export class Orchestrator {
     }
 
     const provider = createProvider(providerName)
-    await provider.initialize(getProviderConfig(providerName, checkpoint.dataSourceRunId))
+    await provider.initialize(
+      getProviderConfig(providerName, checkpoint.dataSourceRunId, !isNewRun)
+    )
 
     // Purge AFTER initialize so the provider has its run context, and using
     // the OLD dataSourceRunId so we wipe the folder that actually held the

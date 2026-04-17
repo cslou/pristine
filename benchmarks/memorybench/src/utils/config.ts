@@ -12,8 +12,14 @@ export const config: Config = {
 
 export function getProviderConfig(
   provider: string,
+  dataSourceRunId: string,
+  resumeMode = false
+): {
+  apiKey: string
+  baseUrl?: string
   dataSourceRunId: string
-): { apiKey: string; baseUrl?: string; dataSourceRunId: string } {
+  resumeMode: boolean
+} {
   const base = (() => {
     switch (provider) {
       case "filesystem":
@@ -26,7 +32,7 @@ export function getProviderConfig(
         throw new Error(`Unknown provider: ${provider}`)
     }
   })()
-  return { ...base, dataSourceRunId }
+  return { ...base, dataSourceRunId, resumeMode }
 }
 
 export function getJudgeConfig(judge: string): { apiKey: string; model?: string } {

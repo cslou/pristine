@@ -87,6 +87,48 @@ describe("PristineProvider path derivation", () => {
       /requires dataSourceRunId/
     )
   })
+
+  test("warns on resume when DB folder does not exist (migration case)", async () => {
+    const provider = new PristineProvider()
+    const runId = `missing-resume-${Date.now()}`
+    testRuns.push(runId) // ensure cleanup even though folder shouldn't exist
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        resumeMode: true,
+      })
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      const msg = String(warnSpy.mock.calls[0][0])
+      expect(msg).toContain("Resuming run but DB folder")
+      expect(msg).toContain(runId)
+      expect(msg).toContain("--force")
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("does NOT warn when resumeMode is false (fresh run path)", async () => {
+    const provider = new PristineProvider()
+    const runId = `fresh-run-${Date.now()}`
+    testRuns.push(runId)
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.initialize({
+        apiKey: "none",
+        dataSourceRunId: runId,
+        resumeMode: false,
+      })
+
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
 })
 
 describe("PristineProvider.initialize idempotency", () => {

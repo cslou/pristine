@@ -53,6 +53,23 @@ export class PristineProvider implements Provider {
     this.dataSourceRunId = newRunId
     this.pristineModule = await import("pristine")
     logger.info(`Initialized Pristine provider for dataSourceRunId=${newRunId}`)
+
+    // Migration warning: when resuming an existing run, the per-run DB folder
+    // should exist. If it does not, the checkpoint likely predates Sprint
+    // 008c Story 3 (PR #86) — when Pristine DBs moved from the shared
+    // data/runs/default/ folder to data/pristine-dbs/{dataSourceRunId}/.
+    // A silent fresh ingest in that case would overwrite extraction results
+    // the user believed were being resumed. Warn loudly and point to --force.
+    if (config.resumeMode) {
+      const runDir = join(PRISTINE_DB_ROOT, newRunId)
+      if (!existsSync(runDir)) {
+        logger.warn(
+          `Resuming run but DB folder ${runDir} does not exist. ` +
+            `This checkpoint likely predates the DB path change in Sprint 008c Story 3. ` +
+            `Re-run with --force to reset, or manually migrate data into the new folder.`
+        )
+      }
+    }
   }
 
   async ingest(sessions: UnifiedSession[], options: IngestOptions): Promise<IngestResult> {

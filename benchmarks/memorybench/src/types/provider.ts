@@ -12,6 +12,13 @@ export interface ProviderConfig {
    * do not persist per-run data (e.g. filesystem, rag).
    */
   dataSourceRunId?: string
+  /**
+   * True when the orchestrator is resuming an existing run (checkpoint
+   * exists, not --force). Providers can use this to detect situations
+   * like a legacy checkpoint whose on-disk data lives at a path the
+   * current code no longer produces (migration case).
+   */
+  resumeMode?: boolean
   [key: string]: unknown
 }
 

@@ -281,6 +281,41 @@ describe('extraction prompt and referenceTimestamp', () => {
     };
     expect(call.systemPrompt).toBe(customPrompt);
   });
+
+  it('default prompt does NOT include SENSITIVE placeholder rules', async () => {
+    // Regression guard: the SENSITIVE_PLACEHOLDER_RULES chunk was removed
+    // from the default because gemma4:e4b treated it as a gating
+    // precondition and returned {facts: []} for LOCOMO content. Privacy
+    // users that need placeholder preservation re-inject the rule via a
+    // custom systemPrompt. This test catches any accidental re-addition
+    // of the toxic phrasing to the default.
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      systemPrompt: string;
+    };
+    expect(call.systemPrompt).not.toContain('CRITICAL: If the text contains [SENSITIVE');
+    expect(call.systemPrompt).not.toContain('MUST preserve them');
+    expect(call.systemPrompt).not.toContain('[SENSITIVE:identity_number:abc-123]');
+  });
+
+  it('default prompt still includes extraction task and category guidance', async () => {
+    // Bookend guard: if someone removes too much from the default, this
+    // fires. The task sentence and at least one category marker are
+    // load-bearing — without them gemma4 and llama3 both produce
+    // lower-quality extractions.
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      systemPrompt: string;
+    };
+    expect(call.systemPrompt).toContain('Extract factual statements from the conversation');
+    expect(call.systemPrompt).toContain('(1) personal preferences');
+  });
 });
 
 describe('message timestamps in prompt', () => {

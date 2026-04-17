@@ -1,8 +1,3 @@
-const SENSITIVE_PLACEHOLDER_RULES =
-  'CRITICAL: If the text contains [SENSITIVE:type:id] placeholders, you MUST preserve them EXACTLY as-is in your extracted facts. ' +
-  'Do NOT summarize, paraphrase, or remove these placeholders. They are redacted sensitive values that must pass through unchanged. ' +
-  'Example input: "User\'s NRIC is [SENSITIVE:identity_number:abc-123]" -> Output fact: "The user\'s NRIC is [SENSITIVE:identity_number:abc-123]."';
-
 const CATEGORY_GUIDANCE =
   'Focus on extracting these types of information: ' +
   '(1) personal preferences (likes, dislikes, favorites), ' +
@@ -49,8 +44,6 @@ If temporal extraction is ambiguous or contradictory, set temporalConfidence = "
 export function buildExtractionPrompt(referenceTimestamp: string): string {
   return (
     'Extract factual statements from the conversation. Return each fact as a standalone sentence with no unresolved pronouns. ' +
-    SENSITIVE_PLACEHOLDER_RULES +
-    ' ' +
     CATEGORY_GUIDANCE +
     '\n\n' +
     buildTemporalRules(referenceTimestamp)

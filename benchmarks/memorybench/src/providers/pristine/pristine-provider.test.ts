@@ -122,6 +122,49 @@ describe("PristineProvider.initialize idempotency", () => {
   })
 })
 
+describe("PristineProvider.shutdown", () => {
+  test("disposes all cached clients and clears the map", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const spy1 = createDisposeSpy()
+    const spy2 = createDisposeSpy()
+    asPrivate(provider).clients.set("conv-1-run-A", spy1)
+    asPrivate(provider).clients.set("conv-2-run-A", spy2)
+
+    await provider.shutdown!()
+
+    expect(spy1.calls).toBe(1)
+    expect(spy2.calls).toBe(1)
+    expect(asPrivate(provider).clients.size).toBe(0)
+  })
+
+  test("is idempotent — calling twice does not double-dispose", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const spy = createDisposeSpy()
+    asPrivate(provider).clients.set("conv-1-run-A", spy)
+
+    await provider.shutdown!()
+    await provider.shutdown!()
+
+    expect(spy.calls).toBe(1)
+    expect(asPrivate(provider).clients.size).toBe(0)
+  })
+
+  test("is a no-op on a fresh provider with no cached clients", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    await expect(provider.shutdown!()).resolves.toBeUndefined()
+    expect(asPrivate(provider).clients.size).toBe(0)
+  })
+})
+
 describe("PristineProvider.purgeRunData", () => {
   test("removes the run folder and disposes cached clients", async () => {
     const runId = `purge-test-${Date.now()}`

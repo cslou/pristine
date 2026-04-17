@@ -124,6 +124,16 @@ export class PristineProvider implements Provider {
     }
   }
 
+  async shutdown(): Promise<void> {
+    // Idempotent: if already shut down, the clients map is empty and this loop
+    // is a no-op. Each better-sqlite3 client closes its own DB handle (and
+    // triggers WAL checkpoint) via PristineLocal.dispose().
+    for (const client of this.clients.values()) {
+      await client.dispose()
+    }
+    this.clients.clear()
+  }
+
   async purgeRunData(dataSourceRunId: string): Promise<void> {
     // Dispose cached clients first: better-sqlite3 holds file handles that
     // can block rmSync cleanup on some platforms. The cache only ever holds

@@ -83,6 +83,10 @@ export async function showFailuresCommand(args: string[]): Promise<void> {
         `Latency: search=${q.phases.search.durationMs || 0}ms, answer=${q.phases.answer.durationMs || 0}ms`
       )
     }
+    const ingestMemoryCount = q.phases.ingest.memoryCount
+    if (typeof ingestMemoryCount === "number") {
+      console.log(`Memories (ingest): ${ingestMemoryCount}`)
+    }
     console.log("")
 
     if (searchResults.length > 0) {

@@ -119,6 +119,8 @@ export async function runIngestPhase(
         const completedSessions =
           checkpoint.questions[question.questionId].phases.ingest.completedSessions
         const combinedResult: IngestResult = { documentIds: [], taskIds: [] }
+        let runMemoryCount = 0
+        let sawMemoryCount = false
 
         for (const session of sessions) {
           if (completedSessions.includes(session.sessionId)) {
@@ -130,6 +132,10 @@ export async function runIngestPhase(
           combinedResult.documentIds.push(...result.documentIds)
           if (result.taskIds) {
             combinedResult.taskIds!.push(...result.taskIds)
+          }
+          if (typeof result.memoryCount === "number") {
+            runMemoryCount += result.memoryCount
+            sawMemoryCount = true
           }
 
           completedSessions.push(session.sessionId)
@@ -156,10 +162,19 @@ export async function runIngestPhase(
           }
         }
 
+        // Combine with any pre-existing memoryCount from a resumed run so the
+        // per-conversation total reflects work done across multiple invocations.
+        const existingMemoryCount =
+          checkpoint.questions[question.questionId].phases.ingest.memoryCount
+        const totalMemoryCount = sawMemoryCount
+          ? runMemoryCount + (existingMemoryCount ?? 0)
+          : existingMemoryCount
+
         const durationMs = Date.now() - startTime
         checkpointManager.updatePhase(checkpoint, question.questionId, "ingest", {
           status: "completed",
           ingestResult: combinedResult,
+          ...(totalMemoryCount !== undefined ? { memoryCount: totalMemoryCount } : {}),
           completedAt: new Date().toISOString(),
           durationMs,
         })
@@ -205,6 +220,9 @@ export async function runIngestPhase(
         status: "completed",
         completedSessions: [...sourceCheckpoint.completedSessions],
         ingestResult: sourceCheckpoint.ingestResult,
+        ...(sourceCheckpoint.memoryCount !== undefined
+          ? { memoryCount: sourceCheckpoint.memoryCount }
+          : {}),
         completedAt: new Date().toISOString(),
         durationMs: 0,
       })

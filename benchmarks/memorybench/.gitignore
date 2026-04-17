@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/runs/
+data/pristine-dbs/
 data/compare/
 data/providers/
 data/benchmarks/longmemeval/

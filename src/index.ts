@@ -37,6 +37,13 @@ export type { Embedder, Extractor, LlmClient, Orchestrator, Store } from './core
 export type { LlmClients } from './engine/index.js';
 
 // ---------------------------------------------------------------------------
+// Extractor prompt (exported so callers can compose on top of the default
+// instead of replacing it wholesale via ExtractorConfig.systemPrompt)
+// ---------------------------------------------------------------------------
+
+export { buildExtractionPrompt } from './memory/extractor/prompts.js';
+
+// ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 

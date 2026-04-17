@@ -234,23 +234,41 @@ describe("PristineProvider.purgeRunData", () => {
 })
 
 describe("PristineProvider silent no-op detection", () => {
+  type FakeClientState = {
+    ingestCalls: number
+    deleteCalls: string[]
+  }
+
   function installFakeClient(
     provider: PristineProvider,
     containerTag: string,
-    memoryIdsToReturn: string[]
-  ) {
+    memoryIdsToReturn: string[],
+    opts: {
+      findByMessages?: () => Promise<{ id: string; memoryCount: number } | null>
+    } = {}
+  ): FakeClientState {
+    const state: FakeClientState = { ingestCalls: 0, deleteCalls: [] }
     const fakeClient = {
       dispose: async () => {},
       orchestrator: {
-        ingest: async () => ({
-          facts: [],
-          decisions: [],
-          memoryIds: memoryIdsToReturn,
-          errors: [],
-        }),
+        ingest: async () => {
+          state.ingestCalls += 1
+          return {
+            facts: [],
+            decisions: [],
+            memoryIds: memoryIdsToReturn,
+            errors: [],
+          }
+        },
+      },
+      findConversationByMessages:
+        opts.findByMessages ?? (async () => null),
+      deleteConversation: async (id: string) => {
+        state.deleteCalls.push(id)
       },
     }
     asPrivate(provider).clients.set(containerTag, fakeClient as never)
+    return state
   }
 
   test("warns and reports memoryCount=0 when Pristine returns empty memoryIds", async () => {
@@ -325,5 +343,113 @@ describe("PristineProvider silent no-op detection", () => {
     } finally {
       warnSpy.mockRestore()
     }
+  })
+})
+
+describe("PristineProvider partial-ingest recovery (Option B)", () => {
+  type FakeClientState = {
+    ingestCalls: number
+    deleteCalls: string[]
+  }
+
+  function installFakeClient(
+    provider: PristineProvider,
+    containerTag: string,
+    opts: {
+      findByMessages?: () => Promise<{ id: string; memoryCount: number } | null>
+      memoryIdsFromIngest?: string[]
+    } = {}
+  ): FakeClientState {
+    const state: FakeClientState = { ingestCalls: 0, deleteCalls: [] }
+    const fakeClient = {
+      dispose: async () => {},
+      orchestrator: {
+        ingest: async () => {
+          state.ingestCalls += 1
+          return {
+            facts: [],
+            decisions: [],
+            memoryIds: opts.memoryIdsFromIngest ?? ["m-new"],
+            errors: [],
+          }
+        },
+      },
+      findConversationByMessages:
+        opts.findByMessages ?? (async () => null),
+      deleteConversation: async (id: string) => {
+        state.deleteCalls.push(id)
+      },
+    }
+    asPrivate(provider).clients.set(containerTag, fakeClient as never)
+    return state
+  }
+
+  const sampleSession = {
+    sessionId: "s1",
+    messages: [{ role: "user" as const, content: "hi" }],
+    metadata: {},
+  }
+
+  test("path 1 — not-exists: ingest proceeds normally", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    const state = installFakeClient(provider, containerTag, {
+      findByMessages: async () => null,
+      memoryIdsFromIngest: ["m1"],
+    })
+
+    const result = await provider.ingest([sampleSession], { containerTag })
+
+    expect(state.ingestCalls).toBe(1)
+    expect(state.deleteCalls).toEqual([])
+    expect(result.memoryCount).toBe(1)
+  })
+
+  test("path 2 — exists-empty: delete orphan conversation and re-ingest", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    const state = installFakeClient(provider, containerTag, {
+      findByMessages: async () => ({ id: "orphan-123", memoryCount: 0 }),
+      memoryIdsFromIngest: ["m-fresh-1", "m-fresh-2"],
+    })
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      const result = await provider.ingest([sampleSession], { containerTag })
+
+      expect(state.deleteCalls).toEqual(["orphan-123"])
+      expect(state.ingestCalls).toBe(1)
+      expect(result.memoryCount).toBe(2)
+      // Warn message announces the recovery
+      const warnArgs = warnSpy.mock.calls.map((c) => String(c[0]))
+      expect(warnArgs.some((m) => m.includes("partial-ingest"))).toBe(true)
+      expect(warnArgs.some((m) => m.includes("orphan-123"))).toBe(true)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("path 3 — exists-populated: skip ingest, surface existing memoryCount", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    const state = installFakeClient(provider, containerTag, {
+      findByMessages: async () => ({ id: "done-456", memoryCount: 7 }),
+    })
+
+    const result = await provider.ingest([sampleSession], { containerTag })
+
+    expect(state.ingestCalls).toBe(0) // skip the re-extraction
+    expect(state.deleteCalls).toEqual([]) // do NOT delete populated conv
+    expect(result.memoryCount).toBe(7) // report existing count for Story 6 guard
+    expect(result.documentIds).toEqual(["s1"])
   })
 })

@@ -1,5 +1,6 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test"
+import { describe, test, expect, afterEach, spyOn } from "bun:test"
 import { PristineProvider } from "./index"
+import { logger } from "../../utils/logger"
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -229,5 +230,100 @@ describe("PristineProvider.purgeRunData", () => {
 
     // Non-existent run id — should not throw
     await expect(provider.purgeRunData!("never-created")).resolves.toBeUndefined()
+  })
+})
+
+describe("PristineProvider silent no-op detection", () => {
+  function installFakeClient(
+    provider: PristineProvider,
+    containerTag: string,
+    memoryIdsToReturn: string[]
+  ) {
+    const fakeClient = {
+      dispose: async () => {},
+      orchestrator: {
+        ingest: async () => ({
+          facts: [],
+          decisions: [],
+          memoryIds: memoryIdsToReturn,
+          errors: [],
+        }),
+      },
+    }
+    asPrivate(provider).clients.set(containerTag, fakeClient as never)
+  }
+
+  test("warns and reports memoryCount=0 when Pristine returns empty memoryIds", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    installFakeClient(provider, containerTag, []) // simulate duplicate-detected no-op
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      const result = await provider.ingest(
+        [
+          {
+            sessionId: "sess-1",
+            messages: [{ role: "user", content: "hi" }],
+            metadata: {},
+          },
+        ],
+        { containerTag }
+      )
+
+      expect(result.memoryCount).toBe(0)
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      const warnArg = String(warnSpy.mock.calls[0][0])
+      expect(warnArg).toContain("0 memories")
+      expect(warnArg).toContain("sess-1")
+      expect(warnArg).toContain(containerTag)
+      expect(warnArg).toContain("--force")
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  test("populates memoryCount as the sum across sessions", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    installFakeClient(provider, containerTag, ["m1", "m2", "m3"]) // 3 memories per session
+
+    const result = await provider.ingest(
+      [
+        { sessionId: "s1", messages: [{ role: "user", content: "a" }], metadata: {} },
+        { sessionId: "s2", messages: [{ role: "user", content: "b" }], metadata: {} },
+      ],
+      { containerTag }
+    )
+
+    // Same fake client returns memoryIds for both sessions → sum is 6
+    expect(result.memoryCount).toBe(6)
+    expect(result.documentIds).toEqual(["s1", "s2"])
+  })
+
+  test("does NOT warn when session has zero messages (empty input is not a silent no-op)", async () => {
+    const provider = new PristineProvider()
+    await provider.initialize({ apiKey: "none", dataSourceRunId: "run-A" })
+    testRuns.push("run-A")
+
+    const containerTag = "conv-42-run-A"
+    installFakeClient(provider, containerTag, [])
+
+    const warnSpy = spyOn(logger, "warn").mockImplementation(() => {})
+    try {
+      await provider.ingest(
+        [{ sessionId: "empty", messages: [], metadata: {} }],
+        { containerTag }
+      )
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 })

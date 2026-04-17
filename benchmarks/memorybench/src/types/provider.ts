@@ -31,6 +31,15 @@ export interface SearchOptions {
 export interface IngestResult {
   documentIds: string[]
   taskIds?: string[]
+  /**
+   * Number of memory records the provider actually created for this ingest
+   * call. Populated by providers that know the count (Pristine); omitted by
+   * providers that cannot report it (filesystem, rag). The orchestrator
+   * aggregates this across the ingest phase to detect silent no-op runs
+   * (e.g., content-hash duplicate detection that skips extraction) which
+   * would otherwise look successful but produce zero-memory containers.
+   */
+  memoryCount?: number
 }
 
 export interface IndexingProgress {

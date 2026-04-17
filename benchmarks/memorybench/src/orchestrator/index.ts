@@ -1,4 +1,4 @@
-import type { ProviderName } from "../types/provider"
+import type { Provider, ProviderName } from "../types/provider"
 import type { BenchmarkName } from "../types/benchmark"
 import type { JudgeName } from "../types/judge"
 import type { RunCheckpoint, SamplingConfig } from "../types/checkpoint"
@@ -16,6 +16,19 @@ import { runSearchPhase } from "./phases/search"
 import { runAnswerPhase } from "./phases/answer"
 import { runEvaluatePhase } from "./phases/evaluate"
 import { generateReport, saveReport, printReport } from "./phases/report"
+
+/**
+ * Module-level registry of the provider owned by the current Orchestrator.run()
+ * invocation. Signal handlers at the process entry (src/index.ts) read this
+ * to invoke shutdown() before exit — they cannot reach the provider through
+ * the call stack because SIGINT/SIGTERM run outside any active scope.
+ * Set after initialize() and cleared in the run() finally block.
+ */
+let currentProvider: Provider | null = null
+
+export function getCurrentProvider(): Provider | null {
+  return currentProvider
+}
 
 /**
  * Extract conversationId from a questionId.
@@ -288,65 +301,81 @@ export class Orchestrator {
       await provider.purgeRunData?.(oldDataSourceRunId)
     }
 
-    if (phases.includes("ingest")) {
-      await runIngestPhase(
-        provider,
-        benchmark,
-        checkpoint,
-        this.checkpointManager,
-        targetQuestionIds
-      )
-    }
+    // Expose the provider to signal handlers at the process entry. Cleared
+    // in finally so the registry reflects liveness accurately between runs.
+    currentProvider = provider
 
-    if (phases.includes("indexing")) {
-      await runIndexingPhase(provider, checkpoint, this.checkpointManager, targetQuestionIds)
-    }
+    try {
+      if (phases.includes("ingest")) {
+        await runIngestPhase(
+          provider,
+          benchmark,
+          checkpoint,
+          this.checkpointManager,
+          targetQuestionIds
+        )
+      }
 
-    if (phases.includes("search")) {
-      await runSearchPhase(
-        provider,
-        benchmark,
-        checkpoint,
-        this.checkpointManager,
-        targetQuestionIds
-      )
-    }
+      if (phases.includes("indexing")) {
+        await runIndexingPhase(provider, checkpoint, this.checkpointManager, targetQuestionIds)
+      }
 
-    if (phases.includes("answer")) {
-      await runAnswerPhase(
-        benchmark,
-        checkpoint,
-        this.checkpointManager,
-        targetQuestionIds,
-        provider
-      )
-    }
+      if (phases.includes("search")) {
+        await runSearchPhase(
+          provider,
+          benchmark,
+          checkpoint,
+          this.checkpointManager,
+          targetQuestionIds
+        )
+      }
 
-    if (phases.includes("evaluate")) {
-      const judge = createJudge(judgeName)
-      const judgeConfig = getJudgeConfig(judgeName)
-      judgeConfig.model = judgeModel
-      await judge.initialize(judgeConfig)
-      await runEvaluatePhase(
-        judge,
-        benchmark,
-        checkpoint,
-        this.checkpointManager,
-        targetQuestionIds,
-        provider
-      )
-    }
+      if (phases.includes("answer")) {
+        await runAnswerPhase(
+          benchmark,
+          checkpoint,
+          this.checkpointManager,
+          targetQuestionIds,
+          provider
+        )
+      }
 
-    if (phases.includes("report")) {
-      const report = generateReport(benchmark, checkpoint)
-      saveReport(report)
-      printReport(report)
-    }
+      if (phases.includes("evaluate")) {
+        const judge = createJudge(judgeName)
+        const judgeConfig = getJudgeConfig(judgeName)
+        judgeConfig.model = judgeModel
+        await judge.initialize(judgeConfig)
+        await runEvaluatePhase(
+          judge,
+          benchmark,
+          checkpoint,
+          this.checkpointManager,
+          targetQuestionIds,
+          provider
+        )
+      }
 
-    // Flush all pending checkpoint saves before marking as complete
-    await this.checkpointManager.flush(checkpoint.runId)
-    this.checkpointManager.updateStatus(checkpoint, "completed")
-    logger.success("Run complete!")
+      if (phases.includes("report")) {
+        const report = generateReport(benchmark, checkpoint)
+        saveReport(report)
+        printReport(report)
+      }
+
+      // Flush all pending checkpoint saves before marking as complete
+      await this.checkpointManager.flush(checkpoint.runId)
+      this.checkpointManager.updateStatus(checkpoint, "completed")
+      logger.success("Run complete!")
+    } finally {
+      // Release in-memory resources (DB handles, etc.) even if a phase threw.
+      // shutdown is idempotent, so a signal handler racing with this block is
+      // safe. Swallow shutdown errors so they cannot mask a phase error.
+      try {
+        await provider.shutdown?.()
+      } catch (err) {
+        logger.warn(`Provider shutdown failed: ${err}`)
+      }
+      currentProvider = null
+    }
   }
 
   async ingest(

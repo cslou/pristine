@@ -182,6 +182,78 @@ On resume, the Pristine provider will warn if it detects a checkpoint whose
 DB path does not exist (a sign of a pre-Story-3 checkpoint) and prompt for
 `--force`.
 
+## Customizing the extractor system prompt
+
+Pristine's default extractor prompt is intentionally minimal: an extraction
+task statement, category guidance (seven personal-memory categories), and
+temporal rules. It does NOT include any placeholder-preservation rules —
+those were removed after they were found to silently break extraction on
+instruction-following models like `gemma4:e4b` (see the diagnosis notes
+below).
+
+If you run Pristine with the privacy pipeline enabled and need the extractor
+to preserve `[SENSITIVE:type:id]` placeholders verbatim, compose your own
+prompt and pass it through `PristineLocalConfig.extractor`:
+
+```ts
+import { PristineLocal } from "pristine";
+
+const SENSITIVE_RULE = `When a fact you extract mentions a [SENSITIVE:type:id]
+placeholder, preserve the placeholder exactly as-is. Never paraphrase or drop
+it — these are redacted values that must pass through unchanged.`;
+
+const client = await PristineLocal.create({
+  extractor: {
+    systemPrompt: `${SENSITIVE_RULE}\n\n${YOUR_BASE_EXTRACTION_PROMPT}`,
+  },
+});
+```
+
+You can also use this hook to swap the default category list for something
+domain-specific (e.g. software-dev or clinical-notes presets). The full
+override replaces the Pristine default — both category guidance and temporal
+rules — so make sure your prompt covers whatever the downstream fact schema
+expects (especially `validFrom`, `validUntil`, `temporalConfidence`).
+
+### Diagnostic scripts
+
+Three scripts under `scripts/` isolate different layers of the extract
+pipeline when an Ollama model underperforms:
+
+| Script | Purpose |
+|--------|---------|
+| `debug-extract.mjs` | Seven probes from a known-good synthetic control up to real LOCOMO full-session input, plus raw Ollama calls bypassing Pristine. Use first when a new model emits nothing. |
+| `debug-schema.mjs` | Holds the prompt and input constant, varies the JSON schema shape (strings-only, strict, no-metadata, all-required, no-format). Use when you suspect llama.cpp's GBNF grammar generator is rejecting specific schema features. |
+| `debug-prompt.mjs` | Holds the schema and input constant, bisects the system prompt to find which chunk is degrading output. Use when the schema is fine but facts come back empty. |
+
+Run each from the memorybench directory:
+
+```bash
+cd benchmarks/memorybench
+npx tsx scripts/debug-extract.mjs
+npx tsx scripts/debug-schema.mjs
+npx tsx scripts/debug-prompt.mjs
+```
+
+All three read `~/.pristine/models.json` to pick up the currently configured
+model. Swap models there (not via CLI flags) to compare.
+
+### How the default prompt was diagnosed
+
+The previous default prompt contained a `SENSITIVE_PLACEHOLDER_RULES` chunk
+that made `gemma4:e4b` return `{facts: []}` on every LOCOMO session of 6+
+messages, while `llama3.2:latest` extracted normally. The bisect via
+`debug-prompt.mjs` showed: every prompt variant INCLUDING the chunk returned
+0 facts; every variant excluding it returned 8. The chunk framed placeholder
+handling with `CRITICAL: ...you MUST preserve them`, which an obedient model
+reads as a gating precondition — no placeholders in input → no facts to
+preserve → emit empty. Llama ignored the framing (weaker instruction
+following), which masked the bug until gemma4 surfaced it.
+
+Takeaway for future changes to the default: avoid `CRITICAL`/`MUST`-framed
+rules on conditional formatting concerns. Keep the default focused on the
+primary extraction task.
+
 ## Extending
 
 | Component | Guide |

@@ -285,6 +285,11 @@ export class PristineLocal {
    * recovery (see findConversationByMessages). No-op on missing id.
    */
   public async deleteConversation(conversationId: string): Promise<void> {
+    if (this.isLite) {
+      throw new IngestQueueError(
+        'deleteConversation() requires a full client via PristineLocal.create().',
+      );
+    }
     this.conversationStore.deleteById(conversationId);
   }
 

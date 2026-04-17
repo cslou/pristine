@@ -136,8 +136,11 @@ export class OllamaClient implements LlmClient {
   }
 
   private isNetworkError(error: unknown): boolean {
+    // AbortError is intentionally NOT checked here: isTimeoutError() runs
+    // first in the catch block and already matches both TimeoutError and
+    // AbortError. Any future non-timeout abort path should revise both
+    // functions so a cancellation does not get reported as a timeout.
     if (error instanceof TypeError) return true;
-    if (error instanceof Error && error.name === 'AbortError') return false;
     return false;
   }
 

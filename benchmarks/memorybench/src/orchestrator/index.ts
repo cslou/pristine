@@ -126,7 +126,13 @@ export class Orchestrator {
       logger.info(`No sampling or limit provided`)
     }
 
+    // Capture OLD dataSourceRunId BEFORE deleting the checkpoint — once
+    // deleted, the new checkpoint defaults dataSourceRunId = runId, which
+    // loses the old value in the checkpoint-copy case where they diverge.
+    let oldDataSourceRunId: string | undefined
     if (force && this.checkpointManager.exists(runId)) {
+      const existing = this.checkpointManager.load(runId)
+      oldDataSourceRunId = existing?.dataSourceRunId
       this.checkpointManager.delete(runId)
       logger.info("Cleared existing checkpoint (--force)")
     }
@@ -273,7 +279,14 @@ export class Orchestrator {
     }
 
     const provider = createProvider(providerName)
-    await provider.initialize(getProviderConfig(providerName))
+    await provider.initialize(getProviderConfig(providerName, checkpoint.dataSourceRunId))
+
+    // Purge AFTER initialize so the provider has its run context, and using
+    // the OLD dataSourceRunId so we wipe the folder that actually held the
+    // prior run's DBs (may differ from the new checkpoint.dataSourceRunId).
+    if (force && oldDataSourceRunId) {
+      await provider.purgeRunData?.(oldDataSourceRunId)
+    }
 
     if (phases.includes("ingest")) {
       await runIngestPhase(

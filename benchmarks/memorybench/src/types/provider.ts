@@ -5,6 +5,13 @@ import type { ConcurrencyConfig } from "./concurrency"
 export interface ProviderConfig {
   apiKey: string
   baseUrl?: string
+  /**
+   * Identifies the run that owns any data this provider persists. Passed
+   * through from the orchestrator (checkpoint.dataSourceRunId) so providers
+   * can scope storage per run. Optional for provider implementations that
+   * do not persist per-run data (e.g. filesystem, rag).
+   */
+  dataSourceRunId?: string
   [key: string]: unknown
 }
 
@@ -47,6 +54,13 @@ export interface Provider {
   ): Promise<void>
   search(query: string, options: SearchOptions): Promise<unknown[]>
   clear(containerTag: string): Promise<void>
+  /**
+   * Purges all persisted data for a specific dataSourceRunId. Called by the
+   * orchestrator when --force is passed, so a clean re-run does not reuse
+   * prior extraction state. Distinct from shutdown: this wipes persistent
+   * data; shutdown (future) releases in-memory resources.
+   */
+  purgeRunData?(dataSourceRunId: string): Promise<void>
 }
 
 export type ProviderName = "filesystem" | "rag" | "pristine"

@@ -18,7 +18,7 @@ import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createEmbedder } from './embedder/index.js';
 import { SqliteStore } from './memory/store/sqlite/index.js';
 import { ConversationStore } from './conversations/store.js';
-import { createExtractor } from './memory/extractor/index.js';
+import { createExtractor, type ExtractorConfig } from './memory/extractor/index.js';
 import { createConsolidator } from './memory/consolidator/index.js';
 import { createQueryAnalyzer } from './memory/query-analyzer/index.js';
 import { createRetriever } from './memory/retriever/index.js';
@@ -45,6 +45,14 @@ export interface PristineLocalConfig {
   readonly db?: Database.Database;
   readonly llmClients?: LlmClients;
   readonly embedder?: Embedder;
+  /**
+   * Overrides for the fact extractor. Pass `{ systemPrompt: '...' }` to
+   * replace the default extraction prompt (useful for privacy-pipeline
+   * users who need to re-include placeholder-preservation rules, or for
+   * domain-specific category tuning). Pass `{ maxTokens: N }` to tune
+   * extraction response budget.
+   */
+  readonly extractor?: ExtractorConfig;
 }
 
 export interface PristineLiteConfig {
@@ -128,7 +136,7 @@ export class PristineLocal {
 
     const store = new SqliteStore(db);
     const conversationStore = new ConversationStore(db);
-    const extractor = createExtractor(llmClients.memoryClient);
+    const extractor = createExtractor(llmClients.memoryClient, config.extractor);
     const consolidator = createConsolidator(llmClients.memoryClient);
     const queryAnalyzer = createQueryAnalyzer(llmClients.memoryClient);
     const retriever = createRetriever({ store, embedder });

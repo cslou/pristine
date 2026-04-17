@@ -1,14 +1,30 @@
+import { z } from "zod"
 import type { ProviderPrompts } from "../../types/prompts"
 
-interface PristineResult {
-  text: string
-  score: number
-  validFrom?: string
-  validUntil?: string
-}
+// Runtime schema for search results that flow from PristineProvider.search()
+// into the answer-phase prompt builder. The previous `context as PristineResult[]`
+// cast silently accepted anything, turning a provider-contract bug into an
+// undebuggable downstream failure. The schema parse throws at the boundary
+// with a clear error if the shape ever drifts.
+const PristineResultSchema = z.object({
+  text: z.string(),
+  score: z.number(),
+  validFrom: z.string().optional(),
+  validUntil: z.string().optional(),
+})
+
+type PristineResult = z.infer<typeof PristineResultSchema>
 
 function buildPristineContext(context: unknown[]): string {
-  const results = context as PristineResult[]
+  const parsed = z.array(PristineResultSchema).safeParse(context)
+  if (!parsed.success) {
+    throw new Error(
+      `Pristine answer phase received malformed search results: ${parsed.error.message}. ` +
+        `Provider.search() must return objects matching { text: string, score: number, ` +
+        `validFrom?: string, validUntil?: string }.`
+    )
+  }
+  const results: PristineResult[] = parsed.data
 
   if (results.length === 0) {
     return "No relevant memories were found."

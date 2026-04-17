@@ -67,16 +67,40 @@ export class PristineProvider implements Provider {
         ...(m.timestamp ? { timestamp: m.timestamp } : {}),
       }))
 
+      // Partial-ingest recovery (Option B). Pristine's pipeline is not
+      // transactional: addConversation commits, then extract/embed/store run
+      // separately. If extract fails (Ollama timeout, OOM, SIGINT) the
+      // conversation persists with zero memories. A naive retry would hit
+      // UNIQUE (user_id, content_hash) and silently skip extraction. Detect
+      // that state here and delete the orphan row before re-ingesting.
+      const existing = await client.findConversationByMessages(options.containerTag, messages)
+      if (existing && existing.memoryCount === 0) {
+        logger.warn(
+          `Detected partial-ingest for session ${session.sessionId} ` +
+            `(containerTag=${options.containerTag}, conversationId=${existing.id}). ` +
+            `Deleting orphan conversation row and re-ingesting.`
+        )
+        await client.deleteConversation(existing.id)
+      } else if (existing && existing.memoryCount > 0) {
+        // Idempotent re-run: a prior ingest for this conversation already
+        // produced memories. Skip to avoid re-extracting and to preserve the
+        // existing memory graph. Report the existing count so Story 6's
+        // aggregate guard does not fire.
+        memoryCount += existing.memoryCount
+        documentIds.push(session.sessionId)
+        continue
+      }
+
       const sessionDate = session.metadata?.date as string | undefined
       const result = await client.orchestrator.ingest(messages, options.containerTag, {
         ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
       })
 
-      // Warn on silent no-op: the Pristine pipeline skips extract/embed/store
-      // when the conversation's content hash matches an existing row for the
-      // same user (containerTag). In the benchmark that usually means a stale
-      // DB from a prior run with a different extraction model. Without this
-      // warning the failure looks identical to a successful ingest.
+      // Warn on silent no-op: the Pristine pipeline can still skip extraction
+      // for reasons outside the partial-ingest path (e.g. duplicate detection
+      // against a session whose conversation row existed before the recovery
+      // window, or a config mismatch). Without this warning the failure would
+      // look identical to a successful ingest.
       if (result.memoryIds.length === 0 && messages.length > 0) {
         logger.warn(
           `Pristine ingest produced 0 memories for session ${session.sessionId} ` +

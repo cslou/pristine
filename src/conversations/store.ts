@@ -157,6 +157,20 @@ const escapeFts5Query = (keyword: string): string => {
 // ConversationStore
 // ---------------------------------------------------------------------------
 
+/**
+ * Compute the canonical conversation content hash used by addConversation's
+ * UNIQUE (user_id, content_hash) index. Exported so other modules can look up
+ * a conversation by the same identity it was stored under without duplicating
+ * the hashing logic.
+ */
+export function computeConversationContentHash(
+  messages: readonly { readonly role: string; readonly content: string }[],
+): string {
+  return createHash('sha256')
+    .update(messages.map((m, i) => `${i}:${m.role}:${m.content}`).join('\x00'))
+    .digest('hex');
+}
+
 export class ConversationStore {
   private readonly db: Database.Database;
 
@@ -179,9 +193,7 @@ export class ConversationStore {
     userId: string,
   ): string {
     const id = randomUUID();
-    const contentHash = createHash('sha256')
-      .update(messages.map((m, i) => `${i}:${m.role}:${m.content}`).join('\x00'))
-      .digest('hex');
+    const contentHash = computeConversationContentHash(messages);
 
     const insertConversation = this.db.prepare(
       `INSERT INTO conversations (id, user_id, content_hash, message_count)
@@ -203,6 +215,39 @@ export class ConversationStore {
 
     runTransaction();
     return id;
+  }
+
+  /**
+   * Look up a conversation row by (userId, content_hash) using the same
+   * hashing algorithm as addConversation. Returns the conversation id when
+   * a row exists, or null otherwise. Used for partial-ingest recovery: the
+   * caller can detect that a prior addConversation inserted the conversation
+   * but a subsequent step (extract/embed/store) failed, and reset the row
+   * to re-drive the pipeline cleanly.
+   */
+  public findByMessages(
+    userId: string,
+    messages: readonly { readonly role: string; readonly content: string }[],
+  ): { readonly id: string } | null {
+    const contentHash = computeConversationContentHash(messages);
+    const row = this.db
+      .prepare('SELECT id FROM conversations WHERE user_id = ? AND content_hash = ?')
+      .get(userId, contentHash) as { id: string } | undefined;
+    return row ? { id: row.id } : null;
+  }
+
+  /**
+   * Delete a conversation and all its associated messages. FTS index entries
+   * are removed automatically via the AFTER DELETE trigger on messages.
+   * No-op if the conversation does not exist. Intended for partial-ingest
+   * recovery — not a general delete-a-user-conversation API.
+   */
+  public deleteById(conversationId: string): void {
+    const runTransaction = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId);
+      this.db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
+    });
+    runTransaction();
   }
 
   /**

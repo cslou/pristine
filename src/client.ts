@@ -61,6 +61,7 @@ export class PristineLocal {
   public readonly ingestQueue: IngestQueue;
 
   private readonly conversationStore: ConversationStore;
+  private readonly memoryStore: SqliteStore | null;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
   private readonly llmClients: LlmClients;
@@ -76,6 +77,7 @@ export class PristineLocal {
     orchestrator: Orchestrator;
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
+    memoryStore: SqliteStore | null;
     db: Database.Database;
     embedder: Embedder;
     llmClients: LlmClients;
@@ -90,6 +92,7 @@ export class PristineLocal {
     this.orchestrator = deps.orchestrator;
     this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
+    this.memoryStore = deps.memoryStore;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.llmClients = deps.llmClients;
@@ -152,6 +155,7 @@ export class PristineLocal {
       orchestrator,
       ingestQueue,
       conversationStore,
+      memoryStore: store,
       db,
       embedder,
       llmClients,
@@ -187,6 +191,7 @@ export class PristineLocal {
       orchestrator: null as unknown as Orchestrator,
       ingestQueue,
       conversationStore,
+      memoryStore: null,
       db,
       embedder: null as unknown as Embedder,
       llmClients: null as unknown as LlmClients,
@@ -234,6 +239,58 @@ export class PristineLocal {
       );
     }
     return this.orchestrator.search(query, userId, options);
+  }
+
+  // -------------------------------------------------------------------------
+  // Partial-ingest recovery API
+  //
+  // The ingest pipeline is not transactional: addConversation commits the
+  // conversation row, then extract/embed/store run as separate steps. If an
+  // intermediate step fails (Ollama timeout, OOM, SIGINT mid-extraction) the
+  // conversation row persists but no memories are linked to it. A naive retry
+  // then hits UNIQUE (user_id, content_hash) duplicate detection and skips
+  // extraction silently. These methods let callers detect and clean up that
+  // partial-ingest state before retrying.
+  //
+  // Tracked for architectural fix (transactional ingest): see follow-up
+  // issue linked from Sprint 008c Story 7.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Find an existing conversation by (userId, messages) and report how many
+   * active memories are linked to it. Returns null if the conversation has
+   * not been ingested. Uses the same content-hash algorithm as `store` /
+   * `storeAsync`, so lookups match exactly.
+   *
+   * - memoryCount === 0 → partial-ingest state; safe to delete and retry
+   * - memoryCount > 0  → prior ingest completed; retries should be skipped
+   */
+  public async findConversationByMessages(
+    userId: string,
+    messages: readonly Message[],
+  ): Promise<{ readonly id: string; readonly memoryCount: number } | null> {
+    if (this.isLite || !this.memoryStore) {
+      throw new IngestQueueError(
+        'findConversationByMessages() requires a full client via PristineLocal.create().',
+      );
+    }
+    const row = this.conversationStore.findByMessages(userId, messages);
+    if (!row) return null;
+    const memoryCount = await this.memoryStore.countForConversation(row.id);
+    return { id: row.id, memoryCount };
+  }
+
+  /**
+   * Delete a conversation row and its messages. Intended for partial-ingest
+   * recovery (see findConversationByMessages). No-op on missing id.
+   */
+  public async deleteConversation(conversationId: string): Promise<void> {
+    if (this.isLite) {
+      throw new IngestQueueError(
+        'deleteConversation() requires a full client via PristineLocal.create().',
+      );
+    }
+    this.conversationStore.deleteById(conversationId);
   }
 
   // -------------------------------------------------------------------------

@@ -316,6 +316,22 @@ export class SqliteStore implements Store {
     }
   }
 
+  /**
+   * Count active (non-deleted) memories linked to a conversation. Used by
+   * partial-ingest recovery to decide whether a re-ingest should delete the
+   * conversation row and restart (zero memories = extraction never finished)
+   * or treat the call as idempotent (memories exist = prior run completed).
+   */
+  public async countForConversation(conversationId: string): Promise<number> {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM memories
+         WHERE source_conversation_id = ? AND is_deleted = 0`,
+      )
+      .get(conversationId) as { count: number };
+    return row.count;
+  }
+
   public async clearAll(userId?: string): Promise<void> {
     if (userId) {
       const rows = this.db.prepare('SELECT rowid FROM memories WHERE user_id = ?').all(userId) as {

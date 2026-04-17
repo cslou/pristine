@@ -6,6 +6,7 @@ import type { OllamaConfig } from '../types.js';
 const DEFAULT_HOST = 'http://localhost:11434';
 const DEFAULT_MAX_TOKENS = 4096;
 const DEFAULT_TEMPERATURE = 0;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
 
@@ -76,12 +77,18 @@ export class OllamaClient implements LlmClient {
     url: string,
     body: Record<string, unknown>,
   ): Promise<OllamaChatResponse> {
+    const timeoutMs = this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      // AbortSignal.timeout creates a fresh signal per attempt — a timeout on
+      // attempt N must not carry over and cancel attempt N+1.
+      const signal = AbortSignal.timeout(timeoutMs);
       try {
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
+          signal,
         });
 
         if (!response.ok) {
@@ -97,6 +104,14 @@ export class OllamaClient implements LlmClient {
       } catch (error: unknown) {
         if (error instanceof AppError) {
           throw error;
+        }
+        if (this.isTimeoutError(error)) {
+          // Do NOT retry timeouts — the prompt is what is slow, not the network.
+          // Retrying would just multiply the wait time.
+          throw new AppError(
+            `Ollama request timed out after ${timeoutMs}ms for model ${this.config.model}. ` +
+              `Increase timeoutMs in ~/.pristine/models.json or pick a smaller model.`,
+          );
         }
         if (attempt < MAX_RETRIES && this.isNetworkError(error)) {
           await this.delay(BASE_DELAY_MS * Math.pow(2, attempt));
@@ -121,8 +136,22 @@ export class OllamaClient implements LlmClient {
   }
 
   private isNetworkError(error: unknown): boolean {
+    // AbortError is intentionally NOT checked here: isTimeoutError() runs
+    // first in the catch block and already matches both TimeoutError and
+    // AbortError. Any future non-timeout abort path should revise both
+    // functions so a cancellation does not get reported as a timeout.
     if (error instanceof TypeError) return true;
-    if (error instanceof Error && error.name === 'AbortError') return false;
+    return false;
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    // AbortSignal.timeout raises a DOMException with name "TimeoutError" in
+    // modern runtimes; Node also uses AbortError for some abort paths. Match
+    // both defensively so we attribute the right failure regardless of engine.
+    if (error instanceof Error) {
+      if (error.name === 'TimeoutError') return true;
+      if (error.name === 'AbortError') return true;
+    }
     return false;
   }
 

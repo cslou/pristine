@@ -164,4 +164,41 @@ describe('SqliteStore CRUD', () => {
       expect(remaining.cnt).toBe(0);
     });
   });
+
+  describe('countForConversation', () => {
+    it('returns 0 for an unknown conversation id', async () => {
+      expect(await store.countForConversation('missing')).toBe(0);
+    });
+
+    it('counts only memories whose source_conversation_id matches', async () => {
+      await store.addMemory(
+        makeInput({ text: 'a', contentHash: hash('a'), sourceConversationId: 'conv-1' }),
+      );
+      await store.addMemory(
+        makeInput({ text: 'b', contentHash: hash('b'), sourceConversationId: 'conv-1' }),
+      );
+      await store.addMemory(
+        makeInput({ text: 'c', contentHash: hash('c'), sourceConversationId: 'conv-2' }),
+      );
+      await store.addMemory(
+        makeInput({ text: 'd', contentHash: hash('d') }), // no conversation link
+      );
+
+      expect(await store.countForConversation('conv-1')).toBe(2);
+      expect(await store.countForConversation('conv-2')).toBe(1);
+      expect(await store.countForConversation('conv-3')).toBe(0);
+    });
+
+    it('excludes soft-deleted memories', async () => {
+      const m = await store.addMemory(
+        makeInput({ text: 'to-delete', contentHash: hash('to-delete'), sourceConversationId: 'c' }),
+      );
+      await store.addMemory(
+        makeInput({ text: 'keep', contentHash: hash('keep'), sourceConversationId: 'c' }),
+      );
+      await store.deleteMemory(m.id, 'user-1');
+
+      expect(await store.countForConversation('c')).toBe(1);
+    });
+  });
 });

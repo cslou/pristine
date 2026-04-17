@@ -357,4 +357,73 @@ describe('ConversationStore', () => {
       expect(() => new ConversationStore(db)).not.toThrow();
     });
   });
+
+  describe('findByMessages', () => {
+    it('returns the stored conversation id when (userId, messages) matches', () => {
+      const messages = makeMessages(['Hi', 'Hello']);
+      const id = store.addConversation(messages, 'user-1');
+
+      const found = store.findByMessages('user-1', messages);
+      expect(found).toEqual({ id });
+    });
+
+    it('returns null when no conversation matches the hash', () => {
+      store.addConversation(makeMessages(['Hi']), 'user-1');
+      const found = store.findByMessages('user-1', makeMessages(['Different']));
+      expect(found).toBeNull();
+    });
+
+    it('is scoped by userId — same hash under different user returns null', () => {
+      const messages = makeMessages(['Hi']);
+      store.addConversation(messages, 'user-1');
+      const found = store.findByMessages('user-2', messages);
+      expect(found).toBeNull();
+    });
+
+    it('computes the same hash as addConversation', () => {
+      const messages = makeMessages(['unique-content-abc', 'reply-xyz']);
+      const insertedId = store.addConversation(messages, 'user-hash');
+      const expectedHash = contentHash(messages);
+
+      const row = db
+        .prepare('SELECT content_hash FROM conversations WHERE id = ?')
+        .get(insertedId) as { content_hash: string };
+      expect(row.content_hash).toBe(expectedHash);
+
+      const found = store.findByMessages('user-hash', messages);
+      expect(found?.id).toBe(insertedId);
+    });
+  });
+
+  describe('deleteById', () => {
+    it('removes the conversation row and its messages', () => {
+      const messages = makeMessages(['Hi', 'Hello', 'Bye']);
+      const id = store.addConversation(messages, 'user-1');
+
+      store.deleteById(id);
+
+      expect(store.getConversation(id)).toBeNull();
+      const remaining = db
+        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(remaining.c).toBe(0);
+    });
+
+    it('is a no-op on a missing conversation id (no throw)', () => {
+      expect(() => store.deleteById('does-not-exist')).not.toThrow();
+    });
+
+    it('allows re-adding a conversation with the same (userId, messages) after delete', () => {
+      // The whole point of delete: a partial-ingest recovery re-inserts the
+      // conversation fresh. This must not trip the UNIQUE constraint.
+      const messages = makeMessages(['Hi']);
+      const firstId = store.addConversation(messages, 'user-1');
+
+      store.deleteById(firstId);
+
+      const secondId = store.addConversation(messages, 'user-1');
+      expect(secondId).not.toBe(firstId);
+      expect(store.getConversation(secondId)).not.toBeNull();
+    });
+  });
 });

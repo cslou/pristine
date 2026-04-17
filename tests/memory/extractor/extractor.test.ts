@@ -313,8 +313,58 @@ describe('extraction prompt and referenceTimestamp', () => {
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       systemPrompt: string;
     };
-    expect(call.systemPrompt).toContain('Extract factual statements from the conversation');
+    expect(call.systemPrompt).toContain('Extract every factual statement you can identify');
     expect(call.systemPrompt).toContain('(1) personal preferences');
+  });
+
+  it('default prompt embeds the JSON schema as text for grounding', async () => {
+    // Ollama's structured-outputs guide recommends passing the schema as
+    // a string in the prompt in addition to the `format` parameter, so
+    // the model "sees" the schema as instruction content and not just a
+    // token-level grammar constraint.
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      systemPrompt: string;
+    };
+    expect(call.systemPrompt).toContain('Schema:');
+    expect(call.systemPrompt).toContain('"facts"');
+    expect(call.systemPrompt).toContain('"properties"');
+    expect(call.systemPrompt).toContain('"temporalConfidence"');
+  });
+
+  it('default prompt includes structured-output mode framing', async () => {
+    // Gemma 4 has both structured-output AND function-calling as native
+    // trained modes. Without explicit disambiguation it can pattern-match
+    // to the function-call path and return {facts: []}.
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      systemPrompt: string;
+    };
+    expect(call.systemPrompt).toContain('function call');
+    expect(call.systemPrompt).toContain('response IS the output');
+  });
+
+  it('default prompt includes both few-shot examples (rich and empty)', async () => {
+    // Rich example teaches the non-empty shape; empty example teaches
+    // the legitimate case for {facts: []}. Both together keep the model
+    // from over-committing in either direction.
+    const client = createMockClient({ facts: [] });
+    const extractor = createExtractor(client);
+    await extractor.extract([{ role: 'user', content: 'hello' }], TEST_TIMESTAMP);
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      systemPrompt: string;
+    };
+    expect(call.systemPrompt).toContain('Transcript:');
+    expect(call.systemPrompt).toContain('Response:');
+    expect(call.systemPrompt).toContain('Tokyo');
+    expect(call.systemPrompt).toContain('{"facts":[]}');
   });
 });
 
@@ -330,7 +380,9 @@ describe('message timestamps in prompt', () => {
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       userPrompt: string;
     };
-    expect(call.userPrompt).toBe('[2023-05-08T14:00:00.000Z] user: I moved yesterday');
+    expect(call.userPrompt).toBe(
+      'Transcript:\n---\n[2023-05-08T14:00:00.000Z] user: I moved yesterday\n---\nExtract facts from the transcript above.',
+    );
   });
 
   it('omits prefix for messages without timestamps', async () => {
@@ -341,7 +393,9 @@ describe('message timestamps in prompt', () => {
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
       userPrompt: string;
     };
-    expect(call.userPrompt).toBe('user: hello');
+    expect(call.userPrompt).toBe(
+      'Transcript:\n---\nuser: hello\n---\nExtract facts from the transcript above.',
+    );
   });
 
   it('handles mixed timestamps — only timestamped messages get prefix', async () => {
@@ -360,7 +414,7 @@ describe('message timestamps in prompt', () => {
       userPrompt: string;
     };
     expect(call.userPrompt).toBe(
-      '[2023-05-08T10:00:00.000Z] user: first\nassistant: response\n[2023-05-08T10:05:00.000Z] user: second',
+      'Transcript:\n---\n[2023-05-08T10:00:00.000Z] user: first\nassistant: response\n[2023-05-08T10:05:00.000Z] user: second\n---\nExtract facts from the transcript above.',
     );
   });
 });

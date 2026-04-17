@@ -12,7 +12,12 @@ import { buildConsolidationPrompt } from './prompts.js';
 import { CONSOLIDATION_SCHEMA } from './schema.js';
 
 const DEFAULT_SINGLE_MAX_TOKENS = 600;
-const DEFAULT_BATCH_MAX_TOKENS = 4096;
+// Batch budget sized for ~20 decisions with reasoning text. 4096 was
+// too tight after the extractor prompt refinement started returning
+// 15+ facts per dialogue-dense session — gemma4:e4b truncated mid-JSON
+// ("Unexpected end of JSON input") on session_7 (16 facts) and
+// session_8 (15 facts) in debug-orchestrator.mjs probes.
+const DEFAULT_BATCH_MAX_TOKENS = 16384;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_BASE_DELAY_MS = 500;
 

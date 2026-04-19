@@ -10,6 +10,17 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
 
+// Strips markdown code-fence wrappers from model output. Ollama's
+// grammar-constrained sampling does not always prevent models from
+// emitting ```json ... ``` around the actual JSON — observed with
+// gemma4:e4b on ~30% of responses. Extracts the JSON body if a fence
+// is present; returns the raw content otherwise.
+const stripJsonWrapper = (raw: string): string => {
+  const trimmed = raw.trim();
+  const fenceMatch = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
+  return fenceMatch ? fenceMatch[1]!.trim() : trimmed;
+};
+
 interface OllamaChatResponse {
   readonly message: {
     readonly role: string;
@@ -52,7 +63,7 @@ export class OllamaClient implements LlmClient {
     const response = await this.fetchWithRetry(`${this.host}/api/chat`, body);
 
     try {
-      return JSON.parse(response.message.content) as T;
+      return JSON.parse(stripJsonWrapper(response.message.content)) as T;
     } catch (error: unknown) {
       throw new AppError(
         `Ollama response parsing failed: ${error instanceof Error ? error.message : 'invalid JSON'}`,

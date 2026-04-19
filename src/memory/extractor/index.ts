@@ -52,14 +52,14 @@ const parseFacts = (result: ExtractFactsInput): Fact[] => {
     );
 };
 
-const buildUserPrompt = (conversation: readonly Message[]): string =>
-  conversation
-    .map((message) =>
-      message.timestamp
-        ? `[${message.timestamp}] ${message.role}: ${message.content}`
-        : `${message.role}: ${message.content}`,
-    )
-    .join('\n');
+const buildUserPrompt = (conversation: readonly Message[]): string => {
+  const lines = conversation.map((message) =>
+    message.timestamp
+      ? `[${message.timestamp}] ${message.role}: ${message.content}`
+      : `${message.role}: ${message.content}`,
+  );
+  return `Transcript:\n---\n${lines.join('\n')}\n---\nExtract facts from the transcript above.`;
+};
 
 export class LocalExtractor implements Extractor {
   private readonly client: LlmClient;

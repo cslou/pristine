@@ -54,6 +54,57 @@ describe('OllamaClient', () => {
     expect(result).toEqual({ facts: ['User likes coffee'] });
   });
 
+  it('strips ```json code fences before parsing', async () => {
+    // gemma4:e4b sometimes emits fenced output even with the format
+    // parameter set. Observed when the system prompt contains a JSON
+    // code block the model pattern-matches.
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      mockFetchResponse({
+        message: {
+          role: 'assistant',
+          content: '```json\n{"facts":["User likes coffee"]}\n```',
+        },
+      }),
+    );
+
+    const client = new OllamaClient(TEST_CONFIG);
+    const result = await client.generate<{ facts: string[] }>(TEST_PARAMS);
+
+    expect(result).toEqual({ facts: ['User likes coffee'] });
+  });
+
+  it('strips bare ``` fences (no json tag) before parsing', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      mockFetchResponse({
+        message: {
+          role: 'assistant',
+          content: '```\n{"facts":[]}\n```',
+        },
+      }),
+    );
+
+    const client = new OllamaClient(TEST_CONFIG);
+    const result = await client.generate<{ facts: string[] }>(TEST_PARAMS);
+
+    expect(result).toEqual({ facts: [] });
+  });
+
+  it('handles unfenced responses with surrounding whitespace', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      mockFetchResponse({
+        message: {
+          role: 'assistant',
+          content: '   \n{"facts":["ok"]}\n  ',
+        },
+      }),
+    );
+
+    const client = new OllamaClient(TEST_CONFIG);
+    const result = await client.generate<{ facts: string[] }>(TEST_PARAMS);
+
+    expect(result).toEqual({ facts: ['ok'] });
+  });
+
   it('sends correct request shape to /api/chat', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       mockFetchResponse({

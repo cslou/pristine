@@ -78,6 +78,43 @@ describe('PristineLocal', () => {
       expect(client).toBeInstanceOf(PristineLocal);
       expect(client.orchestrator).toBeDefined();
     });
+
+    it('threads extractor.systemPrompt from config to the extractor LlmClient call', async () => {
+      // Regression guard: the extractor config MUST flow from
+      // PristineLocalConfig.extractor down to createExtractor and into the
+      // LlmClient.generate({ systemPrompt }) call. Without this wiring,
+      // privacy-pipeline users have no supported way to re-inject their
+      // placeholder-preservation rules that were removed from the default.
+      const customPrompt = 'DIAGNOSTIC: replace default extraction prompt.';
+      const calls: { systemPrompt: string }[] = [];
+      const spyLlmClient: LlmClient = {
+        generate: (async (params: { systemPrompt: string }) => {
+          calls.push({ systemPrompt: params.systemPrompt });
+          // Return a minimal valid extraction so downstream steps don't throw.
+          return {
+            facts: [{ text: 'The user likes tea', validFrom: new Date().toISOString() }],
+          };
+        }) as LlmClient['generate'],
+      };
+      const llmClients: LlmClients = {
+        privacyClient: spyLlmClient,
+        memoryClient: spyLlmClient,
+      };
+
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients,
+        embedder: deps.embedder,
+        extractor: { systemPrompt: customPrompt },
+      });
+
+      await client.store([{ role: 'user', content: 'hi' }], 'test-user');
+
+      // Extraction is the first LlmClient call the pipeline makes; any call
+      // matching the custom prompt confirms the wiring end-to-end.
+      const extractCall = calls.find((c) => c.systemPrompt === customPrompt);
+      expect(extractCall).toBeDefined();
+    });
   });
 
   describe('memory API', () => {

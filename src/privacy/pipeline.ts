@@ -1,6 +1,9 @@
 import type { LlmClient, PrivacyPipeline, SensitivityClassifier } from '../core/interfaces.js';
 import type { ClassificationPipelineResult } from '../core/types.js';
-import { createCombinedClassifier, type CombinedClassifierConfig } from './classifier/combined/index.js';
+import {
+  createCombinedClassifier,
+  type CombinedClassifierConfig,
+} from './classifier/combined/index.js';
 import { findSafetyViolations } from './safety-scan.js';
 import { redactText } from './vault/redaction.js';
 

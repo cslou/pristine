@@ -162,10 +162,7 @@ export const mergeReports = (
     }
   }
 
-  const warnings = [
-    ...(deterministicReport.warnings ?? []),
-    ...(llmReport.warnings ?? []),
-  ];
+  const warnings = [...(deterministicReport.warnings ?? []), ...(llmReport.warnings ?? [])];
 
   return {
     entities: kept,

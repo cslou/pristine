@@ -1,10 +1,5 @@
 import { createDecipheriv } from 'node:crypto';
-import type {
-  KeyManager,
-  LlmClient,
-  PrivacyPipeline,
-  VaultStore,
-} from '../core/interfaces.js';
+import type { KeyManager, LlmClient, PrivacyPipeline, VaultStore } from '../core/interfaces.js';
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
 import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
@@ -211,7 +206,9 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
  * Safety net: scrub revealed plaintext, leftover placeholders, and obvious structured patterns.
  */
 export function scrubOutput(text: string, revealedValues: readonly string[]): string {
-  const sortedRevealedValues = [...uniqueStrings(revealedValues)].sort((a, b) => b.length - a.length);
+  const sortedRevealedValues = [...uniqueStrings(revealedValues)].sort(
+    (a, b) => b.length - a.length,
+  );
   let scrubbed = text;
 
   for (const value of sortedRevealedValues) {

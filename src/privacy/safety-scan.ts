@@ -10,7 +10,9 @@ const sortAndDedupeViolations = (entities: DetectedEntity[]): DetectedEntity[] =
   for (const entity of sorted) {
     const duplicate = deduped.some(
       (existing) =>
-        existing.start === entity.start && existing.end === entity.end && existing.type === entity.type,
+        existing.start === entity.start &&
+        existing.end === entity.end &&
+        existing.type === entity.type,
     );
     if (!duplicate) {
       deduped.push(entity);
@@ -24,7 +26,8 @@ export const replacePlaceholdersWithWhitespace = (text: string): string => {
   return text.replace(PLACEHOLDER_RE, (match) => ' '.repeat(match.length));
 };
 
-export const stripSensitivePlaceholders = (text: string): string => text.replace(PLACEHOLDER_RE, '');
+export const stripSensitivePlaceholders = (text: string): string =>
+  text.replace(PLACEHOLDER_RE, '');
 
 export const findSafetyViolations = (text: string): readonly DetectedEntity[] => {
   const scanText = replacePlaceholdersWithWhitespace(text);

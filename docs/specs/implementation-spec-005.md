@@ -1,32 +1,96 @@
-# Pristine — Implementation Spec 005: Memory Rethink for Developer Agents
+# Pristine — Implementation Spec 005: Memory as Searchable Corpus
 
-**Status:** Draft / Discovery
-**Last updated:** 2026-04-18
-**Author:** Lou + Claude (paired during PR #94 wrap-up)
+**Status:** Draft — architecture committed
+**Last updated:** 2026-04-22
+**Author:** Lou + Claude (paired across PR #94 wrap-up, research synthesis, and architecture alignment)
+
+---
+
+## Product Overview
+
+Pristine is a local-first privacy and memory SDK for coding agents. The memory subsystem treats past conversations as a **searchable corpus** — not a compressed fact ledger — and exposes primitives (ingest, search, summary storage, embedding) that consumers compose into tools, hooks, and integrations. No API calls, no server, no data leaving the device. This spec defines the memory subsystem's architecture after the pivot from extraction-based storage to corpus-based retrieval.
+
+### Key References
+
+- `docs/specs/implementation-spec-001.md` — original Pristine architecture
+- `docs/specs/implementation-spec-003.md` — memory infrastructure (conversation store, embedder, FTS5, hook scripts) — preserved by this pivot
+- `docs/specs/implementation-spec-004.md` — privacy narrowed to secrets for developer use; same narrowing discipline applied here
+- `docs/analysis/claude-mem-vs-pristine.html` — 21-slide comparison deck
+- `docs/analysis/developer-memory-pain-research.html` — 55-source developer-memory-pain research deck
+- PR #94 — `fix/gemma4-extraction-diagnostic` (extraction-fix work the pivot builds on)
+- PR #95 — architecture-docs PR (claude-mem comparison, developer-memory-pain research)
+
+---
+
+## 0. Philosophy
+
+Three principles shape every design decision in this spec. They are stated upfront because downstream sections lean on them.
+
+### 0.1 The 2×2 of agent behavior
+
+Every behavior a developer wants — or doesn't want — from a coding agent falls into one of four quadrants, cut across two axes: what the developer is **conscious** of wanting, and whether the agent should **do** or **not do** it.
+
+|                         | Conscious                                | Unconscious    |
+| ----------------------- | ---------------------------------------- | -------------- |
+| **Agent should do**     | Recency, checklists, hooks *(harness)*   | Search tools   |
+| **Agent should NOT do** | Recency, checklists, hooks *(harness)*   | *(empty)*      |
+
+Three of the four quadrants are **harness problems** — enforced through hooks, injected checklists, and recency management. They belong to Claude Code, Cursor, Cline, Copilot — not to Pristine.
+
+**Pristine owns only the top-right quadrant.** The agent doesn't know what it doesn't know, and the answer is *a search away*. Our job is to provide the search primitives and the index over the corpus that lets the agent find it. The conscious-should-do and conscious-should-not-do quadrants are out of scope — not because they're unimportant, but because they belong to a different layer of the stack.
+
+### 0.2 Memory is a corpus, not a ledger
+
+Production memory systems — mem0, claude-mem, Letta — extract atomic facts from conversations and store those facts as the memory. They compress at write-time to save tokens at read-time. This design is forced by their architecture: they don't store raw conversations as a queryable corpus, so extraction is the only way to build useable memory.
+
+**Pristine's architecture is different.** Raw conversations are stored locally in SQLite. sqlite-vec retrieval is sub-millisecond. The host agent is fully capable of synthesizing from primary sources. Under these constraints, pre-compression is pure tax — and a lossy tax, because it bakes in write-time guesses about what future queries will need.
+
+The right analogy is **llms.txt over pre-summarization**. Given a capable reader and fast access to primary sources, an index that points to content beats a summary that replaces it. Same principle applies to memory: raw corpus + index beats compressed ledger whenever the reader can search.
+
+Consequence: **no fact extraction.** The existing extractor and consolidator modules are removed from the SDK entirely. There is no opt-in mode, no legacy flag, no dormant import path.
+
+### 0.3 Primitives ship; opinions are reference implementations
+
+Pristine ships **primitives** — composable, opinion-free building blocks that anything else can be built on top of. Anything opinionated — tools, hooks, file formats, integration wiring — is a **reference implementation** documented separately. Users can adopt references verbatim, fork them, or replace them entirely.
+
+| Layer | Example |
+|---|---|
+| **Primitive** (core SDK) | `searcher.vectorSearch(query, filters)` |
+| **Reference** (documented example, replaceable) | `search_memory` tool that wraps it for Claude tool-use |
+| **Primitive** | `store.addSummary(sessionId, text, timestamp)` |
+| **Reference** | Session-summary-generation script using the host LLM |
+| **Primitive** | `searcher.sql(query, params)` (read-only, row-capped, timeout-guarded) |
+| **Reference** | SQL/DSL query tool for agent tool-calling |
+| **Primitive** | `indexer.ingest(turns)` |
+| **Reference** | PostToolUse hook script that calls it |
+
+Reference implementations live in `docs/examples/` (or as separately-versioned packages). Each opens with: *"This is one way to use Pristine primitives. You can write your own."*
+
+This principle has teeth: if a feature requires an opinion (a file format, a hook matcher, a prompt shape, a tool schema), it is not a primitive. It is either a reference implementation or out of scope. Pristine may choose to ship any given reference or none; consumers are never blocked by the absence of one.
 
 ---
 
 ## 1. Why this spec exists
 
-PR #94 (`fix/gemma4-extraction-diagnostic`) succeeded at its stated goal: gemma4:e4b now reliably extracts facts from dialogue-dense LOCOMO sessions, lifting the `--limit 1` baseline from 54 memories / 8 sessions to **83 memories / 10 sessions**. But the work also surfaced deeper questions about whether our memory architecture is aimed at the right user — and whether fact extraction on small local models is the right primary mechanism at all.
+PR #94 (`fix/gemma4-extraction-diagnostic`) succeeded at its stated goal: gemma4:e4b now reliably extracts facts from dialogue-dense LOCOMO sessions, lifting the `--limit 1` baseline from 54 memories / 8 sessions to **83 memories / 10 sessions**. PR #95 followed with architectural docs — claude-mem comparison, developer-memory-pain research. But the work surfaced a deeper question: is fact extraction on small local models the right primary mechanism at all?
 
-Today's discovery session added a comparison against [claude-mem](https://github.com/thedotmack/claude-mem) (61.8k stars, dominant Claude Code memory plugin) — see `docs/analysis/claude-mem-vs-pristine.html`. claude-mem makes architectural choices that look almost opposite to ours on every axis, and it forced us to articulate what we believe and why.
+Two weeks of discovery — claude-mem architecture review, 55-source developer-pain research, and chunking-pattern research across seven shipping memory systems — converged on a reversal: **the extraction model is wrong for our constraints.** Production systems extract because they don't store raw corpora as queryable memory. Pristine *does*, so pre-compression is pure tax. The pivot is toward corpus-based search with agent-driven navigation.
 
-This spec captures the rethink in progress. **It is not a build plan.** Its job is to:
+This spec captures that pivot. It supersedes the extraction-based memory design from spec-001 / spec-003 at the semantic layer while preserving the storage and hook infrastructure those specs built. **It is not a build plan.** Its job is to:
 
-- Record findings before they go stale
-- Frame the design questions clearly enough that future-us can pick up cleanly
-- Resist premature commitment to architecture we haven't validated
+- Lock in the architectural direction so future decisions stay coherent
+- Define the primitive/reference split that governs SDK surface decisions
+- Frame remaining design questions clearly enough to validate with prototypes
 
-**In scope:** What pristine's memory system should do, for whom, using what mechanisms. The case for narrowing to a developer focus. Hook surface, layering, retrieval philosophy.
+**In scope:** primitives, philosophy, scope boundaries, the corpus architecture, validation experiments.
 
-**Out of scope:** Phase/story breakdown, sprint plan, file-level changes. Those follow once we've validated the direction with small prototypes.
+**Out of scope:** phase/story breakdown, sprint plan, file-level changes, specific reference implementation choreography. Those follow once primitives are validated.
 
 ---
 
 ## 2. What's in place today
 
-The pristine memory pipeline as of `fix/gemma4-extraction-diagnostic` (15 commits, PR #94 open and pending merge):
+The pristine memory pipeline as of `main` post-PR #95:
 
 ```
 PostToolUse hook
@@ -37,241 +101,445 @@ SQLite outbox (conversations + pending_ingest_tasks, atomic)
     ↓
 Detached extract-worker.ts (full PristineLocal)
     ↓
+[REMOVED in this spec]
 Per chunk (CHUNK_SIZE=20, OVERLAP=2):
   1. Extractor LLM call (gemma4:e4b via Ollama)
-       → facts[] {text, validFrom, validUntil, temporalConfidence}
   2. Consolidator LLM call (gemma4:e4b via Ollama)
-       → decisions[] {ADD | UPDATE | NOOP | SUPERSEDE | DELETE}
     ↓
 SQLite + sqlite-vec + FTS5
     ↓
 scripts/search.ts exposed as agent tool
 ```
 
-### What we shipped in PR #94
+PRs #94 and #95 are merged. The extractor + consolidator pipeline still runs; this spec supersedes the semantic layer with a corpus-based design but does not invalidate the ingestion-hook, storage, or FTS5 infrastructure already built.
 
-- `SENSITIVE_PLACEHOLDER_RULES` removed from default extractor prompt (was causing `{facts:[]}` on placeholder-free transcripts)
-- `extractor.systemPrompt` config hook on `PristineLocalConfig` for users who need to re-inject privacy rules
-- Extractor prompt rewritten with role/goal, schema-in-prompt, mode disambiguation, two few-shot examples
-- User prompt wrapped with `Transcript:\n---\n...\n---\nExtract facts...`
-- `OllamaClient` defensively strips ` ```json ` / ``` ``` ``` markdown fences
-- Consolidator `DEFAULT_BATCH_MAX_TOKENS` raised 4096 → 16384 (output truncation fix)
-- Diagnostic scripts: `debug-extract.mjs`, `debug-prompt.mjs`, `debug-schema.mjs`, `debug-failing-sessions.mjs`, `debug-pristine-extractor.mjs`, `debug-orchestrator.mjs`
-- `buildExtractionPrompt` exported from `pristine` so callers can compose on the default
-- 3 P2 fixes from Greptile (export `ExtractorConfig`, docstring fix, README caveat on REFERENCE_TIME staleness)
+### Infrastructure preserved by this pivot
 
-### Measured behavior
+- `PostToolUse` hook wiring (ingestion entry point)
+- SQLite outbox + `pending_ingest_tasks` queue
+- Detached worker architecture
+- `sqlite-vec` storage + embedder abstraction
+- `FTS5` full-text index on conversations
+- `scripts/search.ts` shape (repurposed as a reference implementation)
 
-| Metric | Pre-PR #94 | Post-PR #94 |
-|---|---|---|
-| Memories on conv-26 `--limit 1` | 54 | **83** |
-| Successful sessions | 8 | 10 |
-| Probe extraction (session_5/12/14, 3 runs each) | 0/0/0, 0/0/0, 0/12/varies | 10/10/10, 10/10/10, 19/19/19 |
-| Retrieval Hit@10 | — | 100% |
-| Answer accuracy | — | 0/1 (gemma4:e4b answerer is the bottleneck) |
+### Infrastructure removed in this pivot
 
-### Known unaddressed
+- `src/memory/extractor/` — prompt-based LLM extraction of atomic facts
+- `src/memory/consolidator/` — LLM-based ADD/UPDATE/NOOP/SUPERSEDE/DELETE judgments
+- LOCOMO-aimed prompt in `src/memory/extractor/prompts.ts`
+- Extractor/consolidator exports from `src/index.ts`
+- Associated tests under `tests/memory/extractor/` and `tests/memory/consolidator/`
 
-- 9 sessions still produce 0 memories in the v2 baseline (session_5, 7, 8, 9, 11, 13, 15, 17, 18). Sprint 012 is drafted to diagnose.
-- Provider WARN message at `benchmarks/memorybench/src/providers/pristine/index.ts:232` is misleading — blames "content-hash duplicate detection" for every `memoryIds.length === 0`, hiding the real per-step error.
-- Consolidator can still truncate or NOOP-all when DB has many similar prior memories.
-- Answer quality on local models is the actual bottleneck for end-to-end task accuracy, not retrieval.
+These modules are deleted from the SDK. No opt-in mode, no legacy flag, no dormant import path. Consumers who want fact extraction can fork from a historical commit or build their own on top of the primitives in §5.1.
 
 ---
 
 ## 3. Findings from discovery
 
-Four observations, all surfaced during PR #94 work and the claude-mem comparison.
+Five observations, across PR #94 diagnostic work, the claude-mem comparison, and two research deep-dives.
 
 ### 3.1 Fact extraction is fragile on small local models
 
 Two days of diagnostic work surfaced multiple failure modes that were brittle, prompt-dependent, and only diagnosable with custom probe scripts:
 
-- **Prompt sensitivity.** The `SENSITIVE_PLACEHOLDER_RULES` chunk (a paragraph of "CRITICAL: ... MUST preserve" framing) caused gemma4:e4b to return `{facts:[]}` on every transcript without placeholders. The bisect (`debug-prompt.mjs`) showed every prompt variant including the chunk returned 0 facts; every variant excluding it returned 8. Llama3.2 ignored the framing (weaker instruction following), masking the bug.
-- **Mode ambiguity.** Gemma 4 has both structured-output and function-calling as native trained modes. Without explicit disambiguation in the prompt ("the response IS the output, not a function call"), the model can pattern-match to function-call mode and emit `{facts:[]}` as a legitimate "I chose not to call" response.
-- **Markdown fence mimicry.** When the system prompt embedded the schema inside ` ```json ` fences, the model began emitting its responses inside the same fences — breaking `JSON.parse()`. Required adding `stripJsonWrapper()` to `OllamaClient` as defensive parsing.
-- **Output truncation.** Consolidator batch calls truncated mid-JSON ("Unexpected end of JSON input") when fact count × similar-memory count exceeded `num_predict=4096`. Fixed by bumping to 16384, but the fix only addresses isolated probes — full-baseline runs still see truncation when prior-session memories accumulate.
-- **Sampler instability.** Even at `temperature=0`, gemma4:e4b produced different outputs across runs on the same input (session_14: 0 facts in baseline, 12 facts in probe). The refined prompt made it deterministic in our 9 probes, but this is empirical, not guaranteed.
+- **Prompt sensitivity** — `SENSITIVE_PLACEHOLDER_RULES` caused `{facts:[]}` on every placeholder-free transcript.
+- **Mode ambiguity** — gemma4's dual structured-output + function-calling training let it emit `{facts:[]}` as a legitimate "I chose not to call" response.
+- **Markdown fence mimicry** — schema embedded in ` ```json ` fences caused responses to mimic the wrapper.
+- **Output truncation** — consolidator batch calls truncated mid-JSON when fact count × similar-memory count exceeded `num_predict=4096`.
+- **Sampler instability** — at `temperature=0`, gemma4:e4b produced different outputs across runs on the same input.
 
-**Each failure mode required custom tooling to even detect.** None would surface in unit tests or the test suite. The observability gap is severe: the provider's WARN message blamed content-hash dedup for every failure regardless of cause.
+**Each failure mode required custom tooling to even detect.** This is a structural mismatch between asking a 3.6B-parameter model to produce strict JSON over multi-paragraph instructions and relying on that output being usable without manual review.
 
-This isn't a "we just need a better prompt" problem. It's a structural mismatch between asking a 3.6B-parameter model to produce strict JSON over multi-paragraph instructions and our reliance on that output being usable downstream without manual review.
+### 3.2 Extraction is the wrong abstraction for our constraints
 
-### 3.2 Our default prompt targets LOCOMO personal-life facts, not dev use
+Production memory systems (mem0, claude-mem, Letta) extract because they don't store raw conversations as queryable corpora. Their extraction is a forced move. Pristine stores raw conversations locally with sub-millisecond vector + FTS retrieval; under these constraints, pre-extraction is a lossy compression step with no payoff.
 
-The current extractor prompt (`src/memory/extractor/prompts.ts`) instructs the model to focus on:
+Moving extraction from a weak local model to the host agent (as claude-mem does) improves quality but doesn't fix the abstraction mismatch — it just makes extraction more expensive. claude-mem spends ~2× the tokens of an equivalent corpus-search system because every `Stop` / `PreCompact` / per-tool-observer call pays an LLM roundtrip that wouldn't be needed against a raw log.
 
-> *"(1) personal preferences (likes, dislikes, favorites), (2) important personal details (names, relationships, dates), (3) plans and intentions (upcoming events, goals), (4) activity and service preferences (dining, travel, hobbies), (5) health and wellness information (dietary restrictions, fitness), (6) professional details (job title, career goals, work habits), (7) miscellaneous details (favorite books, movies, brands)."*
+The chunking research (see `docs/analysis/`) confirmed: no shipping system embeds raw dialogue turns with token-window chunking — because they all pre-extract. Our constraint set is genuinely different, and the right move is to stay in corpus mode rather than inherit an architectural shape designed around cloud-hosted ledgers.
 
-This category list was built around the LOCOMO benchmark — a dataset of 10 long peer-to-peer dialogues between two people about their personal lives. It tests whether a memory system can recall facts like "Caroline went to a pride parade on July 3, 2023" or "Melanie has kids."
+### 3.3 Our default prompt targets LOCOMO personal-life facts
 
-These are not the facts a coding agent needs to remember. The prompt has been optimized for the wrong target. Even a perfect implementation against this taxonomy would produce memories of marginal value to the developer using Pristine.
+The current extractor prompt targets personal preferences, personal details, plans, activities, health, professional details, and misc facts — the LOCOMO benchmark's shape. These are not the facts a coding agent needs. Even a perfect implementation against this taxonomy would produce memories of marginal value to the developer using Pristine.
 
-A coding-agent memory system should be extracting facts like:
-- "We chose `sqlite-vec` over Chroma to avoid a Python subprocess."
-- "The `consolidator` truncates on dialogue-dense sessions; bumping `DEFAULT_BATCH_MAX_TOKENS` partially fixes."
-- "PR #94 is waiting for Greptile re-review on three P2 fixes."
-- "The provider WARN message hides real errors — log `result.errors` instead."
+This observation stood at PR #94 wrap-up; the pivot in §0.2 obsoletes it by removing the extraction step entirely.
 
-claude-mem's observation taxonomy (`bugfix | feature | refactor | change | discovery | decision`) is much closer to this need.
+### 3.4 Developers want search + handoff, not a fact ledger
 
-### 3.3 claude-mem comparison surfaced design patterns we don't use
+55-source research across X, GitHub, HN, blogs (see `docs/analysis/developer-memory-pain-research.html`) found the real developer asks are:
 
-Full analysis: `docs/analysis/claude-mem-vs-pristine.html` (21 slides). Key takeaways for spec-005:
+- *"What was I doing last session?"* (handoff / resume)
+- *"Did we discuss X?"* (search through history)
+- *"What did we decide about Y?"* (decision recall)
+- *"Remember this so we don't hit it again"* (explicit capture)
 
-- **SessionStart auto-injection is a UX win we don't have.** claude-mem's `SessionStart` hook fetches relevant prior context and injects it via `hookSpecificOutput.additionalContext` on every session start (including post-compaction). Pristine's tool-only retrieval requires the agent to remember to search, which is unreliable.
-- **Per-session summarization is missing from our pipeline.** claude-mem's `Stop` hook generates a structured `session_summaries` row (request / investigated / learned / completed / next_steps / notes). This is arguably more useful for "what did I do last time" recall than per-fact extraction.
-- **Per-tool-call observation captures intent + parameters + outcome together.** Higher fidelity than dialogue-only extraction. The unit of memory matches the unit of work.
-- **Append-only with recency cutoff is a real alternative to LLM consolidation.** claude-mem doesn't consolidate — it appends, dedups by content hash within a 30s window, and filters retrieval to the last 90 days. Less powerful than our SUPERSEDE/DELETE, but vastly more reliable on small-model deployments. Worth considering as a fallback or alternative mode.
-- **claude-mem pays for it with operational complexity.** Express daemon on :37777 + Chroma subprocess via `uvx chroma-mcp` + N observer Claude subprocesses + supervisor + zombie reaper. Pristine's single-file deployment is a real differentiator we should preserve.
-- **claude-mem has zero memory-recall benchmarks despite 61k stars.** All quality claims are vibes. Pristine's LOCOMO baseline is a genuine talking-point asset — we should keep measuring.
+Every one is a **search/retrieve operation against a corpus**, not a lookup against a pre-compressed fact ledger. The emergent product spec from developers (Lucas Beyer's self-maintaining MEMORIES.md, jongeibel's "commit to memory button", awesamarth_'s handoff pattern) all describe corpus-based architectures, not extraction-based ones.
 
-### 3.4 No user-segment narrowing — memory hasn't pivoted like privacy did
+### 3.5 Session-start injection is a harness concern, not a primitive concern
 
-`implementation-spec-004` (Secret Redaction for Agent Harnesses) made a deliberate pivot: it narrowed pristine's privacy module from "general PII detection" to "secrets that developers paste into agent conversations" (API keys, tokens, private keys). The narrowing made the privacy module:
-
-- Easier to specify (clear use case, clear data shapes)
-- Easier to evaluate (regex-deterministic, sub-millisecond)
-- Easier to dogfood (Lou uses it daily)
-- Easier to ship (smaller surface, faster wins)
-
-The memory module never had an equivalent narrowing. It still tries to be "useful for any user with any kind of long-term memory need" — which is why the prompt has 7 personal-life categories, why we benchmark on LOCOMO (peer-to-peer life dialogues), and why every design discussion gets stuck on tradeoffs that wouldn't matter for a narrower scope.
-
-**Spec-005's central claim:** memory should pivot the same way privacy did. Narrow to developer/coding agent memory. Same dogfood discipline. Same evaluation rigor.
+Session-start research across Cursor Memories, Cline Memory Bank, Claude Code CLAUDE.md, Aider conventions, Continue rules, and Copilot Spaces showed strong patterns: markdown-in-repo, ≤500 lines, startup-only hook, transparency UX, aggressive decay. **But these are all harness-level decisions** — belonging to the conscious-should-do quadrant of §0.1. They inform how *reference implementations* should be built, not what Pristine's core primitives expose. Pristine itself stays out of session-start choreography.
 
 ---
 
-## 4. What does a coding-agent memory actually need?
+## 4. Scope — what Pristine's memory is for
 
-Reframing the design question. If we narrow to developer use, what are we actually building?
+Reframing the design question given the pivot.
 
-### 4.1 Five concrete scenarios
+### 4.1 What Pristine provides
 
-These are the recall situations a developer-focused memory system should handle. Written from the dev's POV — what they ask the agent, and what the agent needs to know.
+Pristine provides the **primitives** needed to treat past conversations as a searchable corpus:
 
-**Scenario A — Resuming after a break.** *"I haven't touched this branch for a week. Where was I?"* The agent needs the last session's summary: what was being worked on, what was tried, what's incomplete, what was the next planned step. claude-mem's `session_summaries` row is exactly this.
+- **Ingest** raw turns into SQLite with vector embeddings + FTS5 index
+- **Search** the corpus via vector, full-text, or hybrid retrieval
+- **Query** the corpus via a scoped read-only SQL surface
+- **Store** arbitrary condensations (e.g., session summaries) as timestamped rows
+- **Embed** text via a swappable embedder (default: Nomic v1.5, local)
 
-**Scenario B — Recalling a decision.** *"Why did we go with sqlite-vec instead of Chroma?"* The agent needs durable decision facts with rationale. These were said once weeks ago and need to persist. Most useful when paired with the conversation excerpt where the decision was made.
+That is the complete functional scope of the core SDK. Everything a consumer wants to build with these primitives — tools for agent tool-calling, hook scripts for session-start injection, markdown-file integrations, condensation generators — are reference implementations documented separately.
 
-**Scenario C — Avoiding a known gotcha.** *"Add JSON output to the extractor."* The agent should remember: gemma4:e4b emits markdown fences sometimes; we have `stripJsonWrapper()`; the SENSITIVE rules chunk was toxic. Searchable by keyword (`extractor`, `json`, `gemma4`) and triggered on context match, not just user query.
+### 4.2 Retrieval queries the primitives must support
 
-**Scenario D — Following the project conventions.** *"Add a new TypeScript file."* The agent should know the repo conventions (no `any`, conventional commits, kebab-case files, ESM imports) without the user repeating them. These are stated infrequently but apply universally.
+The primitives must support every recall situation developers actually have. These drive API shape, not feature count:
 
-**Scenario E — Cross-referencing prior work.** *"Did we ever discuss the consolidator truncation issue?"* The agent should be able to grep past conversations by keyword and surface the thread, not just an extracted fact. The conversation has more nuance than the fact.
+- **Semantic query** — *"something about the extractor truncating"* → vector search across turns
+- **Exact keyword query** — *"find `DEFAULT_BATCH_MAX_TOKENS`"* → FTS5 search
+- **Scoped filter** — *"what did we discuss yesterday in this repo"* → SQL-over-corpus with timestamp + project filters
+- **Decision recall** — *"why did we go with sqlite-vec"* → hybrid semantic + keyword
+- **Handoff context** — *"last session's summary"* → `store.getRecentSummaries(projectId, N)`
 
-### 4.2 Memory type taxonomy
+All five are composable from five primitives, each listed in §5.1.
 
-Different scenarios → different memory shapes → different retention policies. This is the architecture lens.
+### 4.3 What Pristine does NOT provide as core SDK
 
-| Type | Example | Lifecycle | Best layer |
-|---|---|---|---|
-| **Session summary** | "Implemented PR #94 fence fix; verified with 9 probes; pending Greptile re-review" | Persists indefinitely; accumulates one per session | LLM-generated at `Stop` hook |
-| **Decision** | "Use sqlite-vec; avoid Chroma for single-file deploy" | Persists until explicitly superseded | Durable fact; agent-authored or extracted |
-| **Convention** | "No `any` in TypeScript; conventional commits" | Persists; rarely changes | Durable fact; project-scoped |
-| **WIP state** | "PR #94 waiting for Greptile" | Expires when work completes | Session summary or scratchpad |
-| **Gotcha** | "gemma4:e4b emits markdown fences sometimes" | Persists until the underlying cause is gone | Durable fact; keyword-indexed |
-| **Activity log** | "Edited `prompts.ts` line 44 — added `stripJsonWrapper`" | Recent only (last few sessions); searchable | Per-tool-call observation |
-| **Conversation** | The full dialogue thread where a decision was made | Persists indefinitely; searchable by FTS5 | Conversation store (already exists) |
+- A `search_memory` tool — **reference implementation** that wraps `searcher.hybridSearch`
+- A `SessionStart` hook — **reference implementation** that calls `store.getRecentSummaries`
+- A `MEMORY.md` file or format — **reference implementation** specific to filesystem-based consumers
+- A session-summary generator — **reference implementation** that calls an LLM, then stores via `store.addSummary`
+- Ingestion hook wiring — **reference implementation** of a PostToolUse script
 
-Observations on this table:
+Each reference implementation is optional. Pristine may or may not ship any given one. Users are expected to fork or rewrite them as their harness requires.
 
-- The **session summary** layer is missing entirely from pristine today. It's probably the highest-value addition.
-- The **conversation store** is undervalued — for many recall situations, FTS5-grepping past conversations is more useful than retrieving extracted facts. We built it but treat it as secondary.
-- The **per-tool-call observation** layer (claude-mem's primary surface) doesn't exist for us. It's expensive (one LLM call per tool) but high-fidelity. Worth considering as an optional "deep capture" mode.
-- The **durable facts** are what we currently extract. They cover decisions, conventions, gotchas — but only when the dialogue is rich enough. Missing the activity-log + session-summary layers means a lot of useful context never makes it in.
-- **Retention policy varies by type.** WIP state should expire; conventions should persist; activity logs should age out. Our current consolidator-based forgetting (LLM judgment) is one-size-fits-all and unreliable. A simpler per-type policy would be more reliable.
+### 4.4 Scope boundary: harness vs memory
 
-### 4.3 What we can take from claude-mem's taxonomy (without taking the architecture)
+The 2×2 in §0.1 cleanly separates our concerns from the harness's:
 
-claude-mem's observation `type` field is `bugfix | feature | refactor | change | discovery | decision`. This is a small, closed enum that maps cleanly to coding work. We can adopt the taxonomy without adopting the implementation (per-tool-call Sonnet observer subprocess).
-
-A narrowed pristine extractor prompt could ask: *"Categorize this fact as one of: decision, convention, gotcha, state, activity, none. Skip anything that doesn't fit."* That's a much simpler classification task than our current 7-category personal-memory split — and the categories are actually useful for coding-agent retrieval.
+| Concern | Pristine | Harness |
+|---|---|---|
+| What to store | X | |
+| How to retrieve | X | |
+| When to retrieve (triggers) | | X |
+| How to present results to the agent | | X |
+| Behavioral enforcement (checklists, hooks) | | X |
+| Session-boot context injection | | X (using our primitives) |
 
 ---
 
-## 5. Design direction (preliminary)
+## 5. Design direction
 
-> *Skeleton only. We have ideas, not commitments. Each subsection deliberately avoids file paths, schema, or sequencing — those follow once we've validated the layering with prototypes.*
+This section splits into primitives (what the core SDK exposes) and reference implementations (what we may or may not choose to ship as examples).
 
-### 5.1 Layered memory architecture
+### 5.1 Core SDK primitives
 
-Three candidate layers, each serving different scenarios from §4.1:
+#### 5.1.1 Storage
 
-1. **Raw conversation + FTS5** — already shipped (Sprint 009). Underused. The grep fallback for "did we ever discuss X."
-2. **Session summary (per-session)** — new. Generated by one LLM call at `Stop` hook. Structured: request / investigated / decided / completed / next_steps / open_questions. Serves Scenario A (resume) and Scenario E (cross-reference).
-3. **Durable facts** — exists today, but pivoted to dev categories (decisions / conventions / gotchas). Probably agent-authored more than auto-extracted, given small-model reliability concerns.
+```
+store.addConversation(conversation: Conversation): void
+store.addMessage(conversationId, message, turnIndex): void
+store.addSummary(sessionId, text, timestamp, metadata?): void
+store.getRecentSummaries(projectId, limit): Summary[]
+```
 
-The split lets us minimize per-turn LLM dependence (Layer 1 is free, Layer 2 is one call per session, Layer 3 is selective) while still enabling structured long-horizon recall.
+Raw conversation turns persisted with `(conversation_id, turn_index, role, content, timestamp, project_id)`. Summaries persisted as standalone timestamped rows with optional metadata — content shape is opaque to the SDK. Project scoping is required on all queries; the projectId source (git root vs. workspace dir vs. config) is discussed in §6.
 
-### 5.2 Hook surface
+#### 5.1.2 Indexing
 
-Hooks we should consider, beyond the `PostToolUse` we already have:
+```
+indexer.ingest(turns: Message[]): Promise<void>
+```
 
-| Hook | Matcher | Layer it serves | Purpose |
-|---|---|---|---|
-| `SessionStart` | `startup`, `clear`, `compact` | Layer 1 + 2 | Inject relevant project context — last summary, recent decisions, open WIP |
-| `UserPromptSubmit` | — | Layer 1 + 3 | Optional surgical injection per query |
-| `PostToolUse` | `*` | Layer 1 (always) + Layer 3 (selective) | Capture activity; gate extraction by tool type |
-| `Stop` | — | Layer 2 | Generate session summary |
-| `SessionEnd` | — | — | Flush pending background work |
+For each message:
+- Insert into `conversations` / `messages` table
+- Embed via `embedder.embed(message.content)` → insert into `sqlite-vec`
+- Add to FTS5 index
 
-`SessionStart(compact)` is particularly important — when Claude compresses context, working memory is gone but long-term memory should still be accessible. Re-injecting then is the highest-leverage moment.
+**One vector per message.** Metadata preserves `(conversation_id, turn_index, role)` so retrieval can expand to neighbors. Chosen over sliding-window and user-message-batch alternatives because: (a) maximum granularity at embed time (merging at retrieval is always possible; splitting at retrieval is not), (b) no arbitrary window boundaries, (c) tool-call chains reconstructable via `(conversation_id, turn_index)`, (d) cheap at local scale. Validated in §8.1.
 
-### 5.3 Storage and retrieval
+For oversize messages (>3000 tokens — rare, typically long tool outputs or code blocks), fall back to Graphiti's "never split mid-message" rule: embed whole if under the embedder's context window (Nomic v1.5 allows 8192), otherwise split at the largest natural boundary (AST for code, paragraph for prose) with 200-token overlap and a `parent_message_id` metadata link.
 
-- **Stay with `sqlite-vec`.** Single-file deployment is a real differentiator. claude-mem's Chroma subprocess is the worst part of their architecture for our target user.
-- **Hybrid retrieval (semantic + FTS5).** We have the pieces; not yet wired together. Code-adjacent queries need keyword fallback (file paths, error strings, issue numbers).
-- **Project-scoped namespacing.** Memories partition by git root or workspace. Mirrors claude-mem's per-project Chroma collections. Avoids cross-project pollution.
-- **Per-type retention policy.** WIP expires, conventions persist, activity ages out. Replaces the LLM consolidator's one-size-fits-all judgment.
+#### 5.1.3 Retrieval
+
+```
+searcher.vectorSearch(query, filters, limit): Hit[]
+searcher.ftsSearch(query, filters, limit): Hit[]
+searcher.hybridSearch(query, filters, limit): Hit[]     // reciprocal rank fusion
+searcher.sql(queryDsl | rawSql, params): Row[]          // read-only, scoped view
+searcher.expandHit(hit, windowSize): ExpandedHit         // ±N neighbors
+```
+
+`Filters` support project, timestamp range, conversation id, role. `expandHit` takes a per-message hit and returns message + ±N neighbors for context reconstruction.
+
+`searcher.sql` accepts a scoped DSL (preferred) or raw SQL (escape hatch). Both run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public view** (`messages_public`, `conversations_public`, `summaries_public`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the view even when internal tables change.
+
+#### 5.1.4 Embedding
+
+```
+embedder.embed(text): Promise<Vector>
+embedder.embedBatch(texts): Promise<Vector[]>
+```
+
+Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-token window, CPU inference. Users can swap in any embedder matching the interface. No dimension padding, no remote service.
+
+### 5.2 Reference implementations
+
+Each reference lives in `docs/examples/` (or as a separately-versioned package). Each is optional. Each opens with *"This is one way to use Pristine primitives. You can write your own."*
+
+#### Candidate reference set (each may or may not ship)
+
+- **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + `expandHit`. Returns formatted text with timestamps and conversation refs.
+- **`SessionStart` hook for Claude Code** — script that on `startup` matcher calls `store.getRecentSummaries(projectId, 5)`, formats as markdown, emits via `hookSpecificOutput.additionalContext`. Timestamps every entry, ≤500 lines, fires on `startup` only (per research: re-injecting on `resume`/`compact` wastes tokens).
+- **SQL/DSL query tool** — tool wrapper over `searcher.sql`, scoped filter DSL as the default surface and raw-SQL as escape hatch.
+- **`MEMORY.md` maintainer** — script that writes timestamped session summaries to a project-scoped markdown file, with decay. Composes `store.getRecentSummaries` + filesystem write.
+- **Session-summary generator** — script that, on `Stop` hook, calls the host LLM with a condensation prompt, then stores via `store.addSummary`. Entirely prompt + format choice — LLM, prompt, and schema are all consumer opinions.
+- **PostToolUse ingestion script** — reframed `scripts/store.ts`.
+
+None are required for Pristine to function as an SDK. A consumer can build any of them from the primitives with a weekend of work.
+
+### 5.3 Removal of the extractor and consolidator
+
+`src/memory/extractor/` and `src/memory/consolidator/` are removed entirely from the SDK along with their tests and public-index exports. No opt-in flag, no dormant module, no alternative pipeline. The corpus-based primitives in §5.1 replace them. Consumers who need fact-ledger semantics can build on top of the primitives or fork a historical commit; it is not Pristine's surface.
+
+### 5.4 Reference repos
+
+Repos whose patterns informed this architecture. See `docs/analysis/` for the full comparisons.
+
+| Repo | Why relevant | Pattern to adopt | Pattern to avoid |
+|------|--------------|------------------|------------------|
+| thedotmack/claude-mem | Dominant Claude Code memory plugin (61k+ stars); local-first sqlite + vector | PostToolUse / Stop hook wiring (for reference impls); SHA-256 content-hash dedup with a time-windowed guard; per-field semantic splitting when vectorizing structured records | ChromaDB subprocess + Express daemon + observer Claude subprocesses; extraction-default pipeline; zero memory-recall benchmarks |
+| mem0ai/mem0 | Largest fact-extraction memory system (53k+ stars) | `infer=False` raw-message escape-hatch pattern; UUID→integer remapping to prevent extraction-prompt hallucination | Cloud-first architecture; fact extraction as the default path |
+| letta-ai/letta | MemGPT lineage, agent-authored archival | Summarizer-based context compression (sliding window); file-processor chunking strategy (`CodeSplitter` for code, `MarkdownNodeParser` for docs) | pgvector padding to `MAX_EMBEDDING_DIM`; reliance on agent-called `archival_memory_insert` |
+| getzep/graphiti | Message-boundary-preserving chunker | "Never split mid-message" rule; density-gated chunking (only when entity-rich); token-aware window with parent-link metadata | Neo4j dependency; fixed 4-chars-per-token estimate (off by 30%+ on code and JSON) |
+| run-llama/llama_index | Broad retrieval ecosystem | `SentenceSplitter` / `SemanticSplitterNodeParser` as oversize-fallback reference; batched-by-user-message as a benchmarkable alternative in §8.1 | Deprecated `VectorMemory` (turn-pair vectors) |
+| jina-ai/late-chunking | Long-context embedding research | Token-span chunking over pre-embedded long context (if we later adopt Nomic's 8192 window fully) | Not a v1 adoption — pure-JS Nomic integration of late-chunking is non-trivial |
+
+### 5.5 Stack
+
+- **Language:** TypeScript (strict mode, ESM only)
+- **Runtime:** Node.js 20+ (Bun has known incompatibilities with `better-sqlite3`)
+- **Storage:** SQLite via `better-sqlite3` (synchronous, file-backed, single-file deploy)
+- **Vector index:** `sqlite-vec` (vec0 virtual table — no Python, no daemon, no subprocess)
+- **Full-text:** SQLite FTS5 (built-in, BM25-ranked, porter stemmer)
+- **Embedder:** Nomic Embed v1.5 via `@huggingface/transformers` (768-d, 8192-token window, CPU-viable)
+- **Harness targets (via reference impls):** Claude Code (primary dogfood), Cursor, Cline, Continue
+- **Test framework:** Vitest
+- **Hard constraints:** No external services. No network calls at SDK runtime. No daemon. No subprocess. Single-file deploy.
+
+### 5.6 System diagram (target state)
+
+```
+                     [Host agent / harness]
+                              │
+           ┌──────────────────┼──────────────────┐
+           │                  │                  │
+    [Reference:        [Reference:         [Reference:
+     search_memory      SessionStart        PostToolUse
+     tool]              hook]               ingestion]
+           │                  │                  │
+           ▼                  ▼                  ▼
+    ╔══════════════════════════════════════════════╗
+    ║             Pristine Core SDK                ║
+    ║                                              ║
+    ║  searcher       indexer        store         ║
+    ║  - vector       - ingest       - addConv     ║
+    ║  - fts          - chunk        - addMessage  ║
+    ║  - hybrid       - embed        - addSummary  ║
+    ║  - sql          - index        - getSummaries║
+    ║  - expandHit                   - query       ║
+    ║                                              ║
+    ║  embedder.embed(text) → Vector (Nomic v1.5)  ║
+    ╚══════════════════════════════════════════════╝
+                          │
+                          ▼
+             ┌────────────────────────────┐
+             │     SQLite (single file)   │
+             │                            │
+             │  conversations             │
+             │  messages                  │
+             │  summaries                 │
+             │  vec_messages (sqlite-vec) │
+             │  messages_fts (FTS5)       │
+             │  *_public views            │
+             └────────────────────────────┘
+```
+
+### 5.7 Module overview
+
+- **Core Layer** (`src/core/`) — types, interfaces, errors, database bootstrap, shared utilities
+- **Storage Layer** (`src/memory/store/`) — conversations, messages, summaries; stable public views; read-only SQL surface
+- **Indexing Layer** (`src/memory/indexer/`) — per-message ingestion, oversize-message chunking, embedding orchestration, FTS5 insert
+- **Retrieval Layer** (`src/memory/searcher/`) — vector / FTS / hybrid / SQL search; hit expansion (±N neighbors)
+- **Embedder Layer** (`src/embedder/`) — Nomic Embed v1.5 default via `@huggingface/transformers`; swappable `Embedder` interface
+- **Engine Layer** (`src/engine/`) — LLM clients used only by reference implementations that need an LLM (summary generator, etc.); **not** a core primitive
+- **Privacy Layer** (`src/privacy/`) — unchanged per spec-004 (secret redaction for developer use)
+- **Reference Implementations** (`docs/examples/` or a separate `@pristine/examples` package) — `search_memory` tool, `SessionStart` hook for Claude Code, `MEMORY.md` maintainer, session-summary generator, PostToolUse ingestion script
+
+### 5.8 Repo structure (target)
+
+```
+pristine/
+├── src/
+│   ├── core/                    # types, interfaces, errors, db bootstrap
+│   ├── memory/
+│   │   ├── store/               # conversations, messages, summaries, views
+│   │   ├── indexer/             # per-message ingestion + oversize chunking
+│   │   └── searcher/            # vector/fts/hybrid/sql/expandHit
+│   ├── embedder/                # Nomic default + swappable interface
+│   ├── engine/                  # llm clients (for reference impls only)
+│   ├── privacy/                 # unchanged (spec-004)
+│   └── index.ts                 # public API surface
+├── tests/
+│   ├── memory/{store,indexer,searcher}/
+│   ├── embedder/
+│   └── integration/
+├── docs/
+│   ├── specs/                   # implementation-spec-*.md
+│   ├── sprints/                 # sprint-*.md
+│   ├── examples/                # reference implementations
+│   │   ├── search-memory-tool/
+│   │   ├── session-start-hook/
+│   │   ├── memory-md-maintainer/
+│   │   ├── summary-generator/
+│   │   └── posttooluse-ingestion/
+│   └── analysis/                # research decks
+├── scripts/                     # current CLI scripts (reframed as examples)
+├── benchmarks/memorybench/      # eval harness
+└── package.json
+
+REMOVED IN THIS PIVOT:
+├── src/memory/extractor/
+├── src/memory/consolidator/
+├── tests/memory/extractor/
+└── tests/memory/consolidator/
+```
+
+### 5.9 Technical decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Primary retrieval strategy | Raw-corpus with vector + FTS + SQL | §0.2 — memory is search, not compression. Local storage + sub-ms retrieval removes the reason to pre-extract. |
+| Embedding unit | Per-message with retrieval-time ±N expansion | §5.1.2 — max granularity at write; merging at read is always possible, splitting is not. |
+| Oversize message handling | Never split mid-message (Graphiti rule); 3000-token threshold; AST / paragraph fallback with 200-token overlap | §5.1.2 — tool outputs and code blocks must stay intact. |
+| Storage engine | SQLite via `better-sqlite3` + `sqlite-vec` + FTS5 | Single-file, no daemon, no subprocess. ChromaDB's operational complexity was our headline critique of claude-mem. |
+| Embedder | Nomic Embed v1.5 (768-d, 8192 window) | CPU-viable, no padding, no network, `@huggingface/transformers` integration exists. |
+| Fact extraction | Removed entirely | §0.2, §5.3 — structural mismatch with corpus architecture. |
+| SQL surface | Read-only connection + row cap + query timeout + stable public view | §5.1.3 — DoS prevention and schema stability. |
+| Primitive / reference split | Core = opinion-free primitives; opinionated layers = reference implementations | §0.3 — composability over prescription. |
+| Project scoping | On by default; mechanism TBD (git root vs workspace dir) | Cross-project memory bleed is a known failure mode (research, §3.5). |
+| Eval strategy | LOCOMO as regression-only; dogfood coding-session corpus is the primary target | §3.3, §7 non-goal 9, §8.5. |
 
 ---
 
 ## 6. Open questions
 
-The load-bearing decisions we need to make before any implementation. Capturing these now while context is fresh.
+Triage from prior version: items resolved by this pivot, items still open, and items newly surfaced by the architectural commitment.
 
-1. **Auto-injection vs tool-only retrieval — which layers does which?** SessionStart auto-inject of session summaries seems clearly right. Auto-injecting durable facts on every session is more controversial (token cost, noise). Probably a config flag.
+### Resolved by this pivot
 
-2. **Agent-authored vs auto-extracted durable facts — what's the proportion?** Letta/MemGPT's "scratchpad memory the agent writes to" is way more reliable than auto-extraction on small models. But it requires the agent to recognize memory-worthy moments. Could be hybrid: automatic for session summaries, agent-authored for durable facts via an explicit `remember(text, type)` tool.
+- ~~Auto-injection vs tool-only retrieval~~ → out of core scope (harness concern); both live as possible reference implementations.
+- ~~Agent-authored vs auto-extracted durable facts~~ → neither; no extraction layer at all in the default path.
+- ~~Per-tool-call observation layer~~ → no (claude-mem-style per-tool extraction is not added).
+- ~~Backwards compatibility with existing extracted data~~ → pre-1.0; clean break acceptable. Existing memories can be rebuilt by re-indexing raw conversations.
+- ~~Storage: `sqlite-vec` vs ChromaDB~~ → sqlite-vec. ChromaDB's daemon + subprocess complexity violates single-file local-first.
+- ~~Storage unit for embeddings~~ → per-message with retrieval-time expansion (§5.1.2).
+- ~~Session-start injection format~~ → harness concern; not a primitive.
 
-3. **Project scoping mechanism.** Git root? Workspace dir? Config-driven? What about projects without a git root (one-off scripts)?
+### Still open
 
-4. **Per-type retention policy.** Concrete policy needed: WIP expires after N sessions of no reference, conventions never expire, activity logs decay over 30 days. These numbers need to be defended.
+1. **Project-scoping mechanism.** Git root via `git rev-parse --show-toplevel`? Workspace dir? Explicit `projectId` override only? Behavior for projects without a git root. Prototype required.
 
-5. **Eval target post-LOCOMO.** LOCOMO is wrong for the developer pivot. Options: (a) build a small coding-session benchmark by recording real sessions and writing recall questions, (b) borrow LongMemEval's coding subset if it exists, (c) accept evaluating qualitatively via dogfooding for now.
+2. **Retrieval-expansion window default.** What is the right default `N` for `expandHit`? Start with N=2 and tune on a dogfood corpus. The primitive operates on a single hit (callers loop over top-K), so this is a per-call default, not a per-batch policy.
 
-6. **Per-tool-call observation layer — adopt or not?** claude-mem's per-tool extraction gives high fidelity but at high cost. We'd want it on a small local model — could it work? Worth a prototype before deciding.
+3. **Chunking boundary for oversize messages.** "Never split mid-message" handles the common case. For code blocks, split at AST boundaries (tree-sitter)? For long JSON tool outputs, split at top-level object boundaries? Concrete fallback algorithm needed.
 
-7. **What happens to the existing extractor + consolidator?** If we add session summaries as Layer 2 and shift durable facts to agent-authored, the per-turn extract+consolidate pipeline becomes redundant for many use cases. Do we deprecate it, keep it as opt-in, or rebuild it for the new categories?
+4. **Hybrid-search scoring.** Reciprocal rank fusion (RRF) is the standard; confirm weights empirically before locking defaults.
 
-8. **Backwards compatibility with existing data.** Pristine has shipped. Existing memory DBs use the LOCOMO-aimed extraction. Migration path? Or accept a clean break (we're pre-1.0)?
+5. **Summary metadata shape.** `store.addSummary(sessionId, text, metadata)` — text is opaque; metadata `Record<string, unknown>` vs. lightly-typed slots (tags, author, schema-version)? Lean toward unknown for flexibility; revisit if consumers duplicate the same metadata fields.
+
+6. **Eval target post-LOCOMO.** LOCOMO stays as regression eval. Primary target shifts to coding-session recall — record real sessions and write recall questions, or adopt LongMemEval's coding subset if available.
+
+7. **Embedder choice confirmation.** Nomic v1.5 (768d, 8192 window, CPU-viable) vs. a smaller default (all-MiniLM-L6-v2, 384d). Measure retrieval quality on a coding corpus before locking in.
+
+8. **Read-path caching.** Hot vector searches within a session can be cached. Primitive concern or reference concern? Default: reference — caches are opinionated.
 
 ---
 
 ## 7. Goals and non-goals
 
-> *Scaffold only. To be filled once §5 design direction is validated by prototypes.*
+### Goals
 
-### Goals (placeholder)
-- *(TBD: 4–6 goals matching the developer pivot)*
+1. **Primitives that anything can build on.** Every feature a consumer needs should be expressible as a composition of the §5.1 primitives. If it isn't, the missing capability becomes a primitive — not a reference.
+2. **Sub-millisecond local retrieval** for both semantic and keyword queries. Local-first, no network, no daemon, no subprocess.
+3. **Stable primitive API.** Public types, storage schema, and public views evolve slowly and with explicit deprecation cycles. Reference implementations can churn freely.
+4. **Hard privacy boundary.** SQL access is read-only through a stable public view; sensitive surfaces (vault, any future secret store) never reachable via the SQL primitive. Row caps + query timeouts prevent DoS.
+5. **Dogfoodable via reference implementations.** Ship enough reference examples (even if docs-only) that a Claude Code user can have a working memory system in an hour.
 
-### Non-goals (placeholder)
-- *(TBD: explicit exclusions to prevent scope creep)*
+### Non-goals
+
+1. **A tool-call schema.** Not our format; reference only.
+2. **A hook wiring choreography.** Not our concern; reference only.
+3. **A file-format standard (`MEMORY.md`, CLAUDE.md integration, etc.).** Reference only.
+4. **A prompt shape for summarization.** Reference only; users bring their own LLM and prompt.
+5. **Behavioral enforcement** (checklists, "you must", mandatory hooks). Harness problem per §0.1.
+6. **Cross-project memory intelligence.** Project scope is the boundary; cross-project surfacing is a consumer choice.
+7. **A compressed-fact ledger of any kind.** §0.2. Extractor + consolidator are removed; Pristine does not ship a fact-ledger surface.
+8. **Daemon or subprocess architecture.** Single-file local-first is a hard constraint.
+9. **LOCOMO leaderboard chasing.** LOCOMO becomes a regression eval, not a target.
 
 ---
 
-## 8. Validation experiments before committing
+## 8. Validation experiments
 
-> *Scaffold only. Small prototypes worth running before locking in §5.*
+Prototypes to run before declaring primitives stable.
 
-Likely candidates:
+### 8.1 Chunk strategy validation
 
-- **Session-summary prototype** — Stop-hook script that calls gemma4:e4b once with last N turns, produces structured summary. Measure: can gemma4 produce a useful summary? How long does it take? Is the recall quality on Scenario A (resume) actually better than current per-turn extraction?
-- **Narrow-extractor prompt A/B** — replace the 7-category personal prompt with a coding-focused one (decisions / conventions / gotchas / state). Re-run baseline. Measure: do the extracted facts feel more useful for dev recall, even if LOCOMO numbers drop?
-- **Agent-authored `remember()` tool** — explicit tool the agent calls when the user says "remember X" or when a decision is made. Measure: is this more reliable than auto-extraction for durable facts?
-- **SessionStart injection prototype** — minimal hook script that fetches the last 3 session summaries and injects them as context. Measure: does it actually help in dogfooding?
+Decision: per-message embedding with retrieval-time expansion. Validate by measuring retrieval quality on a real coding-session corpus against:
 
-> *(To be expanded once we know which subset to run.)*
+- **A**: Per-message (proposed default)
+- **B**: User-message batch (LlamaIndex's deprecated-but-conversation-appropriate shape — one vector per user turn plus all subsequent tool/assistant replies until next user turn)
+- **C**: Sliding window (4 turns, 2-turn overlap)
+
+Metric: Recall@10 on a benchmark of 50+ recall queries. Success: A matches or beats B and C. If B wins, revisit.
+
+### 8.2 Primitive composability
+
+Build three reference implementations from only the primitives in §5.1. Confirm no consumer-only extension to the primitive surface is needed.
+
+- Reference 1: `search_memory` tool → composes `hybridSearch` + `expandHit`
+- Reference 2: `SessionStart` hook for Claude Code → composes `getRecentSummaries` + output formatting
+- Reference 3: `MEMORY.md` maintainer → composes `getRecentSummaries` + filesystem write + decay
+
+Success: each reference is ≤200 LOC and requires no changes to the primitive surface.
+
+### 8.3 Oversize-message handling
+
+Ingest a real Pristine development session (contains long tool outputs, code blocks, JSON). Confirm:
+- No message silently truncated
+- Oversize messages split at chosen boundary without losing context
+- Retrieval over split messages reconstructs full context via `expandHit` + `parent_message_id`
+
+### 8.4 Retrieval quality on coding-session recall
+
+Record 10+ real sessions (dogfood). Write 50+ recall questions spanning semantic queries, keyword queries, decision recall, and handoff. Measure Recall@10 and agent-synthesis quality.
+
+Success: median Recall@10 ≥ 0.7; agent answers ≥ 80% of handoff questions given top-5 expanded hits.
+
+### 8.5 LOCOMO regression
+
+Re-run LOCOMO on the new corpus-based pipeline. Success: retrieval Hit@10 matches or exceeds the post-PR #94 baseline of 100%. Answer quality is a separate host-LLM concern, not a pipeline concern.
+
+### 8.6 Privacy boundary
+
+Adversarial SQL queries against the `searcher.sql` primitive: attempt to access raw tables, issue DoS queries (cross joins, large scans), reach the vault. Confirm all rejected by the read-only view + row cap + timeout.
 
 ---
 
@@ -279,32 +547,578 @@ Likely candidates:
 
 | Spec | Relation |
 |---|---|
-| `implementation-spec-001.md` | Original architecture. Memory-related phases mostly superseded by spec-003. spec-005 modifies the "what to extract" question further. |
+| `implementation-spec-001.md` | Original architecture. Memory-extraction and -consolidation phases are **superseded entirely** by this spec — extractor/consolidator modules are removed from the SDK. Storage and embedder infrastructure that underpins corpus retrieval is preserved. |
 | `implementation-spec-002.md` | (separate scope) |
-| `implementation-spec-003.md` | Memory architecture refinement (conversation store, embedder engines, ingest queue, CLI scripts). spec-005 **modifies** Phases 1–6 of this spec at the semantic layer (what we extract, what we store) but does **not** invalidate the storage / hook / scripts infrastructure already built. |
-| `implementation-spec-004.md` | Privacy narrowed to secrets for developer use. spec-005 is the parallel pivot for memory. Same target user (developers, dogfooded). Same narrowing discipline. |
-
-Nothing is superseded outright. spec-005 is a **refinement layer** on top of spec-003's infrastructure, with a sharper user focus inherited from spec-004's discipline.
+| `implementation-spec-003.md` | Memory infrastructure (conversation store, embedder, ingest queue, FTS5, hook scripts) is **preserved** — this spec uses all of it. The extractor/consolidator semantic layer from spec-003 is superseded. |
+| `implementation-spec-004.md` | Privacy narrowed to secrets for developer use. This spec is the parallel pivot for memory — same target user (developers), same dogfood discipline, same scope narrowing. |
 
 ---
 
 ## 10. References
 
 ### From this codebase
-- `docs/analysis/claude-mem-vs-pristine.html` — 21-slide comparison deck (open in browser)
-- `docs/sprints/sprint-012.md` — drafted sprint for consolidator failure diagnosis (not committed)
-- `src/memory/extractor/prompts.ts` — current LOCOMO-aimed default prompt
-- `src/memory/consolidator/index.ts` — current LLM-based consolidator
-- `benchmarks/memorybench/scripts/debug-orchestrator.mjs` — diagnostic tool that revealed consolidator truncation
-- PR #94 — `fix/gemma4-extraction-diagnostic`, branch with all the work this spec reflects on
+- `docs/analysis/claude-mem-vs-pristine.html` — 21-slide comparison deck
+- `docs/analysis/developer-memory-pain-research.html` — 55-source developer-memory-pain research deck
+- `src/memory/extractor/prompts.ts` — current LOCOMO-aimed default prompt (removed in this pivot)
+- `src/memory/consolidator/index.ts` — current LLM-based consolidator (removed in this pivot)
+- PR #94 — `fix/gemma4-extraction-diagnostic`, merged
+- PR #95 — architecture docs (claude-mem comparison, developer-memory-pain research), merged
 
 ### External
-- claude-mem repo: <https://github.com/thedotmack/claude-mem>
+- claude-mem: <https://github.com/thedotmack/claude-mem>
+- mem0: <https://github.com/mem0ai/mem0>
+- Letta / MemGPT: <https://github.com/letta-ai/letta>
+- Graphiti: <https://github.com/getzep/graphiti>
+- LangChain: <https://github.com/langchain-ai/langchain>
+- LlamaIndex: <https://github.com/run-llama/llama_index>
+- Jina late-chunking: <https://github.com/jina-ai/late-chunking>
 - Anthropic Claude Code hooks reference: <https://docs.claude.com/en/docs/claude-code/hooks>
-- LOCOMO benchmark paper (the eval we currently run)
-- Letta / MemGPT memory model (alternative agent-authored approach)
+- Cursor Rules / Memories docs: <https://cursor.com/docs>
+- Cline Memory Bank docs: <https://docs.cline.bot/prompting/cline-memory-bank>
+- Continue.dev Rules docs: <https://docs.continue.dev/customize/deep-dives/rules>
+- Aider conventions docs: <https://aider.chat/docs/usage/conventions.html>
+- LOCOMO benchmark paper (regression eval)
+- llms.txt proposal (analogy source)
+
+### Research outputs (this spec)
+- Session-start injection survey — Cursor / Cline / Continue / Aider / Claude Code / Copilot Spaces / Cody, 36 primary sources
+- Conversation-memory chunking patterns — mem0 / claude-mem / Letta / Graphiti / LangChain / LlamaIndex / Jina, source-grounded against commit SHAs
 
 ### Prior pristine specs
 - `docs/specs/implementation-spec-001.md`
 - `docs/specs/implementation-spec-003.md`
 - `docs/specs/implementation-spec-004.md`
+
+---
+
+## 11. External integrations
+
+**N/A.** Pristine is local-first. The SDK makes no network calls, requires no API keys, and depends on no third-party services at runtime. Embedder models are loaded locally via `@huggingface/transformers`. LLM clients (used only by reference implementations) are consumer-provided — the consumer decides which LLM, if any, their reference composition calls.
+
+The `benchmarks/memorybench/` harness may reach out to local Ollama or hosted LLM APIs for evaluation purposes, but that is an eval-harness concern, not an SDK runtime dependency.
+
+---
+
+## 12. Data model
+
+Concrete schema for the SQLite store. Public views (exposed via `searcher.sql`) are the stable consumer contract; underlying tables are free to evolve.
+
+### conversations
+
+```
+id          TEXT PRIMARY KEY     -- UUID
+project_id  TEXT NOT NULL
+started_at  INTEGER NOT NULL     -- unix ms
+metadata    TEXT                 -- JSON, opaque to the SDK
+```
+
+### messages
+
+```
+id                TEXT PRIMARY KEY
+conversation_id   TEXT NOT NULL REFERENCES conversations(id)
+turn_index        INTEGER NOT NULL       -- ordinal within conversation
+role              TEXT NOT NULL          -- 'user' | 'assistant' | 'system' | 'tool'
+content           TEXT NOT NULL
+timestamp         INTEGER NOT NULL
+parent_message_id TEXT                   -- set when a chunk of an oversize parent; NULL otherwise
+metadata          TEXT                   -- JSON, opaque
+```
+
+### summaries
+
+```
+id          TEXT PRIMARY KEY
+session_id  TEXT NOT NULL    -- harness-provided identifier
+project_id  TEXT NOT NULL
+text        TEXT NOT NULL    -- opaque content (format is the reference impl's choice)
+timestamp   INTEGER NOT NULL
+metadata    TEXT             -- JSON, opaque
+```
+
+### vec_messages (sqlite-vec virtual table)
+
+```
+message_id TEXT PRIMARY KEY    -- matches messages.id
+embedding  BLOB                -- 768-d Nomic Embed v1.5
+```
+
+### messages_fts (FTS5 virtual table)
+
+```
+message_id UNINDEXED
+content    TEXT    -- tokenized via porter stemmer
+```
+
+### Public views (stable surface for `searcher.sql`)
+
+- `messages_public (id, conversation_id, turn_index, role, content, timestamp, project_id)`
+- `conversations_public (id, project_id, started_at)`
+- `summaries_public (id, session_id, project_id, text, timestamp)`
+
+The `metadata` columns and the `parent_message_id` linkage are **not** exposed in the public views. Internal tables are free to evolve; views are the consumer contract.
+
+### Indexes
+
+- `conversations(project_id, started_at DESC)`
+- `messages(conversation_id, turn_index)`
+- `messages(timestamp DESC) WHERE parent_message_id IS NULL`
+- `summaries(project_id, timestamp DESC)`
+- `vec_messages` via sqlite-vec's vec0 KNN
+- `messages_fts` auto-rebuild on insert/update
+
+---
+
+## 13. Environment setup
+
+### Required env vars
+
+None for the core SDK.
+
+Optional (only if reference implementations or benchmarks use them):
+
+```bash
+# Reference summary-generator calling local Ollama
+OLLAMA_HOST=http://localhost:11434
+
+# Reference summary-generator calling a hosted LLM
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+
+# Embedder model-cache directory (default: ~/.pristine/models)
+PRISTINE_MODEL_CACHE=
+```
+
+### Local dev
+
+```bash
+git clone <repo>
+cd pristine
+npm install
+npm run build
+npm test
+```
+
+### Deployment
+
+N/A. Pristine ships as an npm package. Consumers install and run it locally in their own process — no daemon, no subprocess, no hosted service.
+
+### Harness integration
+
+Reference implementations (see §5.2 and `docs/examples/`) document how to wire Pristine into specific harnesses. Each example is self-contained and can be copied, forked, or ignored.
+
+---
+
+## 14. Success criteria
+
+Checklist derived from §8 Validation experiments plus architectural commitments.
+
+- [ ] Extractor + consolidator modules fully removed from SDK (no opt-in surface remains)
+- [ ] Core primitives implemented: `store`, `indexer`, `searcher` (vector / FTS / hybrid / SQL / expandHit), `embedder`
+- [ ] Public views (`messages_public`, `conversations_public`, `summaries_public`) stable and documented
+- [ ] Per-message chunking strategy validated against alternatives (§8.1) — Recall@10 ≥ baseline on dogfood corpus
+- [ ] Three reference implementations built from primitives alone, each ≤ 200 LOC (§8.2)
+- [ ] Oversize-message handling preserves full context via `parent_message_id` (§8.3)
+- [ ] Median Recall@10 on coding-session recall ≥ 0.7 (§8.4)
+- [ ] Agent answers ≥ 80% of handoff questions given top-5 expanded hits (§8.4)
+- [ ] LOCOMO regression: Hit@10 matches or exceeds post-PR #94 baseline of 100% (§8.5)
+- [ ] SQL privacy boundary validated against adversarial queries (§8.6)
+- [ ] Full test suite passing; strict TypeScript; ESM-only; no `any` uses
+- [ ] Single-file deploy — no daemon, no subprocess, no network at SDK runtime
+
+---
+
+## 15. User & data flows
+
+Five flows — three primitive, two reference. Deferred reference integrations (see §5.2) get their flows in a future spec.
+
+### Flow 1 — Ingestion (primitive)
+
+**Composes:** `indexer.ingest` → `store.addMessage` → `IngestQueue.enqueue` → detached `embed-worker.ts` → `embedder.embed` → `vec_messages` + `messages_fts`
+
+```
+Consumer calls: indexer.ingest(turns, { projectId, conversationId, sessionId })
+                    │
+                    ▼
+     [Fast path — <0.5s, caller unblocked]
+     Atomic transaction:
+       store.addConversation (if new)       ← reuses existing ConversationStore
+       store.addMessage × N                 ← extended with project_id, parent_message_id
+       IngestQueue.enqueue(message_id) × N  ← reuses existing queue
+                    │
+                    ▼
+     Caller returns
+                    │
+                    ▼
+     Detached embed-worker (rewrite of extract-worker.ts):
+       while queue not empty:
+         message = queue.claimNext()  ← self-healing stale-row reset
+         if len(message.content) > 3000 tok:
+           chunks = chunk(message, mode=content-aware)
+           for each chunk:
+             write chunk row with parent_message_id
+             embedder.embed(chunk.content)
+             insert into vec_messages + messages_fts
+         else:
+           embedder.embed(message.content)
+           insert into vec_messages + messages_fts
+         queue.complete(message_id)
+       exit on idle
+```
+
+**Design notes:**
+
+- **Crash safety** — message row persisted in the same transaction as the pending task; worker crash recovers via self-healing claim (existing behavior from spec-003 Phase 5).
+- **Idempotency** — content-hash dedup at the `vec_messages` level; re-embed of an identical message is a no-op.
+- **Latency** — <0.5s for the hook path; ~0.1s per message in the worker (Nomic CPU embedding).
+- **Reuse** — this flow adopts the shape of `createRawIngestPipeline()` proposed in spec-003 Phase 10 (deprioritized at the time), with oversize-message handling and explicit project scoping added.
+
+### Flow 2 — Retrieval (primitive)
+
+**Composes:** `searcher.hybridSearch` → filters → `vectorSearch` + `ftsSearch` → RRF → `expandHit`
+
+```
+Consumer calls: searcher.hybridSearch(query, filters, limit)
+                    │
+                    ▼
+   [Filters applied FIRST to build candidate set]
+   Build candidate SQL:
+     SELECT id FROM messages WHERE
+       project_id = filters.projectId
+       AND (timestamp BETWEEN ... if set)
+       AND (role IN (...) if set)
+       AND (conversation_id = ... if set)
+       AND parent_message_id IS NULL   ← only root messages by default
+                    │
+          ┌─────────┴──────────┐
+          ▼                    ▼
+   vectorSearch on           ftsSearch on
+   candidate set             candidate set
+   - embed(query)            - FTS5 MATCH
+   - sqlite-vec KNN          - BM25 rank
+   - returns top 2N          - returns top 2N
+          │                    │
+          └─────────┬──────────┘
+                    ▼
+         Reciprocal rank fusion (RRF)
+                    ▼
+            Hit[] ranked by fused score
+                    │
+                    ▼
+         (optional) expandHit(hit, ±N)
+         - fetch neighbors by (conversation_id, turn_index)
+         - return message + N prior + N subsequent
+                    │
+                    ▼
+         ExpandedHit[] returned to caller
+```
+
+**Key design — filter-first is deliberate:** sqlite-vec KNN over an unfiltered index can miss hits that fall outside the top-K globally but are top-K within a filter. For correctness, we pre-filter candidates, then KNN over them.
+
+**Latency:** ~100–200 ms for corpora up to ~100K messages. Query embedding ~50 ms; vector + FTS + RRF ≈ 100 ms.
+
+### Flow 3 — SQL query (primitive)
+
+**Composes:** `searcher.sql` → validate → read-only connection → public view → row cap + timeout
+
+```
+Consumer calls: searcher.sql(dsl | rawSql, params)
+                    │
+                    ▼
+       Validate access surface
+       - DSL mode: translate {view, where, orderBy, limit} → SQL
+       - rawSql mode: parse; reject if (a) non-SELECT, (b) references tables not in public-view allowlist
+                    │
+                    ▼
+       Open read-only connection (SQLITE_OPEN_READONLY)
+       Attach progress_handler (timeout, default 5s)
+       Wrap cursor with row cap (default 1000)
+                    │
+                    ▼
+       Execute; return Row[] (≤ row_cap)
+```
+
+**Safety envelope:**
+
+- **Read-only connection** → no DML possible even if the parser fails
+- **Public-view restriction** → cannot SELECT from internal tables (`messages`, `conversations`) or any privacy/vault surface
+- **Row cap + timeout** → DoS prevention (§8.6)
+- **Views hide internal columns** (`parent_message_id`, `metadata`) → consumer contract stable even when internals evolve
+
+**DSL example:**
+
+```typescript
+searcher.sql({
+  view: 'messages_public',
+  where: { project_id: 'pristine', role: 'assistant', timestamp: { gte: t } },
+  orderBy: { timestamp: 'desc' },
+  limit: 50,
+});
+```
+
+### Flow 4 — `search_memory` tool (reference implementation)
+
+**Composes Flow 2 for agent tool-calling.**
+
+```
+Agent emits tool_use: search_memory({
+  query: "why did we pick sqlite-vec",
+  projectId: "pristine",
+  limit: 10,
+})
+                    │
+                    ▼
+Harness dispatches to reference handler
+                    │
+                    ▼
+Handler calls: searcher.hybridSearch(query, { projectId, limit })
+                    │
+                    ▼
+For top-5 hits: searcher.expandHit(hit, windowSize=2)
+                    │
+                    ▼
+Format as text:
+   ---
+   [conv-abc123, turn 12, 2026-04-18T15:22Z, assistant]
+   "We picked sqlite-vec because single-file deploy matters
+    more than ChromaDB's query flexibility at this scale..."
+   (±2 neighbors shown for context)
+   ---
+                    │
+                    ▼
+Tool returns text to agent
+```
+
+**Reference impl size target:** ≤ 200 LOC. Composes only §5.1 primitives. Users can fork or replace entirely.
+
+### Flow 5 — `query_memory` tool (reference implementation)
+
+**Composes Flow 3 for agent tool-calling.**
+
+```
+Agent emits tool_use: query_memory({
+  view: "messages_public",
+  where: { role: "user", project_id: "pristine" },
+  orderBy: { timestamp: "desc" },
+  limit: 10,
+})
+                    │
+                    ▼
+Harness dispatches to reference handler
+                    │
+                    ▼
+Handler calls: searcher.sql(dsl, [])
+                    │
+                    ▼
+Format rows as JSON table or markdown
+                    │
+                    ▼
+Tool returns to agent
+```
+
+**Raw SQL variant:** same flow, DSL replaced with raw SQL string + params. Handler passes through after schema validation.
+
+**Reference impl size target:** ≤ 150 LOC.
+
+### Privacy integration point (pointer, not a flow)
+
+Spec-004's privacy module handles secret redaction and reveal via separate hooks (`PreToolUse`, `PostToolUse`). Pristine memory stores whatever content it receives — if a consumer wants secrets redacted before storage, they wire privacy hooks upstream of `indexer.ingest`. This is a composition concern for the deferred reference implementation that owns PostToolUse wiring. See spec-004 for the contract.
+
+---
+
+## 16. Phases
+
+Incremental delivery. Each phase is a shippable milestone. Phases deliberately factor in the preexisting SDK (`src/conversations/`, `src/embedder/`, `src/queue/`, `src/core/`, `src/privacy/`) — much of the storage, embedding, queue, and privacy infrastructure is preserved.
+
+### Phase 1: Remove extraction, consolidation, and legacy memory modules
+
+Clean slate — delete the LOCOMO-aimed subsystem. The SDK stops doing fact extraction. Every `src/memory/*` directory is either deleted entirely or partial-deleted with specific survivors called out for Phase 3/4 reuse.
+
+#### Modules
+
+- **Delete entirely:** `src/memory/extractor/`, `src/memory/consolidator/`, `src/memory/episodes/`, `src/memory/graph/`, `src/memory/temporal/`, `src/memory/query-analyzer/` — LOCOMO-aimed fact pipeline and legacy subsystems
+- **Delete entirely:** `src/memory/store/` — fact-ledger storage replaced by per-message vector table in the extended `ConversationStore` (Phase 2)
+- **Partial delete:** `src/memory/orchestrator/` — remove `pipeline.ts`, `retrieve.ts`, `ingest.ts`, `turn-order.ts`. **Preserve `chunker.ts`** (adapted in Phase 3 for oversize-message handling)
+- **Partial delete:** `src/memory/retriever/` — remove `index.ts` (fact-retrieval path). **Preserve `ranking.ts`** (RRF utilities reused in Phase 4)
+- **Delete:** corresponding `tests/memory/{extractor,consolidator,episodes,graph,temporal,query-analyzer,store}/` + tests for the removed orchestrator/retriever files
+- **Modify:** `src/core/interfaces.ts` — remove `Extractor`, `Consolidator`, `Store` (memory), fact-type interfaces
+- **Modify:** `src/core/types.ts` — remove `Fact`, `Episode`, `Entity`, `Relationship`, consolidation + temporal types
+- **Modify:** `src/index.ts` — drop extractor/consolidator/episodes exports
+- **Modify:** `src/client.ts` — drop extractor/consolidator wiring from `PristineLocal.create()`
+
+#### Stories
+
+- **P1-S1:** Delete extractor + consolidator modules and tests; update `src/core/interfaces.ts` and `src/index.ts`.
+- **P1-S2:** Delete legacy episodic/graph/temporal/query-analyzer modules and their tests; remove types from `src/core/types.ts`.
+- **P1-S3:** Delete `src/memory/store/` (fact-ledger) and tests; remove the memory-`Store` interface from `src/core/interfaces.ts` (distinct from `ConversationStore`, which is preserved).
+- **P1-S4:** Update `src/client.ts` — `PristineLocal.create()` no longer wires extractor/consolidator/memory-store. `createLite()` stays.
+- **P1-S5:** Partial-delete `src/memory/orchestrator/` — remove `pipeline.ts`, `retrieve.ts`, `ingest.ts`, `turn-order.ts` and their tests; preserve `chunker.ts` for Phase 3 reuse.
+- **P1-S6:** Partial-delete `src/memory/retriever/` — remove `index.ts` (fact-retrieval path) and its tests; preserve `ranking.ts` for Phase 4 reuse.
+
+#### Done when
+
+- [ ] `npm run typecheck` and `npm test` pass (removed tests no longer referenced)
+- [ ] No references to extractor/consolidator/episodes/graph/temporal/query-analyzer/memory-store in `src/`
+- [ ] `src/memory/orchestrator/` contains only `chunker.ts`; `src/memory/retriever/` contains only `ranking.ts`
+- [ ] `PristineLocal.create()` succeeds without any LLM client dependency
+
+---
+
+### Phase 2: Extend ConversationStore schema for corpus storage
+
+The existing `src/conversations/` module (Sprint 009) already has `conversations` + `messages` + `messages_fts` tables with FTS5 triggers. Extend it for per-message embedding, project scoping, summaries, and public views.
+
+#### Modules
+
+- **Reuse (verbatim, preserve):** Sprint 009 infrastructure — `conversations`, `messages`, `messages_fts` tables and FTS5 triggers in `src/conversations/store.ts` stay as shipped. This phase extends the schema additively; existing tables and triggers are not altered.
+- **Modify:** `src/conversations/store.ts` — extend DDL + methods
+- **Add:** public-view migrations
+- **Modify:** `src/core/database.ts` (if needed for additional virtual-table bootstrap)
+
+#### Stories
+
+- **P2-S1:** Add `project_id` column to `conversations` + `messages` (default-null migration; back-fill from `user_id` or new explicit scope key). Confirm `turn_index` is exposed (existing `sort_order` column may be renamed or aliased).
+- **P2-S2:** Add `parent_message_id` column to `messages` with index on `(parent_message_id)`.
+- **P2-S3:** Add `vec_messages` sqlite-vec virtual table (dim=768) keyed on `message_id`.
+- **P2-S4:** Add `summaries` table (id, session_id, project_id, text, timestamp, metadata) with index on `(project_id, timestamp DESC)`.
+- **P2-S5:** Add public views: `messages_public`, `conversations_public`, `summaries_public` — exclude `metadata` and `parent_message_id` columns.
+- **P2-S6:** Extend `ConversationStore` with `addMessage`, `addSummary`, `getRecentSummaries`. Existing `addConversation`, `getConversation`, `searchConversations` preserved.
+
+#### Done when
+
+- [ ] Migration applies cleanly on a Sprint-009-era database
+- [ ] All new columns + virtual tables created
+- [ ] Public views return only the documented columns (§12)
+- [ ] Existing Sprint-009 tests still pass — no regressions
+
+---
+
+### Phase 3: Indexer primitive — per-message embedding with oversize handling
+
+Turn raw turns into a populated corpus. Borrows the shape of spec-003 Phase 10's `createRawIngestPipeline()` — deprioritized at the time but now the default — with oversize handling and explicit project scoping added.
+
+#### Modules
+
+- **Add:** `src/memory/indexer/` (new primitive facade)
+- **Rewrite:** `scripts/extract-worker.ts` → `scripts/embed-worker.ts`
+- **Reuse (adapted):** `src/memory/orchestrator/chunker.ts` — preserved in Phase 1 (P1-S5), adapted here for oversize-message handling (Graphiti never-split-mid-message rule, 3000-token threshold, 200-token overlap)
+- **Reuse (verbatim):** `src/queue/ingest-queue.ts` — crash-recovery semantics from spec-003 unchanged; enqueue + self-healing claim as shipped
+- **Reuse (verbatim):** `src/embedder/` — Nomic v1.5 interface unchanged
+- **Reuse (design shape):** spec-003 Phase 10's `createRawIngestPipeline()` sketch — the per-message-embed-no-LLM shape is the starting point; oversize handling and explicit project scoping added
+
+#### Stories
+
+- **P3-S1:** Implement `indexer.ingest(turns, { projectId, conversationId, sessionId })` — atomic insert of messages + enqueue of embed tasks. Caller unblocked in <0.5s.
+- **P3-S2:** Adapt `chunker.ts` for oversize-message handling — detect >3000 tok, split at AST boundaries for code / paragraph for prose with 200-token overlap, write chunks with `parent_message_id`. Preserve never-split-mid-message invariant.
+- **P3-S3:** Rewrite `extract-worker.ts` → `embed-worker.ts`: claim pending task → embed via existing `Embedder` → insert into `vec_messages` + `messages_fts` → mark complete. Self-terminate on idle (existing behavior). Content-hash dedup on `vec_messages`.
+- **P3-S4:** Integration tests — end-to-end ingest → embed → retrieve round-trip on a small corpus, plus oversize-branch test with synthetic long messages.
+
+#### Done when
+
+- [ ] Raw turns flow to populated `messages` + `vec_messages` + `messages_fts`
+- [ ] Oversize messages split correctly with `parent_message_id` linkage preserved
+- [ ] Crash-recovery behavior verified (stale-row reset on claim)
+- [ ] No LLM calls in the ingest path
+
+---
+
+### Phase 4: Searcher primitive — filter-first retrieval
+
+Filter-first vector + FTS + hybrid + expansion. Repurposes `src/memory/retriever/` ranking logic where applicable.
+
+#### Modules
+
+- **Add:** `src/memory/searcher/` (new primitive)
+- **Reuse (verbatim):** `src/memory/retriever/ranking.ts` — RRF / scoring utilities preserved in Phase 1 (P1-S6) specifically for use here
+- **Reuse (verbatim):** `src/embedder/` — query-embedding path unchanged
+
+#### Stories
+
+- **P4-S1:** `searcher.vectorSearch(query, filters, limit)` — build candidate set via filter SQL, then sqlite-vec KNN over candidates. Explicit filter-first ordering.
+- **P4-S2:** `searcher.ftsSearch(query, filters, limit)` — FTS5 MATCH scoped to candidate set.
+- **P4-S3:** `searcher.hybridSearch(query, filters, limit)` — parallel vector + FTS, fuse via reciprocal rank fusion.
+- **P4-S4:** `searcher.expandHit(hit, windowSize)` — fetch ±N neighbors by `(conversation_id, turn_index)`, respect conversation boundaries.
+- **P4-S5:** Tests — filter correctness, hybrid ranking stability, expandHit boundary handling, cross-project isolation.
+
+#### Done when
+
+- [ ] All retrieval primitives functional
+- [ ] Filter-first ordering verified by test — vector KNN does not leak cross-project results
+- [ ] RRF scoring blends correctly
+- [ ] `expandHit` reconstructs context within conversation bounds
+
+---
+
+### Phase 5: SQL primitive — scoped read-only surface
+
+Read-only SQL over public views with row-cap + timeout.
+
+#### Modules
+
+- **Add:** `src/memory/searcher/sql.ts`
+- **Add:** DSL parser + SQL translator
+
+#### Stories
+
+- **P5-S1:** Open a read-only SQLite connection (`SQLITE_OPEN_READONLY`). Attach `progress_handler` for timeout; cursor wrapper for row cap.
+- **P5-S2:** Public-view allowlist — parse referenced tables from SQL; reject queries touching non-allowlisted tables (including all privacy/vault surfaces).
+- **P5-S3:** DSL surface — `{view, where, orderBy, limit, projection}` → parameterized SQL. Injection tests.
+- **P5-S4:** Adversarial privacy tests (matches §8.6) — attempt DML, internal-table access, vault access, DoS queries. All must be rejected or row-capped.
+
+#### Done when
+
+- [ ] SQL primitive safe + useful — DSL covers common queries, raw SQL works for escape cases
+- [ ] All adversarial tests pass
+- [ ] Privacy boundary validated
+
+---
+
+### Phase 6: Reference implementations — `search_memory` tool + `query_memory` tool
+
+Two reference implementations with "this is one way, you can write your own" framing.
+
+#### Modules
+
+- **Add:** `docs/examples/search-memory-tool/` (JSON schema, handler, README)
+- **Add:** `docs/examples/query-memory-tool/` (JSON schema, handler, README)
+
+#### Stories
+
+- **P6-S1:** `search_memory` tool — JSON schema compatible with Claude / Cursor tool-use; handler composes `searcher.hybridSearch` + `searcher.expandHit`; returns formatted text. ≤ 200 LOC.
+- **P6-S2:** `query_memory` tool — JSON schema supporting DSL and raw-SQL modes; handler wraps `searcher.sql`; returns JSON or markdown rows. ≤ 150 LOC.
+- **P6-S3:** READMEs for each example — installation, usage, customization, "this is one way" framing per §0.3. Cross-link from §5.2.
+
+#### Done when
+
+- [ ] Both tools ship as documented reference implementations
+- [ ] Each implementation ≤ target LOC
+- [ ] Documentation explicitly marks them as optional, forkable
+
+---
+
+### Phase 7: Validation + eval framework
+
+Lock in the primitive defaults via §8 experiments.
+
+#### Modules
+
+- **Extend:** `benchmarks/memorybench/`
+- **Add:** dogfood corpus fixtures
+
+#### Stories
+
+- **P7-S1:** Record ≥ 10 real Pristine dev sessions as reproducible fixtures covering dialogue + tool outputs + code.
+- **P7-S2:** Write ≥ 50 recall questions across semantic, keyword, decision, and handoff categories with ground-truth answers.
+- **P7-S3:** Chunking benchmark (§8.1) — implement per-message, user-message-batch, and sliding-window; measure Recall@10 on the corpus; lock in per-message unless beaten.
+- **P7-S4:** LOCOMO regression — re-run on the new corpus-based pipeline; Hit@10 ≥ post-PR #94 baseline of 100%.
+- **P7-S5:** Coding-session recall eval (§8.4) — median Recall@10 ≥ 0.7; handoff answer quality ≥ 80% on top-5 expanded hits.
+
+#### Done when
+
+- [ ] All §14 success criteria verifiable via automated tests or bench runs
+- [ ] Chunking default justified by benchmark data
+- [ ] Spec-005 can be marked "delivered"
+
+---
+
+*Created: 2026-04-22*

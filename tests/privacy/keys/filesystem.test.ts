@@ -119,7 +119,9 @@ describe('FileSystemKeyManager', () => {
   it('rejects unsafe user ids instead of encoding them into filenames', async () => {
     const { manager, keysDir } = createManager();
 
-    await expect(manager.getOrCreateKeyPair('../escape/../../user')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreateKeyPair('../escape/../../user')).rejects.toThrow(
+      KeyManagerError,
+    );
 
     const files = readdirSync(keysDir);
     expect(files).toHaveLength(0);

@@ -254,29 +254,45 @@ Raw conversation turns persisted with `(conversation_id, turn_index, role, conte
 #### 5.1.2 Indexing
 
 ```
-indexer.ingest(turns: Message[]): Promise<void>
+indexer.ingest(turns: Message[], ctx: { projectId, conversationId?, sessionId? }): Promise<void>
+indexer.buildSessionVector(conversationId: string): Promise<void>
 ```
 
-For each message:
-- Insert into `conversations` / `messages` table
-- Embed via `embedder.embed(message.content)` → insert into `sqlite-vec`
-- Add to FTS5 index
+**Primary index: sliding-window embeddings.** Configurable via `IndexerConfig`:
 
-**One vector per message.** Metadata preserves `(conversation_id, turn_index, role)` so retrieval can expand to neighbors. Chosen over sliding-window and user-message-batch alternatives because: (a) maximum granularity at embed time (merging at retrieval is always possible; splitting at retrieval is not), (b) no arbitrary window boundaries, (c) tool-call chains reconstructable via `(conversation_id, turn_index)`, (d) cheap at local scale. Validated in §8.1.
+```typescript
+interface IndexerConfig {
+  windowSize?: number;     // default: 3 turns
+  windowOverlap?: number;  // default: 1 turn
+  // constraint: 0 < windowOverlap < windowSize
+}
+```
 
-For oversize messages (>3000 tokens — rare, typically long tool outputs or code blocks), fall back to Graphiti's "never split mid-message" rule: embed whole if under the embedder's context window (Nomic v1.5 allows 8192), otherwise split at the largest natural boundary (AST for code, paragraph for prose) with 200-token overlap and a `parent_message_id` metadata link.
+Each window is `windowSize` consecutive messages with `windowOverlap` messages shared between adjacent windows. The embedded text is the role-prefixed concatenation (`"[user] …\n[assistant] …\n[user] …"`). One vector per window, keyed by `(conversation_id, window_index)`, stored in `vec_windows`. The `window_messages` join table records which message IDs each window contains.
+
+**Why sliding-window over per-message.** Short context-dependent turns (`"sure, that works"`, `"yes, do that"`) carry no standalone semantic signal — a per-message vector of three ack-words is nowhere near a query like `"why did we pick sqlite-vec"`. Sliding-window bakes the surrounding exchange into the vector, so the ack is retrievable via its context. Per-message and other alternatives remain benchmarked in §8.1.
+
+**Incremental updates.** As a conversation grows, the tail window fills up. Each addition triggers `INSERT OR REPLACE` on the current window row, keyed by `window_index`. At most one partial window exists at any time (the tail). Each window is re-embedded at most `windowSize - 1` times before it seals. Total embed cost for an N-message conversation is roughly `N` embeds — comparable to per-message, but with `~0.5×` storage.
+
+**Tail-slide-back rule.** If the last computed window would have fewer than `windowSize` messages (e.g., an 8-message conversation with stride 2 ends in a 2-message window), slide the final window's start index back to `max(previous_start, length - windowSize)`. This guarantees every window has exactly `windowSize` messages, except when the entire conversation is shorter than `windowSize` (in which case one window contains all of it).
+
+**Oversize messages.** If a single message exceeds 3000 tokens (rare — typically long tool outputs or code blocks), pre-chunk it before window assembly using Graphiti's "never split mid-message" rule: embed whole if it fits Nomic's 8192-token window; otherwise split at the largest natural boundary (AST for code, paragraph for prose) with 200-token overlap, linked via `parent_message_id` on the `messages` row.
+
+**Secondary index: session-level vector.** `indexer.buildSessionVector(conversationId)` concatenates every message in the conversation (role-prefixed), embeds the whole string, stores in `vec_sessions` keyed by `conversation_id`. Zero LLM, zero extraction. Consumers decide when to call it — typically after a session-close signal. Provides retrieval recall for multi-session and long-range-reference queries that the window-level index alone cannot catch. mcp-memory-service reports +5.6 R@5 and +15 multi-session on LongMemEval from adding this layer alongside turn-level embeddings, at zero LLM cost.
 
 #### 5.1.3 Retrieval
 
 ```
 searcher.vectorSearch(query, filters, limit): Hit[]
 searcher.ftsSearch(query, filters, limit): Hit[]
-searcher.hybridSearch(query, filters, limit): Hit[]     // reciprocal rank fusion
+searcher.hybridSearch(query, filters, limit): Hit[]     // reciprocal rank fusion over
+                                                         //   vec_windows + vec_sessions + FTS5
 searcher.sql(queryDsl | rawSql, params): Row[]          // read-only, scoped view
-searcher.expandHit(hit, windowSize): ExpandedHit         // ±N neighbors
 ```
 
-`Filters` support project, timestamp range, conversation id, role. `expandHit` takes a per-message hit and returns message + ±N neighbors for context reconstruction.
+`Filters` support project, timestamp range, conversation id, role. A window hit returns the window's `conversation_id` and constituent `message_ids`; callers resolve to full message content via `searcher.sql` against `messages_public`. A session hit returns the whole conversation via the same path.
+
+Neighbor expansion (`"give me the N turns before and after this hit"`) is not a primitive — it's a ~10-line consumer composition over `searcher.sql` with `WHERE conversation_id = ? AND turn_index BETWEEN ? AND ?`. See §5.2 reference implementations.
 
 `searcher.sql` accepts a scoped DSL (preferred) or raw SQL (escape hatch). Both run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public view** (`messages_public`, `conversations_public`, `summaries_public`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the view even when internal tables change.
 
@@ -295,11 +311,13 @@ Each reference lives in `docs/examples/` (or as a separately-versioned package).
 
 #### Candidate reference set (each may or may not ship)
 
-- **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + `expandHit`. Returns formatted text with timestamps and conversation refs.
+- **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + neighbor-expansion helper. Returns formatted text with timestamps and conversation refs.
+- **Neighbor-expansion helper (`expandHit`)** — ergonomic wrapper over `searcher.sql`: given a hit and a window size `N`, returns the hit's message plus the ±N surrounding turns within the same conversation. ~10 LOC. Opinions baked in (default `N`, conversation-boundary behavior, whether to respect `parent_message_id` for oversize-split messages) — hence reference-only. Often bundled into the `search_memory` tool.
 - **`SessionStart` hook for Claude Code** — script that on `startup` matcher calls `store.getRecentSummaries(projectId, 5)`, formats as markdown, emits via `hookSpecificOutput.additionalContext`. Timestamps every entry, ≤500 lines, fires on `startup` only (per research: re-injecting on `resume`/`compact` wastes tokens).
 - **SQL/DSL query tool** — tool wrapper over `searcher.sql`, scoped filter DSL as the default surface and raw-SQL as escape hatch.
 - **`MEMORY.md` maintainer** — script that writes timestamped session summaries to a project-scoped markdown file, with decay. Composes `store.getRecentSummaries` + filesystem write.
 - **Session-summary generator** — script that, on `Stop` hook, calls the host LLM with a condensation prompt, then stores via `store.addSummary`. Entirely prompt + format choice — LLM, prompt, and schema are all consumer opinions.
+- **Session-vector lifecycle wiring** — script that calls `indexer.buildSessionVector(conversationId)` on a session-close signal. Opinion: when to trigger (session end vs. first retrieval vs. nightly batch).
 - **PostToolUse ingestion script** — reframed `scripts/store.ts`.
 
 None are required for Pristine to function as an SDK. A consumer can build any of them from the primitives with a weekend of work.
@@ -353,7 +371,9 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
     ║  - fts          - chunk        - addMessage  ║
     ║  - hybrid       - embed        - addSummary  ║
     ║  - sql          - index        - getSummaries║
-    ║  - expandHit                   - query       ║
+    ║  (neighbor expansion is         - query       ║
+    ║   a reference helper, not                     ║
+    ║   a primitive)                                ║
     ║                                              ║
     ║  embedder.embed(text) → Vector (Nomic v1.5)  ║
     ╚══════════════════════════════════════════════╝
@@ -365,7 +385,9 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
              │  conversations             │
              │  messages                  │
              │  summaries                 │
-             │  vec_messages (sqlite-vec) │
+             │  vec_windows (sqlite-vec)  │
+             │  window_messages           │
+             │  vec_sessions (sqlite-vec) │
              │  messages_fts (FTS5)       │
              │  *_public views            │
              └────────────────────────────┘
@@ -391,7 +413,7 @@ pristine/
 │   ├── memory/
 │   │   ├── store/               # conversations, messages, summaries, views
 │   │   ├── indexer/             # per-message ingestion + oversize chunking
-│   │   └── searcher/            # vector/fts/hybrid/sql/expandHit
+│   │   └── searcher/            # vector/fts/hybrid/sql
 │   ├── embedder/                # Nomic default + swappable interface
 │   ├── engine/                  # llm clients (for reference impls only)
 │   ├── privacy/                 # unchanged (spec-004)
@@ -426,7 +448,7 @@ REMOVED IN THIS PIVOT:
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Primary retrieval strategy | Raw-corpus with vector + FTS + SQL | §0.2 — memory is search, not compression. Local storage + sub-ms retrieval removes the reason to pre-extract. |
-| Embedding unit | Per-message with retrieval-time ±N expansion | §5.1.2 — max granularity at write; merging at read is always possible, splitting is not. |
+| Embedding unit | Sliding-window (primary, `windowSize=3` / `windowOverlap=1` defaults, tunable via `IndexerConfig`) + session-level concatenation (secondary) | §5.1.2 — short context-dependent turns have no standalone signal; sliding-window bakes the exchange into the vector. Per-message retained as a benchmarked alternative in §8.1. |
 | Oversize message handling | Never split mid-message (Graphiti rule); 3000-token threshold; AST / paragraph fallback with 200-token overlap | §5.1.2 — tool outputs and code blocks must stay intact. |
 | Storage engine | SQLite via `better-sqlite3` + `sqlite-vec` + FTS5 | Single-file, no daemon, no subprocess. ChromaDB's operational complexity was our headline critique of claude-mem. |
 | Embedder | Nomic Embed v1.5 (768-d, 8192 window) | CPU-viable, no padding, no network, `@huggingface/transformers` integration exists. |
@@ -449,14 +471,14 @@ Triage from prior version: items resolved by this pivot, items still open, and i
 - ~~Per-tool-call observation layer~~ → no (claude-mem-style per-tool extraction is not added).
 - ~~Backwards compatibility with existing extracted data~~ → pre-1.0; clean break acceptable. Existing memories can be rebuilt by re-indexing raw conversations.
 - ~~Storage: `sqlite-vec` vs ChromaDB~~ → sqlite-vec. ChromaDB's daemon + subprocess complexity violates single-file local-first.
-- ~~Storage unit for embeddings~~ → per-message with retrieval-time expansion (§5.1.2).
+- ~~Storage unit for embeddings~~ → sliding-window (primary, `windowSize=3`, `windowOverlap=1` defaults) + session-level (secondary) per §5.1.2. Per-message remains benchmarked in §8.1.
 - ~~Session-start injection format~~ → harness concern; not a primitive.
 
 ### Still open
 
 1. **Project-scoping mechanism.** Git root via `git rev-parse --show-toplevel`? Workspace dir? Explicit `projectId` override only? Behavior for projects without a git root. Prototype required.
 
-2. **Retrieval-expansion window default.** What is the right default `N` for `expandHit`? Start with N=2 and tune on a dogfood corpus. The primitive operates on a single hit (callers loop over top-K), so this is a per-call default, not a per-batch policy.
+2. **Sliding-window parameter defaults.** Starting point: `windowSize=3`, `windowOverlap=1`. Alternatives to benchmark on dogfood corpus: `(4, 2)` for more context, `(2, 1)` for finer granularity, `(3, 2)` for heavier coverage. Both values exposed via `IndexerConfig` so consumers can retune without forking. §8.1 drives the locked-in default.
 
 3. **Chunking boundary for oversize messages.** "Never split mid-message" handles the common case. For code blocks, split at AST boundaries (tree-sitter)? For long JSON tool outputs, split at top-level object boundaries? Concrete fallback algorithm needed.
 
@@ -504,17 +526,21 @@ Prototypes to run before declaring primitives stable.
 
 Decision: per-message embedding with retrieval-time expansion. Validate by measuring retrieval quality on a real coding-session corpus against:
 
-- **A**: Per-message (proposed default)
-- **B**: User-message batch (LlamaIndex's deprecated-but-conversation-appropriate shape — one vector per user turn plus all subsequent tool/assistant replies until next user turn)
-- **C**: Sliding window (4 turns, 2-turn overlap)
+- **A**: Sliding window, `windowSize=3`, `windowOverlap=1` (proposed default)
+- **B**: Sliding window, `windowSize=4`, `windowOverlap=2` (heavier context)
+- **C**: Sliding window, `windowSize=2`, `windowOverlap=1` (finer granularity)
+- **D**: Per-message (one vector per turn, as in prior drafts)
+- **E**: User-message batch (LlamaIndex's deprecated-but-conversation-appropriate shape — one vector per user turn plus all subsequent tool/assistant replies until next user turn)
 
-Metric: Recall@10 on a benchmark of 50+ recall queries. Success: A matches or beats B and C. If B wins, revisit.
+All run with the session-level secondary index (`vec_sessions`) enabled. Also measure each with and without the session index to isolate its contribution.
+
+Metric: Recall@10 on a benchmark of 50+ recall queries spanning semantic, keyword, decision, and handoff categories. Success: **A** matches or beats **D** and **E**. If **B** wins, lock `windowSize=4` / `windowOverlap=2` as the default. If **D** wins, revisit the whole pivot.
 
 ### 8.2 Primitive composability
 
 Build three reference implementations from only the primitives in §5.1. Confirm no consumer-only extension to the primitive surface is needed.
 
-- Reference 1: `search_memory` tool → composes `hybridSearch` + `expandHit`
+- Reference 1: `search_memory` tool → composes `hybridSearch` + neighbor-expansion helper (over `searcher.sql`)
 - Reference 2: `SessionStart` hook for Claude Code → composes `getRecentSummaries` + output formatting
 - Reference 3: `MEMORY.md` maintainer → composes `getRecentSummaries` + filesystem write + decay
 
@@ -525,7 +551,7 @@ Success: each reference is ≤200 LOC and requires no changes to the primitive s
 Ingest a real Pristine development session (contains long tool outputs, code blocks, JSON). Confirm:
 - No message silently truncated
 - Oversize messages split at chosen boundary without losing context
-- Retrieval over split messages reconstructs full context via `expandHit` + `parent_message_id`
+- Retrieval over split messages reconstructs full context via `parent_message_id` join and the reference neighbor-expansion helper
 
 ### 8.4 Retrieval quality on coding-session recall
 
@@ -636,14 +662,40 @@ timestamp   INTEGER NOT NULL
 metadata    TEXT             -- JSON, opaque
 ```
 
-### vec_messages (sqlite-vec virtual table)
+### vec_windows (sqlite-vec virtual table) — primary semantic index
 
 ```
-message_id TEXT PRIMARY KEY    -- matches messages.id
-embedding  BLOB                -- 768-d Nomic Embed v1.5
+conversation_id TEXT NOT NULL
+window_index    INTEGER NOT NULL     -- 0, 1, 2, … within conversation
+embedding       BLOB                 -- 768-d Nomic Embed v1.5 of role-prefixed concatenation
+PRIMARY KEY (conversation_id, window_index)
 ```
 
-### messages_fts (FTS5 virtual table)
+One row per sliding-window of messages. `INSERT OR REPLACE` on each update (windows re-embed during fill-up until `windowSize` is reached — see §5.1.2 incremental-updates note). Window parameters (`windowSize`, `windowOverlap`) come from `IndexerConfig`; defaults 3 / 1.
+
+### window_messages (join table)
+
+```
+conversation_id TEXT NOT NULL
+window_index    INTEGER NOT NULL
+message_id      TEXT NOT NULL REFERENCES messages(id)
+position        INTEGER NOT NULL     -- 0..windowSize-1 within the window
+PRIMARY KEY (conversation_id, window_index, message_id)
+```
+
+Records which message IDs are in each window. Enables retrieval callers to resolve a window hit → constituent messages.
+
+### vec_sessions (sqlite-vec virtual table) — secondary whole-conversation index
+
+```
+conversation_id TEXT PRIMARY KEY
+embedding       BLOB                 -- 768-d Nomic Embed v1.5 of full-conversation role-prefixed concatenation
+updated_at      INTEGER NOT NULL
+```
+
+Zero-LLM, produced by `indexer.buildSessionVector(conversationId)`. Catches multi-session / long-range-reference queries that the window index alone misses.
+
+### messages_fts (FTS5 virtual table) — keyword index at turn granularity
 
 ```
 message_id UNINDEXED
@@ -664,7 +716,7 @@ The `metadata` columns and the `parent_message_id` linkage are **not** exposed i
 - `messages(conversation_id, turn_index)`
 - `messages(timestamp DESC) WHERE parent_message_id IS NULL`
 - `summaries(project_id, timestamp DESC)`
-- `vec_messages` via sqlite-vec's vec0 KNN
+- `vec_windows` and `vec_sessions` via sqlite-vec's vec0 KNN
 - `messages_fts` auto-rebuild on insert/update
 
 ---
@@ -714,9 +766,10 @@ Reference implementations (see §5.2 and `docs/examples/`) document how to wire 
 Checklist derived from §8 Validation experiments plus architectural commitments.
 
 - [ ] Extractor + consolidator modules fully removed from SDK (no opt-in surface remains)
-- [ ] Core primitives implemented: `store`, `indexer`, `searcher` (vector / FTS / hybrid / SQL / expandHit), `embedder`
+- [ ] Core primitives implemented: `store`, `indexer` (ingest + buildSessionVector), `searcher` (vector / FTS / hybrid / SQL), `embedder`
 - [ ] Public views (`messages_public`, `conversations_public`, `summaries_public`) stable and documented
-- [ ] Per-message chunking strategy validated against alternatives (§8.1) — Recall@10 ≥ baseline on dogfood corpus
+- [ ] Sliding-window defaults (`windowSize=3`, `windowOverlap=1`) validated against alternatives (§8.1, incl. per-message, user-cycle, `(4,2)`) — Recall@10 ≥ baseline on dogfood corpus
+- [ ] Session-level vector index (`vec_sessions`) improves multi-session Recall@10 over window-only baseline
 - [ ] Three reference implementations built from primitives alone, each ≤ 200 LOC (§8.2)
 - [ ] Oversize-message handling preserves full context via `parent_message_id` (§8.3)
 - [ ] Median Recall@10 on coding-session recall ≥ 0.7 (§8.4)
@@ -734,7 +787,7 @@ Five flows — three primitive, two reference. Deferred reference integrations (
 
 ### Flow 1 — Ingestion (primitive)
 
-**Composes:** `indexer.ingest` → `store.addMessage` → `IngestQueue.enqueue` → detached `embed-worker.ts` → `embedder.embed` → `vec_messages` + `messages_fts`
+**Composes:** `indexer.ingest` → `store.addMessage` → `IngestQueue.enqueue` → detached `embed-worker.ts` → `embedder.embed` → `vec_windows` (tail window assembled / re-embedded on each growth) + `messages_fts` per turn
 
 ```
 Consumer calls: indexer.ingest(turns, { projectId, conversationId, sessionId })
@@ -757,11 +810,15 @@ Consumer calls: indexer.ingest(turns, { projectId, conversationId, sessionId })
            chunks = chunk(message, mode=content-aware)
            for each chunk:
              write chunk row with parent_message_id
-             embedder.embed(chunk.content)
-             insert into vec_messages + messages_fts
+             insert into messages_fts
+             (chunks participate as individual messages in window assembly)
          else:
-           embedder.embed(message.content)
-           insert into vec_messages + messages_fts
+           insert into messages_fts
+         # Assemble/update tail window(s) that contain this message:
+         for each window covering this message's turn_index:
+           window_text = concat(role-prefixed messages in window)
+           embedder.embed(window_text)
+           INSERT OR REPLACE into vec_windows + window_messages
          queue.complete(message_id)
        exit on idle
 ```
@@ -769,13 +826,13 @@ Consumer calls: indexer.ingest(turns, { projectId, conversationId, sessionId })
 **Design notes:**
 
 - **Crash safety** — message row persisted in the same transaction as the pending task; worker crash recovers via self-healing claim (existing behavior from spec-003 Phase 5).
-- **Idempotency** — content-hash dedup at the `vec_messages` level; re-embed of an identical message is a no-op.
+- **Idempotency** — windows re-embed on each fill-up step via `INSERT OR REPLACE` keyed by `(conversation_id, window_index)`. Content-hash dedup applies at the message level to prevent duplicate ingestion from replays.
 - **Latency** — <0.5s for the hook path; ~0.1s per message in the worker (Nomic CPU embedding).
 - **Reuse** — this flow adopts the shape of `createRawIngestPipeline()` proposed in spec-003 Phase 10 (deprioritized at the time), with oversize-message handling and explicit project scoping added.
 
 ### Flow 2 — Retrieval (primitive)
 
-**Composes:** `searcher.hybridSearch` → filters → `vectorSearch` + `ftsSearch` → RRF → `expandHit`
+**Composes:** `searcher.hybridSearch` → filters → `vectorSearch` (over `vec_windows` and `vec_sessions`) + `ftsSearch` (over `messages_fts`) → RRF → (optional) reference neighbor-expansion helper
 
 ```
 Consumer calls: searcher.hybridSearch(query, filters, limit)
@@ -805,9 +862,12 @@ Consumer calls: searcher.hybridSearch(query, filters, limit)
             Hit[] ranked by fused score
                     │
                     ▼
-         (optional) expandHit(hit, ±N)
-         - fetch neighbors by (conversation_id, turn_index)
-         - return message + N prior + N subsequent
+         (optional, reference-impl only)
+         neighborExpand(hit, ±N)
+         - wraps searcher.sql:
+             WHERE conversation_id = hit.conversation_id
+               AND turn_index BETWEEN (anchor - N) AND (anchor + N)
+         - returns message + N prior + N subsequent
                     │
                     ▼
          ExpandedHit[] returned to caller
@@ -874,7 +934,7 @@ Harness dispatches to reference handler
 Handler calls: searcher.hybridSearch(query, { projectId, limit })
                     │
                     ▼
-For top-5 hits: searcher.expandHit(hit, windowSize=2)
+For top-5 hits: neighborExpand(hit, windowSize=2)  // reference helper over searcher.sql
                     │
                     ▼
 Format as text:
@@ -979,7 +1039,7 @@ The existing `src/conversations/` module (Sprint 009) already has `conversations
 
 - **P2-S1:** Add `project_id` column to `conversations` + `messages` (default-null migration; back-fill from `user_id` or new explicit scope key). Confirm `turn_index` is exposed (existing `sort_order` column may be renamed or aliased).
 - **P2-S2:** Add `parent_message_id` column to `messages` with index on `(parent_message_id)`.
-- **P2-S3:** Add `vec_messages` sqlite-vec virtual table (dim=768) keyed on `message_id`.
+- **P2-S3:** Add `vec_windows` (sqlite-vec virtual table, dim=768, keyed on `(conversation_id, window_index)`), `window_messages` (join table), and `vec_sessions` (sqlite-vec virtual table, dim=768, keyed on `conversation_id`).
 - **P2-S4:** Add `summaries` table (id, session_id, project_id, text, timestamp, metadata) with index on `(project_id, timestamp DESC)`.
 - **P2-S5:** Add public views: `messages_public`, `conversations_public`, `summaries_public` — exclude `metadata` and `parent_message_id` columns.
 - **P2-S6:** Extend `ConversationStore` with `addMessage`, `addSummary`, `getRecentSummaries`. Existing `addConversation`, `getConversation`, `searchConversations` preserved.
@@ -1008,14 +1068,17 @@ Turn raw turns into a populated corpus. Borrows the shape of spec-003 Phase 10's
 
 #### Stories
 
-- **P3-S1:** Implement `indexer.ingest(turns, { projectId, conversationId, sessionId })` — atomic insert of messages + enqueue of embed tasks. Caller unblocked in <0.5s.
-- **P3-S2:** Adapt `chunker.ts` for oversize-message handling — detect >3000 tok, split at AST boundaries for code / paragraph for prose with 200-token overlap, write chunks with `parent_message_id`. Preserve never-split-mid-message invariant.
-- **P3-S3:** Rewrite `extract-worker.ts` → `embed-worker.ts`: claim pending task → embed via existing `Embedder` → insert into `vec_messages` + `messages_fts` → mark complete. Self-terminate on idle (existing behavior). Content-hash dedup on `vec_messages`.
+- **P3-S1:** Implement `indexer.ingest(turns, { projectId, conversationId, sessionId })` — atomic insert of messages + enqueue of window-embed tasks. Caller unblocked in <0.5s. Expose `IndexerConfig` with `windowSize` (default 3) and `windowOverlap` (default 1); validate `0 < overlap < windowSize`.
+- **P3-S2:** Sliding-window assembly logic — for a conversation of length N, compute window start indices with stride `windowSize - windowOverlap`; apply tail-slide-back so the final window always has `windowSize` messages (unless conversation is shorter). Update logic: `INSERT OR REPLACE` into `vec_windows` + `window_messages` as each window fills during streaming ingest.
+- **P3-S3:** Adapt `chunker.ts` for oversize-message handling — detect >3000 tok, split at AST boundaries for code / paragraph for prose with 200-token overlap, write chunks with `parent_message_id`. Preserve never-split-mid-message invariant. Oversize-chunks count as individual messages for window assembly.
+- **P3-S4:** Implement `indexer.buildSessionVector(conversationId)` — concatenate all messages (role-prefixed), embed, `INSERT OR REPLACE` into `vec_sessions`. No LLM call, pure mechanical.
+- **P3-S5:** Rewrite `extract-worker.ts` → `embed-worker.ts`: claim pending task → insert message into `messages_fts` → assemble/update containing tail window(s) via `INSERT OR REPLACE` into `vec_windows` + `window_messages` → mark complete. Self-terminate on idle (existing behavior). Content-hash dedup at the message level.
 - **P3-S4:** Integration tests — end-to-end ingest → embed → retrieve round-trip on a small corpus, plus oversize-branch test with synthetic long messages.
 
 #### Done when
 
-- [ ] Raw turns flow to populated `messages` + `vec_messages` + `messages_fts`
+- [ ] Raw turns flow to populated `messages` + `vec_windows` + `window_messages` + `messages_fts`
+- [ ] `indexer.buildSessionVector` populates `vec_sessions`
 - [ ] Oversize messages split correctly with `parent_message_id` linkage preserved
 - [ ] Crash-recovery behavior verified (stale-row reset on claim)
 - [ ] No LLM calls in the ingest path
@@ -1037,15 +1100,16 @@ Filter-first vector + FTS + hybrid + expansion. Repurposes `src/memory/retriever
 - **P4-S1:** `searcher.vectorSearch(query, filters, limit)` — build candidate set via filter SQL, then sqlite-vec KNN over candidates. Explicit filter-first ordering.
 - **P4-S2:** `searcher.ftsSearch(query, filters, limit)` — FTS5 MATCH scoped to candidate set.
 - **P4-S3:** `searcher.hybridSearch(query, filters, limit)` — parallel vector + FTS, fuse via reciprocal rank fusion.
-- **P4-S4:** `searcher.expandHit(hit, windowSize)` — fetch ±N neighbors by `(conversation_id, turn_index)`, respect conversation boundaries.
-- **P4-S5:** Tests — filter correctness, hybrid ranking stability, expandHit boundary handling, cross-project isolation.
+- **P4-S4:** `searcher.hybridSearch` fan-out — vector search runs against both `vec_windows` and `vec_sessions`; FTS5 runs against `messages_fts`; RRF fuses. Window hits resolve to constituent `message_ids` via `window_messages`. Session hits return the whole `conversation_id`.
+- **P4-S5:** Tests — filter correctness, hybrid ranking stability, window-to-messages resolution, session-level match behavior, cross-project isolation.
 
 #### Done when
 
 - [ ] All retrieval primitives functional
 - [ ] Filter-first ordering verified by test — vector KNN does not leak cross-project results
 - [ ] RRF scoring blends correctly
-- [ ] `expandHit` reconstructs context within conversation bounds
+- [ ] Window hits resolve to constituent messages correctly (via `window_messages` join)
+- [ ] Session-level hits return whole-conversation context correctly
 
 ---
 
@@ -1084,7 +1148,7 @@ Two reference implementations with "this is one way, you can write your own" fra
 
 #### Stories
 
-- **P6-S1:** `search_memory` tool — JSON schema compatible with Claude / Cursor tool-use; handler composes `searcher.hybridSearch` + `searcher.expandHit`; returns formatted text. ≤ 200 LOC.
+- **P6-S1:** `search_memory` tool — JSON schema compatible with Claude / Cursor tool-use; handler composes `searcher.hybridSearch` + a `~10 LOC` neighbor-expansion helper (via `searcher.sql`) to surface ±N surrounding turns. Returns formatted text. ≤ 200 LOC total.
 - **P6-S2:** `query_memory` tool — JSON schema supporting DSL and raw-SQL modes; handler wraps `searcher.sql`; returns JSON or markdown rows. ≤ 150 LOC.
 - **P6-S3:** READMEs for each example — installation, usage, customization, "this is one way" framing per §0.3. Cross-link from §5.2.
 
@@ -1109,7 +1173,7 @@ Lock in the primitive defaults via §8 experiments.
 
 - **P7-S1:** Record ≥ 10 real Pristine dev sessions as reproducible fixtures covering dialogue + tool outputs + code.
 - **P7-S2:** Write ≥ 50 recall questions across semantic, keyword, decision, and handoff categories with ground-truth answers.
-- **P7-S3:** Chunking benchmark (§8.1) — implement per-message, user-message-batch, and sliding-window; measure Recall@10 on the corpus; lock in per-message unless beaten.
+- **P7-S3:** Chunking benchmark (§8.1) — implement sliding-window at `(3,1)`, `(4,2)`, `(2,1)`, plus per-message and user-message-batch baselines; measure Recall@10 on the corpus with and without the session-level index; lock in the winning `(windowSize, windowOverlap)` pair as the `IndexerConfig` default.
 - **P7-S4:** LOCOMO regression — re-run on the new corpus-based pipeline; Hit@10 ≥ post-PR #94 baseline of 100%.
 - **P7-S5:** Coding-session recall eval (§8.4) — median Recall@10 ≥ 0.7; handoff answer quality ≥ 80% on top-5 expanded hits.
 

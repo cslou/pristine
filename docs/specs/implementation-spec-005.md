@@ -492,6 +492,25 @@ Triage from prior version: items resolved by this pivot, items still open, and i
 
 8. **Read-path caching.** Hot vector searches within a session can be cached. Primitive concern or reference concern? Default: reference — caches are opinionated.
 
+9. **Entity-retrieval path (future work).** Frontier conversation-memory systems (REM Labs 90%, Memento 92%, Memoria ~89% on LongMemEval) include a third parallel retrieval path alongside vector and FTS: an **entity index** that catches identifier-flavored queries (file paths, function names, CAPS_CASE constants, SHAs, error codes, package names, PR refs, URLs). For coding-agent corpora these queries are a large share of recall traffic, and both vector search (Nomic wasn't heavily trained on code-style identifiers) and FTS5 (default tokenizer splits `DEFAULT_BATCH_MAX_TOKENS` into four words, creating noise) handle them imperfectly. Evidence suggests adding an entity path is the single largest remaining gap between our current design and SOTA on conversation-memory benchmarks.
+
+    Proposed zero-LLM starting shape:
+
+    - At ingestion, regex-extract entities per message — file paths, URLs, SHAs, `SCREAMING_SNAKE_CASE` constants, backtick-quoted identifiers, `#NNN` PR/issue refs, function-call-shaped tokens, npm package names, shell flags, error codes.
+    - New tables: `entities (id, text, normalized_form)`, `message_entities (message_id, entity_id)`.
+    - New primitive: `searcher.entitySearch(entity: string, filters, limit): Hit[]`.
+    - Extend `hybridSearch` to fuse vector + FTS + entity via RRF.
+    - Extend `Filters` with `mentions: string[]` so any retrieval call can narrow to turns mentioning specific entities.
+
+    Future directions to research before implementing:
+
+    - **Is regex enough?** Frontier systems (Memento) use tiered entity resolution — exact → fuzzy → phonetic → embedding-based → LLM tie-break. Regex approximates the exact-match tier only. Worth benchmarking regex-only vs. tiered (with a small NER model or opt-in LLM extraction) on a dogfood corpus before committing.
+    - **Which entity patterns to ship?** The pattern list needs empirical tuning — which patterns catch real recall-relevant entities without flooding the index with false positives in coding-agent prose.
+    - **Does it still matter once §8.1 chunking benchmark is in?** Sliding-window already improves context preservation; the marginal lift from entity path on top of sliding-window should be measured, not assumed.
+    - **Cross-harness generality.** Coding-agent corpora have dense identifier traffic; general-purpose conversations do not. If Pristine stays developer-focused, entity path is high-value. If scope broadens, the case weakens.
+
+    Not in scope for v1 primitives. Revisit after §8.1 benchmark results + real dogfood usage.
+
 ---
 
 ## 7. Goals and non-goals

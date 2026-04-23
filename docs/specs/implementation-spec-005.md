@@ -1204,4 +1204,56 @@ Lock in the primitive defaults via §8 experiments.
 
 ---
 
+## 17. Future work — deferred beyond v1
+
+Items explicitly not in scope for the §16 phases. Each is documented here for traceability so future planning can pick them up with full context. None are commitments. Revisit after §8 validation, real dogfood usage, or specific user demand.
+
+### Reference implementations deferred
+
+The v1 sprint ships two reference implementations (`search_memory` + `query_memory`, Phase 6). Every other reference surface listed in §5.2 is deferred:
+
+| Item | Source | Notes |
+|---|---|---|
+| `SessionStart` hook for Claude Code | §5.2 | Harness-specific; depends on session-summary generator existing first. |
+| `MEMORY.md` maintainer | §5.2 | Filesystem surface, decay policy, scope resolution (git root vs. workspace) all require decisions. |
+| Session-summary generator (`Stop` hook) | §5.2 | LLM call, prompt, and format are all consumer opinions. |
+| Session-vector lifecycle wiring | §5.2 | When to call `indexer.buildSessionVector` — opinion. |
+| `PostToolUse` ingestion script | §5.2 | Claude Code-specific event → `indexer.ingest` wiring. |
+| Standalone neighbor-expansion helper (`expandHit`) | §5.2 | Often bundled into `search_memory` in v1; a standalone example could ship later. |
+| Cursor integration | §5.2 | Requires research into Cursor's Rules / Memories API; may not be hook-shaped. |
+| Cline integration | §5.2 | Requires mapping Pristine schema to Cline's Memory Bank six-file structure. |
+| Continue.dev integration | §5.2 | Lower priority; smaller user base than Claude Code / Cursor. |
+| Generic CLI adapter | §5.2 | Catch-all for non-hook-based harnesses. |
+
+### Primitive / architectural additions flagged for research
+
+| Item | Source | Notes |
+|---|---|---|
+| Entity-retrieval path (`entitySearch` + `entities` + `message_entities` tables + hybrid fusion) | §6.9 | Biggest single delta between our design and SOTA on LongMemEval (REM Labs 90%, Memento 92%). Regex-based zero-LLM starting shape documented in §6.9. |
+| Richer entity extraction (NER model or Memento-style tiered resolution) | §6.9 | Upgrade path if regex-only proves insufficient after benchmark. |
+| Contextual embeddings at ingestion (Anthropic-cookbook style LLM-generated per-turn context prefix) | §6 — considered, ruled out | 35-49% retrieval-failure reduction on documents. Violates the no-LLM-at-ingestion hard constraint. Revisit only if that constraint softens. |
+| Query-side enhancements (query expansion, HyDE, multi-query fan-out) | not in current spec | Generally reference-impl territory — the host agent can do most of this. Flag if a primitive becomes necessary. |
+| Conversation-tuned reranker | not in current spec | Mixed evidence — web-trained rerankers (BGE-reranker-v2-m3) **hurt** conversation recall per Ogham MCP research. Would require a conversation-specific reranker, which adds a model dependency. |
+| Parent-document / hierarchical retrieval beyond window + session | §5.1.2 | LangChain-style small-chunk hits → parent-chunk retrieval. Our window + session already gives a two-level hierarchy; further levels (turn / window / session / project) could be measured. |
+
+### Evaluation / benchmarking expansions
+
+| Item | Source | Notes |
+|---|---|---|
+| LongMemEval as regression eval | §6.6, §8 | Adopt the Wu et al. ICLR 2025 benchmark after the dogfood corpus benchmark (§8.4) is stable. Publish our numbers. |
+| Dogfood corpus expansion beyond ≥10 sessions | §8.4 | Scale as Pristine is dogfooded more widely; baseline established in v1. |
+| Public eval publication | not in current spec | Once §8 results stabilize, publish methodology + numbers to close the "zero memory-recall benchmarks" critique of claude-mem (§3.3). |
+
+### Architecture decisions to lock in during v1 (not deferred — listed for completeness)
+
+These are in §6 "Still open" and are expected to be resolved during the v1 implementation, not after:
+
+- §6.1 Project-scoping mechanism (git root vs. workspace dir vs. explicit)
+- §6.2 Sliding-window parameter defaults — resolved by §8.1
+- §6.4 Hybrid-search RRF weight tuning — resolved by §8 experiments
+- §6.7 Embedder choice (Nomic v1.5 vs. smaller default) — measured on coding corpus during §8
+
+---
+
 *Created: 2026-04-22*
+*Future-work table added: 2026-04-24*

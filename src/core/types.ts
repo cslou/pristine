@@ -236,35 +236,6 @@ export interface ZkV2EncryptedVaultEntryInput {
 export type VaultEntryInput = ZkV2EncryptedVaultEntryInput;
 
 // ---------------------------------------------------------------------------
-// Retriever & Search
-// ---------------------------------------------------------------------------
-
-export interface RankedMemory {
-  readonly memory: Memory;
-  readonly score: number;
-}
-
-export interface RetrieveOptions {
-  readonly topK?: number;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
-
-export interface SearchOptions {
-  readonly topK?: number;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
-
-export interface RetrieveResult {
-  readonly memories: RankedMemory[];
-  readonly metadata: {
-    readonly totalFound: number;
-    readonly topK: number;
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Orchestrator & Pipeline
 // ---------------------------------------------------------------------------
 

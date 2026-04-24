@@ -3,15 +3,11 @@ import type Database from 'better-sqlite3';
 import type {
   ConversationDetail,
   ConversationSearchResult,
-  IngestResult,
   Message,
-  RetrieveResult,
   RevealResult,
-  SearchOptions,
   SecureAndRedactResult,
 } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
-import { IngestQueueError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
@@ -148,7 +144,6 @@ export class PristineLocal {
    * Lightweight client with only DB, ConversationStore, and IngestQueue.
    * No Ollama connection, no embedder, no LLM clients.
    * Supports storeAsync(), searchConversations(), and getConversation().
-   * Throws IngestQueueError on store() or search() (those need full client).
    */
   public static createLite(config: PristineLiteConfig = {}): PristineLocal {
     const ownsDb = config.db === undefined;
@@ -179,33 +174,19 @@ export class PristineLocal {
   }
 
   // -------------------------------------------------------------------------
-  // Memory API
+  // Ingest API
   // -------------------------------------------------------------------------
 
-  public async store(_conversation: readonly Message[], _userId: string): Promise<IngestResult> {
-    throw new IngestQueueError(
-      'store() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
-        'Use storeAsync() to enqueue conversations, or wait for the Phase 2 indexer/searcher primitives.',
-    );
-  }
-
   /**
-   * Fire-and-forget: enqueue a conversation for background extraction.
+   * Fire-and-forget: enqueue a conversation for background processing.
    * Returns the task ID, or empty string if duplicate conversation.
+   *
+   * The synchronous `store()` / `search()` methods were removed in spec-005
+   * Phase 1 along with the LOCOMO-aimed orchestrator pipeline. Synchronous
+   * retrieval returns in Phase 2 via the indexer + searcher primitives.
    */
   public storeAsync(conversation: readonly Message[], userId: string): string {
     return this.ingestQueue.enqueue(conversation, userId);
-  }
-
-  public async search(
-    _query: string,
-    _userId: string,
-    _options?: SearchOptions,
-  ): Promise<RetrieveResult> {
-    throw new IngestQueueError(
-      'search() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
-        'searchConversations() and getConversation() remain available for raw-conversation lookup.',
-    );
   }
 
   // -------------------------------------------------------------------------

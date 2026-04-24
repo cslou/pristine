@@ -20,10 +20,6 @@ export type {
   PipelineStep,
   SecureAndRedactResult,
   RevealResult,
-  RankedMemory,
-  RetrieveOptions,
-  RetrieveResult,
-  SearchOptions,
 } from './core/types.js';
 
 // ---------------------------------------------------------------------------

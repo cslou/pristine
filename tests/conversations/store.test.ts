@@ -844,12 +844,20 @@ describe('sprint-014 Story 2 — vec tables', () => {
 // -----------------------------------------------------------------------------
 
 describe('sprint-014 Story 3 — public views', () => {
-  it('messages_public exposes EXACTLY (id, conversation_id, turn_index, role, content, timestamp, project_id)', () => {
+  it('messages_public exposes EXACTLY (id, conversation_id, turn_index, role, content, timestamp, project_id) in declared order', () => {
     const cols = db.prepare('PRAGMA table_info(messages_public)').all() as { name: string }[];
-    const names = cols.map((c) => c.name).sort();
-    expect(names).toEqual(
-      ['id', 'conversation_id', 'turn_index', 'role', 'content', 'timestamp', 'project_id'].sort(),
-    );
+    // No .sort() — the DDL declares a specific column order and SELECT ... *
+    // callers of the view see columns in that order. A future refactor that
+    // reorders the SELECT should fail this test, not silently pass.
+    expect(cols.map((c) => c.name)).toEqual([
+      'id',
+      'conversation_id',
+      'turn_index',
+      'role',
+      'content',
+      'timestamp',
+      'project_id',
+    ]);
   });
 
   it('messages_public excludes parent_message_id (privacy invariant)', () => {
@@ -857,10 +865,9 @@ describe('sprint-014 Story 3 — public views', () => {
     expect(cols.map((c) => c.name)).not.toContain('parent_message_id');
   });
 
-  it('conversations_public exposes EXACTLY (id, project_id, started_at)', () => {
+  it('conversations_public exposes EXACTLY (id, project_id, started_at) in declared order', () => {
     const cols = db.prepare('PRAGMA table_info(conversations_public)').all() as { name: string }[];
-    const names = cols.map((c) => c.name).sort();
-    expect(names).toEqual(['id', 'project_id', 'started_at'].sort());
+    expect(cols.map((c) => c.name)).toEqual(['id', 'project_id', 'started_at']);
   });
 
   it('conversations_public excludes user_id, content_hash, message_count (privacy invariant)', () => {
@@ -885,12 +892,33 @@ describe('sprint-014 Story 3 — public views', () => {
   });
 
   it('conversations_public.started_at is integer (unix ms, not text)', () => {
-    store.addConversation(makeMessages(['started-at-test']), 'user-started-at');
+    const convId = store.addConversation(makeMessages(['started-at-test']), 'user-started-at');
+
+    // Scope to the row this test just inserted — LIMIT 1 without a WHERE
+    // filter would pick an arbitrary row depending on test order, which is
+    // fragile even though all rows share the same cast.
+    const row = db
+      .prepare('SELECT typeof(started_at) AS t FROM conversations_public WHERE id = ?')
+      .get(convId) as { t: string };
+    expect(row.t).toBe('integer');
+  });
+
+  it('messages_public.timestamp is NULL when the underlying message was stored without a timestamp', () => {
+    // Sprint-009's physical messages.timestamp is nullable TEXT; addConversation
+    // without per-message timestamps inserts NULL. strftime('%s', NULL) returns
+    // NULL, so the view's timestamp column passes NULL through for those rows.
+    // This is the documented contract — consumers must handle NULL on
+    // messages_public.timestamp, not assume the INTEGER type annotation
+    // guarantees non-null.
+    const convId = store.addConversation(makeMessages(['null-ts-test']), 'user-null-ts');
 
     const row = db
-      .prepare('SELECT typeof(started_at) AS t FROM conversations_public LIMIT 1')
-      .get() as { t: string };
-    expect(row.t).toBe('integer');
+      .prepare(
+        'SELECT timestamp, typeof(timestamp) AS t FROM messages_public WHERE conversation_id = ?',
+      )
+      .get(convId) as { timestamp: number | null; t: string };
+    expect(row.timestamp).toBeNull();
+    expect(row.t).toBe('null');
   });
 
   it('round-trips addConversation data through messages_public with correct aliases', () => {

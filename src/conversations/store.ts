@@ -195,6 +195,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
 // the VIEW declaration pins the surface contract; adding a column to the
 // SELECT without also listing it in the view's declared columns raises a
 // DDL error, so the view can't accidentally leak new columns.
+//
+// **timestamp nullability.** The underlying messages.timestamp column is
+// nullable TEXT (Sprint-009 shape; addConversation without per-message
+// timestamps inserts NULL). `strftime('%s', NULL)` returns NULL, so the
+// view's timestamp column passes NULL through for those rows. Consumers
+// doing time-range filters must handle NULL (e.g. `WHERE timestamp IS NOT
+// NULL AND timestamp > ?`) — coercing to 0 / epoch would lie about data
+// availability. Pinned by the NULL-passthrough test in store.test.ts.
+//
+// **Index pushdown.** The CAST(strftime(...)) expression blocks use of
+// ix_messages_timestamp_nonchunk through the view — SQLite can't see
+// through the cast to the base column. Consumers issuing time-range
+// queries should filter against the base messages table (using the
+// index-friendly raw column) and join back to messages_public only for
+// the aliased surface. Same caveat applies to conversations_public
+// .started_at vs. ix_conversations_project_started.
 const SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL = `
 CREATE VIEW IF NOT EXISTS messages_public
   (id, conversation_id, turn_index, role, content, timestamp, project_id) AS

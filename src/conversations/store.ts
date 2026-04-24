@@ -163,8 +163,9 @@ export function initConversationTables(db: Database.Database): void {
   );
   db.exec(
     `UPDATE messages
-     SET project_id = (
-       SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id
+     SET project_id = COALESCE(
+       (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
+       'default'
      )
      WHERE project_id = 'default'`,
   );

@@ -530,6 +530,28 @@ describe('sprint-014 schema migration', () => {
     d.close();
   });
 
+  it("back-fills orphaned messages.project_id to 'default' (COALESCE fallback)", () => {
+    // Legacy DBs built before PRAGMA foreign_keys = ON was enabled can contain
+    // messages whose conversation_id has no matching row in conversations. The
+    // back-fill's correlated subquery returns NULL for those rows; without the
+    // COALESCE fallback, the UPDATE would violate the NOT NULL constraint and
+    // abort the migration. Disable FK on the legacy seed so we can simulate
+    // the orphan shape a legacy DB could have accrued.
+    const d = makeLegacyDb();
+    d.pragma('foreign_keys = OFF');
+    d.prepare(
+      "INSERT INTO messages (conversation_id, role, content, sort_order) VALUES ('c-missing', 'user', 'orphan', 0)",
+    ).run();
+
+    expect(() => new ConversationStore(d)).not.toThrow();
+
+    const row = d
+      .prepare('SELECT project_id FROM messages WHERE conversation_id = ?')
+      .get('c-missing') as { project_id: string };
+    expect(row.project_id).toBe('default');
+    d.close();
+  });
+
   it('addConversation writes parent_message_id = NULL by default', () => {
     const msgs = makeMessages(['Hi', 'Hello']);
     const id = store.addConversation(msgs, 'user-parent-null');

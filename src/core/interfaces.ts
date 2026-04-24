@@ -1,8 +1,10 @@
 import type {
   AddMemoryInput,
+  ClassificationPipelineResult,
   IngestOptions,
   IngestResult,
   JsonSchema,
+  KeyPairWithStatus,
   Memory,
   Message,
   PipelineStep,
@@ -10,13 +12,11 @@ import type {
   RetrieveResult,
   SearchOptions,
   SearchParams,
-  ClassificationPipelineResult,
   SensitivityReport,
   SupersedeMemoryResult,
   UpdateMemoryInput,
   VaultEntry,
   VaultEntryInput,
-  KeyPairWithStatus,
 } from './types.js';
 
 // ---------------------------------------------------------------------------

@@ -155,6 +155,13 @@ export function initConversationTables(db: Database.Database): void {
      )
      WHERE project_id = 'default'`,
   );
+
+  addColumnIfMissing(
+    db,
+    'messages',
+    'parent_message_id',
+    'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
+  );
 }
 
 // ---------------------------------------------------------------------------

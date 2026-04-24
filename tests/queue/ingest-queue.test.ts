@@ -15,8 +15,6 @@ const createMockOrchestrator = (ingestFn?: Orchestrator['ingest']): Orchestrator
     ingest:
       ingestFn ??
       vi.fn(async () => ({
-        facts: [{ text: 'test fact' }],
-        decisions: [{ action: 'ADD', factIndex: 0 }],
         memoryIds: ['mem-1'],
         errors: [],
       })),

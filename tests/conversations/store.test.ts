@@ -565,18 +565,23 @@ describe('sprint-014 schema migration', () => {
     }
   });
 
-  it('creates all four spec §12 indexes in sqlite_master', () => {
+  it('creates all four Story-1 spec §12 indexes in sqlite_master', () => {
     const expected = [
       'ix_conversations_project_started',
       'ix_messages_conv_sort',
       'ix_messages_timestamp_nonchunk',
       'ix_messages_parent',
-    ];
+    ].sort();
     const rows = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%'")
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index'
+           AND name IN ('ix_conversations_project_started', 'ix_messages_conv_sort',
+                        'ix_messages_timestamp_nonchunk', 'ix_messages_parent')`,
+      )
       .all() as { name: string }[];
     const names = rows.map((r) => r.name).sort();
-    expect(names).toEqual(expected.sort());
+    expect(names).toEqual(expected);
   });
 
   it('re-running migration is a no-op (idempotent)', () => {
@@ -663,6 +668,15 @@ describe('sprint-014 Story 2 — vec tables', () => {
     expect(names).toContain('vec_windows');
     expect(names).toContain('window_messages');
     expect(names).toContain('vec_sessions');
+  });
+
+  it('creates ix_window_messages_message_id for Phase-4 reverse joins', () => {
+    const row = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ix_window_messages_message_id'",
+      )
+      .get() as { name: string } | undefined;
+    expect(row?.name).toBe('ix_window_messages_message_id');
   });
 
   it('round-trips a 768-d embedding through vec_windows (bit-identical)', () => {

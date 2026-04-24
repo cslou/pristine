@@ -124,6 +124,17 @@ CREATE INDEX IF NOT EXISTS ix_messages_parent
 // 768-d Nomic Embed v1.5 vectors keyed by (conversation_id, window_index). The
 // `float[768]` is the sqlite-vec typed-column syntax; vec0 handles the BLOB
 // representation internally. Requires sqlite-vec loaded on the connection.
+//
+// **Write idiom note**: vec0 does NOT support INSERT OR REPLACE — duplicate
+// inserts on the composite key just add a second row (this table has no
+// declared PK), and on vec_sessions' PK it throws UNIQUE constraint failed.
+// The indexer's "replace" primitive is DELETE + INSERT inside a transaction.
+// Contract pinned by the PK-rejection test in store.test.ts.
+//
+// **CREATE inside transaction**: `CREATE VIRTUAL TABLE IF NOT EXISTS` inside
+// db.transaction() is not guaranteed to roll back cleanly on transaction
+// abort in standard SQLite; the IF NOT EXISTS guard makes a subsequent
+// re-run idempotent on the success path, which is what we rely on.
 const SPRINT_014_VEC_WINDOWS_DDL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
   conversation_id TEXT,
@@ -138,6 +149,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
 // tables is the indexer's atomic write unit. message_id is INTEGER to
 // match the current messages.id type (see sprint-014 Known Deviation #1
 // and GH issue #106 for the future TEXT UUID migration).
+//
+// ix_window_messages_message_id supports Phase-4 reverse lookups (window
+// hits resolve to constituent message_ids) without a full scan of
+// window_messages. Spec §12's index list omits this, but the Phase-4
+// join pattern makes it load-bearing at scale.
 const SPRINT_014_WINDOW_MESSAGES_DDL = `
 CREATE TABLE IF NOT EXISTS window_messages (
   conversation_id TEXT NOT NULL,
@@ -146,6 +162,8 @@ CREATE TABLE IF NOT EXISTS window_messages (
   position INTEGER NOT NULL,
   PRIMARY KEY (conversation_id, window_index, message_id)
 );
+CREATE INDEX IF NOT EXISTS ix_window_messages_message_id
+  ON window_messages(message_id);
 `;
 
 // Spec-005 §12 vec_sessions — whole-conversation secondary semantic index.
@@ -157,6 +175,9 @@ CREATE TABLE IF NOT EXISTS window_messages (
 // vec0 does not accept NOT NULL / CHECK / DEFAULT on auxiliary columns at
 // DDL — the non-null invariant is enforced at the write-helper layer in
 // sprint-015.
+//
+// Same INSERT OR REPLACE caveat as vec_windows: duplicate PK inserts throw
+// UNIQUE constraint failed; use DELETE + INSERT for the replace idiom.
 const SPRINT_014_VEC_SESSIONS_DDL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
   conversation_id TEXT PRIMARY KEY,

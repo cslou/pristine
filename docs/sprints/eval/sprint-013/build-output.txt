@@ -2,3 +2,4 @@
 > @pristine/shield-local@0.0.1 build
 > tsc -p tsconfig.build.json
 
+Exit: 0

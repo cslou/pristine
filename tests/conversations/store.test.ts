@@ -81,6 +81,18 @@ describe('ConversationStore', () => {
       expect(row.project_id).toBe('default');
     });
 
+    it('treats empty-string projectId as unset and falls back to userId', () => {
+      // `??` alone doesn't short-circuit on empty string; verify the guard
+      // in addConversation correctly treats '' as unset so the NOT NULL
+      // column never lands on an empty value.
+      const id = store.addConversation(makeMessages(['hi']), 'user-empty-proj', '');
+
+      const row = db.prepare('SELECT project_id FROM conversations WHERE id = ?').get(id) as {
+        project_id: string;
+      };
+      expect(row.project_id).toBe('user-empty-proj');
+    });
+
     it('stores messages with correct sort_order', () => {
       const messages = makeMessages(['First', 'Second', 'Third']);
       const id = store.addConversation(messages, 'user-1');

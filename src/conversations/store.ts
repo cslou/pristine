@@ -473,7 +473,11 @@ export class ConversationStore {
   ): string {
     const id = randomUUID();
     const contentHash = computeConversationContentHash(messages);
-    const resolvedProjectId = projectId ?? (userId !== '' ? userId : 'default');
+    // Empty-string projectId is treated as "unset" (not as a valid value) so
+    // the fallback-to-userId branch runs — `??` alone only short-circuits on
+    // null/undefined and would let `''` through into the NOT NULL column.
+    const explicitProject = projectId !== undefined && projectId !== '' ? projectId : undefined;
+    const resolvedProjectId = explicitProject ?? (userId !== '' ? userId : 'default');
 
     const insertConversation = this.db.prepare(
       `INSERT INTO conversations (id, user_id, content_hash, message_count, project_id)

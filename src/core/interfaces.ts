@@ -1,20 +1,15 @@
 import type {
-  AddMemoryInput,
   ClassificationPipelineResult,
   IngestOptions,
   IngestResult,
   JsonSchema,
   KeyPairWithStatus,
-  Memory,
   Message,
   PipelineStep,
   RetrieveOptions,
   RetrieveResult,
   SearchOptions,
-  SearchParams,
   SensitivityReport,
-  SupersedeMemoryResult,
-  UpdateMemoryInput,
   VaultEntry,
   VaultEntryInput,
 } from './types.js';
@@ -39,26 +34,6 @@ export interface LlmClient {
 export interface Embedder {
   embed(text: string): Promise<number[]>;
   embedBatch(texts: readonly string[]): Promise<number[][]>;
-}
-
-// ---------------------------------------------------------------------------
-// Memory Store
-// ---------------------------------------------------------------------------
-
-export interface Store {
-  addMemory(memory: AddMemoryInput): Promise<Memory>;
-  getMemory(id: string, userId: string): Promise<Memory | null>;
-  searchSimilar(params: SearchParams): Promise<Memory[]>;
-  updateMemory(id: string, updates: UpdateMemoryInput, userId: string): Promise<Memory>;
-  deleteMemory(id: string, userId: string): Promise<void>;
-  supersedeMemory(
-    oldId: string,
-    newMemory: AddMemoryInput,
-    reason: string,
-    validUntil?: string,
-  ): Promise<SupersedeMemoryResult>;
-  getSupersessionChain(memoryId: string, userId: string): Promise<Memory[]>;
-  clearAll(userId?: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,14 +65,6 @@ export interface VaultStore {
   addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
   getEntriesByPlaceholderIds(userId: string, placeholderIds: string[]): Promise<VaultEntry[]>;
   deleteEntriesByMemoryId(memoryId: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Retrieval
-// ---------------------------------------------------------------------------
-
-export interface Retriever {
-  retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
 }
 
 // ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ export type {
 // Interfaces (for DI, custom implementations, and test mocks)
 // ---------------------------------------------------------------------------
 
-export type { Embedder, LlmClient, Orchestrator, Store } from './core/interfaces.js';
+export type { Embedder, LlmClient, Orchestrator } from './core/interfaces.js';
 
 export type { LlmClients } from './engine/index.js';
 
@@ -38,13 +38,7 @@ export type { LlmClients } from './engine/index.js';
 // Errors
 // ---------------------------------------------------------------------------
 
-export {
-  AppError,
-  ConfigError,
-  EmbedderError,
-  IngestQueueError,
-  OrchestratorError,
-} from './core/errors.js';
+export { AppError, ConfigError, EmbedderError, IngestQueueError } from './core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Database (for provider integrations that need file-backed DBs)

@@ -636,3 +636,140 @@ describe('sprint-014 schema migration', () => {
     d.close();
   });
 });
+
+// -----------------------------------------------------------------------------
+// Sprint-014 Story 2 — vec_windows + window_messages + vec_sessions
+// -----------------------------------------------------------------------------
+
+// sqlite-vec vec0 tables require BigInt for INTEGER metadata / PK columns.
+// Plain JS numbers get bound as REAL and vec0 rejects them with
+// "Expected integer for INTEGER metadata column ...".
+const makeEmbedding = (seed: number): Buffer => {
+  const f = new Float32Array(768);
+  for (let i = 0; i < 768; i++) f[i] = seed + i * 1e-4;
+  return Buffer.from(f.buffer);
+};
+
+const readEmbedding = (buf: Buffer): Float32Array =>
+  new Float32Array(buf.buffer, buf.byteOffset, 768);
+
+describe('sprint-014 Story 2 — vec tables', () => {
+  it('creates vec_windows, window_messages, vec_sessions in sqlite_master', () => {
+    const rows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE name IN ('vec_windows', 'window_messages', 'vec_sessions') ORDER BY name",
+      )
+      .all() as { name: string }[];
+    const names = rows.map((r) => r.name);
+    expect(names).toContain('vec_windows');
+    expect(names).toContain('window_messages');
+    expect(names).toContain('vec_sessions');
+  });
+
+  it('round-trips a 768-d embedding through vec_windows (bit-identical)', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    // Bit-identical round-trip check: compare against the same Float32 source
+    // that was written, not the JS Float64 literal — otherwise precision loss
+    // from the Float64 → Float32 cast breaks equality on most element indexes.
+    const source = new Float32Array(768);
+    for (let i = 0; i < 768; i++) source[i] = 0.25 + i * 1e-4;
+    const writeBuf = Buffer.from(source.buffer);
+
+    d.prepare(
+      'INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?)',
+    ).run('c-rt', 0n, writeBuf);
+
+    const row = d
+      .prepare('SELECT embedding FROM vec_windows WHERE conversation_id = ? AND window_index = ?')
+      .get('c-rt', 0n) as { embedding: Buffer };
+    const out = readEmbedding(row.embedding);
+
+    for (let i = 0; i < 768; i++) {
+      expect(out[i]).toBe(source[i]);
+    }
+    d.close();
+  });
+
+  it('rejects a non-768-dimension embedding on vec_windows', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    const wrong = Buffer.from(new Float32Array(512).buffer);
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?)',
+        )
+        .run('c-wrong', 0n, wrong),
+    ).toThrow(/Dimension mismatch/i);
+    d.close();
+  });
+
+  it('round-trips a 768-d embedding + updated_at through vec_sessions', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    const source = new Float32Array(768);
+    for (let i = 0; i < 768; i++) source[i] = 0.75 + i * 1e-4;
+    const writeBuf = Buffer.from(source.buffer);
+
+    d.prepare(
+      'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+    ).run('c-sess', writeBuf, 1_700_000_000_000n);
+
+    const row = d
+      .prepare(
+        'SELECT conversation_id, embedding, updated_at FROM vec_sessions WHERE conversation_id = ?',
+      )
+      .get('c-sess') as { conversation_id: string; embedding: Buffer; updated_at: number };
+    expect(row.conversation_id).toBe('c-sess');
+    expect(row.updated_at).toBe(1_700_000_000_000);
+    const out = readEmbedding(row.embedding);
+    for (let i = 0; i < 768; i++) {
+      expect(out[i]).toBe(source[i]);
+    }
+    d.close();
+  });
+
+  it('vec_sessions.conversation_id PK rejects a duplicate insert', () => {
+    // vec0 does not support INSERT OR REPLACE on the declared PRIMARY KEY —
+    // duplicate inserts throw a UNIQUE constraint. The indexer's "replace"
+    // idiom is DELETE + INSERT inside a transaction; this test pins that
+    // contract at the schema level so sprint-015's write-helper lands on
+    // the right primitive.
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    const emb1 = makeEmbedding(0.1);
+    const emb2 = makeEmbedding(0.2);
+
+    d.prepare(
+      'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+    ).run('c-pk', emb1, 1n);
+
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+        )
+        .run('c-pk', emb2, 2n),
+    ).toThrow(/UNIQUE constraint failed/i);
+
+    // DELETE + INSERT is the supported replace idiom — verify it leaves one row
+    // with the new embedding and updated_at.
+    d.transaction(() => {
+      d.prepare('DELETE FROM vec_sessions WHERE conversation_id = ?').run('c-pk');
+      d.prepare(
+        'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+      ).run('c-pk', emb2, 2n);
+    })();
+
+    const row = d
+      .prepare('SELECT updated_at FROM vec_sessions WHERE conversation_id = ?')
+      .get('c-pk') as { updated_at: number };
+    expect(row.updated_at).toBe(2);
+    d.close();
+  });
+});

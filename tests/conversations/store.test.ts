@@ -838,3 +838,58 @@ describe('sprint-014 Story 2 — vec tables', () => {
     d.close();
   });
 });
+
+// -----------------------------------------------------------------------------
+// Sprint-014 Story 3 — public views (messages_public + conversations_public)
+// -----------------------------------------------------------------------------
+
+describe('sprint-014 Story 3 — public views', () => {
+  it('messages_public exposes EXACTLY (id, conversation_id, turn_index, role, content, timestamp, project_id)', () => {
+    const cols = db.prepare('PRAGMA table_info(messages_public)').all() as { name: string }[];
+    const names = cols.map((c) => c.name).sort();
+    expect(names).toEqual(
+      ['id', 'conversation_id', 'turn_index', 'role', 'content', 'timestamp', 'project_id'].sort(),
+    );
+  });
+
+  it('messages_public excludes parent_message_id (privacy invariant)', () => {
+    const cols = db.prepare('PRAGMA table_info(messages_public)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).not.toContain('parent_message_id');
+  });
+
+  it('conversations_public exposes EXACTLY (id, project_id, started_at)', () => {
+    const cols = db.prepare('PRAGMA table_info(conversations_public)').all() as { name: string }[];
+    const names = cols.map((c) => c.name).sort();
+    expect(names).toEqual(['id', 'project_id', 'started_at'].sort());
+  });
+
+  it('conversations_public excludes user_id, content_hash, message_count (privacy invariant)', () => {
+    const cols = db.prepare('PRAGMA table_info(conversations_public)').all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).not.toContain('user_id');
+    expect(names).not.toContain('content_hash');
+    expect(names).not.toContain('message_count');
+  });
+
+  it('messages_public.timestamp is integer (unix ms, not text)', () => {
+    // Seed a message with a TEXT timestamp so the cast has something to operate on.
+    const msgs = [{ role: 'user', content: 'view-ts-test', timestamp: '2026-04-24T10:00:00' }];
+    store.addConversation(msgs, 'user-view-ts');
+
+    const row = db
+      .prepare(
+        "SELECT typeof(timestamp) AS t FROM messages_public WHERE content = 'view-ts-test' LIMIT 1",
+      )
+      .get() as { t: string };
+    expect(row.t).toBe('integer');
+  });
+
+  it('conversations_public.started_at is integer (unix ms, not text)', () => {
+    store.addConversation(makeMessages(['started-at-test']), 'user-started-at');
+
+    const row = db
+      .prepare('SELECT typeof(started_at) AS t FROM conversations_public LIMIT 1')
+      .get() as { t: string };
+    expect(row.t).toBe('integer');
+  });
+});

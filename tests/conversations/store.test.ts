@@ -1024,7 +1024,7 @@ describe('sprint-014 Story 4 — summaries schema', () => {
 });
 
 describe('sprint-014 Story 4 — addMessage', () => {
-  it('appends a message with correct sort_order = N+1 when N messages exist', () => {
+  it('appends a message with correct sort_order = N+1 when N messages exist (return void)', () => {
     const convId = store.addConversation(makeMessages(['msg0', 'msg1']), 'user-seq');
     // Confirm baseline: parent has 2 messages (sort_order 0 + 1).
     const beforeCount = db
@@ -1032,7 +1032,10 @@ describe('sprint-014 Story 4 — addMessage', () => {
       .get(convId) as { c: number };
     expect(beforeCount.c).toBe(2);
 
-    store.addMessage(convId, { role: 'user', content: 'appended-after' });
+    const result = store.addMessage(convId, { role: 'user', content: 'appended-after' });
+    // Spec §5.1.1 primitive: addMessage returns void — callers that need the
+    // inserted id query by (conversationId, sort_order).
+    expect(result).toBeUndefined();
 
     const rows = db
       .prepare(
@@ -1041,6 +1044,27 @@ describe('sprint-014 Story 4 — addMessage', () => {
       .all(convId) as { sort_order: number; content: string }[];
     expect(rows).toHaveLength(3);
     expect(rows[2]).toMatchObject({ sort_order: 2, content: 'appended-after' });
+  });
+
+  it('bumps conversations.message_count by 1 on each append', () => {
+    // Seed 2 initial messages via addConversation — message_count should be 2.
+    const convId = store.addConversation(makeMessages(['a', 'b']), 'user-count');
+    const initial = db
+      .prepare('SELECT message_count FROM conversations WHERE id = ?')
+      .get(convId) as { message_count: number };
+    expect(initial.message_count).toBe(2);
+
+    store.addMessage(convId, { role: 'user', content: 'append-1' });
+    store.addMessage(convId, { role: 'assistant', content: 'append-2' });
+    store.addMessage(convId, { role: 'user', content: 'append-3' });
+
+    const after = db
+      .prepare('SELECT message_count FROM conversations WHERE id = ?')
+      .get(convId) as { message_count: number };
+    expect(after.message_count).toBe(5);
+
+    // getConversation surfaces the live counter.
+    expect(store.getConversation(convId)?.messageCount).toBe(5);
   });
 
   it('reads project_id from the parent conversation (not caller-supplied)', () => {
@@ -1173,8 +1197,19 @@ describe('sprint-014 Story 4 — addSummary + getRecentSummaries', () => {
   });
 
   it('getRecentSummaries uses ix_summaries_project_time (EXPLAIN QUERY PLAN)', () => {
-    // Seed at least one row so the optimizer has something to plan.
-    store.addSummary({ sessionId: 's', projectId: 'proj-plan', text: 'x', timestamp: 1 });
+    // Seed enough rows that SQLite's optimizer reliably picks the index —
+    // a single-row table can be full-scanned in less CPU than an index
+    // seek, so the optimizer may skip the index even when it exists. 50
+    // rows is comfortably past the threshold where the optimizer commits
+    // to indexed access.
+    for (let i = 0; i < 50; i++) {
+      store.addSummary({
+        sessionId: 's',
+        projectId: 'proj-plan',
+        text: `summary ${i}`,
+        timestamp: 1_000 + i,
+      });
+    }
 
     const plan = db
       .prepare(
@@ -1188,6 +1223,11 @@ describe('sprint-014 Story 4 — addSummary + getRecentSummaries', () => {
       .all('proj-plan', 10) as { detail: string }[];
     const planText = plan.map((r) => r.detail).join('\n');
     expect(planText).toContain('ix_summaries_project_time');
+  });
+
+  it('rejects limit <= 0 in getRecentSummaries with InvalidArgumentError', () => {
+    expect(() => store.getRecentSummaries('proj-limit', 0)).toThrow(InvalidArgumentError);
+    expect(() => store.getRecentSummaries('proj-limit', -1)).toThrow(InvalidArgumentError);
   });
 
   it('addSummary stores + getRecentSummaries omits metadata when NULL', () => {

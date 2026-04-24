@@ -487,24 +487,27 @@ export class ConversationStore {
   }
 
   /**
-   * Append a single message to an existing conversation. Returns the integer
-   * rowid of the inserted row.
+   * Append a single message to an existing conversation.
    *
-   * **Atomic sort_order.** The method wraps a `MAX(sort_order) + 1` lookup
-   * and the INSERT in a single `db.transaction(...)` so concurrent appends
-   * serialize at the SQLite level — a gapless ordinal sequence is preserved
-   * even when multiple callers append into the same conversation. Genuine
-   * worker-thread concurrency arrives with sprint-015's embed-worker; this
-   * contract is pinned now so that pipeline lands on correct primitives.
+   * **Atomic sort_order + message_count.** The method wraps three steps in
+   * a single `db.transaction(...)`: (1) resolve the parent conversation +
+   * its `project_id`, (2) compute `MAX(sort_order) + 1`, (3) insert the
+   * message + bump `conversations.message_count` by 1. Concurrent appends
+   * serialize at the SQLite level so the ordinal sequence stays gapless
+   * and the counter stays accurate. Worker-thread concurrency arrives with
+   * sprint-015's embed-worker; this contract is pinned now.
    *
    * **Project scope from parent.** `project_id` is read from the parent
    * conversation row, NOT supplied by the caller. This prevents cross-
    * project contamination that would be near-impossible to diagnose later.
    * If the conversation doesn't exist, throws `ConversationNotFoundError`
-   * and nothing is written.
+   * and nothing is written (transaction rolls back).
    *
    * `sort_order` is ordinal, not contiguous — deleting a message and later
    * appending yields `MAX(sort_order) + 1`, so gaps are allowed.
+   *
+   * Returns void to match the spec §5.1.1 primitive contract; callers that
+   * need the inserted id should query by (conversationId, sort_order).
    */
   public addMessage(
     conversationId: string,
@@ -514,7 +517,7 @@ export class ConversationStore {
       readonly timestamp?: string;
       readonly parentMessageId?: number;
     },
-  ): number {
+  ): void {
     const selectParent = this.db.prepare('SELECT project_id FROM conversations WHERE id = ?');
     const selectMaxSort = this.db.prepare(
       'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM messages WHERE conversation_id = ?',
@@ -524,6 +527,9 @@ export class ConversationStore {
          (conversation_id, role, content, timestamp, sort_order, project_id, parent_message_id)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
+    const bumpMessageCount = this.db.prepare(
+      'UPDATE conversations SET message_count = message_count + 1 WHERE id = ?',
+    );
 
     const runTransaction = this.db.transaction(() => {
       const parent = selectParent.get(conversationId) as { project_id: string } | undefined;
@@ -531,7 +537,7 @@ export class ConversationStore {
         throw new ConversationNotFoundError(`Conversation not found: ${conversationId}`);
       }
       const { next } = selectMaxSort.get(conversationId) as { next: number };
-      const result = insertMessage.run(
+      insertMessage.run(
         conversationId,
         message.role,
         message.content,
@@ -540,10 +546,10 @@ export class ConversationStore {
         parent.project_id,
         message.parentMessageId ?? null,
       );
-      return Number(result.lastInsertRowid);
+      bumpMessageCount.run(conversationId);
     });
 
-    return runTransaction();
+    runTransaction();
   }
 
   /**
@@ -590,12 +596,21 @@ export class ConversationStore {
   /**
    * Return the most recent summaries for a project, ordered by timestamp
    * DESC. Default limit of 10 keeps the caller's retrieval-context budget
-   * bounded; callers that need more pass an explicit limit.
+   * bounded; callers that need more pass an explicit positive integer.
    *
    * Uses `ix_summaries_project_time (project_id, timestamp DESC)` — the
    * query plan is a covering index seek+scan, not a full-table sort.
+   *
+   * Throws `InvalidArgumentError` on `limit <= 0` — SQLite treats `LIMIT -1`
+   * as "no limit" and `LIMIT 0` as "no rows", both surprising and silent
+   * for callers passing an unvalidated variable.
    */
   public getRecentSummaries(projectId: string, limit = 10): readonly StoredSummary[] {
+    if (limit <= 0) {
+      throw new InvalidArgumentError(
+        `getRecentSummaries: limit must be a positive integer (got ${limit})`,
+      );
+    }
     const rows = this.db
       .prepare(
         `SELECT id, session_id, project_id, text, timestamp, metadata

@@ -49,7 +49,8 @@ export interface TemporalValidationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Fact & Extraction
+// Fact (temporal subsystem — removed together with src/memory/temporal in
+// sprint-013 Story 2)
 // ---------------------------------------------------------------------------
 
 export interface Fact {
@@ -60,10 +61,6 @@ export interface Fact {
   readonly validFrom?: string;
   readonly validUntil?: string;
   readonly temporalConfidence?: TemporalConfidence;
-}
-
-export interface ExtractionResult {
-  readonly facts: Fact[];
 }
 
 // ---------------------------------------------------------------------------
@@ -122,31 +119,6 @@ export interface SearchParams {
   readonly userId: string;
   readonly temporalMode?: TemporalMode;
   readonly asOf?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Consolidation
-// ---------------------------------------------------------------------------
-
-export type ConsolidationAction = 'ADD' | 'UPDATE' | 'DELETE' | 'NOOP' | 'SUPERSEDE';
-
-export interface ConsolidationResult {
-  readonly action: ConsolidationAction;
-  readonly mergedText?: string;
-  readonly targetMemoryId?: string;
-  readonly supersessionReason?: string;
-  readonly validUntil?: string;
-  readonly factIndex: number;
-}
-
-export interface ConsolidationBatchResult {
-  readonly results: ConsolidationResult[];
-  readonly idRemap: ReadonlyMap<string, string>;
-}
-
-export interface ConsolidationRequest {
-  readonly newFact: Fact;
-  readonly similarMemories: readonly Fact[];
 }
 
 // ---------------------------------------------------------------------------
@@ -410,8 +382,6 @@ export interface StepError {
 }
 
 export interface IngestResult {
-  readonly facts: Fact[];
-  readonly decisions: ConsolidationResult[];
   readonly memoryIds: string[];
   readonly errors: StepError[];
 }

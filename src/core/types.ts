@@ -53,40 +53,7 @@ export interface Memory {
   readonly supersessionReason?: string;
 }
 
-export interface AddMemoryInput {
-  readonly userId: string;
-  readonly text: string;
-  readonly embedding: number[];
-  readonly contentHash: string;
-  readonly sourceConversationId?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-}
-
-export interface UpdateMemoryInput {
-  readonly text?: string;
-  readonly embedding?: number[];
-  readonly contentHash?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-}
-
-export interface SupersedeMemoryResult {
-  readonly oldMemory: Memory;
-  readonly newMemory: Memory;
-}
-
 export type TemporalMode = 'current' | 'as_of' | 'full';
-
-export interface SearchParams {
-  readonly embedding: number[];
-  readonly limit: number;
-  readonly userId: string;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
 
 // ---------------------------------------------------------------------------
 // Classification & Sensitivity

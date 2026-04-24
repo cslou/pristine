@@ -120,6 +120,18 @@ CREATE INDEX IF NOT EXISTS ix_messages_parent
   ON messages(parent_message_id);
 `;
 
+// Spec-005 §12 vec_windows — sliding-window primary semantic index. vec0 stores
+// 768-d Nomic Embed v1.5 vectors keyed by (conversation_id, window_index). The
+// `float[768]` is the sqlite-vec typed-column syntax; vec0 handles the BLOB
+// representation internally. Requires sqlite-vec loaded on the connection.
+const SPRINT_014_VEC_WINDOWS_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
+  conversation_id TEXT,
+  window_index INTEGER,
+  embedding float[768]
+);
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -146,7 +158,8 @@ function addColumnIfMissing(
 // when the stored version is below this constant.
 // - 0 = Sprint-009 baseline (pre-sprint-014)
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
-const SCHEMA_VERSION = 1;
+// - 2 = Sprint-014 Story 2 (vec_windows virtual table)
+const SCHEMA_VERSION = 2;
 
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
@@ -157,43 +170,51 @@ export function initConversationTables(db: Database.Database): void {
     return;
   }
 
-  // Atomic migration: either every ADD COLUMN / UPDATE / index + the user_version
-  // bump lands, or none of them does. A crash between ADD COLUMN and back-fill
-  // would otherwise leave the schema partially migrated with no recovery path.
+  // Atomic forward migration. Each versioned block is gated on the stored
+  // user_version so a DB that's already partway through (e.g. v1 → v2) only
+  // applies the steps it's missing. The whole migration + user_version bump
+  // commits as a single transaction; a crash leaves the DB at its prior
+  // version with no recovery path needed.
   db.transaction(() => {
-    addColumnIfMissing(
-      db,
-      'conversations',
-      'project_id',
-      "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
-    );
-    db.exec(
-      "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
-    );
+    if (currentVersion < 1) {
+      addColumnIfMissing(
+        db,
+        'conversations',
+        'project_id',
+        "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+      );
+      db.exec(
+        "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
+      );
 
-    addColumnIfMissing(
-      db,
-      'messages',
-      'project_id',
-      "ALTER TABLE messages ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
-    );
-    db.exec(
-      `UPDATE messages
-       SET project_id = COALESCE(
-         (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
-         'default'
-       )
-       WHERE project_id = 'default'`,
-    );
+      addColumnIfMissing(
+        db,
+        'messages',
+        'project_id',
+        "ALTER TABLE messages ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+      );
+      db.exec(
+        `UPDATE messages
+         SET project_id = COALESCE(
+           (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
+           'default'
+         )
+         WHERE project_id = 'default'`,
+      );
 
-    addColumnIfMissing(
-      db,
-      'messages',
-      'parent_message_id',
-      'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
-    );
+      addColumnIfMissing(
+        db,
+        'messages',
+        'parent_message_id',
+        'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
+      );
 
-    db.exec(SPRINT_014_INDEXES_DDL);
+      db.exec(SPRINT_014_INDEXES_DDL);
+    }
+
+    if (currentVersion < 2) {
+      db.exec(SPRINT_014_VEC_WINDOWS_DDL);
+    }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
   })();

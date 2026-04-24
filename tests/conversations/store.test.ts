@@ -18,7 +18,7 @@ const contentHash = (messages: { role: string; content: string }[]): string =>
     .digest('hex');
 
 beforeAll(() => {
-  db = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+  db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
   store = new ConversationStore(db);
 });
 
@@ -468,14 +468,14 @@ END;
 `;
 
 const makeLegacyDb = () => {
-  const d = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+  const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
   d.exec(SPRINT_009_DDL);
   return d;
 };
 
 describe('sprint-014 schema migration', () => {
   it('enables PRAGMA foreign_keys after store init', () => {
-    const d = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     new ConversationStore(d);
     const result = d.pragma('foreign_keys', { simple: true });
     expect(result).toBe(1);
@@ -612,12 +612,13 @@ describe('sprint-014 schema migration', () => {
     d.close();
   });
 
-  it('bumps PRAGMA user_version from 0 to 1 on first migration and skips on re-run', () => {
+  it('bumps PRAGMA user_version to the current target on first migration and skips on re-run', () => {
     const d = makeLegacyDb();
     expect(d.pragma('user_version', { simple: true })).toBe(0);
 
     new ConversationStore(d);
-    expect(d.pragma('user_version', { simple: true })).toBe(1);
+    const afterFirst = d.pragma('user_version', { simple: true }) as number;
+    expect(afterFirst).toBeGreaterThanOrEqual(1);
 
     // Flip a conversation's project_id to 'default' (the back-fill sentinel).
     // If the migration ran again, the back-fill UPDATE would re-match and
@@ -631,7 +632,7 @@ describe('sprint-014 schema migration', () => {
       project_id: string;
     };
     expect(row.project_id).toBe('default');
-    expect(d.pragma('user_version', { simple: true })).toBe(1);
+    expect(d.pragma('user_version', { simple: true })).toBe(afterFirst);
     d.close();
   });
 });

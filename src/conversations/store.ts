@@ -107,6 +107,19 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
 END;
 `;
 
+// Spec-005 §12 indexes — runs after ADD COLUMN steps so project_id and
+// parent_message_id exist when the partial + parent indexes reference them.
+const SPRINT_014_INDEXES_DDL = `
+CREATE INDEX IF NOT EXISTS ix_conversations_project_started
+  ON conversations(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_messages_conv_sort
+  ON messages(conversation_id, sort_order);
+CREATE INDEX IF NOT EXISTS ix_messages_timestamp_nonchunk
+  ON messages(timestamp DESC) WHERE parent_message_id IS NULL;
+CREATE INDEX IF NOT EXISTS ix_messages_parent
+  ON messages(parent_message_id);
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -162,6 +175,8 @@ export function initConversationTables(db: Database.Database): void {
     'parent_message_id',
     'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
   );
+
+  db.exec(SPRINT_014_INDEXES_DDL);
 }
 
 // ---------------------------------------------------------------------------

@@ -95,3 +95,17 @@ export class IngestQueueError extends AppError {
     this.name = 'IngestQueueError';
   }
 }
+
+export class ConversationNotFoundError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'ConversationNotFoundError';
+  }
+}
+
+export class InvalidArgumentError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'InvalidArgumentError';
+  }
+}

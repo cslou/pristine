@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
+import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -34,6 +35,15 @@ export interface ConversationSearchParams {
   readonly dateFrom?: string;
   readonly dateTo?: string;
   readonly limit?: number;
+}
+
+export interface StoredSummary {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly text: string;
+  readonly timestamp: number;
+  readonly metadata?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +249,38 @@ CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
     FROM conversations;
 `;
 
+// Spec-005 §12 summaries — scratch-pad table for Phase-5 reference summaries
+// injected into the retrieval context. No FK to conversations intentional:
+// session_id is a harness-provided opaque string; multiple conversations may
+// share a session (session lifetime is harness-scoped, not corpus-scoped).
+// `metadata` holds optional caller-provided JSON-encoded state. Per spec §12
+// the column list is (id TEXT PK, session_id TEXT NOT NULL, project_id TEXT
+// NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT).
+// ix_summaries_project_time covers the recency query pattern getRecentSummaries
+// uses — filter by project_id + order by timestamp DESC.
+const SPRINT_014_SUMMARIES_DDL = `
+CREATE TABLE IF NOT EXISTS summaries (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_summaries_project_time
+  ON summaries(project_id, timestamp DESC);
+`;
+
+// Spec-005 §12 summaries_public — read-only public view. Excludes the
+// metadata column (private caller-state) per spec §12 privacy invariant;
+// exposes everything else verbatim. No CAST needed — summaries.timestamp
+// is already stored as INTEGER unix ms (unlike messages.timestamp which
+// was TEXT from Sprint-009).
+const SPRINT_014_VIEW_SUMMARIES_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, timestamp) AS
+  SELECT id, session_id, project_id, text, timestamp FROM summaries;
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -268,7 +310,8 @@ function addColumnIfMissing(
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
 // - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
 // - 3 = Sprint-014 Story 3 (messages_public + conversations_public views)
-export const SCHEMA_VERSION = 3;
+// - 4 = Sprint-014 Story 4 (summaries table + ix_summaries_project_time + summaries_public view + addMessage/addSummary/getRecentSummaries API)
+export const SCHEMA_VERSION = 4;
 
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
@@ -330,6 +373,11 @@ export function initConversationTables(db: Database.Database): void {
     if (currentVersion < 3) {
       db.exec(SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL);
       db.exec(SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL);
+    }
+
+    if (currentVersion < 4) {
+      db.exec(SPRINT_014_SUMMARIES_DDL);
+      db.exec(SPRINT_014_VIEW_SUMMARIES_PUBLIC_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
@@ -436,6 +484,157 @@ export class ConversationStore {
 
     runTransaction();
     return id;
+  }
+
+  /**
+   * Append a single message to an existing conversation.
+   *
+   * **Atomic sort_order + message_count.** The method wraps three steps in
+   * a single `db.transaction(...)`: (1) resolve the parent conversation +
+   * its `project_id`, (2) compute `MAX(sort_order) + 1`, (3) insert the
+   * message + bump `conversations.message_count` by 1. Concurrent appends
+   * serialize at the SQLite level so the ordinal sequence stays gapless
+   * and the counter stays accurate. Worker-thread concurrency arrives with
+   * sprint-015's embed-worker; this contract is pinned now.
+   *
+   * **Project scope from parent.** `project_id` is read from the parent
+   * conversation row, NOT supplied by the caller. This prevents cross-
+   * project contamination that would be near-impossible to diagnose later.
+   * If the conversation doesn't exist, throws `ConversationNotFoundError`
+   * and nothing is written (transaction rolls back).
+   *
+   * `sort_order` is ordinal, not contiguous — deleting a message and later
+   * appending yields `MAX(sort_order) + 1`, so gaps are allowed.
+   *
+   * Returns void to match the spec §5.1.1 primitive contract; callers that
+   * need the inserted id should query by (conversationId, sort_order).
+   */
+  public addMessage(
+    conversationId: string,
+    message: {
+      readonly role: string;
+      readonly content: string;
+      readonly timestamp?: string;
+      readonly parentMessageId?: number;
+    },
+  ): void {
+    const selectParent = this.db.prepare('SELECT project_id FROM conversations WHERE id = ?');
+    const selectMaxSort = this.db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM messages WHERE conversation_id = ?',
+    );
+    const insertMessage = this.db.prepare(
+      `INSERT INTO messages
+         (conversation_id, role, content, timestamp, sort_order, project_id, parent_message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const bumpMessageCount = this.db.prepare(
+      'UPDATE conversations SET message_count = message_count + 1 WHERE id = ?',
+    );
+
+    const runTransaction = this.db.transaction(() => {
+      const parent = selectParent.get(conversationId) as { project_id: string } | undefined;
+      if (!parent) {
+        throw new ConversationNotFoundError(`Conversation not found: ${conversationId}`);
+      }
+      const { next } = selectMaxSort.get(conversationId) as { next: number };
+      insertMessage.run(
+        conversationId,
+        message.role,
+        message.content,
+        message.timestamp ?? null,
+        next,
+        parent.project_id,
+        message.parentMessageId ?? null,
+      );
+      bumpMessageCount.run(conversationId);
+    });
+
+    runTransaction();
+  }
+
+  /**
+   * Insert a reference summary into the summaries table. Returns the
+   * generated id. Phase-5's summary-injection flow writes here after the
+   * retrieval context is assembled.
+   *
+   * Unlike `addMessage`, `projectId` IS caller-supplied — summaries aren't
+   * attached to a specific conversation, and session_id is a harness-
+   * provided opaque string that may span multiple conversations.
+   *
+   * **Empty-text guard.** A summary with no text carries no retrieval
+   * value; `text.trim().length === 0` throws `InvalidArgumentError` and
+   * nothing is inserted. Callers get a targetable catch class rather than
+   * discovering the empty row later in a query result.
+   */
+  public addSummary(params: {
+    readonly sessionId: string;
+    readonly projectId: string;
+    readonly text: string;
+    readonly timestamp: number;
+    readonly metadata?: string;
+  }): string {
+    if (params.text.trim().length === 0) {
+      throw new InvalidArgumentError('addSummary: text must not be empty or whitespace-only');
+    }
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO summaries (id, session_id, project_id, text, timestamp, metadata)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        params.sessionId,
+        params.projectId,
+        params.text,
+        params.timestamp,
+        params.metadata ?? null,
+      );
+    return id;
+  }
+
+  /**
+   * Return the most recent summaries for a project, ordered by timestamp
+   * DESC. Default limit of 10 keeps the caller's retrieval-context budget
+   * bounded; callers that need more pass an explicit positive integer.
+   *
+   * Uses `ix_summaries_project_time (project_id, timestamp DESC)` — the
+   * query plan is a covering index seek+scan, not a full-table sort.
+   *
+   * Throws `InvalidArgumentError` on `limit <= 0` — SQLite treats `LIMIT -1`
+   * as "no limit" and `LIMIT 0` as "no rows", both surprising and silent
+   * for callers passing an unvalidated variable.
+   */
+  public getRecentSummaries(projectId: string, limit = 10): readonly StoredSummary[] {
+    if (limit <= 0) {
+      throw new InvalidArgumentError(
+        `getRecentSummaries: limit must be a positive integer (got ${limit})`,
+      );
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, project_id, text, timestamp, metadata
+         FROM summaries
+         WHERE project_id = ?
+         ORDER BY timestamp DESC
+         LIMIT ?`,
+      )
+      .all(projectId, limit) as {
+      id: string;
+      session_id: string;
+      project_id: string;
+      text: string;
+      timestamp: number;
+      metadata: string | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      projectId: row.project_id,
+      text: row.text,
+      timestamp: row.timestamp,
+      ...(row.metadata !== null ? { metadata: row.metadata } : {}),
+    }));
   }
 
   /**

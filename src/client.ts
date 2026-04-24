@@ -18,11 +18,6 @@ import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createEmbedder } from './embedder/index.js';
 import { SqliteStore } from './memory/store/sqlite/index.js';
 import { ConversationStore } from './conversations/store.js';
-import { createExtractor, type ExtractorConfig } from './memory/extractor/index.js';
-import { createConsolidator } from './memory/consolidator/index.js';
-import { createQueryAnalyzer } from './memory/query-analyzer/index.js';
-import { createRetriever } from './memory/retriever/index.js';
-import { createOrchestrator } from './memory/orchestrator/index.js';
 import { IngestQueue } from './queue/ingest-queue.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
@@ -45,14 +40,6 @@ export interface PristineLocalConfig {
   readonly db?: Database.Database;
   readonly llmClients?: LlmClients;
   readonly embedder?: Embedder;
-  /**
-   * Overrides for the fact extractor. Pass `{ systemPrompt: '...' }` to
-   * replace the default extraction prompt (useful for privacy-pipeline
-   * users who need to re-include placeholder-preservation rules, or for
-   * domain-specific category tuning). Pass `{ maxTokens: N }` to tune
-   * extraction response budget.
-   */
-  readonly extractor?: ExtractorConfig;
 }
 
 export interface PristineLiteConfig {
@@ -65,7 +52,7 @@ export interface PristineLiteConfig {
 // ---------------------------------------------------------------------------
 
 export class PristineLocal {
-  public readonly orchestrator: Orchestrator;
+  public readonly orchestrator: Orchestrator | null;
   public readonly ingestQueue: IngestQueue;
 
   private readonly conversationStore: ConversationStore;
@@ -82,7 +69,7 @@ export class PristineLocal {
   private readonly isLite: boolean;
 
   private constructor(deps: {
-    orchestrator: Orchestrator;
+    orchestrator: Orchestrator | null;
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
     memoryStore: SqliteStore | null;
@@ -136,22 +123,12 @@ export class PristineLocal {
 
     const store = new SqliteStore(db);
     const conversationStore = new ConversationStore(db);
-    const extractor = createExtractor(llmClients.memoryClient, config.extractor);
-    const consolidator = createConsolidator(llmClients.memoryClient);
-    const queryAnalyzer = createQueryAnalyzer(llmClients.memoryClient);
-    const retriever = createRetriever({ store, embedder });
 
-    const orchestrator = createOrchestrator({
-      extractor,
-      embedder,
-      store,
-      consolidator,
+    const ingestQueue = new IngestQueue({
+      db,
+      orchestrator: null,
       conversationStore,
-      retriever,
-      queryAnalyzer,
     });
-
-    const ingestQueue = new IngestQueue({ db, orchestrator, conversationStore });
 
     const keysDir =
       config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
@@ -160,7 +137,7 @@ export class PristineLocal {
     const vaultStore = createSqliteVaultStore(db);
 
     return new PristineLocal({
-      orchestrator,
+      orchestrator: null,
       ingestQueue,
       conversationStore,
       memoryStore: store,
@@ -191,12 +168,12 @@ export class PristineLocal {
     const conversationStore = new ConversationStore(db);
     const ingestQueue = new IngestQueue({
       db,
-      orchestrator: null as unknown as Orchestrator,
+      orchestrator: null,
       conversationStore,
     });
 
     return new PristineLocal({
-      orchestrator: null as unknown as Orchestrator,
+      orchestrator: null,
       ingestQueue,
       conversationStore,
       memoryStore: null,
@@ -217,14 +194,11 @@ export class PristineLocal {
   // Memory API
   // -------------------------------------------------------------------------
 
-  public async store(conversation: readonly Message[], userId: string): Promise<IngestResult> {
-    if (this.isLite) {
-      throw new IngestQueueError(
-        'store() requires a full client via PristineLocal.create(). ' +
-          'Use storeAsync() for fire-and-forget enqueuing with lite clients.',
-      );
-    }
-    return this.orchestrator.store(conversation, userId);
+  public async store(_conversation: readonly Message[], _userId: string): Promise<IngestResult> {
+    throw new IngestQueueError(
+      'store() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
+        'Use storeAsync() to enqueue conversations, or wait for the Phase 2 indexer/searcher primitives.',
+    );
   }
 
   /**
@@ -236,17 +210,14 @@ export class PristineLocal {
   }
 
   public async search(
-    query: string,
-    userId: string,
-    options?: SearchOptions,
+    _query: string,
+    _userId: string,
+    _options?: SearchOptions,
   ): Promise<RetrieveResult> {
-    if (this.isLite) {
-      throw new IngestQueueError(
-        'search() requires a full client via PristineLocal.create(). ' +
-          'Lite clients support searchConversations() and getConversation().',
-      );
-    }
-    return this.orchestrator.search(query, userId, options);
+    throw new IngestQueueError(
+      'search() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
+        'searchConversations() and getConversation() remain available for raw-conversation lookup.',
+    );
   }
 
   // -------------------------------------------------------------------------

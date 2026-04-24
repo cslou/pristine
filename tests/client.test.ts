@@ -11,23 +11,7 @@ import type { LlmClients } from '../src/engine/index.js';
 // ---------------------------------------------------------------------------
 
 const createMockLlmClient = (): LlmClient => {
-  const generate = async ({ systemPrompt }: { systemPrompt: string }): Promise<unknown> => {
-    if (systemPrompt.includes('memory consolidation')) {
-      return { decisions: [{ action: 'ADD', factIndex: 0 }] };
-    }
-    if (systemPrompt.includes('query analysis') || systemPrompt.includes('analyze')) {
-      return {
-        intent: 'factual_lookup',
-        filters: {},
-        suggestedTopK: 5,
-        rewrittenQuery: 'test query',
-      };
-    }
-    // Extractor default
-    return {
-      facts: [{ text: 'The user likes tea', validFrom: new Date().toISOString() }],
-    };
-  };
+  const generate = async (): Promise<unknown> => ({});
   return { generate: generate as LlmClient['generate'] };
 };
 
@@ -76,136 +60,40 @@ describe('PristineLocal', () => {
       });
 
       expect(client).toBeInstanceOf(PristineLocal);
-      expect(client.orchestrator).toBeDefined();
     });
 
-    it('threads extractor.systemPrompt from config to the extractor LlmClient call', async () => {
-      // Regression guard: the extractor config MUST flow from
-      // PristineLocalConfig.extractor down to createExtractor and into the
-      // LlmClient.generate({ systemPrompt }) call. Without this wiring,
-      // privacy-pipeline users have no supported way to re-inject their
-      // placeholder-preservation rules that were removed from the default.
-      const customPrompt = 'DIAGNOSTIC: replace default extraction prompt.';
-      const calls: { systemPrompt: string }[] = [];
-      const spyLlmClient: LlmClient = {
-        generate: (async (params: { systemPrompt: string }) => {
-          calls.push({ systemPrompt: params.systemPrompt });
-          // Return a minimal valid extraction so downstream steps don't throw.
-          return {
-            facts: [{ text: 'The user likes tea', validFrom: new Date().toISOString() }],
-          };
-        }) as LlmClient['generate'],
-      };
-      const llmClients: LlmClients = {
-        privacyClient: spyLlmClient,
-        memoryClient: spyLlmClient,
-      };
-
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients,
-        embedder: deps.embedder,
-        extractor: { systemPrompt: customPrompt },
-      });
-
-      await client.store([{ role: 'user', content: 'hi' }], 'test-user');
-
-      // Extraction is the first LlmClient call the pipeline makes; any call
-      // matching the custom prompt confirms the wiring end-to-end.
-      const extractCall = calls.find((c) => c.systemPrompt === customPrompt);
-      expect(extractCall).toBeDefined();
-    });
-  });
-
-  describe('memory API', () => {
-    it('store() delegates to orchestrator and returns IngestResult', async () => {
+    it('store() throws IngestQueueError (orchestrator pipeline removed in spec-005 Phase 1)', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
-      const result = await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
-
-      expect(result).toBeDefined();
-      expect(result.facts).toBeDefined();
-      expect(result.errors).toBeDefined();
+      await expect(
+        client.store([{ role: 'user', content: 'I like tea' }], 'test-user'),
+      ).rejects.toThrow(IngestQueueError);
     });
 
-    it('search() delegates to orchestrator and returns RetrieveResult', async () => {
+    it('search() throws IngestQueueError (orchestrator pipeline removed in spec-005 Phase 1)', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
-      // Ingest first so there's something to find
-      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
-
-      const result = await client.search('what does the user like?', 'test-user');
-
-      expect(result).toBeDefined();
-      expect(result.memories).toBeDefined();
-      expect(result.metadata).toBeDefined();
-    });
-
-    it('search() accepts SearchOptions with topK', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients: deps.llmClients,
-        embedder: deps.embedder,
-      });
-
-      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
-
-      const result = await client.search('what does the user like?', 'test-user', { topK: 5 });
-
-      expect(result).toBeDefined();
-      expect(result.memories).toBeDefined();
-    });
-
-    it('search() accepts SearchOptions with temporalMode', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients: deps.llmClients,
-        embedder: deps.embedder,
-      });
-
-      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
-
-      const resultCurrent = await client.search('tea', 'test-user', { temporalMode: 'current' });
-      expect(resultCurrent).toBeDefined();
-
-      const resultFull = await client.search('tea', 'test-user', { temporalMode: 'full' });
-      expect(resultFull).toBeDefined();
-    });
-
-    it('search() without options is backward compatible', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients: deps.llmClients,
-        embedder: deps.embedder,
-      });
-
-      await client.store([{ role: 'user', content: 'I like tea' }], 'test-user');
-
-      // Two-arg call should still work
-      const result = await client.search('tea', 'test-user');
-      expect(result).toBeDefined();
-      expect(result.memories).toBeDefined();
+      await expect(client.search('tea', 'test-user')).rejects.toThrow(IngestQueueError);
     });
   });
 
   describe('conversation API', () => {
-    it('searchConversations() returns matching conversations', async () => {
+    it('searchConversations() returns matching conversations after storeAsync', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
-      // Store a conversation first (via store() which writes to ConversationStore)
-      await client.store([{ role: 'user', content: 'I love espresso coffee' }], 'test-user');
+      client.storeAsync([{ role: 'user', content: 'I love espresso coffee' }], 'test-user');
 
       const results = client.searchConversations({
         userId: 'test-user',
@@ -243,9 +131,8 @@ describe('PristineLocal', () => {
         { role: 'user' as const, content: 'Hello' },
         { role: 'assistant' as const, content: 'Hi there' },
       ];
-      await client.store(messages, 'test-user');
+      client.storeAsync(messages, 'test-user');
 
-      // Find the conversation via search
       const searchResults = client.searchConversations({ userId: 'test-user' });
       expect(searchResults.length).toBeGreaterThan(0);
 
@@ -312,21 +199,6 @@ describe('PristineLocal', () => {
 
       await client.dispose();
       expect(closeSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('orchestrator property', () => {
-    it('exposes orchestrator for advanced pipeline access', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients: deps.llmClients,
-        embedder: deps.embedder,
-      });
-
-      expect(client.orchestrator.ingest).toBeTypeOf('function');
-      expect(client.orchestrator.retrieve).toBeTypeOf('function');
-      expect(client.orchestrator.ingestSteps).toBeDefined();
-      expect(client.orchestrator.retrieveSteps).toBeDefined();
     });
   });
 
@@ -438,10 +310,6 @@ describe('PristineLocal', () => {
         IngestQueueError,
       );
 
-      await expect(client.store([{ role: 'user', content: 'test' }], 'lite-user')).rejects.toThrow(
-        'store() requires a full client',
-      );
-
       liteDb.close();
     });
 
@@ -450,10 +318,6 @@ describe('PristineLocal', () => {
       const client = PristineLocal.createLite({ db: liteDb });
 
       await expect(client.search('query', 'lite-user')).rejects.toThrow(IngestQueueError);
-
-      await expect(client.search('query', 'lite-user')).rejects.toThrow(
-        'search() requires a full client',
-      );
 
       liteDb.close();
     });

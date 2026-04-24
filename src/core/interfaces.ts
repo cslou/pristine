@@ -1,15 +1,10 @@
 import type {
   AddMemoryInput,
   AnalyzedQuery,
-  ConsolidationBatchResult,
-  ConsolidationRequest,
-  ConsolidationResult,
   Entity,
   EntityInput,
   Episode,
   EpisodeInput,
-  ExtractionResult,
-  Fact,
   IngestOptions,
   IngestResult,
   JsonSchema,
@@ -75,23 +70,6 @@ export interface Store {
   ): Promise<SupersedeMemoryResult>;
   getSupersessionChain(memoryId: string, userId: string): Promise<Memory[]>;
   clearAll(userId?: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Extraction
-// ---------------------------------------------------------------------------
-
-export interface Extractor {
-  extract(conversation: readonly Message[], referenceTimestamp: string): Promise<ExtractionResult>;
-}
-
-// ---------------------------------------------------------------------------
-// Consolidation
-// ---------------------------------------------------------------------------
-
-export interface Consolidator {
-  consolidate(newFact: Fact, similarMemories: readonly Fact[]): Promise<ConsolidationResult>;
-  consolidateBatch(requests: ConsolidationRequest[]): Promise<ConsolidationBatchResult>;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,10 +1,6 @@
 import type {
   AddMemoryInput,
-  AnalyzedQuery,
-  Entity,
-  EntityInput,
-  Episode,
-  EpisodeInput,
+  ClassificationPipelineResult,
   IngestOptions,
   IngestResult,
   JsonSchema,
@@ -12,19 +8,12 @@ import type {
   Memory,
   Message,
   PipelineStep,
-  QueryContext,
-  RankedEpisode,
-  RankedRelationship,
-  Relationship,
-  RelationshipInput,
   RetrieveOptions,
   RetrieveResult,
   SearchOptions,
   SearchParams,
-  ClassificationPipelineResult,
   SensitivityReport,
   SupersedeMemoryResult,
-  TraversalResult,
   UpdateMemoryInput,
   VaultEntry,
   VaultEntryInput,
@@ -104,49 +93,11 @@ export interface VaultStore {
 }
 
 // ---------------------------------------------------------------------------
-// Episodes
-// ---------------------------------------------------------------------------
-
-export interface EpisodeStore {
-  addEpisode(episode: EpisodeInput): Promise<Episode>;
-  searchByEmbedding(embedding: number[], topK: number, userId: string): Promise<RankedEpisode[]>;
-  linkMemory(memoryId: string, episodeId: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Entity Graph
-// ---------------------------------------------------------------------------
-
-export interface EntityStore {
-  addEntity(entity: EntityInput): Promise<Entity>;
-  resolve(name: string, type: string, userId: string, embedding?: number[]): Promise<Entity | null>;
-  getEntity(id: string, userId: string): Promise<Entity | null>;
-}
-
-export interface RelationshipStore {
-  addRelationship(rel: RelationshipInput): Promise<Relationship>;
-  traverse(entityId: string, userId: string, maxDepth: number): Promise<TraversalResult[]>;
-  searchByEmbedding(
-    embedding: number[],
-    topK: number,
-    userId: string,
-  ): Promise<RankedRelationship[]>;
-}
-
-// ---------------------------------------------------------------------------
 // Retrieval
 // ---------------------------------------------------------------------------
 
 export interface Retriever {
   retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
-}
-
-// ---------------------------------------------------------------------------
-// Query Analysis
-// ---------------------------------------------------------------------------
-
-export interface QueryAnalyzer {
-  analyzeQuery(query: string, context?: QueryContext): Promise<AnalyzedQuery>;
 }
 
 // ---------------------------------------------------------------------------

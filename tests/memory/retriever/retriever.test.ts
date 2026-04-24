@@ -213,8 +213,6 @@ describe('retriever', () => {
 
     expect(result.metadata.totalFound).toBe(2);
     expect(result.metadata.topK).toBe(5);
-    expect(result.query.rewrittenQuery).toBe('query');
-    expect(result.query.intent).toBe('contextual_search');
   });
 });
 

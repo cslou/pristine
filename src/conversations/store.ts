@@ -188,11 +188,12 @@ function addColumnIfMissing(
 
 // Schema version tracked via PRAGMA user_version. Bump when adding a new
 // migration step; the initConversationTables gate only runs migration work
-// when the stored version is below this constant.
+// when the stored version is below this constant. Exported so tests can pin
+// the exact post-migration value without re-declaring the number.
 // - 0 = Sprint-009 baseline (pre-sprint-014)
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
-// - 2 = Sprint-014 Story 2 (vec_windows virtual table)
-const SCHEMA_VERSION = 2;
+// - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
+export const SCHEMA_VERSION = 2;
 
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');

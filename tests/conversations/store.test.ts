@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
-import { ConversationStore } from '../../src/conversations/store.js';
+import { ConversationStore, SCHEMA_VERSION } from '../../src/conversations/store.js';
 
 let db: ReturnType<typeof createDatabase>;
 let store: ConversationStore;
@@ -612,13 +612,12 @@ describe('sprint-014 schema migration', () => {
     d.close();
   });
 
-  it('bumps PRAGMA user_version to the current target on first migration and skips on re-run', () => {
+  it('bumps PRAGMA user_version to SCHEMA_VERSION on first migration and skips on re-run', () => {
     const d = makeLegacyDb();
     expect(d.pragma('user_version', { simple: true })).toBe(0);
 
     new ConversationStore(d);
-    const afterFirst = d.pragma('user_version', { simple: true }) as number;
-    expect(afterFirst).toBeGreaterThanOrEqual(1);
+    expect(d.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
 
     // Flip a conversation's project_id to 'default' (the back-fill sentinel).
     // If the migration ran again, the back-fill UPDATE would re-match and
@@ -632,7 +631,7 @@ describe('sprint-014 schema migration', () => {
       project_id: string;
     };
     expect(row.project_id).toBe('default');
-    expect(d.pragma('user_version', { simple: true })).toBe(afterFirst);
+    expect(d.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
     d.close();
   });
 });

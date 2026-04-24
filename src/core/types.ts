@@ -244,12 +244,6 @@ export interface RankedMemory {
   readonly score: number;
 }
 
-export interface RetrieveFilters {
-  readonly userId: string;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
-
 export interface RetrieveOptions {
   readonly topK?: number;
   readonly temporalMode?: TemporalMode;

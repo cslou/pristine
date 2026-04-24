@@ -38,13 +38,7 @@ export type { LlmClients } from './engine/index.js';
 // Errors
 // ---------------------------------------------------------------------------
 
-export {
-  AppError,
-  ConfigError,
-  EmbedderError,
-  IngestQueueError,
-  OrchestratorError,
-} from './core/errors.js';
+export { AppError, ConfigError, EmbedderError, IngestQueueError } from './core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Database (for provider integrations that need file-backed DBs)

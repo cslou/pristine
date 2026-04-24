@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
-import { ConversationNotFoundError } from '../core/errors.js';
+import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -35,6 +35,15 @@ export interface ConversationSearchParams {
   readonly dateFrom?: string;
   readonly dateTo?: string;
   readonly limit?: number;
+}
+
+export interface StoredSummary {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly text: string;
+  readonly timestamp: number;
+  readonly metadata?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +544,82 @@ export class ConversationStore {
     });
 
     return runTransaction();
+  }
+
+  /**
+   * Insert a reference summary into the summaries table. Returns the
+   * generated id. Phase-5's summary-injection flow writes here after the
+   * retrieval context is assembled.
+   *
+   * Unlike `addMessage`, `projectId` IS caller-supplied — summaries aren't
+   * attached to a specific conversation, and session_id is a harness-
+   * provided opaque string that may span multiple conversations.
+   *
+   * **Empty-text guard.** A summary with no text carries no retrieval
+   * value; `text.trim().length === 0` throws `InvalidArgumentError` and
+   * nothing is inserted. Callers get a targetable catch class rather than
+   * discovering the empty row later in a query result.
+   */
+  public addSummary(params: {
+    readonly sessionId: string;
+    readonly projectId: string;
+    readonly text: string;
+    readonly timestamp: number;
+    readonly metadata?: string;
+  }): string {
+    if (params.text.trim().length === 0) {
+      throw new InvalidArgumentError('addSummary: text must not be empty or whitespace-only');
+    }
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO summaries (id, session_id, project_id, text, timestamp, metadata)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        params.sessionId,
+        params.projectId,
+        params.text,
+        params.timestamp,
+        params.metadata ?? null,
+      );
+    return id;
+  }
+
+  /**
+   * Return the most recent summaries for a project, ordered by timestamp
+   * DESC. Default limit of 10 keeps the caller's retrieval-context budget
+   * bounded; callers that need more pass an explicit limit.
+   *
+   * Uses `ix_summaries_project_time (project_id, timestamp DESC)` — the
+   * query plan is a covering index seek+scan, not a full-table sort.
+   */
+  public getRecentSummaries(projectId: string, limit = 10): readonly StoredSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, project_id, text, timestamp, metadata
+         FROM summaries
+         WHERE project_id = ?
+         ORDER BY timestamp DESC
+         LIMIT ?`,
+      )
+      .all(projectId, limit) as {
+      id: string;
+      session_id: string;
+      project_id: string;
+      text: string;
+      timestamp: number;
+      metadata: string | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      projectId: row.project_id,
+      text: row.text,
+      timestamp: row.timestamp,
+      ...(row.metadata !== null ? { metadata: row.metadata } : {}),
+    }));
   }
 
   /**

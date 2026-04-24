@@ -4,6 +4,8 @@ Local-first privacy and memory SDK for AI agents. No API calls, no server, no da
 
 Pristine gives agents persistent memory (remember facts from conversations) and privacy protection (detect, redact, and encrypt PII) using local LLM inference and SQLite storage. Everything runs on-device.
 
+> **Status — spec-005 Phase 1 complete (sprint-013).** The SDK surface has been trimmed to the **corpus + privacy + queue** subsystems. The LOCOMO-aimed fact-extraction pipeline (extractor / consolidator / fact-ledger store / legacy memory subsystems / orchestrator retrieval path) has been removed to make room for the corpus-based architecture defined in `docs/specs/implementation-spec-005.md`. The Phase-1 public API is: `PristineLocal.create()` / `PristineLocal.createLite()`, `storeAsync()`, `searchConversations()`, `getConversation()`, and the privacy triad (`secureAndRedact` / `reveal` / `scrubOutput`). The Phase-2 indexer + Phase-3/4 searcher primitives are deferred to upcoming sprints; the "How Memory Works → Fact Extraction Pipeline" section below describes the **pre-pivot** behavior and will be rewritten when those primitives land.
+
 ## Table of Contents
 
 - [Architecture](#architecture)

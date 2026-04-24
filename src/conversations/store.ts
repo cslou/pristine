@@ -148,6 +148,23 @@ CREATE TABLE IF NOT EXISTS window_messages (
 );
 `;
 
+// Spec-005 §12 vec_sessions — whole-conversation secondary semantic index.
+// One vector per conversation (keyed by conversation_id, PRIMARY KEY), used
+// by Phase-4 hybrid retrieval as a coarse-grained vector source alongside
+// vec_windows. No project_id column per spec §12 — Phase-4 filters sessions
+// via a pre-query join on conversations.project_id.
+// `+updated_at INTEGER` uses the vec0 auxiliary-column syntax (`+` prefix).
+// vec0 does not accept NOT NULL / CHECK / DEFAULT on auxiliary columns at
+// DDL — the non-null invariant is enforced at the write-helper layer in
+// sprint-015.
+const SPRINT_014_VEC_SESSIONS_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
+  conversation_id TEXT PRIMARY KEY,
+  embedding float[768],
+  +updated_at INTEGER
+);
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -231,6 +248,7 @@ export function initConversationTables(db: Database.Database): void {
     if (currentVersion < 2) {
       db.exec(SPRINT_014_VEC_WINDOWS_DDL);
       db.exec(SPRINT_014_WINDOW_MESSAGES_DDL);
+      db.exec(SPRINT_014_VEC_SESSIONS_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

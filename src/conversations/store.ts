@@ -116,7 +116,7 @@ END;
 
 // Spec-005 §12 indexes — runs after ADD COLUMN steps so project_id and
 // parent_message_id exist when the partial + parent indexes reference them.
-const SPRINT_014_INDEXES_DDL = `
+const RETRIEVAL_INDEXES_DDL = `
 CREATE INDEX IF NOT EXISTS ix_conversations_project_started
   ON conversations(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_messages_conv_sort
@@ -142,7 +142,7 @@ CREATE INDEX IF NOT EXISTS ix_messages_parent
 // db.transaction() is not guaranteed to roll back cleanly on transaction
 // abort in standard SQLite; the IF NOT EXISTS guard makes a subsequent
 // re-run idempotent on the success path, which is what we rely on.
-const SPRINT_014_VEC_WINDOWS_DDL = `
+const VEC_WINDOWS_DDL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
   conversation_id TEXT,
   window_index INTEGER,
@@ -161,7 +161,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
 // hits resolve to constituent message_ids) without a full scan of
 // window_messages. Spec §12's index list omits this, but the Phase-4
 // join pattern makes it load-bearing at scale.
-const SPRINT_014_WINDOW_MESSAGES_DDL = `
+const WINDOW_MESSAGES_DDL = `
 CREATE TABLE IF NOT EXISTS window_messages (
   conversation_id TEXT NOT NULL,
   window_index INTEGER NOT NULL,
@@ -185,7 +185,7 @@ CREATE INDEX IF NOT EXISTS ix_window_messages_message_id
 //
 // Same INSERT OR REPLACE caveat as vec_windows: duplicate PK inserts throw
 // UNIQUE constraint failed; use DELETE + INSERT for the replace idiom.
-const SPRINT_014_VEC_SESSIONS_DDL = `
+const VEC_SESSIONS_DDL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
   conversation_id TEXT PRIMARY KEY,
   embedding float[768],
@@ -218,7 +218,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
 // index-friendly raw column) and join back to messages_public only for
 // the aliased surface. Same caveat applies to conversations_public
 // .started_at vs. ix_conversations_project_started.
-const SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL = `
+const MESSAGES_PUBLIC_DDL = `
 CREATE VIEW IF NOT EXISTS messages_public
   (id, conversation_id, turn_index, role, content, timestamp, project_id) AS
   SELECT id,
@@ -238,7 +238,7 @@ CREATE VIEW IF NOT EXISTS messages_public
 // implementation details the Phase-5 SQL-primitive consumer should not
 // see. project_id IS exposed — consumers need it for project-scoped
 // retrieval.
-const SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL = `
+const CONVERSATIONS_PUBLIC_DDL = `
 CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
   SELECT id,
          project_id,
@@ -255,7 +255,7 @@ CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
 // NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT).
 // ix_summaries_project_time covers the recency query pattern getRecentSummaries
 // uses — filter by project_id + order by timestamp DESC.
-const SPRINT_014_SUMMARIES_DDL = `
+const SUMMARIES_DDL = `
 CREATE TABLE IF NOT EXISTS summaries (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
@@ -273,7 +273,7 @@ CREATE INDEX IF NOT EXISTS ix_summaries_project_time
 // exposes everything else verbatim. No CAST needed — summaries.timestamp
 // is already stored as INTEGER unix ms (unlike messages.timestamp which
 // was TEXT from Sprint-009).
-const SPRINT_014_VIEW_SUMMARIES_PUBLIC_DDL = `
+const SUMMARIES_PUBLIC_DDL = `
 CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, timestamp) AS
   SELECT id, session_id, project_id, text, timestamp FROM summaries;
 `;
@@ -358,23 +358,23 @@ export function initConversationTables(db: Database.Database): void {
         'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
       );
 
-      db.exec(SPRINT_014_INDEXES_DDL);
+      db.exec(RETRIEVAL_INDEXES_DDL);
     }
 
     if (currentVersion < 2) {
-      db.exec(SPRINT_014_VEC_WINDOWS_DDL);
-      db.exec(SPRINT_014_WINDOW_MESSAGES_DDL);
-      db.exec(SPRINT_014_VEC_SESSIONS_DDL);
+      db.exec(VEC_WINDOWS_DDL);
+      db.exec(WINDOW_MESSAGES_DDL);
+      db.exec(VEC_SESSIONS_DDL);
     }
 
     if (currentVersion < 3) {
-      db.exec(SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL);
-      db.exec(SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL);
+      db.exec(MESSAGES_PUBLIC_DDL);
+      db.exec(CONVERSATIONS_PUBLIC_DDL);
     }
 
     if (currentVersion < 4) {
-      db.exec(SPRINT_014_SUMMARIES_DDL);
-      db.exec(SPRINT_014_VIEW_SUMMARIES_PUBLIC_DDL);
+      db.exec(SUMMARIES_DDL);
+      db.exec(SUMMARIES_PUBLIC_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

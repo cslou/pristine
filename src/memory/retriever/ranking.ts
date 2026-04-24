@@ -1,3 +1,10 @@
+// Temporal-boost ranking helpers.
+//
+// Preserved here as the sole survivor of `src/memory/retriever/` through
+// the spec-005 Phase-1 removal sweep. sprint-016 (Phase-4 searcher) will
+// import these helpers for RRF fusion + time-aware boosts. Until then
+// there is no runtime consumer in src/ — only the ranking.test.ts unit test.
+
 import type { Memory, TemporalMode } from '../../core/types.js';
 
 /** Boost for facts that are currently valid (validUntil is undefined) in full mode */

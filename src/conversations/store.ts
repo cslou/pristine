@@ -132,6 +132,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
 );
 `;
 
+// Spec-005 §12 window_messages — join table resolving the messages that
+// comprise each window. Composite PK mirrors the vec_windows key +
+// message_id, so the same (conversation_id, window_index) pair in both
+// tables is the indexer's atomic write unit. message_id is INTEGER to
+// match the current messages.id type (see sprint-014 Known Deviation #1
+// and GH issue #106 for the future TEXT UUID migration).
+const SPRINT_014_WINDOW_MESSAGES_DDL = `
+CREATE TABLE IF NOT EXISTS window_messages (
+  conversation_id TEXT NOT NULL,
+  window_index INTEGER NOT NULL,
+  message_id INTEGER NOT NULL REFERENCES messages(id),
+  position INTEGER NOT NULL,
+  PRIMARY KEY (conversation_id, window_index, message_id)
+);
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -214,6 +230,7 @@ export function initConversationTables(db: Database.Database): void {
 
     if (currentVersion < 2) {
       db.exec(SPRINT_014_VEC_WINDOWS_DDL);
+      db.exec(SPRINT_014_WINDOW_MESSAGES_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

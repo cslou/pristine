@@ -427,3 +427,211 @@ describe('ConversationStore', () => {
     });
   });
 });
+
+// -----------------------------------------------------------------------------
+// Sprint-014 schema migration
+// -----------------------------------------------------------------------------
+
+// Pre-sprint-014 (Sprint-009) DDL — used to seed a "legacy" DB so the migration
+// path runs against a shape that matches what an existing user's DB looks like.
+// Includes the FTS5 triggers so direct INSERTs below populate messages_fts, which
+// matches real Sprint-009 DBs and avoids spurious "disk image malformed" errors
+// when the back-fill UPDATE fires the AFTER UPDATE trigger.
+const SPRINT_009_DDL = `
+CREATE TABLE conversations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  message_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  timestamp TEXT,
+  sort_order INTEGER NOT NULL
+);
+CREATE VIRTUAL TABLE messages_fts
+  USING fts5(content, content=messages, content_rowid=rowid);
+CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+`;
+
+const makeLegacyDb = () => {
+  const d = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+  d.exec(SPRINT_009_DDL);
+  return d;
+};
+
+describe('sprint-014 schema migration', () => {
+  it('enables PRAGMA foreign_keys after store init', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+    new ConversationStore(d);
+    const result = d.pragma('foreign_keys', { simple: true });
+    expect(result).toBe(1);
+    d.close();
+  });
+
+  it('back-fills conversations.project_id from user_id on legacy rows', () => {
+    const d = makeLegacyDb();
+    d.prepare(
+      "INSERT INTO conversations (id, user_id, content_hash) VALUES ('c-legacy-1', 'u-legacy', 'h1')",
+    ).run();
+
+    new ConversationStore(d);
+
+    const row = d
+      .prepare('SELECT project_id FROM conversations WHERE id = ?')
+      .get('c-legacy-1') as { project_id: string };
+    expect(row.project_id).toBe('u-legacy');
+    d.close();
+  });
+
+  it("back-fills conversations.project_id to 'default' when user_id is empty", () => {
+    const d = makeLegacyDb();
+    d.prepare(
+      "INSERT INTO conversations (id, user_id, content_hash) VALUES ('c-empty', '', 'h2')",
+    ).run();
+
+    new ConversationStore(d);
+
+    const row = d.prepare('SELECT project_id FROM conversations WHERE id = ?').get('c-empty') as {
+      project_id: string;
+    };
+    expect(row.project_id).toBe('default');
+    d.close();
+  });
+
+  it('back-fills messages.project_id from the parent conversation', () => {
+    const d = makeLegacyDb();
+    d.prepare(
+      "INSERT INTO conversations (id, user_id, content_hash) VALUES ('c-parent', 'u-parent', 'h3')",
+    ).run();
+    d.prepare(
+      "INSERT INTO messages (conversation_id, role, content, sort_order) VALUES ('c-parent', 'user', 'hi', 0)",
+    ).run();
+
+    new ConversationStore(d);
+
+    const row = d
+      .prepare('SELECT project_id FROM messages WHERE conversation_id = ?')
+      .get('c-parent') as { project_id: string };
+    expect(row.project_id).toBe('u-parent');
+    d.close();
+  });
+
+  it("back-fills orphaned messages.project_id to 'default' (COALESCE fallback)", () => {
+    // Legacy DBs built before PRAGMA foreign_keys = ON was enabled can contain
+    // messages whose conversation_id has no matching row in conversations. The
+    // back-fill's correlated subquery returns NULL for those rows; without the
+    // COALESCE fallback, the UPDATE would violate the NOT NULL constraint and
+    // abort the migration. Disable FK on the legacy seed so we can simulate
+    // the orphan shape a legacy DB could have accrued.
+    const d = makeLegacyDb();
+    d.pragma('foreign_keys = OFF');
+    d.prepare(
+      "INSERT INTO messages (conversation_id, role, content, sort_order) VALUES ('c-missing', 'user', 'orphan', 0)",
+    ).run();
+
+    expect(() => new ConversationStore(d)).not.toThrow();
+
+    const row = d
+      .prepare('SELECT project_id FROM messages WHERE conversation_id = ?')
+      .get('c-missing') as { project_id: string };
+    expect(row.project_id).toBe('default');
+    d.close();
+  });
+
+  it('addConversation writes parent_message_id = NULL by default', () => {
+    const msgs = makeMessages(['Hi', 'Hello']);
+    const id = store.addConversation(msgs, 'user-parent-null');
+
+    const rows = db
+      .prepare('SELECT parent_message_id FROM messages WHERE conversation_id = ?')
+      .all(id) as { parent_message_id: number | null }[];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.parent_message_id).toBeNull();
+    }
+  });
+
+  it('creates all four spec §12 indexes in sqlite_master', () => {
+    const expected = [
+      'ix_conversations_project_started',
+      'ix_messages_conv_sort',
+      'ix_messages_timestamp_nonchunk',
+      'ix_messages_parent',
+    ];
+    const rows = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%'")
+      .all() as { name: string }[];
+    const names = rows.map((r) => r.name).sort();
+    expect(names).toEqual(expected.sort());
+  });
+
+  it('re-running migration is a no-op (idempotent)', () => {
+    const d = makeLegacyDb();
+    d.prepare(
+      "INSERT INTO conversations (id, user_id, content_hash) VALUES ('c-idem', 'u-idem', 'h4')",
+    ).run();
+
+    new ConversationStore(d);
+    const beforeCols = d.prepare('PRAGMA table_info(messages)').all();
+    const beforeIdx = d
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
+      .all();
+
+    expect(() => new ConversationStore(d)).not.toThrow();
+
+    const afterCols = d.prepare('PRAGMA table_info(messages)').all();
+    const afterIdx = d
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
+      .all();
+    expect(afterCols).toEqual(beforeCols);
+    expect(afterIdx).toEqual(beforeIdx);
+
+    // Consumer-reassigned project_id must survive a re-run — the user_version
+    // gate skips the whole back-fill block on already-migrated DBs, so any
+    // caller-assigned value is safe regardless of whether it equals 'default'.
+    d.prepare("UPDATE conversations SET project_id = 'custom' WHERE id = ?").run('c-idem');
+    new ConversationStore(d);
+    const row = d.prepare('SELECT project_id FROM conversations WHERE id = ?').get('c-idem') as {
+      project_id: string;
+    };
+    expect(row.project_id).toBe('custom');
+    d.close();
+  });
+
+  it('bumps PRAGMA user_version from 0 to 1 on first migration and skips on re-run', () => {
+    const d = makeLegacyDb();
+    expect(d.pragma('user_version', { simple: true })).toBe(0);
+
+    new ConversationStore(d);
+    expect(d.pragma('user_version', { simple: true })).toBe(1);
+
+    // Flip a conversation's project_id to 'default' (the back-fill sentinel).
+    // If the migration ran again, the back-fill UPDATE would re-match and
+    // rewrite this row from user_id; with the version gate, it must survive.
+    d.prepare(
+      "INSERT INTO conversations (id, user_id, content_hash, project_id) VALUES ('c-post', 'u-post', 'h-post', 'default')",
+    ).run();
+
+    new ConversationStore(d);
+    const row = d.prepare('SELECT project_id FROM conversations WHERE id = ?').get('c-post') as {
+      project_id: string;
+    };
+    expect(row.project_id).toBe('default');
+    expect(d.pragma('user_version', { simple: true })).toBe(1);
+    d.close();
+  });
+});

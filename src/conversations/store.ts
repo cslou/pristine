@@ -107,12 +107,96 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
 END;
 `;
 
+// Spec-005 §12 indexes — runs after ADD COLUMN steps so project_id and
+// parent_message_id exist when the partial + parent indexes reference them.
+const SPRINT_014_INDEXES_DDL = `
+CREATE INDEX IF NOT EXISTS ix_conversations_project_started
+  ON conversations(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_messages_conv_sort
+  ON messages(conversation_id, sort_order);
+CREATE INDEX IF NOT EXISTS ix_messages_timestamp_nonchunk
+  ON messages(timestamp DESC) WHERE parent_message_id IS NULL;
+CREATE INDEX IF NOT EXISTS ix_messages_parent
+  ON messages(parent_message_id);
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
 
+interface TableInfoRow {
+  readonly name: string;
+}
+
+function addColumnIfMissing(
+  db: Database.Database,
+  table: string,
+  column: string,
+  ddl: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
+  if (columns.some((row) => row.name === column)) {
+    return;
+  }
+  db.exec(ddl);
+}
+
+// Schema version tracked via PRAGMA user_version. Bump when adding a new
+// migration step; the initConversationTables gate only runs migration work
+// when the stored version is below this constant.
+// - 0 = Sprint-009 baseline (pre-sprint-014)
+// - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
+const SCHEMA_VERSION = 1;
+
 export function initConversationTables(db: Database.Database): void {
+  db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
+
+  const currentVersion = db.pragma('user_version', { simple: true }) as number;
+  if (currentVersion >= SCHEMA_VERSION) {
+    return;
+  }
+
+  // Atomic migration: either every ADD COLUMN / UPDATE / index + the user_version
+  // bump lands, or none of them does. A crash between ADD COLUMN and back-fill
+  // would otherwise leave the schema partially migrated with no recovery path.
+  db.transaction(() => {
+    addColumnIfMissing(
+      db,
+      'conversations',
+      'project_id',
+      "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+    );
+    db.exec(
+      "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
+    );
+
+    addColumnIfMissing(
+      db,
+      'messages',
+      'project_id',
+      "ALTER TABLE messages ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+    );
+    db.exec(
+      `UPDATE messages
+       SET project_id = COALESCE(
+         (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
+         'default'
+       )
+       WHERE project_id = 'default'`,
+    );
+
+    addColumnIfMissing(
+      db,
+      'messages',
+      'parent_message_id',
+      'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
+    );
+
+    db.exec(SPRINT_014_INDEXES_DDL);
+
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  })();
 }
 
 // ---------------------------------------------------------------------------

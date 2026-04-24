@@ -892,4 +892,72 @@ describe('sprint-014 Story 3 — public views', () => {
       .get() as { t: string };
     expect(row.t).toBe('integer');
   });
+
+  it('round-trips addConversation data through messages_public with correct aliases', () => {
+    const timestamp = '2026-04-24T10:00:00';
+    // strftime('%s', '2026-04-24T10:00:00') assumes UTC when there's no tz
+    // suffix, which is the Sprint-009 datetime('now') default. Compute the
+    // expected unix-ms value the same way the view's CAST does.
+    const expectedMs = Math.floor(Date.parse(`${timestamp}Z`) / 1000) * 1000;
+
+    const convId = store.addConversation(
+      [
+        { role: 'user', content: 'first turn', timestamp },
+        { role: 'assistant', content: 'second turn', timestamp },
+      ],
+      'user-rt',
+    );
+
+    const rows = db
+      .prepare(
+        `SELECT id, conversation_id, turn_index, role, content, timestamp, project_id
+         FROM messages_public
+         WHERE conversation_id = ?
+         ORDER BY turn_index ASC`,
+      )
+      .all(convId) as {
+      id: number;
+      conversation_id: string;
+      turn_index: number;
+      role: string;
+      content: string;
+      timestamp: number;
+      project_id: string;
+    }[];
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].conversation_id).toBe(convId);
+    expect(rows[0].turn_index).toBe(0);
+    expect(rows[0].role).toBe('user');
+    expect(rows[0].content).toBe('first turn');
+    expect(rows[0].timestamp).toBe(expectedMs);
+    // addConversation doesn't explicitly set project_id — the column's
+    // DDL-level DEFAULT 'default' applies. The migration back-fill runs
+    // only for LEGACY rows; forward writes through addConversation land
+    // on 'default' until the new Story-4 API surface (addMessage with
+    // project_id) lands in sprint-015. Pinned here so the view + default
+    // contract is explicit.
+    expect(rows[0].project_id).toBe('default');
+    expect(rows[1].turn_index).toBe(1);
+    expect(rows[1].content).toBe('second turn');
+  });
+
+  it('round-trips addConversation data through conversations_public with started_at cast', () => {
+    const convId = store.addConversation(makeMessages(['hi']), 'user-conv-rt');
+
+    // started_at is derived from datetime('now') — can't predict the exact
+    // value, but assert structure: integer, positive, within the last minute.
+    const row = db
+      .prepare('SELECT id, project_id, started_at FROM conversations_public WHERE id = ?')
+      .get(convId) as { id: string; project_id: string; started_at: number };
+
+    expect(row.id).toBe(convId);
+    // Same rationale as the messages_public project_id assertion above.
+    expect(row.project_id).toBe('default');
+    expect(typeof row.started_at).toBe('number');
+    expect(row.started_at).toBeGreaterThan(0);
+    // Must be within 60 seconds of now — confirms unix ms, not text.
+    const nowMs = Date.now();
+    expect(Math.abs(nowMs - row.started_at)).toBeLessThan(60_000);
+  });
 });

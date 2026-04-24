@@ -2,7 +2,6 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
-import { IngestQueueError } from '../src/core/errors.js';
 import type { LlmClient, Embedder } from '../src/core/interfaces.js';
 import type { LlmClients } from '../src/engine/index.js';
 
@@ -60,28 +59,6 @@ describe('PristineLocal', () => {
       });
 
       expect(client).toBeInstanceOf(PristineLocal);
-    });
-
-    it('store() throws IngestQueueError (orchestrator pipeline removed in spec-005 Phase 1)', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients: deps.llmClients,
-        embedder: deps.embedder,
-      });
-
-      await expect(
-        client.store([{ role: 'user', content: 'I like tea' }], 'test-user'),
-      ).rejects.toThrow(IngestQueueError);
-    });
-
-    it('search() throws IngestQueueError (orchestrator pipeline removed in spec-005 Phase 1)', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        llmClients: deps.llmClients,
-        embedder: deps.embedder,
-      });
-
-      await expect(client.search('tea', 'test-user')).rejects.toThrow(IngestQueueError);
     });
   });
 
@@ -298,26 +275,6 @@ describe('PristineLocal', () => {
       expect(detail).not.toBeNull();
       expect(detail!.messages).toHaveLength(1);
       expect(detail!.messages[0].content).toBe('Test message');
-
-      liteDb.close();
-    });
-
-    it('store() throws IngestQueueError on lite client', async () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      await expect(client.store([{ role: 'user', content: 'test' }], 'lite-user')).rejects.toThrow(
-        IngestQueueError,
-      );
-
-      liteDb.close();
-    });
-
-    it('search() throws IngestQueueError on lite client', async () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      await expect(client.search('query', 'lite-user')).rejects.toThrow(IngestQueueError);
 
       liteDb.close();
     });

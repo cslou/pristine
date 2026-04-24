@@ -227,10 +227,6 @@ export class SqliteVaultStore implements VaultStore {
 
     return rows.map(mapRow);
   }
-
-  public async deleteEntriesByMemoryId(memoryId: string): Promise<void> {
-    this.db.prepare('DELETE FROM vault_entries WHERE memory_id = ?').run(memoryId);
-  }
 }
 
 export class SqlitePublicKeyStore {

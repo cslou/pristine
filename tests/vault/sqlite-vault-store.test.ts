@@ -79,18 +79,6 @@ describe('SqliteVaultStore', () => {
     expect(result).toHaveLength(0);
   });
 
-  it('deleteEntriesByMemoryId removes entries', async () => {
-    const entries = [makeEntry('ph-delete-1')];
-    const added = await store.addEntries(entries);
-
-    db.prepare('UPDATE vault_entries SET memory_id = ? WHERE id = ?').run('mem-1', added[0]!.id);
-
-    await store.deleteEntriesByMemoryId('mem-1');
-
-    const remaining = await store.getEntriesByPlaceholderIds('user-1', ['ph-delete-1']);
-    expect(remaining).toHaveLength(0);
-  });
-
   it('encrypted values are stored as blobs', async () => {
     const result = await store.getEntriesByPlaceholderIds('user-1', ['ph-1']);
     const entry = result[0]!;

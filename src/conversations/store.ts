@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
+import { ConversationNotFoundError } from '../core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -474,6 +475,66 @@ export class ConversationStore {
 
     runTransaction();
     return id;
+  }
+
+  /**
+   * Append a single message to an existing conversation. Returns the integer
+   * rowid of the inserted row.
+   *
+   * **Atomic sort_order.** The method wraps a `MAX(sort_order) + 1` lookup
+   * and the INSERT in a single `db.transaction(...)` so concurrent appends
+   * serialize at the SQLite level — a gapless ordinal sequence is preserved
+   * even when multiple callers append into the same conversation. Genuine
+   * worker-thread concurrency arrives with sprint-015's embed-worker; this
+   * contract is pinned now so that pipeline lands on correct primitives.
+   *
+   * **Project scope from parent.** `project_id` is read from the parent
+   * conversation row, NOT supplied by the caller. This prevents cross-
+   * project contamination that would be near-impossible to diagnose later.
+   * If the conversation doesn't exist, throws `ConversationNotFoundError`
+   * and nothing is written.
+   *
+   * `sort_order` is ordinal, not contiguous — deleting a message and later
+   * appending yields `MAX(sort_order) + 1`, so gaps are allowed.
+   */
+  public addMessage(
+    conversationId: string,
+    message: {
+      readonly role: string;
+      readonly content: string;
+      readonly timestamp?: string;
+      readonly parentMessageId?: number;
+    },
+  ): number {
+    const selectParent = this.db.prepare('SELECT project_id FROM conversations WHERE id = ?');
+    const selectMaxSort = this.db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM messages WHERE conversation_id = ?',
+    );
+    const insertMessage = this.db.prepare(
+      `INSERT INTO messages
+         (conversation_id, role, content, timestamp, sort_order, project_id, parent_message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    const runTransaction = this.db.transaction(() => {
+      const parent = selectParent.get(conversationId) as { project_id: string } | undefined;
+      if (!parent) {
+        throw new ConversationNotFoundError(`Conversation not found: ${conversationId}`);
+      }
+      const { next } = selectMaxSort.get(conversationId) as { next: number };
+      const result = insertMessage.run(
+        conversationId,
+        message.role,
+        message.content,
+        message.timestamp ?? null,
+        next,
+        parent.project_id,
+        message.parentMessageId ?? null,
+      );
+      return Number(result.lastInsertRowid);
+    });
+
+    return runTransaction();
   }
 
   /**

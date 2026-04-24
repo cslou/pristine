@@ -201,7 +201,7 @@
       <table>
         <thead><tr><th>Command</th><th>Result</th><th>Artifact</th></tr></thead>
         <tbody>
-          <tr><td><code>npm run test:unit</code></td><td class="pass">453 / 453 passed (exit 0)</td><td><a href="sprint-014/test-unit-output.txt">test-unit-output.txt</a></td></tr>
+          <tr><td><code>npm run test:unit</code></td><td class="pass">453 / 453 passed (exit 0) <span style="color: var(--fg-dim); font-weight: normal;">— baseline 413, +40 over sprint</span></td><td><a href="sprint-014/test-unit-output.txt">test-unit-output.txt</a></td></tr>
           <tr><td><code>npm run test:e2e</code></td><td class="pass">E2E suite passed (exit 0)</td><td><a href="sprint-014/test-e2e-output.txt">test-e2e-output.txt</a></td></tr>
           <tr><td><code>npm run typecheck</code></td><td class="pass">exit 0</td><td><a href="sprint-014/typecheck-output.txt">typecheck-output.txt</a></td></tr>
           <tr><td><code>npm run build</code></td><td class="pass">exit 0</td><td><a href="sprint-014/build-output.txt">build-output.txt</a></td></tr>
@@ -286,6 +286,17 @@ ix_window_messages_message_id     ON window_messages(message_id)                
         Fresh v0 DBs run all 4 story blocks in one transaction; partway-migrated DBs pick up only the steps they're missing. Idempotent on re-run.
       </p>
       <p><code>PRAGMA foreign_keys = ON</code> is now applied on every <code>ConversationStore</code> construction — Sprint-009 declared the FK but didn't enable the pragma; this sprint closes that gap so <code>window_messages</code>'s FK to <code>messages(id)</code> is enforced.</p>
+
+      <h2>Known spec §12 deviations (callout per sprint AC)</h2>
+      <div class="note">
+        <ul style="margin: 0;">
+          <li><code>messages.id</code> stays <code>INTEGER AUTOINCREMENT</code> (spec says TEXT UUID) — Sprint-009 FTS5 <code>content_rowid=rowid</code> requires INTEGER. Tracked as <a href="https://github.com/getlou-gh/pristine/issues/106">#106</a>.</li>
+          <li><code>conversations.started_at</code> is view-aliased from physical <code>created_at</code> via CAST to unix ms in <code>conversations_public</code> (spec §12 types it INTEGER).</li>
+          <li><code>messages.turn_index</code> view-aliased from physical <code>sort_order</code> in <code>messages_public</code>.</li>
+          <li><code>messages.timestamp</code> view-aliased with same CAST pattern; NULL passes through (physical column nullable TEXT) — pinned by regression test.</li>
+          <li><code>messages.metadata</code> — sprint doc AC over-specified; physical schema never gained the column. addMessage signature does not accept metadata. If needed, a follow-up story can add the column + extend the signature.</li>
+        </ul>
+      </div>
     </section>
 
     <!-- SLIDE 4 -->

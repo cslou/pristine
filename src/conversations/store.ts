@@ -261,6 +261,16 @@ CREATE INDEX IF NOT EXISTS ix_summaries_project_time
   ON summaries(project_id, timestamp DESC);
 `;
 
+// Spec-005 §12 summaries_public — read-only public view. Excludes the
+// metadata column (private caller-state) per spec §12 privacy invariant;
+// exposes everything else verbatim. No CAST needed — summaries.timestamp
+// is already stored as INTEGER unix ms (unlike messages.timestamp which
+// was TEXT from Sprint-009).
+const SPRINT_014_VIEW_SUMMARIES_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, timestamp) AS
+  SELECT id, session_id, project_id, text, timestamp FROM summaries;
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -290,7 +300,7 @@ function addColumnIfMissing(
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
 // - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
 // - 3 = Sprint-014 Story 3 (messages_public + conversations_public views)
-// - 4 = Sprint-014 Story 4 (summaries table + ix_summaries_project_time + summaries_public view)
+// - 4 = Sprint-014 Story 4 (summaries table + ix_summaries_project_time + summaries_public view + addMessage/addSummary/getRecentSummaries API)
 export const SCHEMA_VERSION = 4;
 
 export function initConversationTables(db: Database.Database): void {
@@ -357,6 +367,7 @@ export function initConversationTables(db: Database.Database): void {
 
     if (currentVersion < 4) {
       db.exec(SPRINT_014_SUMMARIES_DDL);
+      db.exec(SPRINT_014_VIEW_SUMMARIES_PUBLIC_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

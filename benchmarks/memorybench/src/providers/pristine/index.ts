@@ -1,350 +1,45 @@
-import { mkdirSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
-import type {
-  Provider,
-  ProviderConfig,
-  IngestOptions,
-  IngestResult,
-  SearchOptions,
-  IndexingProgressCallback,
-} from "../../types/provider"
-import type { UnifiedSession, UnifiedMessage } from "../../types/unified"
-import type { PristineLocal, Message } from "pristine"
-import { logger } from "../../utils/logger"
-import { PRISTINE_PROMPTS } from "./prompts"
+// Pristine Provider — DEPRECATED under spec-005 Phase 1.
+//
+// The prior implementation drove the LOCOMO-aimed fact-extraction pipeline
+// via PristineLocal.store() and PristineLocal.search() / orchestrator.ingest().
+// sprint-013 (spec-005 Phase 1) removed the pipeline entirely:
+//   - client.store() / client.search() deleted
+//   - client.orchestrator is null on every construction path
+//   - findConversationByMessages() / deleteConversation() deleted
+//
+// Rebuilding this provider requires the Phase-2 indexer and Phase-3/4
+// searcher primitives (spec-005 §5.1). It will return once indexer +
+// searcher land — likely sprint-015 / sprint-016.
+//
+// Until then, this file exports a throw-on-construct stub so any benchmark
+// run that still references the provider fails loudly with an actionable
+// message rather than dereferencing `undefined`.
 
-const PRISTINE_DB_ROOT = join(process.cwd(), "data", "pristine-dbs")
+import type { Provider, ProviderConfig } from '../../types/provider'
 
-/**
- * Shape of the per-run metadata.json stamp written alongside Pristine DBs.
- * Read back on subsequent runs to detect config drift (extraction model
- * mismatches) that would silently skew benchmark results.
- */
-interface PristineRunMetadata {
-  createdAt: string
-  extractionModel: string | null
-  benchmark: string | null
-}
-
-/**
- * Pristine Provider
- *
- * Uses PristineLocal SDK directly (no HTTP server). Each conversation gets
- * its own file-backed SQLite database at data/pristine-dbs/{dataSourceRunId}/{containerTag}.db.
- * The isolated namespace (separate from memorybench's data/runs/) avoids cleanup
- * races with CheckpointManager and keeps ownership unambiguous.
- * Data persists across benchmark phases (ingest -> indexing -> search -> answer).
- */
 export class PristineProvider implements Provider {
-  name = "pristine"
-  prompts = PRISTINE_PROMPTS
-  concurrency = {
-    default: 1,
-    ingest: 1,
-  }
-
-  private clients = new Map<string, PristineLocal>()
-  private pristineModule: typeof import("pristine") | null = null
-  private dataSourceRunId: string | null = null
-
-  async initialize(config: ProviderConfig): Promise<void> {
-    const newRunId = config.dataSourceRunId
-    if (!newRunId) {
-      throw new Error("Pristine provider requires dataSourceRunId in ProviderConfig")
-    }
-
-    // Idempotency: if reinitializing with a different run, dispose cached clients first
-    if (this.dataSourceRunId && this.dataSourceRunId !== newRunId && this.clients.size > 0) {
-      for (const client of this.clients.values()) {
-        await client.dispose()
-      }
-      this.clients.clear()
-    }
-
-    this.dataSourceRunId = newRunId
-    this.pristineModule = await import("pristine")
-    logger.info(`Initialized Pristine provider for dataSourceRunId=${newRunId}`)
-
-    // Concurrency warning: Pristine extracts memories via a single in-process
-    // LlmClient. When that client points at Ollama (the common local setup)
-    // Ollama serializes requests internally, so concurrency > 1 just adds
-    // coordination overhead without improving throughput. Soften the message:
-    // against API-backed LLMs (future config) higher concurrency may help.
-    if (config.concurrency) {
-      const values = [
-        config.concurrency.default,
-        config.concurrency.ingest,
-        config.concurrency.indexing,
-        config.concurrency.search,
-        config.concurrency.answer,
-        config.concurrency.evaluate,
-      ].filter((v): v is number => typeof v === "number")
-      const maxConcurrency = values.length ? Math.max(...values) : 0
-      if (maxConcurrency > 1) {
-        logger.warn(
-          `Note: concurrency > 1 (effective=${maxConcurrency}) with Ollama as the LLM backend may ` +
-            `not improve throughput (Ollama serializes requests).`
-        )
-      }
-    }
-
-    // Migration warning: when resuming an existing run, the per-run DB folder
-    // should exist. If it does not, the checkpoint likely predates Sprint
-    // 008c Story 3 (PR #86) — when Pristine DBs moved from the shared
-    // data/runs/default/ folder to data/pristine-dbs/{dataSourceRunId}/.
-    // A silent fresh ingest in that case would overwrite extraction results
-    // the user believed were being resumed. Warn loudly and point to --force.
-    if (config.resumeMode) {
-      const runDir = join(PRISTINE_DB_ROOT, newRunId)
-      if (!existsSync(runDir)) {
-        logger.warn(
-          `Resuming run but DB folder ${runDir} does not exist. ` +
-            `This checkpoint likely predates the DB path change in Sprint 008c Story 3. ` +
-            `Re-run with --force to reset, or manually migrate data into the new folder.`
-        )
-      }
-    }
-
-    // Metadata stamp: record {createdAt, extractionModel, benchmark} so a
-    // re-run against the same dataSourceRunId with a different extraction
-    // model surfaces a warning instead of silently reusing the prior model's
-    // extractions. Four cases handled distinctly:
-    //  - Folder missing: create + write fresh stamp, no warn.
-    //  - Folder exists, metadata missing (legacy/cold-start): info log, write
-    //    fresh stamp. The user didn't cause this so don't warn.
-    //  - Folder exists, metadata present, model matches: silent proceed.
-    //  - Folder exists, metadata present, model mismatches: WARN with the
-    //    prior createdAt + prior model + remediation ("Pass --force").
-    this.stampMetadata(
-      newRunId,
-      config.benchmark ?? null,
-      config.extractionModel ?? null
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public constructor(_config: ProviderConfig) {
+    throw new Error(
+      'PristineProvider is disabled under spec-005 Phase 1 (sprint-013). ' +
+        'The LOCOMO-aimed fact-pipeline that this provider drove was removed; ' +
+        'the provider will return once the Phase-2 indexer + Phase-3/4 searcher ' +
+        'primitives land. See docs/specs/implementation-spec-005.md §5.1 and ' +
+        'docs/sprints/sprint-013.md for context.',
     )
   }
 
-  private stampMetadata(
-    dataSourceRunId: string,
-    benchmark: string | null,
-    extractionModel: string | null
-  ): void {
-    const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
-    const metaPath = join(runDir, "metadata.json")
-    const fresh: PristineRunMetadata = {
-      createdAt: new Date().toISOString(),
-      extractionModel,
-      benchmark,
-    }
+  public readonly name = 'pristine'
 
-    if (!existsSync(runDir)) {
-      mkdirSync(runDir, { recursive: true })
-      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
-      return
-    }
-
-    if (!existsSync(metaPath)) {
-      logger.info(
-        `metadata.json missing in ${runDir} (legacy or cold-start). Writing fresh stamp.`
-      )
-      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
-      return
-    }
-
-    try {
-      const prior = JSON.parse(readFileSync(metaPath, "utf8")) as Partial<PristineRunMetadata>
-      if (
-        extractionModel &&
-        prior.extractionModel &&
-        prior.extractionModel !== extractionModel
-      ) {
-        logger.warn(
-          `Reusing DB folder created at ${prior.createdAt ?? "unknown"} with model ` +
-            `${prior.extractionModel}. Current configured extraction model is ${extractionModel}. ` +
-            `Pass --force to reset.`
-        )
-      }
-      // Match or unknown prior — don't overwrite the original createdAt.
-    } catch {
-      logger.info(
-        `metadata.json in ${runDir} is unreadable. Overwriting with fresh stamp.`
-      )
-      writeFileSync(metaPath, JSON.stringify(fresh, null, 2))
-    }
+  public async ingest(): Promise<never> {
+    throw new Error('PristineProvider.ingest: disabled — see constructor error.')
   }
 
-  async ingest(sessions: UnifiedSession[], options: IngestOptions): Promise<IngestResult> {
-    const client = await this.getOrCreateClient(options.containerTag)
-    const documentIds: string[] = []
-    let memoryCount = 0
-
-    for (const session of sessions) {
-      const messages: Message[] = session.messages.map((m: UnifiedMessage) => ({
-        role: m.role as Message["role"],
-        content: m.content,
-        ...(m.timestamp ? { timestamp: m.timestamp } : {}),
-      }))
-
-      // Partial-ingest recovery (Option B). Pristine's pipeline is not
-      // transactional: addConversation commits, then extract/embed/store run
-      // separately. If extract fails (Ollama timeout, OOM, SIGINT) the
-      // conversation persists with zero memories. A naive retry would hit
-      // UNIQUE (user_id, content_hash) and silently skip extraction. Detect
-      // that state here and delete the orphan row before re-ingesting.
-      const existing = await client.findConversationByMessages(options.containerTag, messages)
-      if (existing && existing.memoryCount === 0) {
-        logger.warn(
-          `Detected partial-ingest for session ${session.sessionId} ` +
-            `(containerTag=${options.containerTag}, conversationId=${existing.id}). ` +
-            `Deleting orphan conversation row and re-ingesting.`
-        )
-        await client.deleteConversation(existing.id)
-      } else if (existing && existing.memoryCount > 0) {
-        // Idempotent re-run: a prior ingest for this conversation already
-        // produced memories. Skip to avoid re-extracting and to preserve the
-        // existing memory graph. Report the existing count so Story 6's
-        // aggregate guard does not fire.
-        memoryCount += existing.memoryCount
-        documentIds.push(session.sessionId)
-        continue
-      }
-
-      const sessionDate = session.metadata?.date as string | undefined
-      // Surface silent regressions in the LOCOMO loader: every LOCOMO session
-      // should carry metadata.date (Sprint 008c Story 2). A missing field here
-      // means the loader dropped it, and Pristine will fall back to the
-      // latest message timestamp or `new Date()` — producing 2026-ish validFrom
-      // dates on 2023 conversations. Warn rather than silently drift.
-      if (!sessionDate && messages.length > 0) {
-        logger.warn(
-          `Session ${session.sessionId} (containerTag=${options.containerTag}) ` +
-            `has no metadata.date — extraction will fall back to message timestamps ` +
-            `or current time. Check the benchmark loader.`
-        )
-      }
-      const result = await client.orchestrator.ingest(messages, options.containerTag, {
-        ...(sessionDate ? { referenceTimestamp: sessionDate } : {}),
-      })
-
-      // Warn on silent no-op: the Pristine pipeline can still skip extraction
-      // for reasons outside the partial-ingest path (e.g. duplicate detection
-      // against a session whose conversation row existed before the recovery
-      // window, or a config mismatch). Without this warning the failure would
-      // look identical to a successful ingest.
-      if (result.memoryIds.length === 0 && messages.length > 0) {
-        logger.warn(
-          `Pristine ingest produced 0 memories for session ${session.sessionId} ` +
-            `(containerTag=${options.containerTag}, ${messages.length} messages). ` +
-            `Likely cause: content-hash duplicate detection against a stale DB. ` +
-            `Run with --force to reset.`
-        )
-      }
-
-      memoryCount += result.memoryIds.length
-      documentIds.push(session.sessionId)
-    }
-
-    return { documentIds, memoryCount }
+  public async search(): Promise<never> {
+    throw new Error('PristineProvider.search: disabled — see constructor error.')
   }
 
-  async awaitIndexing(
-    result: IngestResult,
-    _containerTag: string,
-    onProgress?: IndexingProgressCallback
-  ): Promise<void> {
-    // Pristine's orchestrator.ingest() completes synchronously — no async indexing needed
-    onProgress?.({
-      completedIds: result.documentIds,
-      failedIds: [],
-      total: result.documentIds.length,
-    })
-  }
-
-  async search(query: string, options: SearchOptions): Promise<unknown[]> {
-    const client = this.clients.get(options.containerTag)
-    if (!client) {
-      logger.warn(`No Pristine client found for ${options.containerTag}`)
-      return []
-    }
-
-    const result = await client.search(query, options.containerTag, {
-      topK: options.limit || 10,
-    })
-
-    return result.memories.map((m) => ({
-      text: m.memory.text,
-      score: m.score,
-      validFrom: m.memory.validFrom,
-      validUntil: m.memory.validUntil,
-    }))
-  }
-
-  async clear(containerTag: string): Promise<void> {
-    const client = this.clients.get(containerTag)
-    if (client) {
-      await client.dispose()
-      this.clients.delete(containerTag)
-    }
-
-    const dbPath = this.getDbPath(containerTag, false)
-    try {
-      rmSync(dbPath, { force: true })
-      logger.info(`Cleared Pristine data for: ${containerTag}`)
-    } catch (e) {
-      logger.warn(`Failed to clear Pristine data: ${e}`)
-    }
-  }
-
-  async shutdown(): Promise<void> {
-    // Drain-before-dispose: snapshot the clients and clear the map BEFORE
-    // awaiting any dispose(), so a concurrent second invocation (e.g. a
-    // SIGINT firing between two awaits in the loop) finds an empty map and
-    // is a true no-op. Without this, a racing caller would call dispose()
-    // on already-disposed clients, and better-sqlite3 throws on double-close.
-    const clients = [...this.clients.values()]
-    this.clients.clear()
-    for (const client of clients) {
-      await client.dispose()
-    }
-  }
-
-  async purgeRunData(dataSourceRunId: string): Promise<void> {
-    // Release in-memory resources first: better-sqlite3 holds file handles
-    // that can block rmSync cleanup on some platforms. The cache only ever
-    // holds clients for a single active run (initialize clears on run-id
-    // change), so a full shutdown is equivalent to disposing this run's.
-    await this.shutdown()
-
-    const runDir = join(PRISTINE_DB_ROOT, dataSourceRunId)
-    if (existsSync(runDir)) {
-      rmSync(runDir, { recursive: true, force: true })
-      logger.info(`Purged Pristine DB folder for dataSourceRunId=${dataSourceRunId}`)
-    }
-  }
-
-  private getDbPath(containerTag: string, ensureDir = true): string {
-    if (!this.dataSourceRunId) {
-      throw new Error("Pristine provider not initialized. Call initialize() first.")
-    }
-    const runDir = join(PRISTINE_DB_ROOT, this.dataSourceRunId)
-    if (ensureDir && !existsSync(runDir)) {
-      mkdirSync(runDir, { recursive: true })
-    }
-    const safeName = containerTag.replace(/[^a-zA-Z0-9_.-]/g, "_")
-    return join(runDir, `${safeName}.db`)
-  }
-
-  private async getOrCreateClient(containerTag: string): Promise<PristineLocal> {
-    let client = this.clients.get(containerTag)
-    if (client) return client
-
-    if (!this.pristineModule) throw new Error("Provider not initialized")
-
-    const dbPath = this.getDbPath(containerTag, true)
-    const db = this.pristineModule.createDatabase(dbPath)
-    client = await this.pristineModule.PristineLocal.create({ db })
-    this.clients.set(containerTag, client)
-
-    return client
+  public async cleanup(): Promise<void> {
+    // no-op — the stub never acquired resources
   }
 }
-
-export default PristineProvider

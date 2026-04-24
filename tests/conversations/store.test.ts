@@ -772,4 +772,51 @@ describe('sprint-014 Story 2 — vec tables', () => {
     expect(row.updated_at).toBe(2);
     d.close();
   });
+
+  it('window_messages FK rejects an insert with non-existent message_id', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    // Pre-condition: Story 1 enabled PRAGMA foreign_keys = ON. Confirm it
+    // here so this test's failure mode is clear — if the pragma ever
+    // regresses, the FK-rejection would silently pass and this test would
+    // fail on the pragma line rather than the FK assertion, pointing at
+    // the right place.
+    expect(d.pragma('foreign_keys', { simple: true })).toBe(1);
+
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO window_messages (conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+        )
+        .run('c-fk', 0, 999_999, 0),
+    ).toThrow(/FOREIGN KEY constraint failed/i);
+    d.close();
+  });
+
+  it('window_messages FK accepts an insert with existing message_id', () => {
+    // Pair-test for the FK rejection above: prove the FK is not over-
+    // restrictive — a valid message_id lands cleanly.
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const s = new ConversationStore(d);
+
+    const convId = s.addConversation(makeMessages(['hi', 'hello']), 'user-fk');
+    const mid = d
+      .prepare('SELECT id FROM messages WHERE conversation_id = ? ORDER BY sort_order LIMIT 1')
+      .get(convId) as { id: number };
+
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO window_messages (conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+        )
+        .run(convId, 0, mid.id, 0),
+    ).not.toThrow();
+
+    const row = d
+      .prepare('SELECT position FROM window_messages WHERE message_id = ?')
+      .get(mid.id) as { position: number };
+    expect(row.position).toBe(0);
+    d.close();
+  });
 });

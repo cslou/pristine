@@ -83,12 +83,6 @@ class LocalRetriever implements Retriever {
     const results = ranked.slice(0, topK);
 
     return {
-      query: {
-        intent: 'contextual_search',
-        filters: {},
-        suggestedTopK: topK,
-        rewrittenQuery: query,
-      },
       memories: results,
       metadata: {
         totalFound: memories.length,

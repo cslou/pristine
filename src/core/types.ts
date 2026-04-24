@@ -330,7 +330,6 @@ export interface SearchOptions {
 }
 
 export interface RetrieveResult {
-  readonly query: AnalyzedQuery;
   readonly memories: RankedMemory[];
   readonly metadata: {
     readonly totalFound: number;

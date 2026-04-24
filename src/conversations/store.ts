@@ -239,6 +239,28 @@ CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
     FROM conversations;
 `;
 
+// Spec-005 §12 summaries — scratch-pad table for Phase-5 reference summaries
+// injected into the retrieval context. No FK to conversations intentional:
+// session_id is a harness-provided opaque string; multiple conversations may
+// share a session (session lifetime is harness-scoped, not corpus-scoped).
+// `metadata` holds optional caller-provided JSON-encoded state. Per spec §12
+// the column list is (id TEXT PK, session_id TEXT NOT NULL, project_id TEXT
+// NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT).
+// ix_summaries_project_time covers the recency query pattern getRecentSummaries
+// uses — filter by project_id + order by timestamp DESC.
+const SPRINT_014_SUMMARIES_DDL = `
+CREATE TABLE IF NOT EXISTS summaries (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_summaries_project_time
+  ON summaries(project_id, timestamp DESC);
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -268,7 +290,8 @@ function addColumnIfMissing(
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
 // - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
 // - 3 = Sprint-014 Story 3 (messages_public + conversations_public views)
-export const SCHEMA_VERSION = 3;
+// - 4 = Sprint-014 Story 4 (summaries table + ix_summaries_project_time + summaries_public view)
+export const SCHEMA_VERSION = 4;
 
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
@@ -330,6 +353,10 @@ export function initConversationTables(db: Database.Database): void {
     if (currentVersion < 3) {
       db.exec(SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL);
       db.exec(SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL);
+    }
+
+    if (currentVersion < 4) {
+      db.exec(SPRINT_014_SUMMARIES_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

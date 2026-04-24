@@ -10,10 +10,8 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 // ---------------------------------------------------------------------------
 
 export type {
-  AnalyzedQuery,
   ConversationDetail,
   ConversationSearchResult,
-  Fact,
   IngestOptions,
   IngestResult,
   Memory,

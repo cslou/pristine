@@ -111,9 +111,36 @@ END;
 // Table initialization
 // ---------------------------------------------------------------------------
 
+interface TableInfoRow {
+  readonly name: string;
+}
+
+function addColumnIfMissing(
+  db: Database.Database,
+  table: string,
+  column: string,
+  ddl: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
+  if (columns.some((row) => row.name === column)) {
+    return;
+  }
+  db.exec(ddl);
+}
+
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
+
+  addColumnIfMissing(
+    db,
+    'conversations',
+    'project_id',
+    "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+  );
+  db.exec(
+    "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
+  );
 }
 
 // ---------------------------------------------------------------------------

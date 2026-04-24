@@ -1,0 +1,7 @@
+-- PRAGMA table_info(summaries) --
+{"cid":0,"name":"id","type":"TEXT","notnull":0,"dflt_value":null,"pk":1}
+{"cid":1,"name":"session_id","type":"TEXT","notnull":1,"dflt_value":null,"pk":0}
+{"cid":2,"name":"project_id","type":"TEXT","notnull":1,"dflt_value":null,"pk":0}
+{"cid":3,"name":"text","type":"TEXT","notnull":1,"dflt_value":null,"pk":0}
+{"cid":4,"name":"timestamp","type":"INTEGER","notnull":1,"dflt_value":null,"pk":0}
+{"cid":5,"name":"metadata","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}

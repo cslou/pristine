@@ -1,0 +1,5 @@
+-- PRAGMA table_info(vec_windows) --
+{"cid":0,"name":"rowid","type":"","notnull":0,"dflt_value":null,"pk":0}
+{"cid":1,"name":"conversation_id","type":"","notnull":0,"dflt_value":null,"pk":0}
+{"cid":2,"name":"window_index","type":"","notnull":0,"dflt_value":null,"pk":0}
+{"cid":3,"name":"embedding","type":"","notnull":0,"dflt_value":null,"pk":0}

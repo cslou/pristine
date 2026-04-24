@@ -141,43 +141,62 @@ function addColumnIfMissing(
   db.exec(ddl);
 }
 
+// Schema version tracked via PRAGMA user_version. Bump when adding a new
+// migration step; the initConversationTables gate only runs migration work
+// when the stored version is below this constant.
+// - 0 = Sprint-009 baseline (pre-sprint-014)
+// - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
+const SCHEMA_VERSION = 1;
+
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
 
-  addColumnIfMissing(
-    db,
-    'conversations',
-    'project_id',
-    "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
-  );
-  db.exec(
-    "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
-  );
+  const currentVersion = db.pragma('user_version', { simple: true }) as number;
+  if (currentVersion >= SCHEMA_VERSION) {
+    return;
+  }
 
-  addColumnIfMissing(
-    db,
-    'messages',
-    'project_id',
-    "ALTER TABLE messages ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
-  );
-  db.exec(
-    `UPDATE messages
-     SET project_id = COALESCE(
-       (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
-       'default'
-     )
-     WHERE project_id = 'default'`,
-  );
+  // Atomic migration: either every ADD COLUMN / UPDATE / index + the user_version
+  // bump lands, or none of them does. A crash between ADD COLUMN and back-fill
+  // would otherwise leave the schema partially migrated with no recovery path.
+  db.transaction(() => {
+    addColumnIfMissing(
+      db,
+      'conversations',
+      'project_id',
+      "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+    );
+    db.exec(
+      "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
+    );
 
-  addColumnIfMissing(
-    db,
-    'messages',
-    'parent_message_id',
-    'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
-  );
+    addColumnIfMissing(
+      db,
+      'messages',
+      'project_id',
+      "ALTER TABLE messages ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
+    );
+    db.exec(
+      `UPDATE messages
+       SET project_id = COALESCE(
+         (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
+         'default'
+       )
+       WHERE project_id = 'default'`,
+    );
 
-  db.exec(SPRINT_014_INDEXES_DDL);
+    addColumnIfMissing(
+      db,
+      'messages',
+      'parent_message_id',
+      'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
+    );
+
+    db.exec(SPRINT_014_INDEXES_DDL);
+
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  })();
 }
 
 // ---------------------------------------------------------------------------

@@ -600,13 +600,38 @@ describe('sprint-014 schema migration', () => {
     expect(afterCols).toEqual(beforeCols);
     expect(afterIdx).toEqual(beforeIdx);
 
-    // Consumer-reassigned project_id must survive a re-run (WHERE project_id = 'default' guard)
+    // Consumer-reassigned project_id must survive a re-run — the user_version
+    // gate skips the whole back-fill block on already-migrated DBs, so any
+    // caller-assigned value is safe regardless of whether it equals 'default'.
     d.prepare("UPDATE conversations SET project_id = 'custom' WHERE id = ?").run('c-idem');
     new ConversationStore(d);
     const row = d.prepare('SELECT project_id FROM conversations WHERE id = ?').get('c-idem') as {
       project_id: string;
     };
     expect(row.project_id).toBe('custom');
+    d.close();
+  });
+
+  it('bumps PRAGMA user_version from 0 to 1 on first migration and skips on re-run', () => {
+    const d = makeLegacyDb();
+    expect(d.pragma('user_version', { simple: true })).toBe(0);
+
+    new ConversationStore(d);
+    expect(d.pragma('user_version', { simple: true })).toBe(1);
+
+    // Flip a conversation's project_id to 'default' (the back-fill sentinel).
+    // If the migration ran again, the back-fill UPDATE would re-match and
+    // rewrite this row from user_id; with the version gate, it must survive.
+    d.prepare(
+      "INSERT INTO conversations (id, user_id, content_hash, project_id) VALUES ('c-post', 'u-post', 'h-post', 'default')",
+    ).run();
+
+    new ConversationStore(d);
+    const row = d.prepare('SELECT project_id FROM conversations WHERE id = ?').get('c-post') as {
+      project_id: string;
+    };
+    expect(row.project_id).toBe('default');
+    expect(d.pragma('user_version', { simple: true })).toBe(1);
     d.close();
   });
 });

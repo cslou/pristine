@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
-import { ConversationStore } from '../../src/conversations/store.js';
+import { ConversationStore, SCHEMA_VERSION } from '../../src/conversations/store.js';
 
 let db: ReturnType<typeof createDatabase>;
 let store: ConversationStore;
@@ -18,7 +18,7 @@ const contentHash = (messages: { role: string; content: string }[]): string =>
     .digest('hex');
 
 beforeAll(() => {
-  db = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+  db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
   store = new ConversationStore(db);
 });
 
@@ -468,14 +468,14 @@ END;
 `;
 
 const makeLegacyDb = () => {
-  const d = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+  const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
   d.exec(SPRINT_009_DDL);
   return d;
 };
 
 describe('sprint-014 schema migration', () => {
   it('enables PRAGMA foreign_keys after store init', () => {
-    const d = createDatabase({ path: ':memory:', loadSqliteVec: false, runIntegrityCheck: false });
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     new ConversationStore(d);
     const result = d.pragma('foreign_keys', { simple: true });
     expect(result).toBe(1);
@@ -565,18 +565,23 @@ describe('sprint-014 schema migration', () => {
     }
   });
 
-  it('creates all four spec §12 indexes in sqlite_master', () => {
+  it('creates all four Story-1 spec §12 indexes in sqlite_master', () => {
     const expected = [
       'ix_conversations_project_started',
       'ix_messages_conv_sort',
       'ix_messages_timestamp_nonchunk',
       'ix_messages_parent',
-    ];
+    ].sort();
     const rows = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%'")
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index'
+           AND name IN ('ix_conversations_project_started', 'ix_messages_conv_sort',
+                        'ix_messages_timestamp_nonchunk', 'ix_messages_parent')`,
+      )
       .all() as { name: string }[];
     const names = rows.map((r) => r.name).sort();
-    expect(names).toEqual(expected.sort());
+    expect(names).toEqual(expected);
   });
 
   it('re-running migration is a no-op (idempotent)', () => {
@@ -612,12 +617,12 @@ describe('sprint-014 schema migration', () => {
     d.close();
   });
 
-  it('bumps PRAGMA user_version from 0 to 1 on first migration and skips on re-run', () => {
+  it('bumps PRAGMA user_version to SCHEMA_VERSION on first migration and skips on re-run', () => {
     const d = makeLegacyDb();
     expect(d.pragma('user_version', { simple: true })).toBe(0);
 
     new ConversationStore(d);
-    expect(d.pragma('user_version', { simple: true })).toBe(1);
+    expect(d.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
 
     // Flip a conversation's project_id to 'default' (the back-fill sentinel).
     // If the migration ran again, the back-fill UPDATE would re-match and
@@ -631,7 +636,205 @@ describe('sprint-014 schema migration', () => {
       project_id: string;
     };
     expect(row.project_id).toBe('default');
-    expect(d.pragma('user_version', { simple: true })).toBe(1);
+    expect(d.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    d.close();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Sprint-014 Story 2 — vec_windows + window_messages + vec_sessions
+// -----------------------------------------------------------------------------
+
+// sqlite-vec vec0 tables require BigInt for INTEGER metadata / PK columns.
+// Plain JS numbers get bound as REAL and vec0 rejects them with
+// "Expected integer for INTEGER metadata column ...".
+const makeEmbedding = (seed: number): Buffer => {
+  const f = new Float32Array(768);
+  for (let i = 0; i < 768; i++) f[i] = seed + i * 1e-4;
+  return Buffer.from(f.buffer);
+};
+
+const readEmbedding = (buf: Buffer): Float32Array =>
+  new Float32Array(buf.buffer, buf.byteOffset, 768);
+
+describe('sprint-014 Story 2 — vec tables', () => {
+  it('creates vec_windows, window_messages, vec_sessions in sqlite_master', () => {
+    const rows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE name IN ('vec_windows', 'window_messages', 'vec_sessions') ORDER BY name",
+      )
+      .all() as { name: string }[];
+    const names = rows.map((r) => r.name);
+    expect(names).toContain('vec_windows');
+    expect(names).toContain('window_messages');
+    expect(names).toContain('vec_sessions');
+  });
+
+  it('creates ix_window_messages_message_id for Phase-4 reverse joins', () => {
+    const row = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ix_window_messages_message_id'",
+      )
+      .get() as { name: string } | undefined;
+    expect(row?.name).toBe('ix_window_messages_message_id');
+  });
+
+  it('round-trips a 768-d embedding through vec_windows (bit-identical)', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    // Bit-identical round-trip check: compare against the same Float32 source
+    // that was written, not the JS Float64 literal — otherwise precision loss
+    // from the Float64 → Float32 cast breaks equality on most element indexes.
+    const source = new Float32Array(768);
+    for (let i = 0; i < 768; i++) source[i] = 0.25 + i * 1e-4;
+    const writeBuf = Buffer.from(source.buffer);
+
+    d.prepare(
+      'INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?)',
+    ).run('c-rt', 0n, writeBuf);
+
+    const row = d
+      .prepare('SELECT embedding FROM vec_windows WHERE conversation_id = ? AND window_index = ?')
+      .get('c-rt', 0n) as { embedding: Buffer };
+    const out = readEmbedding(row.embedding);
+
+    for (let i = 0; i < 768; i++) {
+      expect(out[i]).toBe(source[i]);
+    }
+    d.close();
+  });
+
+  it('rejects a non-768-dimension embedding on vec_windows', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    const wrong = Buffer.from(new Float32Array(512).buffer);
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?)',
+        )
+        .run('c-wrong', 0n, wrong),
+    ).toThrow(/Dimension mismatch/i);
+    d.close();
+  });
+
+  it('round-trips a 768-d embedding + updated_at through vec_sessions', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    const source = new Float32Array(768);
+    for (let i = 0; i < 768; i++) source[i] = 0.75 + i * 1e-4;
+    const writeBuf = Buffer.from(source.buffer);
+
+    d.prepare(
+      'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+    ).run('c-sess', writeBuf, 1_700_000_000_000n);
+
+    const row = d
+      .prepare(
+        'SELECT conversation_id, embedding, updated_at FROM vec_sessions WHERE conversation_id = ?',
+      )
+      .get('c-sess') as { conversation_id: string; embedding: Buffer; updated_at: number | bigint };
+    expect(row.conversation_id).toBe('c-sess');
+    // vec0 INTEGER auxiliary columns currently return as Number via
+    // better-sqlite3, but the typed row annotation accepts bigint too so
+    // an sqlite-vec return-type change doesn't silently break this assertion.
+    // Explicit Number() coercion makes the comparison symmetric with the
+    // BigInt literal used on write.
+    expect(Number(row.updated_at)).toBe(1_700_000_000_000);
+    const out = readEmbedding(row.embedding);
+    for (let i = 0; i < 768; i++) {
+      expect(out[i]).toBe(source[i]);
+    }
+    d.close();
+  });
+
+  it('vec_sessions.conversation_id PK rejects a duplicate insert', () => {
+    // vec0 does not support INSERT OR REPLACE on the declared PRIMARY KEY —
+    // duplicate inserts throw a UNIQUE constraint. The indexer's "replace"
+    // idiom is DELETE + INSERT inside a transaction; this test pins that
+    // contract at the schema level so sprint-015's write-helper lands on
+    // the right primitive.
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    const emb1 = makeEmbedding(0.1);
+    const emb2 = makeEmbedding(0.2);
+
+    d.prepare(
+      'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+    ).run('c-pk', emb1, 1n);
+
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+        )
+        .run('c-pk', emb2, 2n),
+    ).toThrow(/UNIQUE constraint failed/i);
+
+    // DELETE + INSERT is the supported replace idiom — verify it leaves one row
+    // with the new embedding and updated_at.
+    d.transaction(() => {
+      d.prepare('DELETE FROM vec_sessions WHERE conversation_id = ?').run('c-pk');
+      d.prepare(
+        'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+      ).run('c-pk', emb2, 2n);
+    })();
+
+    const row = d
+      .prepare('SELECT updated_at FROM vec_sessions WHERE conversation_id = ?')
+      .get('c-pk') as { updated_at: number | bigint };
+    expect(Number(row.updated_at)).toBe(2);
+    d.close();
+  });
+
+  it('window_messages FK rejects an insert with non-existent message_id', () => {
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new ConversationStore(d);
+
+    // Pre-condition: Story 1 enabled PRAGMA foreign_keys = ON. Confirm it
+    // here so this test's failure mode is clear — if the pragma ever
+    // regresses, the FK-rejection would silently pass and this test would
+    // fail on the pragma line rather than the FK assertion, pointing at
+    // the right place.
+    expect(d.pragma('foreign_keys', { simple: true })).toBe(1);
+
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO window_messages (conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+        )
+        .run('c-fk', 0, 999_999, 0),
+    ).toThrow(/FOREIGN KEY constraint failed/i);
+    d.close();
+  });
+
+  it('window_messages FK accepts an insert with existing message_id', () => {
+    // Pair-test for the FK rejection above: prove the FK is not over-
+    // restrictive — a valid message_id lands cleanly.
+    const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const s = new ConversationStore(d);
+
+    const convId = s.addConversation(makeMessages(['hi', 'hello']), 'user-fk');
+    const mid = d
+      .prepare('SELECT id FROM messages WHERE conversation_id = ? ORDER BY sort_order LIMIT 1')
+      .get(convId) as { id: number };
+
+    expect(() =>
+      d
+        .prepare(
+          'INSERT INTO window_messages (conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+        )
+        .run(convId, 0, mid.id, 0),
+    ).not.toThrow();
+
+    const row = d
+      .prepare('SELECT position FROM window_messages WHERE message_id = ?')
+      .get(mid.id) as { position: number };
+    expect(row.position).toBe(0);
     d.close();
   });
 });

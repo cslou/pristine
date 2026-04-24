@@ -208,6 +208,21 @@ CREATE VIEW IF NOT EXISTS messages_public
     FROM messages;
 `;
 
+// Spec-005 §12 conversations_public — read-only public view. Same pattern
+// as messages_public: alias + cast + exclude. created_at (TEXT ISO from
+// datetime('now')) casts to unix milliseconds as started_at (spec §12
+// name). Excludes user_id, content_hash, message_count — all internal
+// implementation details the Phase-5 SQL-primitive consumer should not
+// see. project_id IS exposed — consumers need it for project-scoped
+// retrieval.
+const SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
+  SELECT id,
+         project_id,
+         CAST(strftime('%s', created_at) * 1000 AS INTEGER) AS started_at
+    FROM conversations;
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -236,7 +251,7 @@ function addColumnIfMissing(
 // - 0 = Sprint-009 baseline (pre-sprint-014)
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
 // - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
-// - 3 = Sprint-014 Story 3 (messages_public view)
+// - 3 = Sprint-014 Story 3 (messages_public + conversations_public views)
 export const SCHEMA_VERSION = 3;
 
 export function initConversationTables(db: Database.Database): void {
@@ -298,6 +313,7 @@ export function initConversationTables(db: Database.Database): void {
 
     if (currentVersion < 3) {
       db.exec(SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL);
+      db.exec(SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

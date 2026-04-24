@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
+import type { ConversationSearchResult } from '../core/types.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -21,13 +22,9 @@ export interface StoredMessage {
   readonly sortOrder: number;
 }
 
-export interface ConversationSearchResult {
-  readonly id: string;
-  readonly userId: string;
-  readonly createdAt: string;
-  readonly messageCount: number;
-  readonly snippet: string;
-}
+// ConversationSearchResult lives in core/types.ts — re-exported from here so
+// external consumers of this module keep a stable import path.
+export type { ConversationSearchResult } from '../core/types.js';
 
 export interface ConversationSearchParams {
   readonly userId: string;
@@ -450,6 +447,18 @@ export class ConversationStore {
 
   /**
    * Store a conversation and its messages. Returns the conversation ID.
+   *
+   * **project_id derivation.** If `projectId` is omitted, it's derived from
+   * `userId` using the same rule the migration back-fill applies:
+   * `COALESCE(NULLIF(userId, ''), 'default')`. This keeps new writes
+   * consistent with legacy back-filled rows. Callers with a distinct
+   * project concept (e.g. multi-project-per-user harnesses) pass it
+   * explicitly.
+   *
+   * Both the conversation row and every message row land with the same
+   * `project_id`, so Phase-4's filter-first vector search can narrow
+   * candidates without joining through conversations on every query.
+   *
    * Throws on duplicate (user_id, content_hash) — callers should check for
    * `error.message.includes('UNIQUE constraint failed')` to detect duplicates.
    */
@@ -460,25 +469,27 @@ export class ConversationStore {
       readonly timestamp?: string;
     }[],
     userId: string,
+    projectId?: string,
   ): string {
     const id = randomUUID();
     const contentHash = computeConversationContentHash(messages);
+    const resolvedProjectId = projectId ?? (userId !== '' ? userId : 'default');
 
     const insertConversation = this.db.prepare(
-      `INSERT INTO conversations (id, user_id, content_hash, message_count)
-       VALUES (?, ?, ?, ?)`,
-    );
-
-    const insertMessage = this.db.prepare(
-      `INSERT INTO messages (conversation_id, role, content, timestamp, sort_order)
+      `INSERT INTO conversations (id, user_id, content_hash, message_count, project_id)
        VALUES (?, ?, ?, ?, ?)`,
     );
 
+    const insertMessage = this.db.prepare(
+      `INSERT INTO messages (conversation_id, role, content, timestamp, sort_order, project_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+
     const runTransaction = this.db.transaction(() => {
-      insertConversation.run(id, userId, contentHash, messages.length);
+      insertConversation.run(id, userId, contentHash, messages.length, resolvedProjectId);
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
-        insertMessage.run(id, msg.role, msg.content, msg.timestamp ?? null, i);
+        insertMessage.run(id, msg.role, msg.content, msg.timestamp ?? null, i, resolvedProjectId);
       }
     });
 

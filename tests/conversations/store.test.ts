@@ -43,6 +43,44 @@ describe('ConversationStore', () => {
       expect(id.length).toBeGreaterThan(0);
     });
 
+    it('derives project_id from userId by default (conversation + messages)', () => {
+      const id = store.addConversation(makeMessages(['hi']), 'user-proj-default');
+
+      const convRow = db.prepare('SELECT project_id FROM conversations WHERE id = ?').get(id) as {
+        project_id: string;
+      };
+      expect(convRow.project_id).toBe('user-proj-default');
+
+      const msgRow = db
+        .prepare('SELECT project_id FROM messages WHERE conversation_id = ? LIMIT 1')
+        .get(id) as { project_id: string };
+      expect(msgRow.project_id).toBe('user-proj-default');
+    });
+
+    it('accepts an explicit projectId override (multi-project-per-user case)', () => {
+      const id = store.addConversation(makeMessages(['hi']), 'user-multi', 'proj-beta');
+
+      const row = db
+        .prepare('SELECT user_id, project_id FROM conversations WHERE id = ?')
+        .get(id) as { user_id: string; project_id: string };
+      expect(row.user_id).toBe('user-multi');
+      expect(row.project_id).toBe('proj-beta');
+
+      const msgRow = db
+        .prepare('SELECT project_id FROM messages WHERE conversation_id = ? LIMIT 1')
+        .get(id) as { project_id: string };
+      expect(msgRow.project_id).toBe('proj-beta');
+    });
+
+    it("falls back to 'default' project_id when userId is empty", () => {
+      const id = store.addConversation(makeMessages(['hi']), '');
+
+      const row = db.prepare('SELECT project_id FROM conversations WHERE id = ?').get(id) as {
+        project_id: string;
+      };
+      expect(row.project_id).toBe('default');
+    });
+
     it('stores messages with correct sort_order', () => {
       const messages = makeMessages(['First', 'Second', 'Third']);
       const id = store.addConversation(messages, 'user-1');
@@ -960,13 +998,11 @@ describe('sprint-014 Story 3 — public views', () => {
     expect(rows[0].role).toBe('user');
     expect(rows[0].content).toBe('first turn');
     expect(rows[0].timestamp).toBe(expectedMs);
-    // addConversation doesn't explicitly set project_id — the column's
-    // DDL-level DEFAULT 'default' applies. The migration back-fill runs
-    // only for LEGACY rows; forward writes through addConversation land
-    // on 'default' until the new Story-4 API surface (addMessage with
-    // project_id) lands in sprint-015. Pinned here so the view + default
-    // contract is explicit.
-    expect(rows[0].project_id).toBe('default');
+    // addConversation derives project_id from userId when no explicit
+    // projectId is supplied — same rule the migration back-fill applies
+    // for legacy rows. A caller that needs multi-project-per-user scoping
+    // can pass `projectId` as the third parameter.
+    expect(rows[0].project_id).toBe('user-rt');
     expect(rows[1].turn_index).toBe(1);
     expect(rows[1].content).toBe('second turn');
   });
@@ -981,8 +1017,8 @@ describe('sprint-014 Story 3 — public views', () => {
       .get(convId) as { id: string; project_id: string; started_at: number };
 
     expect(row.id).toBe(convId);
-    // Same rationale as the messages_public project_id assertion above.
-    expect(row.project_id).toBe('default');
+    // project_id defaults to the userId value (see addConversation JSDoc).
+    expect(row.project_id).toBe('user-conv-rt');
     expect(typeof row.started_at).toBe('number');
     expect(row.started_at).toBeGreaterThan(0);
     // Must be within 60 seconds of now — confirms unix ms, not text.

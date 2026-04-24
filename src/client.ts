@@ -52,7 +52,7 @@ export interface PristineLiteConfig {
 // ---------------------------------------------------------------------------
 
 export class PristineLocal {
-  public readonly orchestrator: Orchestrator;
+  public readonly orchestrator: Orchestrator | null;
   public readonly ingestQueue: IngestQueue;
 
   private readonly conversationStore: ConversationStore;
@@ -69,7 +69,7 @@ export class PristineLocal {
   private readonly isLite: boolean;
 
   private constructor(deps: {
-    orchestrator: Orchestrator;
+    orchestrator: Orchestrator | null;
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
     memoryStore: SqliteStore | null;
@@ -126,7 +126,7 @@ export class PristineLocal {
 
     const ingestQueue = new IngestQueue({
       db,
-      orchestrator: null as unknown as Orchestrator,
+      orchestrator: null,
       conversationStore,
     });
 
@@ -137,7 +137,7 @@ export class PristineLocal {
     const vaultStore = createSqliteVaultStore(db);
 
     return new PristineLocal({
-      orchestrator: null as unknown as Orchestrator,
+      orchestrator: null,
       ingestQueue,
       conversationStore,
       memoryStore: store,
@@ -168,12 +168,12 @@ export class PristineLocal {
     const conversationStore = new ConversationStore(db);
     const ingestQueue = new IngestQueue({
       db,
-      orchestrator: null as unknown as Orchestrator,
+      orchestrator: null,
       conversationStore,
     });
 
     return new PristineLocal({
-      orchestrator: null as unknown as Orchestrator,
+      orchestrator: null,
       ingestQueue,
       conversationStore,
       memoryStore: null,
@@ -194,9 +194,7 @@ export class PristineLocal {
   // Memory API
   // -------------------------------------------------------------------------
 
-  public async store(conversation: readonly Message[], userId: string): Promise<IngestResult> {
-    void conversation;
-    void userId;
+  public async store(_conversation: readonly Message[], _userId: string): Promise<IngestResult> {
     throw new IngestQueueError(
       'store() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
         'Use storeAsync() to enqueue conversations, or wait for the Phase 2 indexer/searcher primitives.',
@@ -212,13 +210,10 @@ export class PristineLocal {
   }
 
   public async search(
-    query: string,
-    userId: string,
-    options?: SearchOptions,
+    _query: string,
+    _userId: string,
+    _options?: SearchOptions,
   ): Promise<RetrieveResult> {
-    void query;
-    void userId;
-    void options;
     throw new IngestQueueError(
       'search() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
         'searchConversations() and getConversation() remain available for raw-conversation lookup.',

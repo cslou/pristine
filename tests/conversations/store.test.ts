@@ -722,9 +722,14 @@ describe('sprint-014 Story 2 — vec tables', () => {
       .prepare(
         'SELECT conversation_id, embedding, updated_at FROM vec_sessions WHERE conversation_id = ?',
       )
-      .get('c-sess') as { conversation_id: string; embedding: Buffer; updated_at: number };
+      .get('c-sess') as { conversation_id: string; embedding: Buffer; updated_at: number | bigint };
     expect(row.conversation_id).toBe('c-sess');
-    expect(row.updated_at).toBe(1_700_000_000_000);
+    // vec0 INTEGER auxiliary columns currently return as Number via
+    // better-sqlite3, but the typed row annotation accepts bigint too so
+    // an sqlite-vec return-type change doesn't silently break this assertion.
+    // Explicit Number() coercion makes the comparison symmetric with the
+    // BigInt literal used on write.
+    expect(Number(row.updated_at)).toBe(1_700_000_000_000);
     const out = readEmbedding(row.embedding);
     for (let i = 0; i < 768; i++) {
       expect(out[i]).toBe(source[i]);
@@ -767,8 +772,8 @@ describe('sprint-014 Story 2 — vec tables', () => {
 
     const row = d
       .prepare('SELECT updated_at FROM vec_sessions WHERE conversation_id = ?')
-      .get('c-pk') as { updated_at: number };
-    expect(row.updated_at).toBe(2);
+      .get('c-pk') as { updated_at: number | bigint };
+    expect(Number(row.updated_at)).toBe(2);
     d.close();
   });
 

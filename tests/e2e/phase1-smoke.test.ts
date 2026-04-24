@@ -85,21 +85,20 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     expect(EmbedderError).toBeTypeOf('function');
     expect(IngestQueueError).toBeTypeOf('function');
 
-    // Wildcard-import sanity: the barrel's own surface shape is what we
-    // expect — at least the handful of named symbols plus zero drift into
-    // accidental default-export or unexpected re-exports.
+    // Wildcard-import sanity: the barrel's named-export shape is a closed
+    // set. `toEqual` with an exact sorted list catches both missing exports
+    // (regression) and accidental re-exports (sprawl) — `arrayContaining`
+    // only enforces the subset, which would silently pass extras through.
     const keys = Object.keys(PristineBarrel).sort();
-    expect(keys).toEqual(
-      expect.arrayContaining([
-        'AppError',
-        'ConfigError',
-        'EmbedderError',
-        'IngestQueue',
-        'IngestQueueError',
-        'PristineLocal',
-        'createDatabase',
-      ]),
-    );
+    expect(keys).toEqual([
+      'AppError',
+      'ConfigError',
+      'EmbedderError',
+      'IngestQueue',
+      'IngestQueueError',
+      'PristineLocal',
+      'createDatabase',
+    ]);
   });
 
   it('createLite() succeeds with no LlmClient or Embedder at all', () => {

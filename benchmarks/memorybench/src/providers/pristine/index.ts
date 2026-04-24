@@ -58,5 +58,3 @@ export class PristineProvider implements Provider {
     // no-op — the stub never acquired resources
   }
 }
-
-export default PristineProvider

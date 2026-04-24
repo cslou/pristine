@@ -14,7 +14,16 @@
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
-import { PristineLocal } from '../../src/index.js';
+import * as PristineBarrel from '../../src/index.js';
+import {
+  AppError,
+  ConfigError,
+  EmbedderError,
+  IngestQueue,
+  IngestQueueError,
+  PristineLocal,
+  createDatabase as createDatabaseFromBarrel,
+} from '../../src/index.js';
 import type { LlmClient, Embedder } from '../../src/core/interfaces.js';
 import type { LlmClients } from '../../src/engine/index.js';
 
@@ -38,11 +47,9 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
 
   it('create() succeeds with DI overrides (no llamacpp / ollama contact)', async () => {
     const db = createDatabase(':memory:');
-    // NB: don't push to `databases` — client.dispose() below closes the DI-provided
-    // DB via its `ownsDb=false` guard, so afterEach's teardown would double-close.
-    // (ownsDb is true only when PristineLocal allocated the DB itself — injected
-    // DBs are the caller's responsibility, and we mirror that by leaving cleanup
-    // to the explicit dispose() call.)
+    // NB: don't push to `databases` — client.dispose() with DI-provided deps
+    // leaves the DB to the caller (ownsDb=false). We close it in finally so
+    // a dispose rejection still releases the handle.
 
     const llmClients: LlmClients = {
       privacyClient: makeLlmStub(),
@@ -55,11 +62,44 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
       embedder: makeEmbedderStub(),
     });
 
-    expect(client).toBeInstanceOf(PristineLocal);
-    expect(client.ingestQueue).toBeDefined();
+    try {
+      expect(client).toBeInstanceOf(PristineLocal);
+      expect(client.ingestQueue).toBeDefined();
 
-    await client.dispose();
-    db.close();
+      await client.dispose();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('src/index.ts public barrel exports the Phase-1 surface (import-level check)', () => {
+    // Named-export contract — all symbols a Phase-1 SDK consumer needs must
+    // resolve to defined values at import time. A future refactor that
+    // silently drops one of these exports breaks downstream imports at
+    // consume-site with no local signal; this test catches it at the barrel.
+    expect(PristineLocal).toBeTypeOf('function');
+    expect(IngestQueue).toBeTypeOf('function');
+    expect(createDatabaseFromBarrel).toBeTypeOf('function');
+    expect(AppError).toBeTypeOf('function');
+    expect(ConfigError).toBeTypeOf('function');
+    expect(EmbedderError).toBeTypeOf('function');
+    expect(IngestQueueError).toBeTypeOf('function');
+
+    // Wildcard-import sanity: the barrel's own surface shape is what we
+    // expect — at least the handful of named symbols plus zero drift into
+    // accidental default-export or unexpected re-exports.
+    const keys = Object.keys(PristineBarrel).sort();
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        'AppError',
+        'ConfigError',
+        'EmbedderError',
+        'IngestQueue',
+        'IngestQueueError',
+        'PristineLocal',
+        'createDatabase',
+      ]),
+    );
   });
 
   it('createLite() succeeds with no LlmClient or Embedder at all', () => {

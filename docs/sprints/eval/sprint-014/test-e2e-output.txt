@@ -1,0 +1,128 @@
+
+> @pristine/shield-local@0.0.1 test:e2e
+> vitest run --passWithNoTests --config vitest.e2e.config.ts
+
+
+ RUN  v3.2.4 /Users/lou/projects/pristine
+
+ ✓ tests/core/init.test.ts (36 tests) 55ms
+ ✓ tests/queue/ingest-queue.test.ts (20 tests) 58ms
+ ✓ tests/integration/embedder.test.ts (2 tests) 337ms
+   ✓ LocalEmbedder integration (real model) > produces 768-dimensional vector from real model  316ms
+ ✓ tests/vault/sqlite-vault-store.test.ts (10 tests) 504ms
+ ✓ tests/conversations/store.test.ts (72 tests) 63ms
+ ✓ tests/models/download.test.ts (8 tests) 23ms
+ ✓ tests/client.test.ts (15 tests) 35ms
+ ✓ tests/core/database.test.ts (8 tests) 16ms
+ ✓ tests/e2e/phase1-smoke.test.ts (5 tests) 15ms
+ ✓ tests/sanitizer/sanitizer.test.ts (22 tests) 9ms
+ ✓ tests/embedder/local.test.ts (16 tests) 7ms
+ ✓ tests/vault/vault-redaction.test.ts (17 tests) 4ms
+ ✓ tests/engine/create-llm-clients.test.ts (10 tests) 9ms
+ ✓ tests/classifier/combined-classifier.test.ts (13 tests) 7ms
+ ✓ tests/classifier/llm-classifier.test.ts (23 tests) 7ms
+ ✓ tests/engine/llamacpp.test.ts (14 tests) 5ms
+ ✓ tests/classifier/deterministic-classifier.test.ts (13 tests) 5ms
+ ✓ tests/vault/asymmetric-encrypt.test.ts (7 tests) 3ms
+ ✓ tests/memory/orchestrator/chunker.test.ts (9 tests) 3ms
+ ✓ tests/memory/retriever/ranking.test.ts (16 tests) 4ms
+ ✓ tests/privacy/safety-scan.test.ts (6 tests) 4ms
+ ✓ tests/models/registry.test.ts (4 tests) 2ms
+ ✓ tests/privacy/secure-and-redact.test.ts (1 test) 5ms
+ ✓ tests/e2e/init-and-config.test.ts (7 tests) 1707ms
+   ✓ e2e: initialization and configuration > rejects keys directory with wrong permissions  742ms
+   ✓ e2e: initialization and configuration > rejects private key file with wrong permissions  946ms
+ ✓ tests/scripts/store.test.ts (4 tests) 4ms
+ ✓ tests/embedder/factory.test.ts (4 tests) 4ms
+ ✓ tests/integration/privacy.test.ts (8 tests) 2954ms
+   ✓ privacy pipeline end-to-end > secureAndRedact -> reveal -> scrubOutput round-trip recovers then scrubs PII  1011ms
+   ✓ privacy pipeline end-to-end > secureAndRedact stores encrypted entries in vault  1157ms
+   ✓ privacy pipeline end-to-end > handles unicode PII in round-trip  781ms
+ ✓ tests/embedder/ollama.test.ts (15 tests) 4518ms
+   ✓ OllamaEmbedder > error handling > retries on 429 then succeeds  501ms
+   ✓ OllamaEmbedder > error handling > retries on 500 then succeeds  503ms
+   ✓ OllamaEmbedder > error handling > throws EmbedderError after exhausting retries on 429  3506ms
+ ✓ tests/privacy/migration.test.ts (5 tests) 4866ms
+   ✓ migrateToKek > migrates old RSA-wrapped entries to KEK scheme  794ms
+   ✓ migrateToKek > migrated entries are decryptable via reveal()  2468ms
+   ✓ migrateToKek > is idempotent — running twice causes no errors  900ms
+   ✓ migrateToKek > handles mixed old and new entries  699ms
+ ✓ tests/integration/kek-lifecycle.test.ts (5 tests) 10528ms
+   ✓ KEK lifecycle e2e > generates KEK on first encrypt and round-trips through reveal  792ms
+   ✓ KEK lifecycle e2e > key rotation preserves access to pre-rotation data  1644ms
+   ✓ KEK lifecycle e2e > encrypts and decrypts new data after rotation  1824ms
+   ✓ KEK lifecycle e2e > survives multiple sequential rotations  4856ms
+   ✓ KEK lifecycle e2e > migrates legacy RSA-wrapped entries and reveals via KEK path  1407ms
+ ✓ tests/engine/ollama.test.ts (20 tests) 11678ms
+   ✓ OllamaClient > retries on 429 and succeeds  505ms
+   ✓ OllamaClient > retries on 500 and succeeds  503ms
+   ✓ OllamaClient > throws AppError when fetch fails (network error)  3510ms
+   ✓ OllamaClient > network error includes ollama serve and models.json guidance  3511ms
+   ✓ OllamaClient > throws AppError after exhausting all retries on 429  3507ms
+ ✓ tests/privacy/rotation.test.ts (5 tests) 12963ms
+   ✓ rotateKey > rotated key still decrypts previously encrypted values  2743ms
+   ✓ rotateKey > encrypts new values after rotation and decrypts them  2585ms
+   ✓ rotateKey > handles multiple rotations in sequence  4193ms
+   ✓ rotateKey > updates user_keks row with new key_id after rotation  1383ms
+   ✓ rotateKey > clears KEK cache after rotation  2055ms
+ ✓ tests/vault/asymmetric-crypto.test.ts (19 tests) 14412ms
+   ✓ asymmetric-crypto > generateKeyPair > returns valid PEM strings  569ms
+   ✓ asymmetric-crypto > generateKeyPair > generates RSA-4096 keys  508ms
+   ✓ asymmetric-crypto > generateKeyPair > produces different key pairs on each call  1197ms
+   ✓ asymmetric-crypto > wrapDek / unwrapDek round-trip > wraps and unwraps a DEK correctly  834ms
+   ✓ asymmetric-crypto > wrapDek / unwrapDek round-trip > produces 512-byte wrapped output for RSA-4096  2291ms
+   ✓ asymmetric-crypto > wrapDek / unwrapDek round-trip > produces different ciphertexts for the same DEK (OAEP randomness)  806ms
+   ✓ asymmetric-crypto > unwrapDek negative cases > fails with wrong private key  1729ms
+   ✓ asymmetric-crypto > unwrapDek negative cases > fails with corrupted wrapped DEK  1428ms
+   ✓ asymmetric-crypto > validatePublicKey > accepts valid RSA-4096 PEM  1792ms
+   ✓ asymmetric-crypto > computeKeyFingerprint > returns sha256:<hex> format  317ms
+   ✓ asymmetric-crypto > computeKeyFingerprint > is deterministic for the same key  1468ms
+   ✓ asymmetric-crypto > computeKeyFingerprint > produces different fingerprints for different keys  1051ms
+ ✓ tests/integration/engine.test.ts (2 tests) 14710ms
+   ✓ LlamaCppClient integration (real model) > generates valid structured JSON from a GGUF model  6662ms
+   ✓ OllamaClient integration (requires running Ollama) > generates valid structured JSON from Ollama  8045ms
+ ✓ tests/privacy/kek/kek-manager.test.ts (18 tests) 15738ms
+   ✓ wrapKek / unwrapKek round-trip > wraps and unwraps a KEK correctly  743ms
+   ✓ wrapKek / unwrapKek round-trip > produces 512-byte wrapped output for RSA-4096  380ms
+   ✓ wrapKek / unwrapKek round-trip > rejects KEK shorter than 32 bytes  601ms
+   ✓ wrapKek / unwrapKek round-trip > rejects KEK longer than 32 bytes  1091ms
+   ✓ wrapKek / unwrapKek round-trip > fails to unwrap with wrong private key  931ms
+   ✓ KekManager > getOrCreate > generates and stores a KEK on first call  1339ms
+   ✓ KekManager > getOrCreate > stores key_id matching RSA fingerprint format  815ms
+   ✓ KekManager > getOrCreate > stores algorithm as rsa-oaep-256  1344ms
+   ✓ KekManager > getOrCreate > returns same KEK on second call (cache hit)  689ms
+   ✓ KekManager > getOrCreate > retrieves from DB after cache clear  903ms
+   ✓ KekManager > cache behavior > clearCache(userId) forces DB lookup on next call  1230ms
+   ✓ KekManager > cache behavior > clearCache() without args clears all users  653ms
+   ✓ KekManager > multi-user isolation > different users get different KEKs  2044ms
+   ✓ KekManager > multi-user isolation > clearing one user cache does not affect another  1868ms
+   ✓ KekManager > DB persistence across KekManager instances > new KekManager instance retrieves existing KEK from DB  843ms
+ ✓ tests/e2e/privacy-pipeline.test.ts (4 tests) 17077ms
+   ✓ e2e: privacy pipeline with real Ollama > detects real PII and round-trips through reveal  9937ms
+   ✓ e2e: privacy pipeline with real Ollama > vault entries use KEK wrapping scheme  1935ms
+   ✓ e2e: privacy pipeline with real Ollama > key rotation preserves access to encrypted data  2968ms
+   ✓ e2e: privacy pipeline with real Ollama > deterministic classifier detects credit card alongside LLM  2234ms
+ ✓ tests/privacy/keys/filesystem.test.ts (23 tests) 20034ms
+   ✓ FileSystemKeyManager > generates and persists key pair on first call  519ms
+   ✓ FileSystemKeyManager > returns created=false on subsequent calls (from cache)  388ms
+   ✓ FileSystemKeyManager > reloads keys from disk on fresh instance  550ms
+   ✓ FileSystemKeyManager > isolates keys by userId  3943ms
+   ✓ FileSystemKeyManager > sets private key permissions to 0600 on Unix  348ms
+   ✓ FileSystemKeyManager > creates keysDir recursively if it does not exist  576ms
+   ✓ FileSystemKeyManager > throws KeyManagerError for corrupt public key file  853ms
+   ✓ FileSystemKeyManager > throws KeyManagerError for corrupt private key file  968ms
+   ✓ FileSystemKeyManager > saveKeyPair writes keys and invalidates cache  1193ms
+   ✓ FileSystemKeyManager > saveKeyPair creates keysDir if needed  1218ms
+   ✓ FileSystemKeyManager > sets 0o700 on keys directory when creating it  1812ms
+   ✓ FileSystemKeyManager > rejects keys directory with group/other access  302ms
+   ✓ FileSystemKeyManager > rejects private key file with group/other access  365ms
+   ✓ FileSystemKeyManager > accepts correct permissions (0o700 dir, 0o600 private key)  784ms
+   ✓ FileSystemKeyManager > accepts normal userId values  5419ms
+   ✓ FileSystemKeyManager > saveKeyPair rejects userId with path traversal  511ms
+
+ Test Files  37 passed (37)
+      Tests  486 passed (486)
+   Start at  19:52:05
+   Duration  20.33s (transform 644ms, setup 0ms, collect 3.08s, tests 132.37s, environment 3ms, prepare 1.49s)
+
+exit=0

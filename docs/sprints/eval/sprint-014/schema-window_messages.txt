@@ -1,0 +1,5 @@
+-- PRAGMA table_info(window_messages) --
+{"cid":0,"name":"conversation_id","type":"TEXT","notnull":1,"dflt_value":null,"pk":1}
+{"cid":1,"name":"window_index","type":"INTEGER","notnull":1,"dflt_value":null,"pk":2}
+{"cid":2,"name":"message_id","type":"INTEGER","notnull":1,"dflt_value":null,"pk":3}
+{"cid":3,"name":"position","type":"INTEGER","notnull":1,"dflt_value":null,"pk":0}

@@ -1,0 +1,4 @@
+-- PRAGMA table_info(vec_sessions) --
+{"cid":0,"name":"conversation_id","type":"","notnull":1,"dflt_value":null,"pk":1}
+{"cid":1,"name":"embedding","type":"","notnull":0,"dflt_value":null,"pk":0}
+{"cid":2,"name":"updated_at","type":"","notnull":0,"dflt_value":null,"pk":0}

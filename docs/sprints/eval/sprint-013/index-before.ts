@@ -10,8 +10,10 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 // ---------------------------------------------------------------------------
 
 export type {
+  AnalyzedQuery,
   ConversationDetail,
   ConversationSearchResult,
+  Fact,
   IngestOptions,
   IngestResult,
   Memory,
@@ -20,21 +22,39 @@ export type {
   PipelineStep,
   SecureAndRedactResult,
   RevealResult,
+  RankedMemory,
+  RetrieveOptions,
+  RetrieveResult,
+  SearchOptions,
 } from './core/types.js';
 
 // ---------------------------------------------------------------------------
 // Interfaces (for DI, custom implementations, and test mocks)
 // ---------------------------------------------------------------------------
 
-export type { Embedder, LlmClient, Orchestrator } from './core/interfaces.js';
+export type { Embedder, Extractor, LlmClient, Orchestrator, Store } from './core/interfaces.js';
 
 export type { LlmClients } from './engine/index.js';
+
+// ---------------------------------------------------------------------------
+// Extractor prompt (exported so callers can compose on top of the default
+// instead of replacing it wholesale via ExtractorConfig.systemPrompt)
+// ---------------------------------------------------------------------------
+
+export { buildExtractionPrompt } from './memory/extractor/prompts.js';
+export type { ExtractorConfig } from './memory/extractor/index.js';
 
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
-export { AppError, ConfigError, EmbedderError, IngestQueueError } from './core/errors.js';
+export {
+  AppError,
+  ConfigError,
+  EmbedderError,
+  IngestQueueError,
+  OrchestratorError,
+} from './core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Database (for provider integrations that need file-backed DBs)

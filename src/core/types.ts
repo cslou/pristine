@@ -31,42 +31,6 @@ export interface ConversationDetail {
 }
 
 // ---------------------------------------------------------------------------
-// Temporal
-// ---------------------------------------------------------------------------
-
-export type TemporalConfidence = 'explicit' | 'inferred' | 'implied' | 'none';
-
-export interface TemporalValidationOptions {
-  readonly referenceTimestamp: string;
-  readonly minimumDate?: string;
-}
-
-export interface TemporalValidationResult {
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-  readonly temporalConfidence?: TemporalConfidence;
-  readonly metadata?: Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Fact & Extraction
-// ---------------------------------------------------------------------------
-
-export interface Fact {
-  readonly id?: string;
-  readonly text: string;
-  readonly sourceConversationId?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-  readonly temporalConfidence?: TemporalConfidence;
-}
-
-export interface ExtractionResult {
-  readonly facts: Fact[];
-}
-
-// ---------------------------------------------------------------------------
 // Memory & Store
 // ---------------------------------------------------------------------------
 
@@ -89,65 +53,7 @@ export interface Memory {
   readonly supersessionReason?: string;
 }
 
-export interface AddMemoryInput {
-  readonly userId: string;
-  readonly text: string;
-  readonly embedding: number[];
-  readonly contentHash: string;
-  readonly sourceConversationId?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-}
-
-export interface UpdateMemoryInput {
-  readonly text?: string;
-  readonly embedding?: number[];
-  readonly contentHash?: string;
-  readonly metadata?: Record<string, unknown>;
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-}
-
-export interface SupersedeMemoryResult {
-  readonly oldMemory: Memory;
-  readonly newMemory: Memory;
-}
-
 export type TemporalMode = 'current' | 'as_of' | 'full';
-
-export interface SearchParams {
-  readonly embedding: number[];
-  readonly limit: number;
-  readonly userId: string;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Consolidation
-// ---------------------------------------------------------------------------
-
-export type ConsolidationAction = 'ADD' | 'UPDATE' | 'DELETE' | 'NOOP' | 'SUPERSEDE';
-
-export interface ConsolidationResult {
-  readonly action: ConsolidationAction;
-  readonly mergedText?: string;
-  readonly targetMemoryId?: string;
-  readonly supersessionReason?: string;
-  readonly validUntil?: string;
-  readonly factIndex: number;
-}
-
-export interface ConsolidationBatchResult {
-  readonly results: ConsolidationResult[];
-  readonly idRemap: ReadonlyMap<string, string>;
-}
-
-export interface ConsolidationRequest {
-  readonly newFact: Fact;
-  readonly similarMemories: readonly Fact[];
-}
 
 // ---------------------------------------------------------------------------
 // Classification & Sensitivity
@@ -330,68 +236,6 @@ export interface ZkV2EncryptedVaultEntryInput {
 export type VaultEntryInput = ZkV2EncryptedVaultEntryInput;
 
 // ---------------------------------------------------------------------------
-// Retriever & Search
-// ---------------------------------------------------------------------------
-
-export interface RankedMemory {
-  readonly memory: Memory;
-  readonly score: number;
-}
-
-export interface RetrieveFilters {
-  readonly userId: string;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
-
-export interface RetrieveOptions {
-  readonly topK?: number;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-  readonly sources?: readonly ('facts' | 'keywords' | 'episodes' | 'graph')[];
-}
-
-export interface SearchOptions {
-  readonly topK?: number;
-  readonly temporalMode?: TemporalMode;
-  readonly asOf?: string;
-}
-
-export interface RetrieveResult {
-  readonly query: AnalyzedQuery;
-  readonly memories: RankedMemory[];
-  readonly metadata: {
-    readonly totalFound: number;
-    readonly topK: number;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Query Analysis
-// ---------------------------------------------------------------------------
-
-export type QueryIntent = 'factual_lookup' | 'contextual_search' | 'temporal_query';
-
-export interface AnalyzedQuery {
-  readonly intent: QueryIntent;
-  readonly filters: {
-    readonly topic?: string;
-    readonly timeRange?: {
-      readonly start?: string;
-      readonly end?: string;
-    };
-    readonly agentScope?: string;
-  };
-  readonly suggestedTopK: number;
-  readonly rewrittenQuery: string;
-}
-
-export interface QueryContext {
-  readonly conversationHistory?: readonly Message[];
-  readonly userId?: string;
-}
-
-// ---------------------------------------------------------------------------
 // Orchestrator & Pipeline
 // ---------------------------------------------------------------------------
 
@@ -410,8 +254,6 @@ export interface StepError {
 }
 
 export interface IngestResult {
-  readonly facts: Fact[];
-  readonly decisions: ConsolidationResult[];
   readonly memoryIds: string[];
   readonly errors: StepError[];
 }
@@ -419,109 +261,6 @@ export interface IngestResult {
 export interface IngestOptions {
   readonly referenceTimestamp?: string;
   readonly [key: string]: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Episodes (new — not in source repo)
-// ---------------------------------------------------------------------------
-
-export interface Episode {
-  readonly id: string;
-  readonly userId: string;
-  readonly conversationId: string;
-  readonly messages: readonly Message[];
-  readonly summary?: string;
-  readonly summaryEmbedding?: number[];
-  readonly participantCount?: number;
-  readonly messageCount: number;
-  readonly startedAt: string;
-  readonly endedAt: string;
-  readonly storageTier: 'hot' | 'warm' | 'cold';
-  readonly metadata: Record<string, unknown>;
-  readonly createdAt: string;
-}
-
-export interface EpisodeInput {
-  readonly userId: string;
-  readonly conversationId: string;
-  readonly messages: readonly Message[];
-  readonly summary?: string;
-  readonly summaryEmbedding?: number[];
-  readonly participantCount?: number;
-  readonly messageCount: number;
-  readonly startedAt: string;
-  readonly endedAt: string;
-  readonly metadata?: Record<string, unknown>;
-}
-
-export interface RankedEpisode {
-  readonly episode: Episode;
-  readonly score: number;
-}
-
-// ---------------------------------------------------------------------------
-// Entity & Graph (new — not in source repo)
-// ---------------------------------------------------------------------------
-
-export type EntityType = 'PERSON' | 'ORGANIZATION' | 'LOCATION' | 'EVENT' | 'PRODUCT' | 'OTHER';
-
-export interface Entity {
-  readonly id: string;
-  readonly userId: string;
-  readonly name: string;
-  readonly type: EntityType;
-  readonly aliases: readonly string[];
-  readonly summary?: string;
-  readonly embedding?: number[];
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
-
-export interface EntityInput {
-  readonly userId: string;
-  readonly name: string;
-  readonly type: EntityType;
-  readonly aliases?: readonly string[];
-  readonly summary?: string;
-  readonly embedding?: number[];
-}
-
-export interface Relationship {
-  readonly id: string;
-  readonly userId: string;
-  readonly sourceEntityId: string;
-  readonly targetEntityId: string;
-  readonly relation: string;
-  readonly fact?: string;
-  readonly sourceMemoryId?: string;
-  readonly embedding?: number[];
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-  readonly isInvalid: boolean;
-  readonly createdAt: string;
-}
-
-export interface RelationshipInput {
-  readonly userId: string;
-  readonly sourceEntityId: string;
-  readonly targetEntityId: string;
-  readonly relation: string;
-  readonly fact?: string;
-  readonly sourceMemoryId?: string;
-  readonly embedding?: number[];
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-}
-
-export interface TraversalResult {
-  readonly entity: Entity;
-  readonly relation: string;
-  readonly depth: number;
-}
-
-export interface RankedRelationship {
-  readonly relationship: Relationship;
-  readonly score: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -540,11 +279,6 @@ export interface KeyPairWithStatus {
 
 export interface PromptConfig {
   readonly classifier?: string;
-  readonly extractor?: string;
-  readonly consolidator?: string;
-  readonly queryAnalyzer?: string;
-  readonly episodeSummary?: string;
-  readonly entityExtractor?: string;
 }
 
 export interface LocalConfig {

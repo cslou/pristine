@@ -1,10 +1,13 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '../../src/core/database.js';
 import { ConversationStore } from '../../src/conversations/store.js';
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 import type { Orchestrator } from '../../src/core/interfaces.js';
-import { AppError, EmbedderError } from '../../src/core/errors.js';
+import { AppError, EmbedderError, IngestQueueError } from '../../src/core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,8 +18,6 @@ const createMockOrchestrator = (ingestFn?: Orchestrator['ingest']): Orchestrator
     ingest:
       ingestFn ??
       vi.fn(async () => ({
-        facts: [{ text: 'test fact' }],
-        decisions: [{ action: 'ADD', factIndex: 0 }],
         memoryIds: ['mem-1'],
         errors: [],
       })),
@@ -311,6 +312,117 @@ describe('IngestQueue', () => {
     it('returns null when no pending tasks', async () => {
       const task = await queue.processNext();
       expect(task).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // orchestrator guard — ported from the deleted integration test; covers the
+  // post-spec-005-Phase-1 state where client.ts constructs IngestQueue with
+  // orchestrator: null
+  // -------------------------------------------------------------------------
+
+  describe('processNext() orchestrator guard', () => {
+    it('throws IngestQueueError when constructed with a null orchestrator', async () => {
+      const localDb = createDatabase(':memory:');
+      try {
+        const localStore = new ConversationStore(localDb);
+        const nullQueue = new IngestQueue({
+          db: localDb,
+          orchestrator: null,
+          conversationStore: localStore,
+        });
+        nullQueue.enqueue(sampleConversation, 'user-guard');
+
+        await expect(nullQueue.processNext()).rejects.toThrow(IngestQueueError);
+        await expect(nullQueue.processNext()).rejects.toThrow(
+          'orchestrator pipeline was removed in spec-005 Phase 1',
+        );
+      } finally {
+        localDb.close();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Multi-connection concurrency — ported from the deleted
+  // tests/integration/ingest-queue.test.ts so the queue's SQLite-level
+  // contracts (atomic claim, busy_timeout) stay covered after spec-005 Phase 1
+  // removed the pipeline-coupled integration suite.
+  // -------------------------------------------------------------------------
+
+  describe('multi-connection concurrency', () => {
+    let tempDir: string;
+    let dbPath: string;
+
+    beforeEach(() => {
+      tempDir = mkdtempSync(join(tmpdir(), 'pristine-queue-concurrency-'));
+      dbPath = join(tempDir, 'test.db');
+    });
+
+    afterEach(() => {
+      rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('two separate connections claim different tasks', () => {
+      const db1 = createDatabase(dbPath);
+      const db2 = createDatabase(dbPath);
+      try {
+        const convStore1 = new ConversationStore(db1);
+        const queue1 = new IngestQueue({
+          db: db1,
+          orchestrator: createMockOrchestrator(),
+          conversationStore: convStore1,
+        });
+        const convStore2 = new ConversationStore(db2);
+        const queue2 = new IngestQueue({
+          db: db2,
+          orchestrator: createMockOrchestrator(),
+          conversationStore: convStore2,
+        });
+
+        for (let i = 0; i < 5; i += 1) {
+          queue1.enqueue(makeConversation(`task-${i}`), 'user-1');
+        }
+
+        const first = queue1.claimNext();
+        const second = queue2.claimNext();
+
+        expect(first).not.toBeNull();
+        expect(second).not.toBeNull();
+        expect(first!.id).not.toBe(second!.id);
+      } finally {
+        db1.close();
+        db2.close();
+      }
+    });
+
+    it('busy_timeout allows concurrent enqueue without SQLITE_BUSY', () => {
+      const db1 = createDatabase(dbPath);
+      const db2 = createDatabase(dbPath);
+      try {
+        const convStore1 = new ConversationStore(db1);
+        const convStore2 = new ConversationStore(db2);
+        const queue1 = new IngestQueue({
+          db: db1,
+          orchestrator: createMockOrchestrator(),
+          conversationStore: convStore1,
+        });
+        const queue2 = new IngestQueue({
+          db: db2,
+          orchestrator: createMockOrchestrator(),
+          conversationStore: convStore2,
+        });
+
+        expect(() => {
+          queue1.enqueue([{ role: 'user', content: 'From writer 1' }], 'user-1');
+          queue2.enqueue([{ role: 'user', content: 'From writer 2' }], 'user-2');
+        }).not.toThrow();
+
+        expect(queue1.pending).toBe(2);
+      } finally {
+        db1.close();
+        db2.close();
+      }
     });
   });
 

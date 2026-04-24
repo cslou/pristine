@@ -1,36 +1,12 @@
 import type {
-  AddMemoryInput,
-  AnalyzedQuery,
-  ConsolidationBatchResult,
-  ConsolidationRequest,
-  ConsolidationResult,
-  Entity,
-  EntityInput,
-  Episode,
-  EpisodeInput,
-  ExtractionResult,
-  Fact,
+  ClassificationPipelineResult,
   IngestOptions,
   IngestResult,
   JsonSchema,
   KeyPairWithStatus,
-  Memory,
   Message,
   PipelineStep,
-  QueryContext,
-  RankedEpisode,
-  RankedRelationship,
-  Relationship,
-  RelationshipInput,
-  RetrieveOptions,
-  RetrieveResult,
-  SearchOptions,
-  SearchParams,
-  ClassificationPipelineResult,
   SensitivityReport,
-  SupersedeMemoryResult,
-  TraversalResult,
-  UpdateMemoryInput,
   VaultEntry,
   VaultEntryInput,
 } from './types.js';
@@ -55,43 +31,6 @@ export interface LlmClient {
 export interface Embedder {
   embed(text: string): Promise<number[]>;
   embedBatch(texts: readonly string[]): Promise<number[][]>;
-}
-
-// ---------------------------------------------------------------------------
-// Memory Store
-// ---------------------------------------------------------------------------
-
-export interface Store {
-  addMemory(memory: AddMemoryInput): Promise<Memory>;
-  getMemory(id: string, userId: string): Promise<Memory | null>;
-  searchSimilar(params: SearchParams): Promise<Memory[]>;
-  updateMemory(id: string, updates: UpdateMemoryInput, userId: string): Promise<Memory>;
-  deleteMemory(id: string, userId: string): Promise<void>;
-  supersedeMemory(
-    oldId: string,
-    newMemory: AddMemoryInput,
-    reason: string,
-    validUntil?: string,
-  ): Promise<SupersedeMemoryResult>;
-  getSupersessionChain(memoryId: string, userId: string): Promise<Memory[]>;
-  clearAll(userId?: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Extraction
-// ---------------------------------------------------------------------------
-
-export interface Extractor {
-  extract(conversation: readonly Message[], referenceTimestamp: string): Promise<ExtractionResult>;
-}
-
-// ---------------------------------------------------------------------------
-// Consolidation
-// ---------------------------------------------------------------------------
-
-export interface Consolidator {
-  consolidate(newFact: Fact, similarMemories: readonly Fact[]): Promise<ConsolidationResult>;
-  consolidateBatch(requests: ConsolidationRequest[]): Promise<ConsolidationBatchResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,57 +61,16 @@ export interface KeyManager {
 export interface VaultStore {
   addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
   getEntriesByPlaceholderIds(userId: string, placeholderIds: string[]): Promise<VaultEntry[]>;
-  deleteEntriesByMemoryId(memoryId: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Episodes
-// ---------------------------------------------------------------------------
-
-export interface EpisodeStore {
-  addEpisode(episode: EpisodeInput): Promise<Episode>;
-  searchByEmbedding(embedding: number[], topK: number, userId: string): Promise<RankedEpisode[]>;
-  linkMemory(memoryId: string, episodeId: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Entity Graph
-// ---------------------------------------------------------------------------
-
-export interface EntityStore {
-  addEntity(entity: EntityInput): Promise<Entity>;
-  resolve(name: string, type: string, userId: string, embedding?: number[]): Promise<Entity | null>;
-  getEntity(id: string, userId: string): Promise<Entity | null>;
-}
-
-export interface RelationshipStore {
-  addRelationship(rel: RelationshipInput): Promise<Relationship>;
-  traverse(entityId: string, userId: string, maxDepth: number): Promise<TraversalResult[]>;
-  searchByEmbedding(
-    embedding: number[],
-    topK: number,
-    userId: string,
-  ): Promise<RankedRelationship[]>;
-}
-
-// ---------------------------------------------------------------------------
-// Retrieval
-// ---------------------------------------------------------------------------
-
-export interface Retriever {
-  retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
-}
-
-// ---------------------------------------------------------------------------
-// Query Analysis
-// ---------------------------------------------------------------------------
-
-export interface QueryAnalyzer {
-  analyzeQuery(query: string, context?: QueryContext): Promise<AnalyzedQuery>;
 }
 
 // ---------------------------------------------------------------------------
 // Orchestrator
+//
+// Phase-1 surface is ingest-only — IngestQueue.processNext() calls
+// orchestrator.ingest() when the queue is wired to a full pipeline. All four
+// retrieve/search/search-pipeline members are deferred to spec-005 Phase 2+
+// (indexer + searcher primitives); re-exposing them here without a live
+// implementation would be a phantom contract.
 // ---------------------------------------------------------------------------
 
 export interface Orchestrator {
@@ -181,11 +79,6 @@ export interface Orchestrator {
     userId: string,
     options?: IngestOptions,
   ): Promise<IngestResult>;
-  retrieve(query: string, userId: string, options?: RetrieveOptions): Promise<RetrieveResult>;
-  store(conversation: readonly Message[], userId: string): Promise<IngestResult>;
-  search(query: string, userId: string, options?: SearchOptions): Promise<RetrieveResult>;
   readonly ingestSteps: readonly PipelineStep[];
-  readonly retrieveSteps: readonly PipelineStep[];
   registerIngestStep(step: PipelineStep): void;
-  registerRetrieveStep(step: PipelineStep): void;
 }

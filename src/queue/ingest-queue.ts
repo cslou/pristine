@@ -63,7 +63,7 @@ export interface IngestTask {
 
 export interface IngestQueueConfig {
   readonly db: Database.Database;
-  readonly orchestrator: Orchestrator;
+  readonly orchestrator: Orchestrator | null;
   readonly conversationStore: ConversationStore;
 }
 
@@ -107,7 +107,7 @@ const isRetryableError = (error: unknown): boolean => {
 
 export class IngestQueue {
   private readonly db: Database.Database;
-  private readonly orchestrator: Orchestrator;
+  private readonly orchestrator: Orchestrator | null;
   private readonly conversationStore: ConversationStore;
 
   public constructor(config: IngestQueueConfig) {
@@ -200,10 +200,11 @@ export class IngestQueue {
    * Returns the claimed task, or null if queue is empty.
    */
   public async processNext(): Promise<IngestTask | null> {
-    if (!this.orchestrator) {
+    const orchestrator = this.orchestrator;
+    if (!orchestrator) {
       throw new IngestQueueError(
-        'processNext() requires a full client with an orchestrator. ' +
-          'Lite clients can only call enqueue().',
+        'processNext() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
+          'Conversations can still be enqueued via enqueue(); processing will be reintroduced once the Phase-2 indexer primitive lands.',
       );
     }
 
@@ -227,7 +228,7 @@ export class IngestQueue {
         ...(m.timestamp ? { timestamp: m.timestamp } : {}),
       }));
 
-      await this.orchestrator.ingest(messages, task.userId, {
+      await orchestrator.ingest(messages, task.userId, {
         sourceConversationId: task.conversationId,
       });
 

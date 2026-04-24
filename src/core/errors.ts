@@ -33,20 +33,6 @@ export class ResolveApprovalTimeoutError extends AppError {
   }
 }
 
-export class ExtractionError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'ExtractionError';
-  }
-}
-
-export class ConsolidationError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'ConsolidationError';
-  }
-}
-
 export class EmbedderError extends AppError {
   public constructor(message: string) {
     super(message);
@@ -100,27 +86,6 @@ export class ConfigError extends AppError {
   public constructor(message: string) {
     super(message);
     this.name = 'ConfigError';
-  }
-}
-
-export class RetrieverError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'RetrieverError';
-  }
-}
-
-export class TurnOrderViolationError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'TurnOrderViolationError';
-  }
-}
-
-export class OrchestratorError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'OrchestratorError';
   }
 }
 

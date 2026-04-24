@@ -838,3 +838,154 @@ describe('sprint-014 Story 2 — vec tables', () => {
     d.close();
   });
 });
+
+// -----------------------------------------------------------------------------
+// Sprint-014 Story 3 — public views (messages_public + conversations_public)
+// -----------------------------------------------------------------------------
+
+describe('sprint-014 Story 3 — public views', () => {
+  it('messages_public exposes EXACTLY (id, conversation_id, turn_index, role, content, timestamp, project_id) in declared order', () => {
+    const cols = db.prepare('PRAGMA table_info(messages_public)').all() as { name: string }[];
+    // No .sort() — the DDL declares a specific column order and SELECT ... *
+    // callers of the view see columns in that order. A future refactor that
+    // reorders the SELECT should fail this test, not silently pass.
+    expect(cols.map((c) => c.name)).toEqual([
+      'id',
+      'conversation_id',
+      'turn_index',
+      'role',
+      'content',
+      'timestamp',
+      'project_id',
+    ]);
+  });
+
+  it('messages_public excludes parent_message_id (privacy invariant)', () => {
+    const cols = db.prepare('PRAGMA table_info(messages_public)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).not.toContain('parent_message_id');
+  });
+
+  it('conversations_public exposes EXACTLY (id, project_id, started_at) in declared order', () => {
+    const cols = db.prepare('PRAGMA table_info(conversations_public)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toEqual(['id', 'project_id', 'started_at']);
+  });
+
+  it('conversations_public excludes user_id, content_hash, message_count (privacy invariant)', () => {
+    const cols = db.prepare('PRAGMA table_info(conversations_public)').all() as { name: string }[];
+    const names = cols.map((c) => c.name);
+    expect(names).not.toContain('user_id');
+    expect(names).not.toContain('content_hash');
+    expect(names).not.toContain('message_count');
+  });
+
+  it('messages_public.timestamp is integer (unix ms, not text)', () => {
+    // Seed a message with a TEXT timestamp so the cast has something to operate on.
+    const msgs = [{ role: 'user', content: 'view-ts-test', timestamp: '2026-04-24T10:00:00' }];
+    store.addConversation(msgs, 'user-view-ts');
+
+    const row = db
+      .prepare(
+        "SELECT typeof(timestamp) AS t FROM messages_public WHERE content = 'view-ts-test' LIMIT 1",
+      )
+      .get() as { t: string };
+    expect(row.t).toBe('integer');
+  });
+
+  it('conversations_public.started_at is integer (unix ms, not text)', () => {
+    const convId = store.addConversation(makeMessages(['started-at-test']), 'user-started-at');
+
+    // Scope to the row this test just inserted — LIMIT 1 without a WHERE
+    // filter would pick an arbitrary row depending on test order, which is
+    // fragile even though all rows share the same cast.
+    const row = db
+      .prepare('SELECT typeof(started_at) AS t FROM conversations_public WHERE id = ?')
+      .get(convId) as { t: string };
+    expect(row.t).toBe('integer');
+  });
+
+  it('messages_public.timestamp is NULL when the underlying message was stored without a timestamp', () => {
+    // Sprint-009's physical messages.timestamp is nullable TEXT; addConversation
+    // without per-message timestamps inserts NULL. strftime('%s', NULL) returns
+    // NULL, so the view's timestamp column passes NULL through for those rows.
+    // This is the documented contract — consumers must handle NULL on
+    // messages_public.timestamp, not assume the INTEGER type annotation
+    // guarantees non-null.
+    const convId = store.addConversation(makeMessages(['null-ts-test']), 'user-null-ts');
+
+    const row = db
+      .prepare(
+        'SELECT timestamp, typeof(timestamp) AS t FROM messages_public WHERE conversation_id = ?',
+      )
+      .get(convId) as { timestamp: number | null; t: string };
+    expect(row.timestamp).toBeNull();
+    expect(row.t).toBe('null');
+  });
+
+  it('round-trips addConversation data through messages_public with correct aliases', () => {
+    const timestamp = '2026-04-24T10:00:00';
+    // strftime('%s', '2026-04-24T10:00:00') assumes UTC when there's no tz
+    // suffix, which is the Sprint-009 datetime('now') default. Compute the
+    // expected unix-ms value the same way the view's CAST does.
+    const expectedMs = Math.floor(Date.parse(`${timestamp}Z`) / 1000) * 1000;
+
+    const convId = store.addConversation(
+      [
+        { role: 'user', content: 'first turn', timestamp },
+        { role: 'assistant', content: 'second turn', timestamp },
+      ],
+      'user-rt',
+    );
+
+    const rows = db
+      .prepare(
+        `SELECT id, conversation_id, turn_index, role, content, timestamp, project_id
+         FROM messages_public
+         WHERE conversation_id = ?
+         ORDER BY turn_index ASC`,
+      )
+      .all(convId) as {
+      id: number;
+      conversation_id: string;
+      turn_index: number;
+      role: string;
+      content: string;
+      timestamp: number;
+      project_id: string;
+    }[];
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].conversation_id).toBe(convId);
+    expect(rows[0].turn_index).toBe(0);
+    expect(rows[0].role).toBe('user');
+    expect(rows[0].content).toBe('first turn');
+    expect(rows[0].timestamp).toBe(expectedMs);
+    // addConversation doesn't explicitly set project_id — the column's
+    // DDL-level DEFAULT 'default' applies. The migration back-fill runs
+    // only for LEGACY rows; forward writes through addConversation land
+    // on 'default' until the new Story-4 API surface (addMessage with
+    // project_id) lands in sprint-015. Pinned here so the view + default
+    // contract is explicit.
+    expect(rows[0].project_id).toBe('default');
+    expect(rows[1].turn_index).toBe(1);
+    expect(rows[1].content).toBe('second turn');
+  });
+
+  it('round-trips addConversation data through conversations_public with started_at cast', () => {
+    const convId = store.addConversation(makeMessages(['hi']), 'user-conv-rt');
+
+    // started_at is derived from datetime('now') — can't predict the exact
+    // value, but assert structure: integer, positive, within the last minute.
+    const row = db
+      .prepare('SELECT id, project_id, started_at FROM conversations_public WHERE id = ?')
+      .get(convId) as { id: string; project_id: string; started_at: number };
+
+    expect(row.id).toBe(convId);
+    // Same rationale as the messages_public project_id assertion above.
+    expect(row.project_id).toBe('default');
+    expect(typeof row.started_at).toBe('number');
+    expect(row.started_at).toBeGreaterThan(0);
+    // Must be within 60 seconds of now — confirms unix ms, not text.
+    const nowMs = Date.now();
+    expect(Math.abs(nowMs - row.started_at)).toBeLessThan(60_000);
+  });
+});

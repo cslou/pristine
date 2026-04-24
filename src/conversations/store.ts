@@ -186,6 +186,59 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
 );
 `;
 
+// Spec-005 §12 messages_public — read-only view exposing the Phase-5 SQL
+// primitive's safe message surface. Aliases internal column names the spec
+// exposes to consumers (sort_order → turn_index) and casts TEXT timestamps
+// to unix milliseconds so Phase-4 integer-ms range filters work. Excludes
+// parent_message_id — oversize-chunk linkage is an internal concern the
+// SQL-primitive consumer should never see. The explicit column list in
+// the VIEW declaration pins the surface contract; adding a column to the
+// SELECT without also listing it in the view's declared columns raises a
+// DDL error, so the view can't accidentally leak new columns.
+//
+// **timestamp nullability.** The underlying messages.timestamp column is
+// nullable TEXT (Sprint-009 shape; addConversation without per-message
+// timestamps inserts NULL). `strftime('%s', NULL)` returns NULL, so the
+// view's timestamp column passes NULL through for those rows. Consumers
+// doing time-range filters must handle NULL (e.g. `WHERE timestamp IS NOT
+// NULL AND timestamp > ?`) — coercing to 0 / epoch would lie about data
+// availability. Pinned by the NULL-passthrough test in store.test.ts.
+//
+// **Index pushdown.** The CAST(strftime(...)) expression blocks use of
+// ix_messages_timestamp_nonchunk through the view — SQLite can't see
+// through the cast to the base column. Consumers issuing time-range
+// queries should filter against the base messages table (using the
+// index-friendly raw column) and join back to messages_public only for
+// the aliased surface. Same caveat applies to conversations_public
+// .started_at vs. ix_conversations_project_started.
+const SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS messages_public
+  (id, conversation_id, turn_index, role, content, timestamp, project_id) AS
+  SELECT id,
+         conversation_id,
+         sort_order AS turn_index,
+         role,
+         content,
+         CAST(strftime('%s', timestamp) * 1000 AS INTEGER) AS timestamp,
+         project_id
+    FROM messages;
+`;
+
+// Spec-005 §12 conversations_public — read-only public view. Same pattern
+// as messages_public: alias + cast + exclude. created_at (TEXT ISO from
+// datetime('now')) casts to unix milliseconds as started_at (spec §12
+// name). Excludes user_id, content_hash, message_count — all internal
+// implementation details the Phase-5 SQL-primitive consumer should not
+// see. project_id IS exposed — consumers need it for project-scoped
+// retrieval.
+const SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
+  SELECT id,
+         project_id,
+         CAST(strftime('%s', created_at) * 1000 AS INTEGER) AS started_at
+    FROM conversations;
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
@@ -214,7 +267,8 @@ function addColumnIfMissing(
 // - 0 = Sprint-009 baseline (pre-sprint-014)
 // - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
 // - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
-export const SCHEMA_VERSION = 2;
+// - 3 = Sprint-014 Story 3 (messages_public + conversations_public views)
+export const SCHEMA_VERSION = 3;
 
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
@@ -271,6 +325,11 @@ export function initConversationTables(db: Database.Database): void {
       db.exec(SPRINT_014_VEC_WINDOWS_DDL);
       db.exec(SPRINT_014_WINDOW_MESSAGES_DDL);
       db.exec(SPRINT_014_VEC_SESSIONS_DDL);
+    }
+
+    if (currentVersion < 3) {
+      db.exec(SPRINT_014_VIEW_MESSAGES_PUBLIC_DDL);
+      db.exec(SPRINT_014_VIEW_CONVERSATIONS_PUBLIC_DDL);
     }
 
     db.pragma(`user_version = ${SCHEMA_VERSION}`);

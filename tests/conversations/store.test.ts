@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
 import { ConversationStore, SCHEMA_VERSION } from '../../src/conversations/store.js';
+import { ConversationNotFoundError, InvalidArgumentError } from '../../src/core/errors.js';
 
 let db: ReturnType<typeof createDatabase>;
 let store: ConversationStore;
@@ -987,5 +988,223 @@ describe('sprint-014 Story 3 — public views', () => {
     // Must be within 60 seconds of now — confirms unix ms, not text.
     const nowMs = Date.now();
     expect(Math.abs(nowMs - row.started_at)).toBeLessThan(60_000);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Sprint-014 Story 4 — summaries table + API surface
+// -----------------------------------------------------------------------------
+
+describe('sprint-014 Story 4 — summaries schema', () => {
+  it('creates the summaries table + ix_summaries_project_time index', () => {
+    const tableRow = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'summaries'")
+      .get() as { name: string } | undefined;
+    expect(tableRow?.name).toBe('summaries');
+
+    const indexRow = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ix_summaries_project_time'",
+      )
+      .get() as { name: string } | undefined;
+    expect(indexRow?.name).toBe('ix_summaries_project_time');
+  });
+
+  it('summaries_public exposes EXACTLY (id, session_id, project_id, text, timestamp) in declared order (excludes metadata)', () => {
+    const cols = db.prepare('PRAGMA table_info(summaries_public)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toEqual([
+      'id',
+      'session_id',
+      'project_id',
+      'text',
+      'timestamp',
+    ]);
+    expect(cols.map((c) => c.name)).not.toContain('metadata');
+  });
+});
+
+describe('sprint-014 Story 4 — addMessage', () => {
+  it('appends a message with correct sort_order = N+1 when N messages exist', () => {
+    const convId = store.addConversation(makeMessages(['msg0', 'msg1']), 'user-seq');
+    // Confirm baseline: parent has 2 messages (sort_order 0 + 1).
+    const beforeCount = db
+      .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+      .get(convId) as { c: number };
+    expect(beforeCount.c).toBe(2);
+
+    store.addMessage(convId, { role: 'user', content: 'appended-after' });
+
+    const rows = db
+      .prepare(
+        'SELECT sort_order, content FROM messages WHERE conversation_id = ? ORDER BY sort_order',
+      )
+      .all(convId) as { sort_order: number; content: string }[];
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toMatchObject({ sort_order: 2, content: 'appended-after' });
+  });
+
+  it('reads project_id from the parent conversation (not caller-supplied)', () => {
+    const convId = store.addConversation(makeMessages(['hi']), 'user-scope');
+    // Flip the parent conversation to a known non-default project_id so the
+    // assertion is unambiguous.
+    db.prepare("UPDATE conversations SET project_id = 'proj-alpha' WHERE id = ?").run(convId);
+
+    store.addMessage(convId, { role: 'assistant', content: 'from-alpha' });
+
+    const row = db
+      .prepare(
+        "SELECT project_id FROM messages WHERE conversation_id = ? AND content = 'from-alpha'",
+      )
+      .get(convId) as { project_id: string };
+    expect(row.project_id).toBe('proj-alpha');
+  });
+
+  it('throws ConversationNotFoundError when the parent conversation does not exist', () => {
+    expect(() =>
+      store.addMessage('nonexistent-conv-id', { role: 'user', content: 'orphan' }),
+    ).toThrow(ConversationNotFoundError);
+
+    // No row inserted — atomic transaction rolled back.
+    const count = db
+      .prepare("SELECT COUNT(*) AS c FROM messages WHERE conversation_id = 'nonexistent-conv-id'")
+      .get() as { c: number };
+    expect(count.c).toBe(0);
+  });
+
+  it('writes parent_message_id when provided (non-null)', () => {
+    const convId = store.addConversation(makeMessages(['parent']), 'user-parent-id');
+    const parentId = db
+      .prepare('SELECT id FROM messages WHERE conversation_id = ? LIMIT 1')
+      .get(convId) as { id: number };
+
+    store.addMessage(convId, {
+      role: 'assistant',
+      content: 'child-chunk',
+      parentMessageId: parentId.id,
+    });
+
+    const row = db
+      .prepare(
+        "SELECT parent_message_id FROM messages WHERE conversation_id = ? AND content = 'child-chunk'",
+      )
+      .get(convId) as { parent_message_id: number | null };
+    expect(row.parent_message_id).toBe(parentId.id);
+  });
+
+  it('produces a gapless sort_order sequence across 10 sequential appends', () => {
+    const convId = store.addConversation(makeMessages(['seed']), 'user-gapless');
+
+    for (let i = 0; i < 10; i++) {
+      store.addMessage(convId, { role: 'user', content: `append-${i}` });
+    }
+
+    const rows = db
+      .prepare('SELECT sort_order FROM messages WHERE conversation_id = ? ORDER BY sort_order')
+      .all(convId) as { sort_order: number }[];
+    // 1 seed + 10 appends = 11 rows with sort_order 0..10 contiguous.
+    expect(rows).toHaveLength(11);
+    for (let i = 0; i < 11; i++) {
+      expect(rows[i]!.sort_order).toBe(i);
+    }
+  });
+});
+
+describe('sprint-014 Story 4 — addSummary + getRecentSummaries', () => {
+  it('addSummary inserts a row and returns a non-empty id', () => {
+    const id = store.addSummary({
+      sessionId: 'sess-1',
+      projectId: 'proj-sum',
+      text: 'The session covered X, Y, Z.',
+      timestamp: 1_700_000_000_000,
+    });
+
+    expect(typeof id).toBe('string');
+    expect(id.length).toBeGreaterThan(0);
+
+    const row = db
+      .prepare('SELECT session_id, project_id, text, timestamp FROM summaries WHERE id = ?')
+      .get(id) as {
+      session_id: string;
+      project_id: string;
+      text: string;
+      timestamp: number;
+    };
+    expect(row.session_id).toBe('sess-1');
+    expect(row.project_id).toBe('proj-sum');
+    expect(row.text).toBe('The session covered X, Y, Z.');
+    expect(row.timestamp).toBe(1_700_000_000_000);
+  });
+
+  it('rejects empty-text summaries with InvalidArgumentError', () => {
+    expect(() =>
+      store.addSummary({
+        sessionId: 's',
+        projectId: 'p',
+        text: '',
+        timestamp: 1,
+      }),
+    ).toThrow(InvalidArgumentError);
+
+    expect(() =>
+      store.addSummary({
+        sessionId: 's',
+        projectId: 'p',
+        text: '   \n\t  ',
+        timestamp: 1,
+      }),
+    ).toThrow(InvalidArgumentError);
+  });
+
+  it('getRecentSummaries returns rows in timestamp DESC order and respects the limit', () => {
+    store.addSummary({ sessionId: 's', projectId: 'proj-rec', text: 'oldest', timestamp: 1000 });
+    store.addSummary({ sessionId: 's', projectId: 'proj-rec', text: 'middle', timestamp: 2000 });
+    store.addSummary({ sessionId: 's', projectId: 'proj-rec', text: 'newest', timestamp: 3000 });
+    // A summary in a DIFFERENT project must not leak into proj-rec's results.
+    store.addSummary({ sessionId: 's', projectId: 'other', text: 'other-proj', timestamp: 5000 });
+
+    const limited = store.getRecentSummaries('proj-rec', 2);
+    expect(limited).toHaveLength(2);
+    expect(limited[0]!.text).toBe('newest');
+    expect(limited[1]!.text).toBe('middle');
+
+    const all = store.getRecentSummaries('proj-rec');
+    expect(all).toHaveLength(3);
+    expect(all.map((r) => r.text)).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('getRecentSummaries uses ix_summaries_project_time (EXPLAIN QUERY PLAN)', () => {
+    // Seed at least one row so the optimizer has something to plan.
+    store.addSummary({ sessionId: 's', projectId: 'proj-plan', text: 'x', timestamp: 1 });
+
+    const plan = db
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT id, session_id, project_id, text, timestamp, metadata
+         FROM summaries
+         WHERE project_id = ?
+         ORDER BY timestamp DESC
+         LIMIT ?`,
+      )
+      .all('proj-plan', 10) as { detail: string }[];
+    const planText = plan.map((r) => r.detail).join('\n');
+    expect(planText).toContain('ix_summaries_project_time');
+  });
+
+  it('addSummary stores + getRecentSummaries omits metadata when NULL', () => {
+    const id = store.addSummary({
+      sessionId: 's',
+      projectId: 'proj-no-meta',
+      text: 'no metadata',
+      timestamp: 42,
+    });
+
+    const row = db.prepare('SELECT metadata FROM summaries WHERE id = ?').get(id) as {
+      metadata: string | null;
+    };
+    expect(row.metadata).toBeNull();
+
+    const [result] = store.getRecentSummaries('proj-no-meta');
+    expect(result).toBeDefined();
+    expect(result).not.toHaveProperty('metadata');
   });
 });

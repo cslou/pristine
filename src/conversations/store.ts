@@ -112,6 +112,7 @@ END;
 // ---------------------------------------------------------------------------
 
 export function initConversationTables(db: Database.Database): void {
+  db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
 }
 

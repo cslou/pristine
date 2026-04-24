@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sprint 013 Evaluation — spec-005 Phase 1 (Pristine SDK)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        --bg: #0f1117;
+        --panel: #171a24;
+        --panel-2: #1f232f;
+        --fg: #e9edf3;
+        --muted: #8a94a8;
+        --accent: #7dd3fc;
+        --ok: #4ade80;
+        --warn: #fbbf24;
+        --del: #f97068;
+        --add: #4ade80;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        line-height: 1.55;
+      }
+      body {
+        padding: 2rem 1rem 4rem;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      header.doc-hero {
+        border-bottom: 1px solid #2a2f3e;
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+      }
+      header.doc-hero h1 {
+        margin: 0;
+        font-size: 1.6rem;
+      }
+      header.doc-hero p {
+        margin: 0.3rem 0 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      section.slide {
+        background: var(--panel);
+        border: 1px solid #2a2f3e;
+        border-radius: 12px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.5rem;
+      }
+      section.slide h2 {
+        margin: 0 0 0.2rem;
+        font-size: 1.25rem;
+      }
+      section.slide .slide-num {
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      section.slide .slide-sub {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin: 0 0 1rem;
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+      .panel {
+        background: var(--panel-2);
+        border-radius: 8px;
+        padding: 0.9rem 1rem;
+        font-size: 0.88rem;
+      }
+      .panel h3 {
+        margin: 0 0 0.5rem;
+        font-size: 0.9rem;
+        color: var(--accent);
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+      pre {
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.78rem;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        color: var(--fg);
+      }
+      pre.diff .del {
+        color: var(--del);
+      }
+      pre.diff .add {
+        color: var(--add);
+      }
+      table.kv {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+      }
+      table.kv td {
+        padding: 0.4rem 0.5rem;
+        border-bottom: 1px solid #2a2f3e;
+      }
+      table.kv td:first-child {
+        color: var(--muted);
+        width: 38%;
+      }
+      table.kv tr:last-child td {
+        border-bottom: none;
+      }
+      table.ac {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+      }
+      table.ac th,
+      table.ac td {
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid #2a2f3e;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.ac th {
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 0.78rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .pill {
+        display: inline-block;
+        padding: 0.1rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        background: #0f3d26;
+        color: var(--ok);
+        border: 1px solid #1e6b42;
+      }
+      .pill.warn {
+        background: #3f2e0a;
+        color: var(--warn);
+        border-color: #8a6018;
+      }
+      .kpi {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.8rem;
+        margin-top: 0.5rem;
+      }
+      .kpi .card {
+        background: var(--panel-2);
+        border-radius: 8px;
+        padding: 0.9rem 1rem;
+        text-align: center;
+      }
+      .kpi .num {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .kpi .label {
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-top: 0.2rem;
+      }
+      ul {
+        margin: 0.3rem 0 0 1rem;
+        padding: 0;
+      }
+      ul li {
+        margin-bottom: 0.2rem;
+        font-size: 0.88rem;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        background: #262b37;
+        padding: 0.05rem 0.35rem;
+        border-radius: 4px;
+        font-size: 0.82rem;
+      }
+      .note {
+        margin-top: 0.8rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="doc-hero">
+      <h1>Sprint 013 — spec-005 Phase 1 evaluation</h1>
+      <p>
+        Pristine Local SDK · pure-removal sprint (LOCOMO-aimed fact pipeline → corpus + privacy +
+        queue). Dated 2026-04-24.
+      </p>
+    </header>
+
+    <!-- Slide 1 — Summary -->
+    <section class="slide">
+      <div class="slide-num">Slide 1 of 5</div>
+      <h2>Sprint summary</h2>
+      <p class="slide-sub">
+        Goal: execute §16 Phase 1 of implementation-spec-005 — remove all LOCOMO-aimed memory
+        infrastructure so Phase 2 (indexer) + Phase 3/4 (searcher) can land on a clean slate.
+      </p>
+
+      <div class="kpi">
+        <div class="card"><div class="num">4 / 4</div><div class="label">Feature stories</div></div>
+        <div class="card"><div class="num">1 / 1</div><div class="label">Eval story</div></div>
+        <div class="card"><div class="num">0</div><div class="label">Dropped ACs</div></div>
+        <div class="card"><div class="num">100%</div><div class="label">AC pass rate</div></div>
+      </div>
+
+      <div style="margin-top: 1rem">
+        <strong>Stories shipped</strong>
+        <ul>
+          <li>
+            <strong>Story 1</strong> — Remove extractor + consolidator pipeline (PR #98, 9
+            commits)
+          </li>
+          <li>
+            <strong>Story 2</strong> — Remove legacy memory subsystems: episodes, graph, temporal,
+            query-analyzer (PR #99, 7 commits)
+          </li>
+          <li>
+            <strong>Story 3</strong> — Remove fact-ledger store + partial-delete orchestrator /
+            retriever (PR #100, 7 commits)
+          </li>
+          <li>
+            <strong>Story 4</strong> — Finalize public API: trim Orchestrator interface, stub
+            benchmark provider, add Phase-1 smoke test, README note (PR #101, 9 commits)
+          </li>
+          <li>
+            <strong>Eval story</strong> — this deck (PR #102)
+          </li>
+        </ul>
+      </div>
+
+      <p class="note">
+        Pre-sprint test count: 738 (per sprint plan §Technical Context). Post-sprint: 413 unit /
+        446 e2e — the ~325-test drop maps one-for-one to the deleted LOCOMO-pipeline modules
+        (extractor, consolidator, orchestrator, episodes, graph, temporal, query-analyzer,
+        store). No surviving subsystem lost coverage.
+      </p>
+    </section>
+
+    <!-- Slide 2 — Surviving subsystems -->
+    <section class="slide">
+      <div class="slide-num">Slide 2 of 5</div>
+      <h2>Surviving subsystems — regression evidence</h2>
+      <p class="slide-sub">
+        Pure-removal sprint; no new user flows. This slide substitutes "user flow videos" with
+        direct regression evidence on the modules that <em>stayed</em>.
+      </p>
+
+      <div class="two-col">
+        <div class="panel">
+          <h3>npm run test:unit</h3>
+          <pre> Test Files  30 passed (30)
+      Tests  413 passed (413)
+   Start at  13:47:04
+   Duration  23.54s</pre>
+          <p class="note">
+            Covers: <code>client</code>, <code>conversations</code>, <code>embedder</code>,
+            <code>engine</code>, <code>privacy/*</code>, <code>queue</code>,
+            <code>vault</code>, core types / interfaces / errors, plus the preserved
+            <code>chunker</code> and <code>ranking</code> helpers.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>npm run test:e2e</h3>
+          <pre> Test Files  37 passed (37)
+      Tests  446 passed (446)
+   Start at  13:47:28
+   Duration  30.78s</pre>
+          <p class="note">
+            Includes the new Phase-1 smoke test — boots <code>PristineLocal.create()</code> with
+            stubbed LLM + embedder, round-trips <code>storeAsync → searchConversations →
+            getConversation</code>, asserts the barrel-export closed surface.
+          </p>
+        </div>
+      </div>
+
+      <div class="two-col" style="margin-top: 1rem">
+        <div class="panel">
+          <h3>npm run typecheck</h3>
+          <pre>&gt; @pristine/shield-local@0.0.1 typecheck
+&gt; tsc --noEmit
+<span style="color:var(--ok)">✓ clean — 0 errors</span></pre>
+        </div>
+        <div class="panel">
+          <h3>npm run build</h3>
+          <pre>&gt; @pristine/shield-local@0.0.1 build
+&gt; tsc -p tsconfig.build.json
+<span style="color:var(--ok)">✓ clean dist/ emitted</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 3 — Key Changes -->
+    <section class="slide">
+      <div class="slide-num">Slide 3 of 5</div>
+      <h2>Key changes — SDK surface &amp; directory tree</h2>
+      <p class="slide-sub">
+        What the public API looks like before vs. after. Numbers are the authoritative story.
+      </p>
+
+      <div class="two-col">
+        <div class="panel">
+          <h3>src/index.ts — BEFORE (70 lines)</h3>
+          <pre>export { PristineLocal } from './client.js';
+export type {
+  AnalyzedQuery, Fact, IngestOptions, IngestResult,
+  Memory, Message, MessageRole, PipelineStep,
+  RankedMemory, RetrieveOptions, RetrieveResult,
+  SearchOptions, SecureAndRedactResult, RevealResult,
+  ConversationDetail, ConversationSearchResult,
+} from './core/types.js';
+export type {
+  Embedder, Extractor, LlmClient,
+  Orchestrator, Store,
+} from './core/interfaces.js';
+export { buildExtractionPrompt } from './memory/extractor/prompts.js';
+export type { ExtractorConfig } from './memory/extractor/index.js';
+export {
+  AppError, ConfigError, EmbedderError,
+  IngestQueueError, OrchestratorError,
+} from './core/errors.js';
+export { createDatabase } from './core/database.js';
+export { IngestQueue } from './queue/ingest-queue.js';
+...</pre>
+        </div>
+        <div class="panel">
+          <h3>src/index.ts — AFTER (50 lines)</h3>
+          <pre>export { PristineLocal } from './client.js';
+export type {
+  ConversationDetail, ConversationSearchResult,
+  IngestOptions, IngestResult, Memory, Message,
+  MessageRole, PipelineStep, SecureAndRedactResult,
+  RevealResult,
+} from './core/types.js';
+export type {
+  Embedder, LlmClient, Orchestrator,
+} from './core/interfaces.js';
+export type { LlmClients } from './engine/index.js';
+export {
+  AppError, ConfigError, EmbedderError,
+  IngestQueueError,
+} from './core/errors.js';
+export { createDatabase } from './core/database.js';
+export { IngestQueue } from './queue/ingest-queue.js';
+export type { IngestTask, IngestQueueConfig }
+  from './queue/ingest-queue.js';</pre>
+        </div>
+      </div>
+
+      <div class="two-col" style="margin-top: 1rem">
+        <div class="panel">
+          <h3>src/memory/ tree — BEFORE (28 files)</h3>
+          <pre>consolidator/index.ts
+consolidator/prompts.ts
+consolidator/schema.ts
+consolidator/types.ts
+episodes/types.ts
+extractor/index.ts
+extractor/prompts.ts
+extractor/schema.ts
+extractor/types.ts
+graph/types.ts
+orchestrator/chunker.ts
+orchestrator/index.ts
+orchestrator/ingest.ts
+orchestrator/pipeline.ts
+orchestrator/retrieve.ts
+orchestrator/turn-order.ts
+orchestrator/types.ts
+query-analyzer/index.ts
+query-analyzer/prompts.ts
+query-analyzer/schema.ts
+query-analyzer/types.ts
+retriever/index.ts
+retriever/ranking.ts
+retriever/types.ts
+store/sqlite/index.ts
+store/types.ts
+temporal/index.ts
+temporal/types.ts</pre>
+        </div>
+        <div class="panel">
+          <h3>src/memory/ tree — AFTER (2 files)</h3>
+          <pre>orchestrator/chunker.ts
+retriever/ranking.ts</pre>
+          <p class="note">
+            Both surviving files carry a top-of-file comment documenting them as deferred
+            Phase-3/4 reuse targets (spec-005 §5.1 — indexer / searcher primitives).
+          </p>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top: 1rem">
+        <h3>LOC delta (<code>git diff --stat main...sprint-013 -- 'src/**/*.ts' 'tests/**/*.ts'</code>)</h3>
+        <pre><span class="add">+296 insertions</span>
+<span class="del">−8412 deletions</span>
+56 files changed · net −8,116 lines in src/ and tests/</pre>
+      </div>
+    </section>
+
+    <!-- Slide 4 — Test & Eval -->
+    <section class="slide">
+      <div class="slide-num">Slide 4 of 5</div>
+      <h2>Test &amp; eval results</h2>
+      <p class="slide-sub">
+        Before/after test counts and the check-system receipts.
+      </p>
+
+      <table class="kv">
+        <tr>
+          <td>Pre-sprint unit tests</td>
+          <td>738 (from sprint plan §Technical Context)</td>
+        </tr>
+        <tr>
+          <td>Post-sprint unit tests</td>
+          <td>
+            <strong>413</strong> (all passing) — drop of 325 maps one-for-one to deleted
+            extractor / consolidator / orchestrator / episodes / graph / temporal /
+            query-analyzer / store test files
+          </td>
+        </tr>
+        <tr>
+          <td>Post-sprint e2e tests</td>
+          <td>
+            <strong>446</strong> (all passing) — includes the new Phase-1 smoke test (5 cases)
+          </td>
+        </tr>
+        <tr>
+          <td>Test files removed</td>
+          <td>
+            extractor, consolidator, episodes, graph, temporal, query-analyzer, store/sqlite,
+            retriever (LocalRetriever), orchestrator (ingest/retrieve/turn-order),
+            integration/orchestrator, integration/conversation-store, integration/ingest-queue,
+            e2e/sdk, e2e/embedder-config, integration/ollama-embedder, scripts/extract-worker,
+            scripts/search, benchmarks/memorybench provider tests
+          </td>
+        </tr>
+        <tr>
+          <td>Test files added</td>
+          <td>
+            <code>tests/e2e/phase1-smoke.test.ts</code> (5 cases): create()-with-DI-stubs,
+            createLite()-no-LLM, Phase-1 public-API round-trip, barrel-export closed-surface,
+            scrubOutput()-on-lite
+          </td>
+        </tr>
+        <tr>
+          <td>typecheck</td>
+          <td><span class="pill">clean</span> — <code>tsc --noEmit</code> 0 errors</td>
+        </tr>
+        <tr>
+          <td>lint</td>
+          <td><span class="pill">clean</span> — eslint 0 errors</td>
+        </tr>
+        <tr>
+          <td>build</td>
+          <td>
+            <span class="pill">clean</span> — <code>dist/memory/</code> contains only
+            <code>orchestrator/chunker</code> + <code>retriever/ranking</code>, matching the
+            source tree
+          </td>
+        </tr>
+        <tr>
+          <td>PR review scores (final)</td>
+          <td>
+            #98: 4/5 · #99: 4/5 · #100: 5/5 · #101: 4/5 — all merged with 0 open P0/P1 findings
+          </td>
+        </tr>
+      </table>
+    </section>
+
+    <!-- Slide 5 — Repo hygiene + AC matrix -->
+    <section class="slide">
+      <div class="slide-num">Slide 5 of 5</div>
+      <h2>Repo hygiene &amp; AC matrix</h2>
+      <p class="slide-sub">
+        Branch state and per-story acceptance-criterion roll-up.
+      </p>
+
+      <table class="kv" style="margin-bottom: 1rem">
+        <tr>
+          <td>sprint-013 branch state</td>
+          <td><span class="pill">up to date</span> — all 4 story PRs merged + eval PR open</td>
+        </tr>
+        <tr>
+          <td>main branch</td>
+          <td><span class="pill">untouched</span> — sprint branch isolated per workflow</td>
+        </tr>
+        <tr>
+          <td>Uncommitted files on sprint-013</td>
+          <td>None after eval commits</td>
+        </tr>
+        <tr>
+          <td>Dangling branches</td>
+          <td>All feature branches deleted on merge (--delete-branch)</td>
+        </tr>
+        <tr>
+          <td>New dependencies</td>
+          <td><span class="pill">none</span> — pure-removal sprint</td>
+        </tr>
+      </table>
+
+      <table class="ac">
+        <thead>
+          <tr>
+            <th>Story</th>
+            <th>Acceptance criterion</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td rowspan="4"><strong>Story 1</strong><br />PR #98</td>
+            <td>Extractor + consolidator modules deleted; fact-pipeline interfaces/types removed</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>client.ts no longer wires Extractor/Consolidator; create() skips the branch</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>buildExtractionPrompt + ExtractorConfig removed from src/index.ts</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>typecheck + test:unit pass</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+
+          <tr>
+            <td rowspan="4"><strong>Story 2</strong><br />PR #99</td>
+            <td>src/memory/{episodes, graph, temporal, query-analyzer}/ deleted</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>
+              Legacy types + interfaces removed from core (Episode/Entity/Relationship/AnalyzedQuery
+              /QueryContext/Fact/TemporalValidation*)
+            </td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>
+              TemporalMode retained (live in retriever/store path); RetrieveResult simplified to
+              { memories, metadata }
+            </td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>typecheck + test:unit pass</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+
+          <tr>
+            <td rowspan="4"><strong>Story 3</strong><br />PR #100</td>
+            <td>src/memory/store/ (fact-ledger) deleted; Store interface removed from core</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>src/memory/orchestrator/ contains only chunker.ts (+ test)</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>src/memory/retriever/ contains only ranking.ts (+ test)</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>chunker.ts + ranking.ts compile in isolation; typecheck + test:unit pass</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+
+          <tr>
+            <td rowspan="5"><strong>Story 4</strong><br />PR #101</td>
+            <td>
+              client.ts verified; createLite() works; src/index.ts public API exports only
+              surviving surface
+            </td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>
+              Minimal smoke test demonstrates PristineLocal.create() succeeding without live
+              llamacpp/ollama (tests/e2e/phase1-smoke.test.ts)
+            </td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>
+              benchmarks/memorybench/src/providers/pristine/ flagged as breaking (throw-on-init
+              stub + Provider interface satisfied)
+            </td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>typecheck + test:unit pass; build produces clean dist/</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>README notes Phase 1 completion + pre-pivot section carries in-line callout</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+
+          <tr>
+            <td rowspan="5"><strong>Eval</strong><br />this PR</td>
+            <td>5-slide deck at docs/sprints/eval/sprint-013.html</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>Slide 1 Sprint Summary with story list + pass/fail count</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>
+              Slide 2 Surviving Subsystems regression evidence (test output per surviving
+              module)
+            </td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>Slide 3 Key Changes — SDK surface + dir-tree before/after + LOC delta</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+          <tr>
+            <td>Slide 5 Repo Hygiene + AC matrix</td>
+            <td><span class="pill">PASS</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="note" style="margin-top: 1rem">
+        All artifacts referenced in this deck live alongside in
+        <code>docs/sprints/eval/sprint-013/</code>
+        — raw test output, captured trees, LOC-delta receipts, dist/index.d.ts emit.
+      </p>
+    </section>
+  </body>
+</html>

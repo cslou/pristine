@@ -566,6 +566,8 @@ This replaces the need for episodic memory — conversations are directly search
 
 ### Fact Extraction Pipeline
 
+> **Pre-pivot behavior — removed in spec-005 Phase 1 (sprint-013).** The pipeline described below was removed along with `client.store()` / `client.search()`. Phase 1 has no synchronous ingest pipeline; use `storeAsync()` to enqueue conversations into the durable `IngestQueue`, and `searchConversations()` / `getConversation()` for raw-conversation lookup. This section stays as a historical record until the Phase-2 indexer + Phase-4 searcher primitives land and the body is rewritten around the new architecture.
+
 After the conversation is stored, the ingest pipeline runs a 7-step process:
 
 ```

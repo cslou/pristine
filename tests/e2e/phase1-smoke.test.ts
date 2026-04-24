@@ -38,7 +38,11 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
 
   it('create() succeeds with DI overrides (no llamacpp / ollama contact)', async () => {
     const db = createDatabase(':memory:');
-    databases.push(db);
+    // NB: don't push to `databases` — client.dispose() below closes the DI-provided
+    // DB via its `ownsDb=false` guard, so afterEach's teardown would double-close.
+    // (ownsDb is true only when PristineLocal allocated the DB itself — injected
+    // DBs are the caller's responsibility, and we mirror that by leaving cleanup
+    // to the explicit dispose() call.)
 
     const llmClients: LlmClients = {
       privacyClient: makeLlmStub(),
@@ -55,6 +59,7 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     expect(client.ingestQueue).toBeDefined();
 
     await client.dispose();
+    db.close();
   });
 
   it('createLite() succeeds with no LlmClient or Embedder at all', () => {
@@ -99,6 +104,9 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
       [],
     );
 
+    // Full output check, not just negative: the placeholder is stripped in
+    // place (no spacing fix-up in Phase 1) and no stray tokens remain.
+    expect(scrubbed).toBe('Hello , here is your confirmation.');
     expect(scrubbed).not.toContain('[SENSITIVE:');
   });
 });

@@ -8,38 +8,55 @@
 //   - findConversationByMessages() / deleteConversation() deleted
 //
 // Rebuilding this provider requires the Phase-2 indexer and Phase-3/4
-// searcher primitives (spec-005 §5.1). It will return once indexer +
-// searcher land — likely sprint-015 / sprint-016.
+// searcher primitives (spec-005 §5.1). It will return once those land.
 //
-// Until then, this file exports a throw-on-construct stub so any benchmark
-// run that still references the provider fails loudly with an actionable
-// message rather than dereferencing `undefined`.
+// Until then, this stub satisfies the `Provider` interface (zero-arg
+// constructor + full method set) so the benchmarks package typechecks
+// cleanly and the provider registry at `src/providers/index.ts` accepts
+// it as a first-class entry. Every method throws on call with an
+// actionable message — the registry can still construct the instance,
+// but any run that selects `pristine` fails loudly at `initialize()`.
 
-import type { Provider, ProviderConfig } from '../../types/provider'
+import type { Provider, ProviderConfig, IngestOptions, IngestResult, SearchOptions, IndexingProgressCallback } from "../../types/provider"
+import type { UnifiedSession } from "../../types/unified"
+
+const DEPRECATION_MESSAGE =
+  "PristineProvider is disabled under spec-005 Phase 1 (sprint-013). " +
+  "The LOCOMO-aimed fact-pipeline that this provider drove was removed; " +
+  "the provider will return once the Phase-2 indexer + Phase-3/4 searcher " +
+  "primitives land. See docs/specs/implementation-spec-005.md §5.1 and " +
+  "docs/sprints/sprint-013.md for context."
 
 export class PristineProvider implements Provider {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public constructor(_config: ProviderConfig) {
-    throw new Error(
-      'PristineProvider is disabled under spec-005 Phase 1 (sprint-013). ' +
-        'The LOCOMO-aimed fact-pipeline that this provider drove was removed; ' +
-        'the provider will return once the Phase-2 indexer + Phase-3/4 searcher ' +
-        'primitives land. See docs/specs/implementation-spec-005.md §5.1 and ' +
-        'docs/sprints/sprint-013.md for context.',
-    )
+  public readonly name = "pristine"
+
+  public async initialize(_config: ProviderConfig): Promise<void> {
+    throw new Error(DEPRECATION_MESSAGE)
   }
 
-  public readonly name = 'pristine'
-
-  public async ingest(): Promise<never> {
-    throw new Error('PristineProvider.ingest: disabled — see constructor error.')
+  public async ingest(_sessions: UnifiedSession[], _options: IngestOptions): Promise<IngestResult> {
+    throw new Error(DEPRECATION_MESSAGE)
   }
 
-  public async search(): Promise<never> {
-    throw new Error('PristineProvider.search: disabled — see constructor error.')
+  public async awaitIndexing(
+    _result: IngestResult,
+    _containerTag: string,
+    _onProgress?: IndexingProgressCallback,
+  ): Promise<void> {
+    throw new Error(DEPRECATION_MESSAGE)
   }
 
-  public async cleanup(): Promise<void> {
+  public async search(_query: string, _options: SearchOptions): Promise<unknown[]> {
+    throw new Error(DEPRECATION_MESSAGE)
+  }
+
+  public async clear(_containerTag: string): Promise<void> {
+    throw new Error(DEPRECATION_MESSAGE)
+  }
+
+  public async shutdown(): Promise<void> {
     // no-op — the stub never acquired resources
   }
 }
+
+export default PristineProvider

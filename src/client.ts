@@ -179,11 +179,8 @@ export class PristineLocal {
 
   /**
    * Fire-and-forget: enqueue a conversation for background processing.
-   * Returns the task ID, or empty string if duplicate conversation.
-   *
-   * The synchronous `store()` / `search()` methods were removed in spec-005
-   * Phase 1 along with the LOCOMO-aimed orchestrator pipeline. Synchronous
-   * retrieval returns in Phase 2 via the indexer + searcher primitives.
+   * Returns the task ID, or empty string if the conversation is a duplicate
+   * (same userId + same content hash).
    */
   public storeAsync(conversation: readonly Message[], userId: string): string {
     return this.ingestQueue.enqueue(conversation, userId);

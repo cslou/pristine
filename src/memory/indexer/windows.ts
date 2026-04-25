@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Embedder } from '../../core/interfaces.js';
+import { InvalidArgumentError } from '../../core/errors.js';
 import type { ResolvedIndexerConfig } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -82,41 +83,76 @@ export const computeWindowsForMessage = (
   const { windowSize, windowOverlap } = config;
   const stride = windowSize - windowOverlap;
   const N = totalMessageCount;
+  const K = newMessageSortOrder;
 
-  const allWindows: WindowAssignment[] = [];
+  // Defensive — `resolveConfig` validates `0 <= overlap < windowSize` so
+  // stride is always >= 1 in production. Tests construct configs directly,
+  // and a stride <= 0 would otherwise infinite-loop the window-count math.
+  if (stride <= 0) {
+    throw new InvalidArgumentError(
+      `computeWindowsForMessage: stride must be positive (windowSize=${windowSize}, windowOverlap=${windowOverlap})`,
+    );
+  }
 
+  // Short-conversation case: ONE partial window covering all messages.
   if (N < windowSize) {
-    // Single partial window covers the whole short conversation.
-    allWindows.push({
-      windowIndex: 0,
-      startSortOrder: 0,
-      endSortOrder: N - 1,
-      position: newMessageSortOrder,
-    });
-  } else {
-    const numWindows = Math.ceil((N - windowSize) / stride) + 1;
-    for (let i = 0; i < numWindows; i++) {
-      let start = i * stride;
-      let end = start + windowSize - 1;
-      // Tail-slide-back: if the last window's natural range overshoots, pin
-      // its end at the last message and slide start back to keep windowSize.
-      if (end > N - 1) {
-        end = N - 1;
-        start = end - windowSize + 1;
-      }
-      const position = newMessageSortOrder - start;
-      allWindows.push({
+    return [
+      {
+        windowIndex: 0,
+        startSortOrder: 0,
+        endSortOrder: N - 1,
+        position: K,
+      },
+    ];
+  }
+
+  const numWindows = Math.ceil((N - windowSize) / stride) + 1;
+  const lastWindowIndex = numWindows - 1;
+  const lastWindowEnd = lastWindowIndex * stride + windowSize - 1;
+  const tailSlid = lastWindowEnd > N - 1;
+
+  // Compute the contiguous window-index range that includes K directly,
+  // then iterate only those windows. Avoids building O(N/stride) entries
+  // for short returns in long conversations.
+  //   firstWindow = max(0, ceil((K - windowSize + 1) / stride))
+  //   lastWindow  = min(numWindows - 1, floor(K / stride))
+  const firstWindow = Math.max(0, Math.ceil((K - windowSize + 1) / stride));
+  const lastWindow = Math.min(lastWindowIndex, Math.floor(K / stride));
+
+  const result: WindowAssignment[] = [];
+  for (let i = firstWindow; i <= lastWindow; i++) {
+    let start = i * stride;
+    let end = start + windowSize - 1;
+    if (i === lastWindowIndex && tailSlid) {
+      end = N - 1;
+      start = end - windowSize + 1;
+    }
+    if (K >= start && K <= end) {
+      result.push({
         windowIndex: i,
         startSortOrder: start,
         endSortOrder: end,
-        position,
+        position: K - start,
       });
     }
   }
 
-  return allWindows.filter(
-    (w) => newMessageSortOrder >= w.startSortOrder && newMessageSortOrder <= w.endSortOrder,
-  );
+  // The tail-slid last window may include K even when K < firstWindow*stride
+  // (because the slide back moves its start earlier). Check and append if so.
+  if (tailSlid && lastWindow < lastWindowIndex) {
+    const slidStart = N - windowSize;
+    const slidEnd = N - 1;
+    if (K >= slidStart && K <= slidEnd) {
+      result.push({
+        windowIndex: lastWindowIndex,
+        startSortOrder: slidStart,
+        endSortOrder: slidEnd,
+        position: K - slidStart,
+      });
+    }
+  }
+
+  return result;
 };
 
 // ---------------------------------------------------------------------------
@@ -125,8 +161,9 @@ export const computeWindowsForMessage = (
 
 /**
  * Format one message row as `role: content` for embedding. Matches the
- * format spec-005 §16 references for window text. Module-private — exposed
- * only for tests via the named export below.
+ * format spec-005 §16 references for window text. Exported so tests can
+ * pin the format directly; production callers go through
+ * `assembleWindowEmbedding`.
  */
 export const formatMessageForEmbed = (row: WindowMessageRow): string =>
   `${row.role}: ${row.content}`;
@@ -138,11 +175,19 @@ export const formatMessageForEmbed = (row: WindowMessageRow): string =>
  * `embedder` is an explicit parameter (not a module-level import) so
  * callers can inject a stub in tests and so the helper stays free of
  * embedder-construction concerns.
+ *
+ * Throws `InvalidArgumentError` on empty input — embedding "" would produce
+ * a semantically meaningless vector and the embedder's behavior on empty
+ * text isn't specified by the `Embedder` interface. Callers that hit this
+ * have a bug upstream (window with zero messages).
  */
 export const assembleWindowEmbedding = async (
   messageRows: readonly WindowMessageRow[],
   embedder: Embedder,
 ): Promise<Float32Array> => {
+  if (messageRows.length === 0) {
+    throw new InvalidArgumentError('assembleWindowEmbedding: messageRows must be non-empty');
+  }
   const text = messageRows.map(formatMessageForEmbed).join('\n');
   const vec = await embedder.embed(text);
   // Embedder returns number[]; convert to Float32 for vec0 storage. Float64
@@ -156,37 +201,46 @@ export const assembleWindowEmbedding = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Atomically replace one window's vector + constituent message-id rows.
+ * Closure of the four prepared statements + transaction wrapper that
+ * `upsertWindow` needs. Created once per `db` via `createWindowWriter` so
+ * Story 6's worker reuses statements across many calls.
+ */
+export interface WindowWriter {
+  upsertWindow(
+    conversationId: string,
+    windowIndex: number,
+    messageIds: readonly number[],
+    embedding: Float32Array,
+  ): void;
+}
+
+/**
+ * Build a `WindowWriter` bound to a database. Prepares the four statements
+ * upsertWindow needs once and reuses them across calls — Story 6's worker
+ * will call upsertWindow once per affected window per processed message,
+ * so per-call statement compilation is real overhead.
  *
  * **Idiom:** vec0 does NOT support INSERT OR REPLACE on (conversation_id,
  * window_index) — the contract pinned by sprint-014's PK-rejection test
- * forces DELETE + INSERT inside a `db.transaction(...)`. This method does
+ * forces DELETE + INSERT inside a `db.transaction(...)`. The writer does
  * the same for `window_messages` so a (conversation_id, window_index) pair
  * is replaced atomically across both tables.
  *
- * **BigInt at the bind boundary:** `window_index` is INTEGER on a vec0
- * virtual table; better-sqlite3 binds plain JS numbers as REAL by default,
- * which vec0 rejects with "Expected integer for INTEGER metadata column".
- * Coerce to `BigInt(windowIndex)` at every bind site.
+ * **BigInt at the vec0 bind boundary:** `vec_windows.window_index` is
+ * INTEGER on a vec0 virtual table; better-sqlite3 binds plain JS numbers
+ * as REAL by default, which vec0 rejects with "Expected integer for
+ * INTEGER metadata column". Coerce to `BigInt(windowIndex)` at every vec0
+ * bind site. Plain numbers are fine for `window_messages` (regular table).
  *
- * Caller responsibilities:
- *   - `messageIds.length` must match the window's constituent message
- *     count; the array's order determines `window_messages.position`
- *     (0-indexed).
+ * Caller responsibilities (upsertWindow):
+ *   - `messageIds.length` must be > 0; the array's order determines
+ *     `window_messages.position` (0-indexed).
  *   - `embedding` must be a 768-d Float32Array (Nomic v1.5).
- *   - Calling outside an outer transaction is fine; this method has its
- *     own atomic boundary.
+ *   - Calling outside an outer transaction is fine; upsertWindow has its
+ *     own atomic boundary. Calling INSIDE an outer transaction also works
+ *     (the inner db.transaction becomes a savepoint).
  */
-export const upsertWindow = (
-  db: Database.Database,
-  conversationId: string,
-  windowIndex: number,
-  messageIds: readonly number[],
-  embedding: Float32Array,
-): void => {
-  const windowIndexBig = BigInt(windowIndex);
-  const embeddingBuf = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
-
+export const createWindowWriter = (db: Database.Database): WindowWriter => {
   const deleteVec = db.prepare(
     'DELETE FROM vec_windows WHERE conversation_id = ? AND window_index = ?',
   );
@@ -200,14 +254,50 @@ export const upsertWindow = (
     'INSERT INTO window_messages(conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
   );
 
-  const runTransaction = db.transaction(() => {
-    deleteVec.run(conversationId, windowIndexBig);
-    deleteJoin.run(conversationId, windowIndexBig);
-    insertVec.run(conversationId, windowIndexBig, embeddingBuf);
-    for (let position = 0; position < messageIds.length; position++) {
-      insertJoin.run(conversationId, windowIndexBig, messageIds[position], BigInt(position));
-    }
-  });
+  return {
+    upsertWindow(conversationId, windowIndex, messageIds, embedding): void {
+      if (messageIds.length === 0) {
+        throw new InvalidArgumentError(
+          'upsertWindow: messageIds must be non-empty (a window with zero messages has no embedding)',
+        );
+      }
+      const windowIndexBig = BigInt(windowIndex);
+      const embeddingBuf = Buffer.from(
+        embedding.buffer,
+        embedding.byteOffset,
+        embedding.byteLength,
+      );
 
-  runTransaction();
+      const runTransaction = db.transaction(() => {
+        deleteVec.run(conversationId, windowIndexBig);
+        deleteJoin.run(conversationId, windowIndexBig);
+        insertVec.run(conversationId, windowIndexBig, embeddingBuf);
+        for (let position = 0; position < messageIds.length; position++) {
+          // window_messages is a regular SQLite table — position is plain
+          // INTEGER, so no BigInt coercion is needed. Only vec0 metadata
+          // columns require BigInt.
+          insertJoin.run(conversationId, windowIndexBig, messageIds[position], position);
+        }
+      });
+
+      runTransaction();
+    },
+  };
+};
+
+/**
+ * Convenience one-shot wrapper. Equivalent to
+ * `createWindowWriter(db).upsertWindow(...)` — pays the per-call prepare
+ * cost. Story 6's worker should use `createWindowWriter` directly and
+ * reuse the writer across many calls; this thin shim is for tests and
+ * one-off callers.
+ */
+export const upsertWindow = (
+  db: Database.Database,
+  conversationId: string,
+  windowIndex: number,
+  messageIds: readonly number[],
+  embedding: Float32Array,
+): void => {
+  createWindowWriter(db).upsertWindow(conversationId, windowIndex, messageIds, embedding);
 };

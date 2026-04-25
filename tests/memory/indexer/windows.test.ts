@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ConversationStore } from '../../../src/conversations/store.js';
 import { createDatabase } from '../../../src/core/database.js';
+import { InvalidArgumentError } from '../../../src/core/errors.js';
 import type { Embedder } from '../../../src/core/interfaces.js';
 import type { ResolvedIndexerConfig } from '../../../src/memory/indexer/index.js';
 import {
   assembleWindowEmbedding,
   computeWindowsForMessage,
+  createWindowWriter,
   formatMessageForEmbed,
   upsertWindow,
 } from '../../../src/memory/indexer/windows.js';
@@ -99,6 +101,14 @@ describe('computeWindowsForMessage', () => {
     ]);
   });
 
+  it('throws InvalidArgumentError when stride <= 0 (defensive — bypasses resolveConfig)', () => {
+    // Defensive guard: callers that bypass the IndexerConfig validation
+    // (e.g., constructing ResolvedIndexerConfig directly) get an explicit
+    // error instead of an infinite loop on numWindows = ceil(N/0) = Infinity.
+    expect(() => computeWindowsForMessage(0, 5, config(3, 3))).toThrow(InvalidArgumentError);
+    expect(() => computeWindowsForMessage(0, 5, config(3, 4))).toThrow(InvalidArgumentError);
+  });
+
   it('handles zero-overlap (stride=windowSize) with non-overlapping windows', () => {
     // windowSize=3, overlap=0, stride=3, N=6 → [0..2], [3..5].
     expect(computeWindowsForMessage(0, 6, config(3, 0))).toEqual([
@@ -170,6 +180,14 @@ describe('assembleWindowEmbedding', () => {
     );
     expect(calls[0]).toBe('user: solo');
     expect(result.length).toBe(768);
+  });
+
+  it('throws InvalidArgumentError on empty messageRows (avoids embedding "")', async () => {
+    const { embedder, calls } = makeStubEmbedder();
+    await expect(assembleWindowEmbedding([], embedder)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+    expect(calls).toHaveLength(0);
   });
 
   it('returns the embedder vector cast to Float32Array', async () => {
@@ -298,6 +316,12 @@ describe('upsertWindow', () => {
     expect(stored[0]).toBe(fresh[0]);
   });
 
+  it('throws InvalidArgumentError on empty messageIds (a window with zero messages is invalid)', () => {
+    expect(() => upsertWindow(db, 'doesnt-matter', 0, [], makeEmbedding(0.1))).toThrow(
+      InvalidArgumentError,
+    );
+  });
+
   it('writing two distinct (conversation_id, window_index) pairs leaves both rows intact', () => {
     const conversationId = store.addConversation(
       makeMessages(['m0', 'm1', 'm2', 'm3', 'm4']),
@@ -321,5 +345,33 @@ describe('upsertWindow', () => {
       .prepare('SELECT COUNT(*) AS c FROM window_messages WHERE conversation_id = ?')
       .get(conversationId) as { c: number };
     expect(joinCount.c).toBe(6); // 3 + 3
+  });
+});
+
+describe('createWindowWriter', () => {
+  it('reuses prepared statements across multiple upsertWindow calls (factory pattern)', () => {
+    // Confirms the closure-cached statements work for >1 invocation; the
+    // hot-path concern Story 6's worker exercises.
+    const conversationId = store.addConversation(
+      makeMessages(['m0', 'm1', 'm2', 'm3', 'm4']),
+      'user-factory',
+    );
+    const ids = (
+      db
+        .prepare('SELECT id FROM messages WHERE conversation_id = ? ORDER BY sort_order ASC')
+        .all(conversationId) as { id: number }[]
+    ).map((r) => r.id);
+
+    const writer = createWindowWriter(db);
+    writer.upsertWindow(conversationId, 0, [ids[0], ids[1], ids[2]], makeEmbedding(0.1));
+    writer.upsertWindow(conversationId, 1, [ids[2], ids[3], ids[4]], makeEmbedding(0.5));
+    // Re-upsert window 0 to exercise the DELETE+INSERT replace path on the
+    // SAME writer instance.
+    writer.upsertWindow(conversationId, 0, [ids[0], ids[1], ids[2]], makeEmbedding(0.9));
+
+    const vecCount = db
+      .prepare('SELECT COUNT(*) AS c FROM vec_windows WHERE conversation_id = ?')
+      .get(conversationId) as { c: number };
+    expect(vecCount.c).toBe(2);
   });
 });

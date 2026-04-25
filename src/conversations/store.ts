@@ -23,8 +23,9 @@ export interface StoredMessage {
 }
 
 // ConversationSearchResult lives in core/types.ts — re-exported from here so
-// external consumers of this module keep a stable import path.
-export type { ConversationSearchResult } from '../core/types.js';
+// external consumers of this module keep a stable import path. Re-exports the
+// already-imported local binding so the source path is stated once.
+export type { ConversationSearchResult };
 
 export interface ConversationSearchParams {
   readonly userId: string;

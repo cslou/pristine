@@ -153,7 +153,11 @@
         and backward-compatible with Sprint-009-era databases.
       </p>
 
-      <h2>Stories shipped (4 feature + 1 evaluation)</h2>
+      <div class="note" style="border-left-color: var(--warn); margin-bottom: 1.25rem;">
+        <strong>Post-simplification note (PR #114).</strong> This deck was captured at the time of the eval merge (PR #111) and reflects the original sprint-014 shape that included a versioned migration engine (`SCHEMA_VERSION`, `PRAGMA user_version` gate, `addColumnIfMissing` helper, back-fill UPDATEs). PR #114 simplified that out — the shipped sprint-014 has a flat `initConversationTables` (no version gate, no transaction wrapper) and `npm run db:reset` for tear-down workflows. References below to "Migration engine" / "PRAGMA user_version" / "post-migration shape" describe the pre-#114 state, not the shipped one. See PR #114 body for the simplification rationale.
+      </div>
+
+      <h2>Stories shipped (4 feature + 1 evaluation + 1 simplification)</h2>
       <table>
         <thead><tr><th>Story</th><th>Title</th><th>PR</th><th>Status</th></tr></thead>
         <tbody>
@@ -161,7 +165,8 @@
           <tr><td>2</td><td>vec_windows + window_messages + vec_sessions virtual tables</td><td>#107</td><td class="pass">merged</td></tr>
           <tr><td>3</td><td>messages_public + conversations_public views (privacy invariant)</td><td>#109</td><td class="pass">merged</td></tr>
           <tr><td>4</td><td>summaries table + addMessage/addSummary/getRecentSummaries API + 2 typed errors</td><td>#110</td><td class="pass">merged</td></tr>
-          <tr><td>Eval</td><td>Schema-surface evidence + regression receipts (this deck)</td><td>—</td><td class="pass">in flight</td></tr>
+          <tr><td>Eval</td><td>Schema-surface evidence + regression receipts (this deck)</td><td>#111</td><td class="pass">merged</td></tr>
+          <tr><td>Simp</td><td>Drop migration machinery — flat init + db:reset</td><td>#114</td><td class="pass">merged</td></tr>
         </tbody>
       </table>
 
@@ -183,7 +188,8 @@
       <h2>Follow-up issues filed</h2>
       <ul>
         <li><a href="https://github.com/getlou-gh/pristine/issues/106">#106</a> — <code>messages.id</code> INTEGER → TEXT UUID migration</li>
-        <li><a href="https://github.com/getlou-gh/pristine/issues/108">#108</a> — refactor: extract <code>src/conversations/migrations.ts</code> from <code>store.ts</code> (god-file decomposition, store.ts now ~796 lines)</li>
+        <li><a href="https://github.com/getlou-gh/pristine/issues/108">#108</a> — extract <code>migrations.ts</code> — <strong>closed by PR #114 as moot</strong>; no migration logic remains in `store.ts` after the simplification. `store.ts` is now 733 lines.</li>
+        <li><a href="https://github.com/getlou-gh/pristine/issues/113">#113</a> — `deleteById` cascade to `window_messages` (FK violation risk once sprint-015 writes); must land before sprint-015 ships.</li>
       </ul>
     </section>
 
@@ -397,7 +403,8 @@ LIMIT ?
         <strong>Deferred P2s tracked as follow-ups (not merge-blocking):</strong>
         <ul style="margin-bottom: 0;">
           <li><a href="https://github.com/getlou-gh/pristine/issues/106">#106</a> — messages.id INTEGER → TEXT UUID migration</li>
-          <li><a href="https://github.com/getlou-gh/pristine/issues/108">#108</a> — extract src/conversations/migrations.ts (god-file decomposition)</li>
+          <li><a href="https://github.com/getlou-gh/pristine/issues/108">#108</a> — extract src/conversations/migrations.ts (<strong>closed by PR #114 as moot</strong>)</li>
+          <li><a href="https://github.com/getlou-gh/pristine/issues/113">#113</a> — deleteById cascade to window_messages (open; blocks sprint-015 start)</li>
         </ul>
       </div>
     </section>

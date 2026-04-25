@@ -839,9 +839,8 @@ describe('sprint-014 Story 3 — public views', () => {
     expect(rows[0].content).toBe('first turn');
     expect(rows[0].timestamp).toBe(expectedMs);
     // addConversation derives project_id from userId when no explicit
-    // projectId is supplied — same rule the migration back-fill applies
-    // for legacy rows. A caller that needs multi-project-per-user scoping
-    // can pass `projectId` as the third parameter.
+    // projectId is supplied. Multi-project-per-user callers pass
+    // `projectId` as the third parameter.
     expect(rows[0].project_id).toBe('user-rt');
     expect(rows[1].turn_index).toBe(1);
     expect(rows[1].content).toBe('second turn');
@@ -1050,6 +1049,20 @@ describe('sprint-014 Story 4 — addSummary + getRecentSummaries', () => {
         sessionId: 's',
         projectId: 'p',
         text: '   \n\t  ',
+        timestamp: 1,
+      }),
+    ).toThrow(InvalidArgumentError);
+  });
+
+  it('rejects empty-string projectId with InvalidArgumentError', () => {
+    // getRecentSummaries filters by exact-match project_id; an empty-string
+    // scope would be unreachable by the consumer pattern and almost
+    // certainly a caller bug. Guarded at the write gate to fail loudly.
+    expect(() =>
+      store.addSummary({
+        sessionId: 's',
+        projectId: '',
+        text: 'has text',
         timestamp: 1,
       }),
     ).toThrow(InvalidArgumentError);

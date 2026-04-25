@@ -498,10 +498,12 @@ export class ConversationStore {
    * attached to a specific conversation, and session_id is a harness-
    * provided opaque string that may span multiple conversations.
    *
-   * **Empty-text guard.** A summary with no text carries no retrieval
-   * value; `text.trim().length === 0` throws `InvalidArgumentError` and
-   * nothing is inserted. Callers get a targetable catch class rather than
-   * discovering the empty row later in a query result.
+   * **Input guards.** Empty / whitespace-only `text` throws
+   * `InvalidArgumentError` (a summary with no text carries no retrieval
+   * value). Empty `projectId` also throws — `getRecentSummaries` filters
+   * by exact-match `project_id`, so an empty-string scope is unreachable
+   * by the consumer pattern and almost certainly a caller bug. Callers
+   * get a targetable catch class rather than discovering empty rows later.
    */
   public addSummary(params: {
     readonly sessionId: string;
@@ -512,6 +514,9 @@ export class ConversationStore {
   }): string {
     if (params.text.trim().length === 0) {
       throw new InvalidArgumentError('addSummary: text must not be empty or whitespace-only');
+    }
+    if (params.projectId.length === 0) {
+      throw new InvalidArgumentError('addSummary: projectId must not be empty');
     }
     const id = randomUUID();
     this.db

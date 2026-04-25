@@ -610,15 +610,13 @@ export class ConversationStore {
    * window_messages rows MUST be removed before the messages rows. vec_windows
    * and vec_sessions have no FK (vec0 does not enforce them), but we DELETE
    * those vector rows in the same transaction so orphans never accumulate
-   * after a recovery.
+   * after a recovery. window_messages targets its own conversation_id column
+   * (the PK leading column) rather than joining through messages.id, so this
+   * step does not depend on messages rows still existing.
    */
   public deleteById(conversationId: string): void {
     const runTransaction = this.db.transaction(() => {
-      this.db
-        .prepare(
-          'DELETE FROM window_messages WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?)',
-        )
-        .run(conversationId);
+      this.db.prepare('DELETE FROM window_messages WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM vec_windows WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM vec_sessions WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId);

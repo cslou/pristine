@@ -550,6 +550,15 @@ describe('ConversationStore', () => {
 
       expect(() => s.deleteById(id)).not.toThrow();
 
+      // Assert the most fundamental invariants first so a partial-delete
+      // failure surfaces on the right line rather than after three passing
+      // count assertions.
+      expect(s.getConversation(id)).toBeNull();
+      const msgCount = d
+        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(msgCount.c).toBe(0);
+
       const wmCount = d
         .prepare('SELECT COUNT(*) AS c FROM window_messages WHERE conversation_id = ?')
         .get(id) as { c: number };
@@ -559,14 +568,9 @@ describe('ConversationStore', () => {
       const vsCount = d
         .prepare('SELECT COUNT(*) AS c FROM vec_sessions WHERE conversation_id = ?')
         .get(id) as { c: number };
-      const msgCount = d
-        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
-        .get(id) as { c: number };
       expect(wmCount.c).toBe(0);
       expect(vwCount.c).toBe(0);
       expect(vsCount.c).toBe(0);
-      expect(msgCount.c).toBe(0);
-      expect(s.getConversation(id)).toBeNull();
 
       d.close();
     });

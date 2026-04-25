@@ -517,6 +517,82 @@ describe('ConversationStore', () => {
       expect(secondId).not.toBe(firstId);
       expect(store.getConversation(secondId)).not.toBeNull();
     });
+
+    it('cascades to window_messages + vec_windows + vec_sessions for indexed conversations (GH #113)', () => {
+      // Sprint-015 Story 1 — once Phase-3 starts writing window_messages rows,
+      // the existing partial-ingest recovery path (deleteById) hits a FK
+      // violation on messages.id without this cascade. Pinned with a fresh
+      // DB so leftover vec rows from other tests don't pollute the assertion.
+      const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+      const s = new ConversationStore(d);
+
+      const id = s.addConversation(makeMessages(['Hi', 'Hello']), 'user-cascade');
+      const messageRows = d
+        .prepare('SELECT id FROM messages WHERE conversation_id = ? ORDER BY sort_order ASC')
+        .all(id) as { id: number }[];
+      expect(messageRows.length).toBe(2);
+
+      // Seed an indexed-corpus shape: window_messages rows referencing real
+      // message ids (FK), one vec_windows row, one vec_sessions row. All three
+      // tables must be empty for this conversation_id after deleteById.
+      d.prepare(
+        'INSERT INTO window_messages(conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+      ).run(id, 0n, messageRows[0].id, 0n);
+      d.prepare(
+        'INSERT INTO window_messages(conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+      ).run(id, 0n, messageRows[1].id, 1n);
+      d.prepare(
+        'INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?)',
+      ).run(id, 0n, makeEmbedding(0.5));
+      d.prepare(
+        'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+      ).run(id, makeEmbedding(0.6), BigInt(Date.now()));
+
+      expect(() => s.deleteById(id)).not.toThrow();
+
+      // Assert the most fundamental invariants first so a partial-delete
+      // failure surfaces on the right line rather than after three passing
+      // count assertions.
+      expect(s.getConversation(id)).toBeNull();
+      const msgCount = d
+        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(msgCount.c).toBe(0);
+
+      const wmCount = d
+        .prepare('SELECT COUNT(*) AS c FROM window_messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      const vwCount = d
+        .prepare('SELECT COUNT(*) AS c FROM vec_windows WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      const vsCount = d
+        .prepare('SELECT COUNT(*) AS c FROM vec_sessions WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(wmCount.c).toBe(0);
+      expect(vwCount.c).toBe(0);
+      expect(vsCount.c).toBe(0);
+
+      d.close();
+    });
+
+    it('preserves the no-window_messages-rows path (Sprint-009 contract)', () => {
+      // Regression: a conversation that has never been indexed (no
+      // window_messages / vec_windows / vec_sessions rows) must still delete
+      // cleanly — the four extra DELETEs are no-ops in that case.
+      const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+      const s = new ConversationStore(d);
+
+      const id = s.addConversation(makeMessages(['Solo turn']), 'user-noindex');
+      expect(() => s.deleteById(id)).not.toThrow();
+
+      expect(s.getConversation(id)).toBeNull();
+      const msgCount = d
+        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(msgCount.c).toBe(0);
+
+      d.close();
+    });
   });
 });
 

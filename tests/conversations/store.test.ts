@@ -487,6 +487,17 @@ describe('ConversationStore', () => {
     });
   });
 
+  describe('getConversationUserId', () => {
+    it('returns the user_id for an existing conversation', () => {
+      const id = store.addConversation(makeMessages(['hi']), 'user-resolve');
+      expect(store.getConversationUserId(id)).toBe('user-resolve');
+    });
+
+    it('returns null when the conversation does not exist', () => {
+      expect(store.getConversationUserId('does-not-exist')).toBeNull();
+    });
+  });
+
   describe('deleteById', () => {
     it('removes the conversation row and its messages', () => {
       const messages = makeMessages(['Hi', 'Hello', 'Bye']);

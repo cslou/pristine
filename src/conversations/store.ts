@@ -605,6 +605,23 @@ export class ConversationStore {
   }
 
   /**
+   * Resolve the `user_id` for an existing conversation, or `null` if the
+   * conversation does not exist. Used by `createIndexer().ingest()` to pin
+   * the embed-task `user_id` to the conversation's row (single source of
+   * truth — caller doesn't repeat what's already on the conversation).
+   *
+   * Lives on `ConversationStore` so the indexer doesn't reach into the
+   * `conversations` table directly — keeps the single-store-per-table
+   * boundary.
+   */
+  public getConversationUserId(conversationId: string): string | null {
+    const row = this.db
+      .prepare('SELECT user_id FROM conversations WHERE id = ?')
+      .get(conversationId) as { user_id: string } | undefined;
+    return row?.user_id ?? null;
+  }
+
+  /**
    * Delete a conversation and all its associated messages, plus any indexer
    * artefacts (window_messages, vec_windows, vec_sessions). FTS index entries
    * are removed automatically via the AFTER DELETE trigger on messages.

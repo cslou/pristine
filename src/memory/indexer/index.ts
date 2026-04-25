@@ -26,16 +26,22 @@ export interface ResolvedIndexerConfig {
 }
 
 /**
- * One conversational turn the caller wants ingested. Mirrors the input shape
+ * One conversational turn the caller wants indexed. Mirrors the input shape
  * of `ConversationStore.addMessage`.
+ *
+ * Note on naming: this module deliberately uses `Index*` names rather than
+ * `Ingest*` because `IngestOptions` and `IngestResult` are already taken in
+ * `src/core/types.ts` for the (now-removed-from-runtime) orchestrator
+ * pipeline. Avoiding the name collision keeps consumers from accidentally
+ * importing the wrong shape.
  */
-export interface IngestTurn {
+export interface IndexTurn {
   readonly role: string;
   readonly content: string;
   readonly timestamp?: string;
 }
 
-export interface IngestOptions {
+export interface IndexOptions {
   /** Project the turns belong to. Pass-through into the embed-task payload. */
   readonly projectId: string;
   /** Pre-existing conversation. Must already exist via `addConversation`. */
@@ -44,7 +50,7 @@ export interface IngestOptions {
   readonly sessionId?: string;
 }
 
-export interface IngestResult {
+export interface IndexResult {
   /** messages.id values for the rows inserted, in insertion order. */
   readonly messageIds: readonly number[];
   /** pending_ingest_tasks.id values for the embed tasks enqueued. */
@@ -60,9 +66,12 @@ export interface Indexer {
    *
    * Throws `InvalidArgumentError` for empty turns / empty opts strings.
    * Throws `ConversationNotFoundError` if `opts.conversationId` doesn't
-   * resolve (re-thrown from `ConversationStore.addMessage`).
+   * resolve. The error is raised by an explicit pre-check SELECT inside the
+   * transaction; `addMessage` would raise the same error secondarily if the
+   * pre-check were removed, but surfacing it before any INSERT keeps the
+   * rollback cheap.
    */
-  ingest(turns: readonly IngestTurn[], opts: IngestOptions): IngestResult;
+  ingest(turns: readonly IndexTurn[], opts: IndexOptions): IndexResult;
   /** The resolved (defaults-applied) config. Read by Stories 3 + 6. */
   readonly config: ResolvedIndexerConfig;
 }
@@ -115,13 +124,7 @@ const resolveConfig = (config?: IndexerConfig): ResolvedIndexerConfig => {
 export const createIndexer = (deps: IndexerDeps): Indexer => {
   const config = resolveConfig(deps.config);
 
-  // Resolve the conversation's user_id so the embed-task row carries it.
-  // Story 2's AC has the caller pass projectId + conversationId + sessionId;
-  // user_id is already pinned on the conversation row, so we read it from
-  // there rather than asking the caller to repeat themselves.
-  const selectConversationUser = deps.db.prepare('SELECT user_id FROM conversations WHERE id = ?');
-
-  const ingest = (turns: readonly IngestTurn[], opts: IngestOptions): IngestResult => {
+  const ingest = (turns: readonly IndexTurn[], opts: IndexOptions): IndexResult => {
     if (turns.length === 0) {
       throw new InvalidArgumentError('Indexer.ingest: turns must be a non-empty array');
     }
@@ -137,17 +140,22 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
       );
     }
 
-    const messageIds: number[] = [];
-    const taskIds: string[] = [];
-
-    const runTransaction = deps.db.transaction(() => {
-      const userRow = selectConversationUser.get(opts.conversationId) as
-        | { user_id: string }
-        | undefined;
-      if (!userRow) {
+    // Return the accumulated ids from inside the transaction so the
+    // in-memory state stays consistent with committed DB state — a thrown
+    // exception unwinds both. (Mutating outer arrays from inside the closure
+    // would leave them partially populated on rollback; the caller can't
+    // observe that today, but it's a fragile pattern under refactor.)
+    const runTransaction = deps.db.transaction((): { messageIds: number[]; taskIds: string[] } => {
+      // Story 2 AC has the caller pass { projectId, conversationId,
+      // sessionId? } — userId comes from the conversation row (single
+      // source of truth). Pre-check before any INSERT so rollback is cheap.
+      const userId = deps.conversationStore.getConversationUserId(opts.conversationId);
+      if (userId === null) {
         throw new ConversationNotFoundError(`Conversation not found: ${opts.conversationId}`);
       }
-      const userId = userRow.user_id;
+
+      const messageIds: number[] = [];
+      const taskIds: string[] = [];
 
       for (const turn of turns) {
         const messageId = deps.conversationStore.addMessage(opts.conversationId, {
@@ -166,14 +174,11 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
         });
         taskIds.push(taskId);
       }
+
+      return { messageIds, taskIds };
     });
 
-    runTransaction();
-
-    return {
-      messageIds: messageIds.slice(),
-      taskIds: taskIds.slice(),
-    };
+    return runTransaction();
   };
 
   return { ingest, config };

@@ -159,6 +159,102 @@ describe('IngestQueue', () => {
   });
 
   // -------------------------------------------------------------------------
+  // enqueueMessageEmbed()
+  // -------------------------------------------------------------------------
+
+  describe('enqueueMessageEmbed()', () => {
+    it('inserts a row with task_type=embed-message + the supplied message-level fields', () => {
+      // The conversation has to exist for the FK to pass.
+      const conversationId = conversationStore.addConversation(sampleConversation, 'user-em');
+      const messageRows = db
+        .prepare('SELECT id FROM messages WHERE conversation_id = ?')
+        .all(conversationId) as { id: number }[];
+      const messageId = messageRows[0].id;
+
+      const taskId = queue.enqueueMessageEmbed({
+        messageId,
+        conversationId,
+        userId: 'user-em',
+        projectId: 'proj-direct',
+        sessionId: 'sess-direct',
+      });
+
+      expect(typeof taskId).toBe('string');
+      expect(taskId).not.toBe('');
+
+      const row = db.prepare('SELECT * FROM pending_ingest_tasks WHERE id = ?').get(taskId) as {
+        id: string;
+        conversation_id: string;
+        user_id: string;
+        task_type: string;
+        message_id: number;
+        project_id: string;
+        session_id: string | null;
+        status: string;
+      };
+      expect(row.id).toBe(taskId);
+      expect(row.conversation_id).toBe(conversationId);
+      expect(row.user_id).toBe('user-em');
+      expect(row.task_type).toBe('embed-message');
+      expect(row.message_id).toBe(messageId);
+      expect(row.project_id).toBe('proj-direct');
+      expect(row.session_id).toBe('sess-direct');
+      expect(row.status).toBe('pending');
+    });
+
+    it('stores session_id as NULL when omitted', () => {
+      const conversationId = conversationStore.addConversation(sampleConversation, 'user-em2');
+      const messageId = (
+        db.prepare('SELECT id FROM messages WHERE conversation_id = ?').get(conversationId) as {
+          id: number;
+        }
+      ).id;
+
+      const taskId = queue.enqueueMessageEmbed({
+        messageId,
+        conversationId,
+        userId: 'user-em2',
+        projectId: 'proj-no-session',
+      });
+
+      const row = db
+        .prepare('SELECT session_id FROM pending_ingest_tasks WHERE id = ?')
+        .get(taskId) as { session_id: string | null };
+      expect(row.session_id).toBeNull();
+    });
+
+    it('returns distinct task ids for repeated calls (UUID per insert)', () => {
+      const conversationId = conversationStore.addConversation(sampleConversation, 'user-em3');
+      const messageId = (
+        db.prepare('SELECT id FROM messages WHERE conversation_id = ?').get(conversationId) as {
+          id: number;
+        }
+      ).id;
+
+      const t1 = queue.enqueueMessageEmbed({
+        messageId,
+        conversationId,
+        userId: 'user-em3',
+        projectId: 'p',
+      });
+      const t2 = queue.enqueueMessageEmbed({
+        messageId,
+        conversationId,
+        userId: 'user-em3',
+        projectId: 'p',
+      });
+      expect(t1).not.toBe(t2);
+
+      const count = db
+        .prepare(
+          "SELECT COUNT(*) AS c FROM pending_ingest_tasks WHERE task_type = 'embed-message' AND conversation_id = ?",
+        )
+        .get(conversationId) as { c: number };
+      expect(count.c).toBe(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // claimNext()
   // -------------------------------------------------------------------------
 

@@ -98,15 +98,16 @@ export interface IngestQueueConfig {
 // ---------------------------------------------------------------------------
 
 const VALID_STATUSES = new Set(['pending', 'processing', 'completed', 'failed']);
-const VALID_TASK_TYPES = new Set<IngestTaskType>(['extract-conversation', 'embed-message']);
 
+// task_type does not need a runtime fallback — the DDL CHECK constraint
+// enforces the closed set, so any row that survives an INSERT is one of the
+// declared types. Cast directly. status keeps a fallback because legacy DBs
+// may have rows that predate the CHECK migration history.
 const mapTaskRow = (row: IngestTaskRow): IngestTask => ({
   id: row.id,
   conversationId: row.conversation_id,
   userId: row.user_id,
-  taskType: VALID_TASK_TYPES.has(row.task_type as IngestTaskType)
-    ? (row.task_type as IngestTaskType)
-    : 'extract-conversation',
+  taskType: row.task_type as IngestTaskType,
   messageId: row.message_id,
   projectId: row.project_id,
   sessionId: row.session_id,
@@ -142,12 +143,20 @@ export class IngestQueue {
   private readonly db: Database.Database;
   private readonly orchestrator: Orchestrator | null;
   private readonly conversationStore: ConversationStore;
+  // Cached at construction so a 100-turn indexer batch reuses one
+  // prepared statement instead of compiling the SQL 100 times.
+  private readonly insertEmbedTaskStmt: Database.Statement;
 
   public constructor(config: IngestQueueConfig) {
     this.db = config.db;
     this.orchestrator = config.orchestrator;
     this.conversationStore = config.conversationStore;
     initIngestQueueTables(config.db);
+    this.insertEmbedTaskStmt = this.db.prepare(
+      `INSERT INTO pending_ingest_tasks
+         (id, conversation_id, user_id, task_type, message_id, project_id, session_id)
+       VALUES (?, ?, ?, 'embed-message', ?, ?, ?)`,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -217,20 +226,14 @@ export class IngestQueue {
     readonly sessionId?: string;
   }): string {
     const taskId = randomUUID();
-    this.db
-      .prepare(
-        `INSERT INTO pending_ingest_tasks
-           (id, conversation_id, user_id, task_type, message_id, project_id, session_id)
-         VALUES (?, ?, ?, 'embed-message', ?, ?, ?)`,
-      )
-      .run(
-        taskId,
-        params.conversationId,
-        params.userId,
-        params.messageId,
-        params.projectId,
-        params.sessionId ?? null,
-      );
+    this.insertEmbedTaskStmt.run(
+      taskId,
+      params.conversationId,
+      params.userId,
+      params.messageId,
+      params.projectId,
+      params.sessionId ?? null,
+    );
     return taskId;
   }
 

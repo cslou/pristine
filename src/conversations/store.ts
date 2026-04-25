@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id TEXT NOT NULL,
   content_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
-  message_count INTEGER NOT NULL DEFAULT 0
+  message_count INTEGER NOT NULL DEFAULT 0,
+  project_id TEXT NOT NULL DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
@@ -95,7 +96,9 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   timestamp TEXT,
-  sort_order INTEGER NOT NULL
+  sort_order INTEGER NOT NULL,
+  project_id TEXT NOT NULL DEFAULT 'default',
+  parent_message_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 
@@ -114,8 +117,9 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
 END;
 `;
 
-// Spec-005 §12 indexes — runs after ADD COLUMN steps so project_id and
-// parent_message_id exist when the partial + parent indexes reference them.
+// Spec-005 §12 indexes — `project_id` and `parent_message_id` are defined
+// inline in CONVERSATION_STORE_DDL above, so these indexes can land
+// immediately after the base tables in initConversationTables.
 const RETRIEVAL_INDEXES_DDL = `
 CREATE INDEX IF NOT EXISTS ix_conversations_project_started
   ON conversations(project_id, created_at DESC);
@@ -282,103 +286,23 @@ CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, ti
 // Table initialization
 // ---------------------------------------------------------------------------
 
-interface TableInfoRow {
-  readonly name: string;
-}
-
-function addColumnIfMissing(
-  db: Database.Database,
-  table: string,
-  column: string,
-  ddl: string,
-): void {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
-  if (columns.some((row) => row.name === column)) {
-    return;
-  }
-  db.exec(ddl);
-}
-
-// Schema version tracked via PRAGMA user_version. Bump when adding a new
-// migration step; the initConversationTables gate only runs migration work
-// when the stored version is below this constant. Exported so tests can pin
-// the exact post-migration value without re-declaring the number.
-// - 0 = Sprint-009 baseline (pre-sprint-014)
-// - 1 = Sprint-014 Story 1 (project_id, parent_message_id, 4 spec-§12 indexes)
-// - 2 = Sprint-014 Story 2 (vec_windows + window_messages + vec_sessions)
-// - 3 = Sprint-014 Story 3 (messages_public + conversations_public views)
-// - 4 = Sprint-014 Story 4 (summaries table + ix_summaries_project_time + summaries_public view + addMessage/addSummary/getRecentSummaries API)
-export const SCHEMA_VERSION = 4;
-
+// Pre-shipped local-dev SDK: no users, no data preservation requirement →
+// schema changes use tear-down + rebuild, not versioned forward migration.
+// Reset is `npm run db:reset` (rm of the default-path SQLite file + WAL
+// siblings); `ConversationStore` reinitializes from the DDL constants on
+// next construction. Every relation uses `IF NOT EXISTS` so idempotent
+// re-construction against an already-initialized DB is a no-op.
 export function initConversationTables(db: Database.Database): void {
   db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
-
-  const currentVersion = db.pragma('user_version', { simple: true }) as number;
-  if (currentVersion >= SCHEMA_VERSION) {
-    return;
-  }
-
-  // Atomic forward migration. Each versioned block is gated on the stored
-  // user_version so a DB that's already partway through (e.g. v1 → v2) only
-  // applies the steps it's missing. The whole migration + user_version bump
-  // commits as a single transaction; a crash leaves the DB at its prior
-  // version with no recovery path needed.
-  db.transaction(() => {
-    if (currentVersion < 1) {
-      addColumnIfMissing(
-        db,
-        'conversations',
-        'project_id',
-        "ALTER TABLE conversations ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
-      );
-      db.exec(
-        "UPDATE conversations SET project_id = COALESCE(NULLIF(user_id, ''), 'default') WHERE project_id = 'default'",
-      );
-
-      addColumnIfMissing(
-        db,
-        'messages',
-        'project_id',
-        "ALTER TABLE messages ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'",
-      );
-      db.exec(
-        `UPDATE messages
-         SET project_id = COALESCE(
-           (SELECT project_id FROM conversations WHERE conversations.id = messages.conversation_id),
-           'default'
-         )
-         WHERE project_id = 'default'`,
-      );
-
-      addColumnIfMissing(
-        db,
-        'messages',
-        'parent_message_id',
-        'ALTER TABLE messages ADD COLUMN parent_message_id INTEGER',
-      );
-
-      db.exec(RETRIEVAL_INDEXES_DDL);
-    }
-
-    if (currentVersion < 2) {
-      db.exec(VEC_WINDOWS_DDL);
-      db.exec(WINDOW_MESSAGES_DDL);
-      db.exec(VEC_SESSIONS_DDL);
-    }
-
-    if (currentVersion < 3) {
-      db.exec(MESSAGES_PUBLIC_DDL);
-      db.exec(CONVERSATIONS_PUBLIC_DDL);
-    }
-
-    if (currentVersion < 4) {
-      db.exec(SUMMARIES_DDL);
-      db.exec(SUMMARIES_PUBLIC_DDL);
-    }
-
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
-  })();
+  db.exec(RETRIEVAL_INDEXES_DDL);
+  db.exec(VEC_WINDOWS_DDL);
+  db.exec(WINDOW_MESSAGES_DDL);
+  db.exec(VEC_SESSIONS_DDL);
+  db.exec(MESSAGES_PUBLIC_DDL);
+  db.exec(CONVERSATIONS_PUBLIC_DDL);
+  db.exec(SUMMARIES_DDL);
+  db.exec(SUMMARIES_PUBLIC_DDL);
 }
 
 // ---------------------------------------------------------------------------
@@ -448,12 +372,10 @@ export class ConversationStore {
   /**
    * Store a conversation and its messages. Returns the conversation ID.
    *
-   * **project_id derivation.** If `projectId` is omitted, it's derived from
-   * `userId` using the same rule the migration back-fill applies:
-   * `COALESCE(NULLIF(userId, ''), 'default')`. This keeps new writes
-   * consistent with legacy back-filled rows. Callers with a distinct
-   * project concept (e.g. multi-project-per-user harnesses) pass it
-   * explicitly.
+   * **project_id derivation.** When `projectId` is omitted (or empty),
+   * falls back to `userId`; when `userId` is also empty, falls back to
+   * `'default'`. Callers with a distinct project concept (e.g.
+   * multi-project-per-user harnesses) pass `projectId` explicitly.
    *
    * Both the conversation row and every message row land with the same
    * `project_id`, so Phase-4's filter-first vector search can narrow

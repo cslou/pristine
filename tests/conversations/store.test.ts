@@ -984,9 +984,11 @@ describe('sprint-014 Story 4 — addMessage', () => {
     expect(beforeCount.c).toBe(2);
 
     const result = store.addMessage(convId, { role: 'user', content: 'appended-after' });
-    // Spec §5.1.1 primitive: addMessage returns void — callers that need the
-    // inserted id query by (conversationId, sort_order).
-    expect(result).toBeUndefined();
+    // Sprint-015 Story 2: addMessage returns the inserted messages.id so the
+    // indexer can enqueue a per-message task atomically. The id is a positive
+    // integer pulled from the same transaction's lastInsertRowid.
+    expect(typeof result).toBe('number');
+    expect(result).toBeGreaterThan(0);
 
     const rows = db
       .prepare(

@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id TEXT NOT NULL,
   content_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
-  message_count INTEGER NOT NULL DEFAULT 0
+  message_count INTEGER NOT NULL DEFAULT 0,
+  project_id TEXT NOT NULL DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
@@ -95,7 +96,9 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   timestamp TEXT,
-  sort_order INTEGER NOT NULL
+  sort_order INTEGER NOT NULL,
+  project_id TEXT NOT NULL DEFAULT 'default',
+  parent_message_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 

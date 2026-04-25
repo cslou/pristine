@@ -600,13 +600,27 @@ export class ConversationStore {
   }
 
   /**
-   * Delete a conversation and all its associated messages. FTS index entries
+   * Delete a conversation and all its associated messages, plus any indexer
+   * artefacts (window_messages, vec_windows, vec_sessions). FTS index entries
    * are removed automatically via the AFTER DELETE trigger on messages.
    * No-op if the conversation does not exist. Intended for partial-ingest
    * recovery — not a general delete-a-user-conversation API.
+   *
+   * Order matters: window_messages.message_id has FK to messages.id, so the
+   * window_messages rows MUST be removed before the messages rows. vec_windows
+   * and vec_sessions have no FK (vec0 does not enforce them), but we DELETE
+   * those vector rows in the same transaction so orphans never accumulate
+   * after a recovery.
    */
   public deleteById(conversationId: string): void {
     const runTransaction = this.db.transaction(() => {
+      this.db
+        .prepare(
+          'DELETE FROM window_messages WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?)',
+        )
+        .run(conversationId);
+      this.db.prepare('DELETE FROM vec_windows WHERE conversation_id = ?').run(conversationId);
+      this.db.prepare('DELETE FROM vec_sessions WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
     });

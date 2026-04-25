@@ -424,6 +424,32 @@ describe('ConversationStore', () => {
     });
   });
 
+  describe('spec §12 retrieval indexes', () => {
+    // Pins the four retrieval indexes that Phase-4's filter-first vector
+    // search relies on. These were previously asserted in the migration
+    // describe (now deleted); coverage moved here so the post-init shape
+    // contract stays explicit.
+    it('creates all four spec §12 retrieval indexes in sqlite_master', () => {
+      const expected = [
+        'ix_conversations_project_started',
+        'ix_messages_conv_sort',
+        'ix_messages_parent',
+        'ix_messages_timestamp_nonchunk',
+      ];
+      const rows = db
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'index'
+             AND name IN ('ix_conversations_project_started', 'ix_messages_conv_sort',
+                          'ix_messages_parent', 'ix_messages_timestamp_nonchunk')
+           ORDER BY name`,
+        )
+        .all() as { name: string }[];
+      const names = rows.map((r) => r.name);
+      expect(names).toEqual(expected);
+    });
+  });
+
   describe('findByMessages', () => {
     it('returns the stored conversation id when (userId, messages) matches', () => {
       const messages = makeMessages(['Hi', 'Hello']);

@@ -372,12 +372,10 @@ export class ConversationStore {
   /**
    * Store a conversation and its messages. Returns the conversation ID.
    *
-   * **project_id derivation.** If `projectId` is omitted, it's derived from
-   * `userId` using the same rule the migration back-fill applies:
-   * `COALESCE(NULLIF(userId, ''), 'default')`. This keeps new writes
-   * consistent with legacy back-filled rows. Callers with a distinct
-   * project concept (e.g. multi-project-per-user harnesses) pass it
-   * explicitly.
+   * **project_id derivation.** When `projectId` is omitted (or empty),
+   * falls back to `userId`; when `userId` is also empty, falls back to
+   * `'default'`. Callers with a distinct project concept (e.g.
+   * multi-project-per-user harnesses) pass `projectId` explicitly.
    *
    * Both the conversation row and every message row land with the same
    * `project_id`, so Phase-4's filter-first vector search can narrow

@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
+import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
+import type { ConversationSearchResult } from '../core/types.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -20,13 +22,10 @@ export interface StoredMessage {
   readonly sortOrder: number;
 }
 
-export interface ConversationSearchResult {
-  readonly id: string;
-  readonly userId: string;
-  readonly createdAt: string;
-  readonly messageCount: number;
-  readonly snippet: string;
-}
+// ConversationSearchResult lives in core/types.ts — re-exported from here so
+// external consumers of this module keep a stable import path. Re-exports the
+// already-imported local binding so the source path is stated once.
+export type { ConversationSearchResult };
 
 export interface ConversationSearchParams {
   readonly userId: string;
@@ -34,6 +33,15 @@ export interface ConversationSearchParams {
   readonly dateFrom?: string;
   readonly dateTo?: string;
   readonly limit?: number;
+}
+
+export interface StoredSummary {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly text: string;
+  readonly timestamp: number;
+  readonly metadata?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +83,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id TEXT NOT NULL,
   content_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now')),
-  message_count INTEGER NOT NULL DEFAULT 0
+  message_count INTEGER NOT NULL DEFAULT 0,
+  project_id TEXT NOT NULL DEFAULT 'default'
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
@@ -88,7 +97,9 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   timestamp TEXT,
-  sort_order INTEGER NOT NULL
+  sort_order INTEGER NOT NULL,
+  project_id TEXT NOT NULL DEFAULT 'default',
+  parent_message_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 
@@ -107,12 +118,192 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
 END;
 `;
 
+// Spec-005 §12 indexes — `project_id` and `parent_message_id` are defined
+// inline in CONVERSATION_STORE_DDL above, so these indexes can land
+// immediately after the base tables in initConversationTables.
+const RETRIEVAL_INDEXES_DDL = `
+CREATE INDEX IF NOT EXISTS ix_conversations_project_started
+  ON conversations(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_messages_conv_sort
+  ON messages(conversation_id, sort_order);
+CREATE INDEX IF NOT EXISTS ix_messages_timestamp_nonchunk
+  ON messages(timestamp DESC) WHERE parent_message_id IS NULL;
+CREATE INDEX IF NOT EXISTS ix_messages_parent
+  ON messages(parent_message_id);
+`;
+
+// Spec-005 §12 vec_windows — sliding-window primary semantic index. vec0 stores
+// 768-d Nomic Embed v1.5 vectors keyed by (conversation_id, window_index). The
+// `float[768]` is the sqlite-vec typed-column syntax; vec0 handles the BLOB
+// representation internally. Requires sqlite-vec loaded on the connection.
+//
+// **Write idiom note**: vec0 does NOT support INSERT OR REPLACE — duplicate
+// inserts on the composite key just add a second row (this table has no
+// declared PK), and on vec_sessions' PK it throws UNIQUE constraint failed.
+// The indexer's "replace" primitive is DELETE + INSERT inside a transaction.
+// Contract pinned by the PK-rejection test in store.test.ts.
+//
+// **CREATE inside transaction**: `CREATE VIRTUAL TABLE IF NOT EXISTS` inside
+// db.transaction() is not guaranteed to roll back cleanly on transaction
+// abort in standard SQLite; the IF NOT EXISTS guard makes a subsequent
+// re-run idempotent on the success path, which is what we rely on.
+const VEC_WINDOWS_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
+  conversation_id TEXT,
+  window_index INTEGER,
+  embedding float[768]
+);
+`;
+
+// Spec-005 §12 window_messages — join table resolving the messages that
+// comprise each window. Composite PK mirrors the vec_windows key +
+// message_id, so the same (conversation_id, window_index) pair in both
+// tables is the indexer's atomic write unit. message_id is INTEGER to
+// match the current messages.id type (see sprint-014 Known Deviation #1
+// and GH issue #106 for the future TEXT UUID migration).
+//
+// ix_window_messages_message_id supports Phase-4 reverse lookups (window
+// hits resolve to constituent message_ids) without a full scan of
+// window_messages. Spec §12's index list omits this, but the Phase-4
+// join pattern makes it load-bearing at scale.
+const WINDOW_MESSAGES_DDL = `
+CREATE TABLE IF NOT EXISTS window_messages (
+  conversation_id TEXT NOT NULL,
+  window_index INTEGER NOT NULL,
+  message_id INTEGER NOT NULL REFERENCES messages(id),
+  position INTEGER NOT NULL,
+  PRIMARY KEY (conversation_id, window_index, message_id)
+);
+CREATE INDEX IF NOT EXISTS ix_window_messages_message_id
+  ON window_messages(message_id);
+`;
+
+// Spec-005 §12 vec_sessions — whole-conversation secondary semantic index.
+// One vector per conversation (keyed by conversation_id, PRIMARY KEY), used
+// by Phase-4 hybrid retrieval as a coarse-grained vector source alongside
+// vec_windows. No project_id column per spec §12 — Phase-4 filters sessions
+// via a pre-query join on conversations.project_id.
+// `+updated_at INTEGER` uses the vec0 auxiliary-column syntax (`+` prefix).
+// vec0 does not accept NOT NULL / CHECK / DEFAULT on auxiliary columns at
+// DDL — the non-null invariant is enforced at the write-helper layer in
+// sprint-015.
+//
+// Same INSERT OR REPLACE caveat as vec_windows: duplicate PK inserts throw
+// UNIQUE constraint failed; use DELETE + INSERT for the replace idiom.
+const VEC_SESSIONS_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
+  conversation_id TEXT PRIMARY KEY,
+  embedding float[768],
+  +updated_at INTEGER
+);
+`;
+
+// Spec-005 §12 messages_public — read-only view exposing the Phase-5 SQL
+// primitive's safe message surface. Aliases internal column names the spec
+// exposes to consumers (sort_order → turn_index) and casts TEXT timestamps
+// to unix milliseconds so Phase-4 integer-ms range filters work. Excludes
+// parent_message_id — oversize-chunk linkage is an internal concern the
+// SQL-primitive consumer should never see. The explicit column list in
+// the VIEW declaration pins the surface contract; adding a column to the
+// SELECT without also listing it in the view's declared columns raises a
+// DDL error, so the view can't accidentally leak new columns.
+//
+// **timestamp nullability.** The underlying messages.timestamp column is
+// nullable TEXT (Sprint-009 shape; addConversation without per-message
+// timestamps inserts NULL). `strftime('%s', NULL)` returns NULL, so the
+// view's timestamp column passes NULL through for those rows. Consumers
+// doing time-range filters must handle NULL (e.g. `WHERE timestamp IS NOT
+// NULL AND timestamp > ?`) — coercing to 0 / epoch would lie about data
+// availability. Pinned by the NULL-passthrough test in store.test.ts.
+//
+// **Index pushdown.** The CAST(strftime(...)) expression blocks use of
+// ix_messages_timestamp_nonchunk through the view — SQLite can't see
+// through the cast to the base column. Consumers issuing time-range
+// queries should filter against the base messages table (using the
+// index-friendly raw column) and join back to messages_public only for
+// the aliased surface. Same caveat applies to conversations_public
+// .started_at vs. ix_conversations_project_started.
+const MESSAGES_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS messages_public
+  (id, conversation_id, turn_index, role, content, timestamp, project_id) AS
+  SELECT id,
+         conversation_id,
+         sort_order AS turn_index,
+         role,
+         content,
+         CAST(strftime('%s', timestamp) * 1000 AS INTEGER) AS timestamp,
+         project_id
+    FROM messages;
+`;
+
+// Spec-005 §12 conversations_public — read-only public view. Same pattern
+// as messages_public: alias + cast + exclude. created_at (TEXT ISO from
+// datetime('now')) casts to unix milliseconds as started_at (spec §12
+// name). Excludes user_id, content_hash, message_count — all internal
+// implementation details the Phase-5 SQL-primitive consumer should not
+// see. project_id IS exposed — consumers need it for project-scoped
+// retrieval.
+const CONVERSATIONS_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
+  SELECT id,
+         project_id,
+         CAST(strftime('%s', created_at) * 1000 AS INTEGER) AS started_at
+    FROM conversations;
+`;
+
+// Spec-005 §12 summaries — scratch-pad table for Phase-5 reference summaries
+// injected into the retrieval context. No FK to conversations intentional:
+// session_id is a harness-provided opaque string; multiple conversations may
+// share a session (session lifetime is harness-scoped, not corpus-scoped).
+// `metadata` holds optional caller-provided JSON-encoded state. Per spec §12
+// the column list is (id TEXT PK, session_id TEXT NOT NULL, project_id TEXT
+// NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT).
+// ix_summaries_project_time covers the recency query pattern getRecentSummaries
+// uses — filter by project_id + order by timestamp DESC.
+const SUMMARIES_DDL = `
+CREATE TABLE IF NOT EXISTS summaries (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_summaries_project_time
+  ON summaries(project_id, timestamp DESC);
+`;
+
+// Spec-005 §12 summaries_public — read-only public view. Excludes the
+// metadata column (private caller-state) per spec §12 privacy invariant;
+// exposes everything else verbatim. No CAST needed — summaries.timestamp
+// is already stored as INTEGER unix ms (unlike messages.timestamp which
+// was TEXT from Sprint-009).
+const SUMMARIES_PUBLIC_DDL = `
+CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, timestamp) AS
+  SELECT id, session_id, project_id, text, timestamp FROM summaries;
+`;
+
 // ---------------------------------------------------------------------------
 // Table initialization
 // ---------------------------------------------------------------------------
 
+// Pre-shipped local-dev SDK: no users, no data preservation requirement →
+// schema changes use tear-down + rebuild, not versioned forward migration.
+// Reset is `npm run db:reset` (rm of the default-path SQLite file + WAL
+// siblings); `ConversationStore` reinitializes from the DDL constants on
+// next construction. Every relation uses `IF NOT EXISTS` so idempotent
+// re-construction against an already-initialized DB is a no-op.
 export function initConversationTables(db: Database.Database): void {
+  db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
+  db.exec(RETRIEVAL_INDEXES_DDL);
+  db.exec(VEC_WINDOWS_DDL);
+  db.exec(WINDOW_MESSAGES_DDL);
+  db.exec(VEC_SESSIONS_DDL);
+  db.exec(MESSAGES_PUBLIC_DDL);
+  db.exec(CONVERSATIONS_PUBLIC_DDL);
+  db.exec(SUMMARIES_DDL);
+  db.exec(SUMMARIES_PUBLIC_DDL);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +372,16 @@ export class ConversationStore {
 
   /**
    * Store a conversation and its messages. Returns the conversation ID.
+   *
+   * **project_id derivation.** When `projectId` is omitted (or empty),
+   * falls back to `userId`; when `userId` is also empty, falls back to
+   * `'default'`. Callers with a distinct project concept (e.g.
+   * multi-project-per-user harnesses) pass `projectId` explicitly.
+   *
+   * Both the conversation row and every message row land with the same
+   * `project_id`, so Phase-4's filter-first vector search can narrow
+   * candidates without joining through conversations on every query.
+   *
    * Throws on duplicate (user_id, content_hash) — callers should check for
    * `error.message.includes('UNIQUE constraint failed')` to detect duplicates.
    */
@@ -191,30 +392,192 @@ export class ConversationStore {
       readonly timestamp?: string;
     }[],
     userId: string,
+    projectId?: string,
   ): string {
     const id = randomUUID();
     const contentHash = computeConversationContentHash(messages);
+    // Empty-string projectId is treated as "unset" (not as a valid value) so
+    // the fallback-to-userId branch runs — `??` alone only short-circuits on
+    // null/undefined and would let `''` through into the NOT NULL column.
+    const explicitProject = projectId !== undefined && projectId !== '' ? projectId : undefined;
+    const resolvedProjectId = explicitProject ?? (userId !== '' ? userId : 'default');
 
     const insertConversation = this.db.prepare(
-      `INSERT INTO conversations (id, user_id, content_hash, message_count)
-       VALUES (?, ?, ?, ?)`,
-    );
-
-    const insertMessage = this.db.prepare(
-      `INSERT INTO messages (conversation_id, role, content, timestamp, sort_order)
+      `INSERT INTO conversations (id, user_id, content_hash, message_count, project_id)
        VALUES (?, ?, ?, ?, ?)`,
     );
 
+    const insertMessage = this.db.prepare(
+      `INSERT INTO messages (conversation_id, role, content, timestamp, sort_order, project_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+
     const runTransaction = this.db.transaction(() => {
-      insertConversation.run(id, userId, contentHash, messages.length);
+      insertConversation.run(id, userId, contentHash, messages.length, resolvedProjectId);
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
-        insertMessage.run(id, msg.role, msg.content, msg.timestamp ?? null, i);
+        insertMessage.run(id, msg.role, msg.content, msg.timestamp ?? null, i, resolvedProjectId);
       }
     });
 
     runTransaction();
     return id;
+  }
+
+  /**
+   * Append a single message to an existing conversation.
+   *
+   * **Atomic sort_order + message_count.** The method wraps three steps in
+   * a single `db.transaction(...)`: (1) resolve the parent conversation +
+   * its `project_id`, (2) compute `MAX(sort_order) + 1`, (3) insert the
+   * message + bump `conversations.message_count` by 1. Concurrent appends
+   * serialize at the SQLite level so the ordinal sequence stays gapless
+   * and the counter stays accurate. Worker-thread concurrency arrives with
+   * sprint-015's embed-worker; this contract is pinned now.
+   *
+   * **Project scope from parent.** `project_id` is read from the parent
+   * conversation row, NOT supplied by the caller. This prevents cross-
+   * project contamination that would be near-impossible to diagnose later.
+   * If the conversation doesn't exist, throws `ConversationNotFoundError`
+   * and nothing is written (transaction rolls back).
+   *
+   * `sort_order` is ordinal, not contiguous — deleting a message and later
+   * appending yields `MAX(sort_order) + 1`, so gaps are allowed.
+   *
+   * Returns void to match the spec §5.1.1 primitive contract; callers that
+   * need the inserted id should query by (conversationId, sort_order).
+   */
+  public addMessage(
+    conversationId: string,
+    message: {
+      readonly role: string;
+      readonly content: string;
+      readonly timestamp?: string;
+      readonly parentMessageId?: number;
+    },
+  ): void {
+    const selectParent = this.db.prepare('SELECT project_id FROM conversations WHERE id = ?');
+    const selectMaxSort = this.db.prepare(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM messages WHERE conversation_id = ?',
+    );
+    const insertMessage = this.db.prepare(
+      `INSERT INTO messages
+         (conversation_id, role, content, timestamp, sort_order, project_id, parent_message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const bumpMessageCount = this.db.prepare(
+      'UPDATE conversations SET message_count = message_count + 1 WHERE id = ?',
+    );
+
+    const runTransaction = this.db.transaction(() => {
+      const parent = selectParent.get(conversationId) as { project_id: string } | undefined;
+      if (!parent) {
+        throw new ConversationNotFoundError(`Conversation not found: ${conversationId}`);
+      }
+      const { next } = selectMaxSort.get(conversationId) as { next: number };
+      insertMessage.run(
+        conversationId,
+        message.role,
+        message.content,
+        message.timestamp ?? null,
+        next,
+        parent.project_id,
+        message.parentMessageId ?? null,
+      );
+      bumpMessageCount.run(conversationId);
+    });
+
+    runTransaction();
+  }
+
+  /**
+   * Insert a reference summary into the summaries table. Returns the
+   * generated id. Phase-5's summary-injection flow writes here after the
+   * retrieval context is assembled.
+   *
+   * Unlike `addMessage`, `projectId` IS caller-supplied — summaries aren't
+   * attached to a specific conversation, and session_id is a harness-
+   * provided opaque string that may span multiple conversations.
+   *
+   * **Input guards.** Empty / whitespace-only `text` throws
+   * `InvalidArgumentError` (a summary with no text carries no retrieval
+   * value). Empty `projectId` also throws — `getRecentSummaries` filters
+   * by exact-match `project_id`, so an empty-string scope is unreachable
+   * by the consumer pattern and almost certainly a caller bug. Callers
+   * get a targetable catch class rather than discovering empty rows later.
+   */
+  public addSummary(params: {
+    readonly sessionId: string;
+    readonly projectId: string;
+    readonly text: string;
+    readonly timestamp: number;
+    readonly metadata?: string;
+  }): string {
+    if (params.text.trim().length === 0) {
+      throw new InvalidArgumentError('addSummary: text must not be empty or whitespace-only');
+    }
+    if (params.projectId.length === 0) {
+      throw new InvalidArgumentError('addSummary: projectId must not be empty');
+    }
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO summaries (id, session_id, project_id, text, timestamp, metadata)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        params.sessionId,
+        params.projectId,
+        params.text,
+        params.timestamp,
+        params.metadata ?? null,
+      );
+    return id;
+  }
+
+  /**
+   * Return the most recent summaries for a project, ordered by timestamp
+   * DESC. Default limit of 10 keeps the caller's retrieval-context budget
+   * bounded; callers that need more pass an explicit positive integer.
+   *
+   * Uses `ix_summaries_project_time (project_id, timestamp DESC)` — the
+   * query plan is a covering index seek+scan, not a full-table sort.
+   *
+   * Throws `InvalidArgumentError` on `limit <= 0` — SQLite treats `LIMIT -1`
+   * as "no limit" and `LIMIT 0` as "no rows", both surprising and silent
+   * for callers passing an unvalidated variable.
+   */
+  public getRecentSummaries(projectId: string, limit = 10): readonly StoredSummary[] {
+    if (limit <= 0) {
+      throw new InvalidArgumentError(
+        `getRecentSummaries: limit must be a positive integer (got ${limit})`,
+      );
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT id, session_id, project_id, text, timestamp, metadata
+         FROM summaries
+         WHERE project_id = ?
+         ORDER BY timestamp DESC
+         LIMIT ?`,
+      )
+      .all(projectId, limit) as {
+      id: string;
+      session_id: string;
+      project_id: string;
+      text: string;
+      timestamp: number;
+      metadata: string | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      projectId: row.project_id,
+      text: row.text,
+      timestamp: row.timestamp,
+      ...(row.metadata !== null ? { metadata: row.metadata } : {}),
+    }));
   }
 
   /**

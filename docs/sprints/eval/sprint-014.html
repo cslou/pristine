@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sprint-014 Evaluation — Spec-005 Phase 2 Schema Extension</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        --bg: #0f1419;
+        --bg2: #1a1f2e;
+        --fg: #e6e6e6;
+        --fg-dim: #9aa4b8;
+        --accent: #7dd3fc;
+        --accent2: #a7f3d0;
+        --warn: #fbbf24;
+        --pass: #22c55e;
+        --fail: #ef4444;
+        --border: #2a3343;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.5;
+      }
+      body { padding: 2rem; max-width: 1100px; margin: 0 auto; }
+      .slide {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        scroll-margin-top: 1rem;
+      }
+      .slide-num {
+        display: inline-block;
+        background: var(--accent);
+        color: var(--bg);
+        padding: 0.15rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+      }
+      h1 {
+        font-size: 1.8rem;
+        margin: 0.75rem 0 0.5rem;
+        color: var(--accent);
+      }
+      h2 {
+        font-size: 1.05rem;
+        color: var(--accent2);
+        margin: 1.5rem 0 0.5rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.25rem;
+      }
+      .subtitle { color: var(--fg-dim); font-size: 0.95rem; margin: 0 0 1rem; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+        margin: 0.5rem 0;
+      }
+      th, td {
+        text-align: left;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th { color: var(--accent2); font-weight: 600; }
+      code, pre {
+        font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+        font-size: 0.82rem;
+      }
+      code { background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 3px; }
+      pre {
+        background: var(--bg);
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        margin: 0.5rem 0;
+        line-height: 1.35;
+      }
+      .pass { color: var(--pass); font-weight: 600; }
+      .fail { color: var(--fail); font-weight: 600; }
+      .warn { color: var(--warn); }
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+      .metric {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+      }
+      .metric-label { color: var(--fg-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .metric-value { font-size: 1.4rem; font-weight: 700; margin-top: 0.25rem; color: var(--accent); }
+      ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+      li { margin: 0.25rem 0; }
+      .nav {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border);
+        margin: -2rem -2rem 2rem -2rem;
+        padding-left: 2rem;
+        font-size: 0.85rem;
+        z-index: 10;
+      }
+      .nav a {
+        color: var(--fg-dim);
+        text-decoration: none;
+        margin-right: 1rem;
+      }
+      .nav a:hover { color: var(--accent); }
+      .note {
+        background: #1f2937;
+        border-left: 3px solid var(--warn);
+        padding: 0.5rem 1rem;
+        margin: 0.5rem 0;
+        font-size: 0.9rem;
+        color: var(--fg-dim);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <a href="#s1">1. Summary</a>
+      <a href="#s2">2. Schema surface</a>
+      <a href="#s3">3. Key changes</a>
+      <a href="#s4">4. Test &amp; eval</a>
+      <a href="#s5">5. Hygiene + AC matrix</a>
+    </div>
+
+    <!-- SLIDE 1 -->
+    <section id="s1" class="slide">
+      <span class="slide-num">SLIDE 1 / 5</span>
+      <h1>Sprint-014 Summary — Spec-005 Phase 2 Schema Extension</h1>
+      <p class="subtitle">
+        Provisions the corpus-storage primitives that Phase-3 (indexer, sprint-015) and Phase-4
+        (searcher, sprint-016) will consume. Pure additive DDL + new method surface; no user
+        flows introduced.
+      </p>
+
+      <h2>Goal</h2>
+      <p>
+        Extend the existing <code>ConversationStore</code> schema (Sprint-009) with project
+        scoping, oversize-chunk linkage, sliding-window + session vector indexes, summaries
+        table + public views, plus mutator/reader methods. All changes are migration-safe
+        and backward-compatible with Sprint-009-era databases.
+      </p>
+
+      <div class="note" style="border-left-color: var(--warn); margin-bottom: 1.25rem;">
+        <strong>Post-simplification note (PR #114).</strong> This deck was captured at the time of the eval merge (PR #111) and reflects the original sprint-014 shape that included a versioned migration engine (`SCHEMA_VERSION`, `PRAGMA user_version` gate, `addColumnIfMissing` helper, back-fill UPDATEs). PR #114 simplified that out — the shipped sprint-014 has a flat `initConversationTables` (no version gate, no transaction wrapper) and `npm run db:reset` for tear-down workflows. References below to "Migration engine" / "PRAGMA user_version" / "post-migration shape" describe the pre-#114 state, not the shipped one. See PR #114 body for the simplification rationale.
+      </div>
+
+      <h2>Stories shipped (4 feature + 1 evaluation + 1 simplification)</h2>
+      <table>
+        <thead><tr><th>Story</th><th>Title</th><th>PR</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>project_id + parent_message_id columns + 4 spec §12 indexes + PRAGMA foreign_keys</td><td>#105</td><td class="pass">merged</td></tr>
+          <tr><td>2</td><td>vec_windows + window_messages + vec_sessions virtual tables</td><td>#107</td><td class="pass">merged</td></tr>
+          <tr><td>3</td><td>messages_public + conversations_public views (privacy invariant)</td><td>#109</td><td class="pass">merged</td></tr>
+          <tr><td>4</td><td>summaries table + addMessage/addSummary/getRecentSummaries API + 2 typed errors</td><td>#110</td><td class="pass">merged</td></tr>
+          <tr><td>Eval</td><td>Schema-surface evidence + regression receipts (this deck)</td><td>#111</td><td class="pass">merged</td></tr>
+          <tr><td>Simp</td><td>Drop migration machinery — flat init + db:reset</td><td>#114</td><td class="pass">merged</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Overall result</h2>
+      <div class="grid-3">
+        <div class="metric"><div class="metric-label">Stories passed</div><div class="metric-value">4 / 4</div></div>
+        <div class="metric"><div class="metric-label">Unit tests</div><div class="metric-value">453 / 453</div></div>
+        <div class="metric"><div class="metric-label">E2E tests</div><div class="metric-value">all pass</div></div>
+      </div>
+
+      <h2>Known spec §12 deviations (documented)</h2>
+      <ul>
+        <li><code>messages.id</code> stays <code>INTEGER AUTOINCREMENT</code> (spec says TEXT UUID). Sprint-009 FTS5 <code>content_rowid=rowid</code> linkage requires INTEGER rowids. Follow-up GH issue <a href="https://github.com/getlou-gh/pristine/issues/106">#106</a>.</li>
+        <li><code>conversations.started_at</code> view-aliased from <code>created_at</code> with <code>CAST(strftime('%s', created_at) * 1000 AS INTEGER)</code>. Physical column stays TEXT; the <code>conversations_public</code> view does the ms cast.</li>
+        <li><code>messages.turn_index</code> view-aliased from <code>sort_order</code> in <code>messages_public</code>. Physical column unchanged.</li>
+        <li><code>messages.timestamp</code> — same CAST pattern as started_at in <code>messages_public.timestamp</code>. Physical column stays TEXT + nullable (NULL passes through the view per documented contract).</li>
+      </ul>
+
+      <h2>Follow-up issues filed</h2>
+      <ul>
+        <li><a href="https://github.com/getlou-gh/pristine/issues/106">#106</a> — <code>messages.id</code> INTEGER → TEXT UUID migration</li>
+        <li><a href="https://github.com/getlou-gh/pristine/issues/108">#108</a> — extract <code>migrations.ts</code> — <strong>closed by PR #114 as moot</strong>; no migration logic remains in `store.ts` after the simplification. `store.ts` is now 733 lines.</li>
+        <li><a href="https://github.com/getlou-gh/pristine/issues/113">#113</a> — `deleteById` cascade to `window_messages` (FK violation risk once sprint-015 writes); must land before sprint-015 ships.</li>
+      </ul>
+    </section>
+
+    <!-- SLIDE 2 -->
+    <section id="s2" class="slide">
+      <span class="slide-num">SLIDE 2 / 5</span>
+      <h1>Schema surface demonstrated</h1>
+      <p class="subtitle">
+        The AC substitutes "user-flow videos" with direct schema evidence — sprint-014 is
+        pure schema infrastructure. Receipts show typecheck, build, and both test suites
+        pass; PRAGMA snapshots pin the post-migration shape.
+      </p>
+
+      <h2>Regression receipts (exit codes)</h2>
+      <table>
+        <thead><tr><th>Command</th><th>Result</th><th>Artifact</th></tr></thead>
+        <tbody>
+          <tr><td><code>npm run test:unit</code></td><td class="pass">453 / 453 passed (exit 0) <span style="color: var(--fg-dim); font-weight: normal;">— baseline 413, +40 over sprint</span></td><td><a href="sprint-014/test-unit-output.txt">test-unit-output.txt</a></td></tr>
+          <tr><td><code>npm run test:e2e</code></td><td class="pass">E2E suite passed (exit 0)</td><td><a href="sprint-014/test-e2e-output.txt">test-e2e-output.txt</a></td></tr>
+          <tr><td><code>npm run typecheck</code></td><td class="pass">exit 0</td><td><a href="sprint-014/typecheck-output.txt">typecheck-output.txt</a></td></tr>
+          <tr><td><code>npm run build</code></td><td class="pass">exit 0</td><td><a href="sprint-014/build-output.txt">build-output.txt</a></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Post-migration shape</h2>
+      <p class="subtitle"><code>PRAGMA user_version = 4</code> matches <code>SCHEMA_VERSION = 4</code> — migration gate fired exactly once across all 4 stories.</p>
+
+      <h2>New / modified relations (<a href="sprint-014/all-relations.txt">all-relations.txt</a>)</h2>
+      <table>
+        <thead><tr><th>Type</th><th>Name</th><th>Origin</th><th>Artifact</th></tr></thead>
+        <tbody>
+          <tr><td>table</td><td>conversations</td><td>Sprint-009 + Story 1 (+project_id)</td><td><a href="sprint-014/schema-conversations.txt">schema</a></td></tr>
+          <tr><td>table</td><td>messages</td><td>Sprint-009 + Story 1 (+project_id, +parent_message_id)</td><td><a href="sprint-014/schema-messages.txt">schema</a></td></tr>
+          <tr><td>table</td><td>summaries</td><td>Story 4 (new)</td><td><a href="sprint-014/schema-summaries.txt">schema</a></td></tr>
+          <tr><td>table</td><td>window_messages</td><td>Story 2 (new)</td><td><a href="sprint-014/schema-window_messages.txt">schema</a></td></tr>
+          <tr><td>virtual</td><td>vec_windows (vec0)</td><td>Story 2 (new)</td><td><a href="sprint-014/schema-vec_windows.txt">schema</a></td></tr>
+          <tr><td>virtual</td><td>vec_sessions (vec0)</td><td>Story 2 (new)</td><td><a href="sprint-014/schema-vec_sessions.txt">schema</a></td></tr>
+          <tr><td>view</td><td>messages_public</td><td>Story 3 (new)</td><td><a href="sprint-014/schema-messages_public.txt">schema</a></td></tr>
+          <tr><td>view</td><td>conversations_public</td><td>Story 3 (new)</td><td><a href="sprint-014/schema-conversations_public.txt">schema</a></td></tr>
+          <tr><td>view</td><td>summaries_public</td><td>Story 4 (new)</td><td><a href="sprint-014/schema-summaries_public.txt">schema</a></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SLIDE 3 -->
+    <section id="s3" class="slide">
+      <span class="slide-num">SLIDE 3 / 5</span>
+      <h1>Key changes — before / after</h1>
+      <p class="subtitle">Additive migration. No columns renamed or dropped. Sprint-009 tables + FTS5 triggers preserved verbatim.</p>
+
+      <h2>Columns added</h2>
+      <table>
+        <thead><tr><th>Table</th><th>Column</th><th>Type</th><th>Default / Back-fill</th></tr></thead>
+        <tbody>
+          <tr><td>conversations</td><td>project_id</td><td>TEXT NOT NULL</td><td><code>DEFAULT 'default'</code>, back-fill: <code>COALESCE(NULLIF(user_id,''), 'default')</code></td></tr>
+          <tr><td>messages</td><td>project_id</td><td>TEXT NOT NULL</td><td><code>DEFAULT 'default'</code>, back-fill: <code>COALESCE((parent.project_id), 'default')</code> (orphan-safe)</td></tr>
+          <tr><td>messages</td><td>parent_message_id</td><td>INTEGER NULL</td><td>NULL (chunks not yet written)</td></tr>
+        </tbody>
+      </table>
+
+      <h2>New tables (<a href="sprint-014/all-relations.txt">all-relations.txt</a>)</h2>
+      <ul>
+        <li><code>summaries(id TEXT PK, session_id TEXT NOT NULL, project_id TEXT NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT)</code> — scratch-pad for Phase-5 reference summaries. No FK to conversations (session lifetime is harness-scoped).</li>
+        <li><code>window_messages(conversation_id, window_index, message_id, position, PRIMARY KEY composite)</code> + FK to <code>messages(id)</code> — join table for sliding-window membership.</li>
+        <li><code>vec_windows</code> (vec0 virtual) — <code>(conversation_id, window_index, embedding float[768])</code>, sliding-window primary semantic index.</li>
+        <li><code>vec_sessions</code> (vec0 virtual) — <code>(conversation_id TEXT PK, embedding float[768], +updated_at INTEGER)</code>, whole-conversation secondary index.</li>
+      </ul>
+
+      <h2>Indexes added (<a href="sprint-014/indexes.txt">indexes.txt</a>)</h2>
+      <pre>ix_conversations_project_started  ON conversations(project_id, created_at DESC)     (§12)
+ix_messages_conv_sort             ON messages(conversation_id, sort_order)          (§12)
+ix_messages_timestamp_nonchunk    ON messages(timestamp DESC) WHERE parent_message_id IS NULL  (§12 partial)
+ix_messages_parent                ON messages(parent_message_id)                    (§12)
+ix_summaries_project_time         ON summaries(project_id, timestamp DESC)          (§12)
+ix_window_messages_message_id     ON window_messages(message_id)                    (Phase-4 reverse joins, spec-gap fill)</pre>
+
+      <h2>Views added (<a href="sprint-014/schema-messages_public.txt">messages_public</a> / <a href="sprint-014/schema-conversations_public.txt">conversations_public</a> / <a href="sprint-014/schema-summaries_public.txt">summaries_public</a>)</h2>
+      <ul>
+        <li><code>messages_public(id, conversation_id, turn_index, role, content, timestamp, project_id)</code> — excludes <code>parent_message_id</code>; <code>timestamp</code> cast to unix-ms; declared-order pinned.</li>
+        <li><code>conversations_public(id, project_id, started_at)</code> — excludes <code>user_id</code>, <code>content_hash</code>, <code>message_count</code>; <code>created_at</code> → <code>started_at</code> unix-ms.</li>
+        <li><code>summaries_public(id, session_id, project_id, text, timestamp)</code> — excludes <code>metadata</code>.</li>
+      </ul>
+
+      <h2>New typed errors</h2>
+      <ul>
+        <li><code>ConversationNotFoundError</code> — thrown by <code>addMessage</code> when the parent conversation row doesn't exist.</li>
+        <li><code>InvalidArgumentError</code> — thrown by <code>addSummary</code> on empty text and by <code>getRecentSummaries</code> on <code>limit &lt;= 0</code>.</li>
+      </ul>
+
+      <h2>New API surface on ConversationStore</h2>
+      <ul>
+        <li><code>addMessage(conversationId, { role, content, timestamp?, parentMessageId? })</code> — void return per spec §5.1.1. Atomic <code>MAX(sort_order)+1</code> + INSERT + <code>message_count++</code> in a single <code>db.transaction</code>. project_id read from parent conversation.</li>
+        <li><code>addSummary({ sessionId, projectId, text, timestamp, metadata? })</code> — returns UUID. Empty-text rejection.</li>
+        <li><code>getRecentSummaries(projectId, limit = 10)</code> — DESC order via <code>ix_summaries_project_time</code>. <code>limit &gt; 0</code> guard.</li>
+      </ul>
+
+      <h2>Migration engine (new)</h2>
+      <p>
+        <code>PRAGMA user_version</code>-gated, atomic <code>db.transaction</code> wrapping all versioned steps.
+        Fresh v0 DBs run all 4 story blocks in one transaction; partway-migrated DBs pick up only the steps they're missing. Idempotent on re-run.
+      </p>
+      <p><code>PRAGMA foreign_keys = ON</code> is now applied on every <code>ConversationStore</code> construction — Sprint-009 declared the FK but didn't enable the pragma; this sprint closes that gap so <code>window_messages</code>'s FK to <code>messages(id)</code> is enforced.</p>
+
+      <h2>Known spec §12 deviations (callout per sprint AC)</h2>
+      <div class="note">
+        <ul style="margin: 0;">
+          <li><code>messages.id</code> stays <code>INTEGER AUTOINCREMENT</code> (spec says TEXT UUID) — Sprint-009 FTS5 <code>content_rowid=rowid</code> requires INTEGER. Tracked as <a href="https://github.com/getlou-gh/pristine/issues/106">#106</a>.</li>
+          <li><code>conversations.started_at</code> is view-aliased from physical <code>created_at</code> via CAST to unix ms in <code>conversations_public</code> (spec §12 types it INTEGER).</li>
+          <li><code>messages.turn_index</code> view-aliased from physical <code>sort_order</code> in <code>messages_public</code>.</li>
+          <li><code>messages.timestamp</code> view-aliased with same CAST pattern; NULL passes through (physical column nullable TEXT) — pinned by regression test.</li>
+          <li><code>messages.metadata</code> — sprint doc AC over-specified; physical schema never gained the column. addMessage signature does not accept metadata. If needed, a follow-up story can add the column + extend the signature.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SLIDE 4 -->
+    <section id="s4" class="slide">
+      <span class="slide-num">SLIDE 4 / 5</span>
+      <h1>Test &amp; eval results</h1>
+
+      <h2>Test-count delta across the sprint</h2>
+      <table>
+        <thead><tr><th>Sprint phase</th><th>Unit tests</th><th>Delta</th></tr></thead>
+        <tbody>
+          <tr><td>Pre-sprint (post-sprint-013)</td><td>413</td><td>baseline</td></tr>
+          <tr><td>After Story 1 (schema columns + indexes + FK)</td><td>422</td><td>+9</td></tr>
+          <tr><td>After Story 2 (vec_windows + vec_sessions + window_messages)</td><td>430</td><td>+8</td></tr>
+          <tr><td>After Story 3 (messages_public + conversations_public views)</td><td>439</td><td>+9</td></tr>
+          <tr><td>After Story 4 (summaries + addMessage/addSummary/getRecentSummaries)</td><td class="pass">453</td><td>+14</td></tr>
+          <tr><td><strong>Total delta</strong></td><td class="pass"><strong>413 → 453</strong></td><td class="pass"><strong>+40 tests</strong></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Privacy-invariant evidence (pinned column lists)</h2>
+      <p class="subtitle">Each public view's declared column list is pinned by PRAGMA table_info tests. Adding / reordering / removing a column fails the test loudly.</p>
+      <pre>messages_public        → (id, conversation_id, turn_index, role, content, timestamp, project_id)
+conversations_public   → (id, project_id, started_at)
+summaries_public       → (id, session_id, project_id, text, timestamp)</pre>
+      <p>Negative assertions pin the excluded internal columns: <code>messages_public</code> never exposes <code>parent_message_id</code>; <code>conversations_public</code> never exposes <code>user_id</code>, <code>content_hash</code>, <code>message_count</code>; <code>summaries_public</code> never exposes <code>metadata</code>.</p>
+
+      <h2>EXPLAIN QUERY PLAN — getRecentSummaries (<a href="sprint-014/explain-query-plan.txt">raw</a>)</h2>
+      <pre>EXPLAIN QUERY PLAN
+SELECT id, session_id, project_id, text, timestamp, metadata
+FROM summaries
+WHERE project_id = ?
+ORDER BY timestamp DESC
+LIMIT ?
+
+→ SEARCH summaries USING INDEX ix_summaries_project_time (project_id=?)</pre>
+      <p>Indexed seek + scan — no full-table-scan + sort. Test runs this query plan against a 50-row seed to keep the optimizer reliably in index-use territory.</p>
+
+      <h2>Migration evidence</h2>
+      <ul>
+        <li><code>PRAGMA user_version</code> = 4 post-migration (matches <code>SCHEMA_VERSION</code>)</li>
+        <li>Orphaned-message COALESCE fallback test pins the back-fill's NULL handling</li>
+        <li>Legacy-DB smoke test (Story 1) verified migration on a hand-seeded Sprint-009 shape</li>
+        <li>Idempotency test re-runs <code>new ConversationStore(db)</code> twice with no schema drift</li>
+      </ul>
+    </section>
+
+    <!-- SLIDE 5 -->
+    <section id="s5" class="slide">
+      <span class="slide-num">SLIDE 5 / 5</span>
+      <h1>Repo hygiene + AC matrix</h1>
+
+      <h2>Hygiene</h2>
+      <table>
+        <tbody>
+          <tr><td>Local checks</td><td class="pass">lint + typecheck + unit + e2e all exit 0</td></tr>
+          <tr><td>Pre-merge gate</td><td class="pass">passed on all 4 feature PRs + this eval PR (once opened)</td></tr>
+          <tr><td><code>sprint-014</code> branch</td><td class="pass">story branches merged + deleted (PRs #105, #107, #109, #110)</td></tr>
+          <tr><td><code>main</code> clean</td><td class="pass">untouched; sprint-integration PR follows this deck</td></tr>
+          <tr><td>Temp files</td><td class="pass">none committed (legacy-smoke.mjs + vec-smoke.mjs removed after use)</td></tr>
+          <tr><td>Binary / secret bleed</td><td class="pass">no .env / .pem / .key / credentials files; no binaries &gt; 10MB</td></tr>
+        </tbody>
+      </table>
+
+      <h2>AC matrix — every story AC with pass/fail</h2>
+      <table>
+        <thead><tr><th>Story</th><th>AC</th><th>Evidence</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>conversations.project_id + back-fill from user_id</td><td>store.ts DDL + migration tests</td><td class="pass">pass</td></tr>
+          <tr><td>1</td><td>messages.project_id + back-fill + COALESCE for orphans</td><td>P0 fix commit 08e97a8 + orphan-fallback test</td><td class="pass">pass</td></tr>
+          <tr><td>1</td><td>messages.parent_message_id (INTEGER, NULL)</td><td>migration + addConversation default-NULL test</td><td class="pass">pass</td></tr>
+          <tr><td>1</td><td>4 spec §12 indexes (project_started, conv_sort, timestamp_nonchunk, parent)</td><td>indexes.txt + sqlite_master test</td><td class="pass">pass</td></tr>
+          <tr><td>1</td><td>PRAGMA foreign_keys = ON in init</td><td>PRAGMA test in migration suite</td><td class="pass">pass</td></tr>
+          <tr><td>1</td><td>Migration idempotent + user_version gated</td><td>idempotency test + user_version 0 → 4 test</td><td class="pass">pass</td></tr>
+          <tr><td>2</td><td>vec_windows (vec0, 768-d)</td><td>round-trip test + existence test</td><td class="pass">pass</td></tr>
+          <tr><td>2</td><td>window_messages join table + FK</td><td>FK rejection + acceptance paired tests</td><td class="pass">pass</td></tr>
+          <tr><td>2</td><td>vec_sessions (vec0, PK, +updated_at aux)</td><td>round-trip + PK-rejection + DELETE+INSERT idiom tests</td><td class="pass">pass</td></tr>
+          <tr><td>2</td><td>End-to-end round-trip (bit-identical 768-d)</td><td>Float32Array source round-trip tests</td><td class="pass">pass</td></tr>
+          <tr><td>2</td><td>dim=768 guard enforced at schema</td><td>512-dim rejection test</td><td class="pass">pass</td></tr>
+          <tr><td>2</td><td>ix_window_messages_message_id for Phase-4 reverse joins</td><td>indexes.txt + existence test</td><td class="pass">pass</td></tr>
+          <tr><td>3</td><td>messages_public (7 columns, declared order, excludes parent_message_id)</td><td>column-list test + negative-exclusion test</td><td class="pass">pass</td></tr>
+          <tr><td>3</td><td>conversations_public (3 columns, excludes user_id/content_hash/message_count)</td><td>column-list test + negative-exclusion test</td><td class="pass">pass</td></tr>
+          <tr><td>3</td><td>Integer timestamp/started_at (cast from TEXT)</td><td>typeof tests + round-trip ms-exact test</td><td class="pass">pass</td></tr>
+          <tr><td>3</td><td>NULL-timestamp passthrough documented + tested</td><td>P1 fix commit d9afd39 + NULL test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>summaries table + ix_summaries_project_time</td><td>existence test + EXPLAIN QUERY PLAN test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>summaries_public view (excludes metadata)</td><td>column-list test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>addMessage — atomic sort_order + project from parent + void return</td><td>sort_order + project_id + void tests</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>addMessage — ConversationNotFoundError + atomic rollback</td><td>missing-parent throw + no-row-inserted test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>addMessage — message_count bump</td><td>P1 fix commit 3d4432a + counter test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>addMessage — gapless ordinal across 10 appends</td><td>sequential-append test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>addSummary — empty/whitespace rejection</td><td>InvalidArgumentError tests (empty + whitespace)</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>getRecentSummaries — DESC + limit + project scoping + index use + limit&gt;0 guard</td><td>ordering test + EQP test + limit-guard test</td><td class="pass">pass</td></tr>
+          <tr><td>4</td><td>Typed errors (ConversationNotFoundError, InvalidArgumentError) extending AppError</td><td>errors.ts + instanceof tests in throw-path tests</td><td class="pass">pass</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        <strong>Deferred P2s tracked as follow-ups (not merge-blocking):</strong>
+        <ul style="margin-bottom: 0;">
+          <li><a href="https://github.com/getlou-gh/pristine/issues/106">#106</a> — messages.id INTEGER → TEXT UUID migration</li>
+          <li><a href="https://github.com/getlou-gh/pristine/issues/108">#108</a> — extract src/conversations/migrations.ts (<strong>closed by PR #114 as moot</strong>)</li>
+          <li><a href="https://github.com/getlou-gh/pristine/issues/113">#113</a> — deleteById cascade to window_messages (open; blocks sprint-015 start)</li>
+        </ul>
+      </div>
+    </section>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+-- PRAGMA table_info(conversations) --
+{"cid":0,"name":"id","type":"TEXT","notnull":0,"dflt_value":null,"pk":1}
+{"cid":1,"name":"user_id","type":"TEXT","notnull":1,"dflt_value":null,"pk":0}
+{"cid":2,"name":"content_hash","type":"TEXT","notnull":1,"dflt_value":null,"pk":0}
+{"cid":3,"name":"created_at","type":"TEXT","notnull":0,"dflt_value":"datetime('now')","pk":0}
+{"cid":4,"name":"message_count","type":"INTEGER","notnull":1,"dflt_value":"0","pk":0}
+{"cid":5,"name":"project_id","type":"TEXT","notnull":1,"dflt_value":"'default'","pk":0}

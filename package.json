@@ -24,7 +24,8 @@
     "test:integration": "vitest run --passWithNoTests --config vitest.integration.config.ts",
     "test:e2e": "vitest run --passWithNoTests --config vitest.e2e.config.ts",
     "test:watch": "vitest",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "db:reset": "rm -f ~/.pristine/data/pristine.db*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

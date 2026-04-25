@@ -84,25 +84,29 @@
 - **As a** consumer of the SDK (today via `storeAsync`), **I want** `indexer.ingest(turns, { projectId, conversationId, sessionId })` to atomically write messages + enqueue embed tasks and return in <0.5s, **so that** my call site is unblocked while the per-message embedding work runs in the background.
 - **Dependencies:** Story 1 (deleteById cascade must be live before Phase-3 starts writing).
 - **Acceptance criteria:**
-  - [ ] New module `src/memory/indexer/index.ts` exports `createIndexer(deps): Indexer` per spec §13
-  - [ ] `IndexerConfig` exported with `windowSize` (default 3) and `windowOverlap` (default 1); validate `0 < overlap < windowSize` at construction; throw `InvalidArgumentError` on violation
-  - [ ] `indexer.ingest(turns, opts)` writes all turns as `messages` rows in a single `db.transaction` via `ConversationStore.addMessage` (sprint-014 atomic primitive)
-  - [ ] If `conversationId` is provided and the conversation does not exist, throw `ConversationNotFoundError` (re-thrown from `addMessage`). Callers must pre-create the conversation via `ConversationStore.addConversation`. Documented in JSDoc.
-  - [ ] After insert, enqueue one `IngestQueue` task per inserted message ID — task type `embed-message`, payload includes `messageId` + `conversationId` + `projectId` + `sessionId`
-  - [ ] `ingest()` returns `<0.5s` for the typical case (<= 100 turns); benchmark in Vitest using `performance.now()` deltas; CI threshold tolerant 2× to avoid flake
-  - [ ] No embedding happens synchronously inside `ingest()` — that's the worker's job (Story 6)
-  - [ ] Caller errors propagate cleanly: `InvalidArgumentError` for zero turns or invalid config
-- **Testing approach:** Unit tests in `tests/memory/indexer/ingest.test.ts`. Mock the embedder (no real model in unit). Verify: turn count → row count, project_id propagation, task enqueue count + payload shape, return-time bound, `ConversationNotFoundError` on missing conversation, `InvalidArgumentError` on zero turns / invalid config. The atomic-insert contract is exercised by the existing addMessage tests.
+  - [x] New module `src/memory/indexer/index.ts` exports `createIndexer(deps): Indexer` per spec §13
+  - [x] `IndexerConfig` exported with `windowSize` (default 3) and `windowOverlap` (default 1); validate `0 <= overlap < windowSize` at construction (overlap=0 is the boundary case for stride=windowSize); throw `InvalidArgumentError` on violation
+  - [x] `indexer.ingest(turns, opts)` writes all turns as `messages` rows in a single `db.transaction` via `ConversationStore.addMessage` (sprint-014 atomic primitive); inner addMessage transactions become savepoints under the outer transaction, preserving atomicity
+  - [x] If `opts.conversationId` does not exist, throw `ConversationNotFoundError` (resolved early via SELECT user_id from conversations; addMessage would throw the same inside its savepoint, but surfacing it before the first INSERT keeps the rollback cheap). Documented in JSDoc.
+  - [x] After insert, enqueue one task per inserted message ID via the new `IngestQueue.enqueueMessageEmbed({ messageId, conversationId, userId, projectId, sessionId? })` method — task type `embed-message`, payload includes message_id + conversation_id + user_id + project_id + session_id
+  - [x] `ingest()` returns `<0.5s` for the typical case (<= 100 turns); benchmark in Vitest using `performance.now()` deltas; CI threshold tolerant 2× to avoid flake
+  - [x] No embedding happens synchronously inside `ingest()` — that's the worker's job (Story 6); test asserts every newly-enqueued task is still in 'pending' status when ingest() returns
+  - [x] Caller errors propagate cleanly: `InvalidArgumentError` for zero turns, empty `projectId` / `conversationId`, empty `sessionId`-when-provided, or invalid config
+- **Testing approach:** 18 unit tests in `tests/memory/indexer/ingest.test.ts`. No embedder mock needed — Story 2 doesn't embed; Story 6's worker does. Verify: turn count → row count + task count, sessionId pass-through, sort_order contiguity, return-time bound, `ConversationNotFoundError` + atomicity (no partial writes on doomed batch), `InvalidArgumentError` on zero turns / invalid config / empty opts strings, async contract (tasks remain 'pending' after return). Hermeticity via `beforeEach` DELETE pass on conversations / messages / pending_ingest_tasks.
 - **QA:** N/A — backend.
-- **Planned commits:**
-  1. `feat(indexer): add IndexerConfig type + validation (windowSize/windowOverlap)`
-  2. `feat(indexer): create indexer module + ingest() atomic insert via addMessage`
-  3. `feat(indexer): enqueue embed-message tasks via IngestQueue after insert`
+- **Planned commits:** (5 total)
+  1. `feat(queue): add task_type + message-level columns to pending_ingest_tasks; expose enqueueMessageEmbed`
+  2. `feat(store): addMessage returns inserted messages.id for indexer enqueue`
+  3. `feat(indexer): create indexer module — IndexerConfig + ingest() atomic insert via addMessage + enqueueMessageEmbed`
   4. `test(indexer): ingest happy path + config validation + error propagation + <0.5s return-time bound`
+  5. `docs(sprint-015): record Story 2 scope expansion — queue schema bump + addMessage return-id`
 - **Technical notes:**
+  - **Scope expansion surfaced during implementation:** Story 2's AC said "enqueue one IngestQueue task per inserted message ID — task type `embed-message`, payload includes messageId + conversationId + projectId + sessionId" without checking that `pending_ingest_tasks` had the columns to support it. The original spec-003 schema was conversation-level (one row per conversation, no `task_type` / `message_id` / `project_id` / `session_id` / payload columns). Honoring the AC required a real schema change to the queue table — additions: `task_type TEXT NOT NULL DEFAULT 'extract-conversation' CHECK (task_type IN ('extract-conversation', 'embed-message'))`, plus nullable `message_id INTEGER` / `project_id TEXT` / `session_id TEXT` columns + a composite index `idx_pending_ingest_tasks_type_status` so Story 6's worker can claim by `(task_type='embed-message', status='pending')` without scanning. The schema-frozen rule from the Sprint-Level Technical Context applies to the corpus tables (`conversations`, `messages`, `vec_*`, `window_messages`), not the queue table.
+  - **`addMessage` return-value change:** sprint-014 pinned `addMessage` to `void` per spec §5.1.1. Sprint-015 Story 2 needs the inserted messages.id atomically (the indexer enqueues a per-message task with the id in the payload, in the same transaction). Reading `db.lastInsertRowid` from outside is fragile across the FTS5 AFTER-INSERT trigger (sprint-009 contract). Cleanest: surface the id from inside addMessage's own transaction via the prepared-statement run() result. The pinned test was updated to assert a positive integer instead of undefined; spec deviation is rationalized alongside #106 (INTEGER vs UUID for messages.id).
+  - **`userId` is read from the conversation row, not in `opts`:** the AC's `IngestOptions` is `{ projectId, conversationId, sessionId? }` — no userId. The conversation already has a `user_id` column; the indexer reads it once at the top of ingest() and passes it into each `enqueueMessageEmbed` call. Single source of truth, prevents drift.
   - The indexer is a primitive facade — small surface, no orchestration logic, no LLM. Keep `src/memory/indexer/` lean: one entry file (`index.ts`) + sliding-window helper (Story 3) + session-vector helper (Story 5).
   - Dedup is handled at the conversation level by the existing `UNIQUE(user_id, content_hash)` index on `conversations`. Per-message dedup is deferred until a concrete replay scenario emerges — Phase-3 treats every turn as a real message and lets the corpus reflect what actually happened.
-  - `sessionId` is passed through into the `embed-message` task payload (for future summary-injection wiring) but not stored on the messages row — there is no `message.session_id` column. Document the pass-through contract in JSDoc.
+  - `sessionId` is passed through into the `embed-message` task payload (for future summary-injection wiring) but not stored on the messages row — there is no `message.session_id` column. Documented in JSDoc.
 - **Priority:** Must-have
 
 #### Story 3: Sliding-window assembly logic + vec_windows / window_messages writes

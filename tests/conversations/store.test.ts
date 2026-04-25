@@ -487,6 +487,17 @@ describe('ConversationStore', () => {
     });
   });
 
+  describe('getConversationUserId', () => {
+    it('returns the user_id for an existing conversation', () => {
+      const id = store.addConversation(makeMessages(['hi']), 'user-resolve');
+      expect(store.getConversationUserId(id)).toBe('user-resolve');
+    });
+
+    it('returns null when the conversation does not exist', () => {
+      expect(store.getConversationUserId('does-not-exist')).toBeNull();
+    });
+  });
+
   describe('deleteById', () => {
     it('removes the conversation row and its messages', () => {
       const messages = makeMessages(['Hi', 'Hello', 'Bye']);
@@ -984,9 +995,11 @@ describe('sprint-014 Story 4 — addMessage', () => {
     expect(beforeCount.c).toBe(2);
 
     const result = store.addMessage(convId, { role: 'user', content: 'appended-after' });
-    // Spec §5.1.1 primitive: addMessage returns void — callers that need the
-    // inserted id query by (conversationId, sort_order).
-    expect(result).toBeUndefined();
+    // Sprint-015 Story 2: addMessage returns the inserted messages.id so the
+    // indexer can enqueue a per-message task atomically. The id is a positive
+    // integer pulled from the same transaction's lastInsertRowid.
+    expect(typeof result).toBe('number');
+    expect(result).toBeGreaterThan(0);
 
     const rows = db
       .prepare(

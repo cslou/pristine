@@ -272,15 +272,16 @@
 - **Review:**
   - Findings: *(tbd)*
   - Resolution: *(tbd)*
-- **As a** sprint reviewer, **I want** end-to-end tests that exercise `storeAsync` → `IngestQueue.processNext` → `indexer.ingest` → embed-worker → `vec_windows` / `window_messages` / `vec_sessions` populated, **so that** the Phase-3 contract is verified at the surface that Sprint-016 will read from.
+- **As a** sprint reviewer, **I want** end-to-end tests that exercise `indexer.ingest` → `IngestQueue.processNext` → embed-worker → `vec_windows` / `window_messages` / `vec_sessions` populated, **so that** the Phase-3 contract is verified at the surface that Sprint-016 will read from.
 - **Dependencies:** Stories 1–6.
 - **Acceptance criteria:**
-  - [ ] New integration suite in `tests/integration/indexer.test.ts` (uses `vitest.integration.config.ts`)
-  - [ ] Round-trip: small synthetic corpus (3 conversations × 5 turns each) → `storeAsync` for each → drain `IngestQueue` → assert `vec_windows` row count matches expected per windowSize/overlap math; assert `window_messages` row count matches; assert FTS5 row count = total message count
-  - [ ] Oversize round-trip: one synthetic 10K-token message → drains successfully → produces N chunks linked via `parent_message_id` → each chunk participates in window assembly
-  - [ ] Crash-recovery round-trip (inline simulation): enqueue → drain partway, skipping `markComplete` for one mid-drain task → re-run `processNext` → verify the stale-claim reset path completes it and final shape matches the success path
-  - [ ] No LLM calls anywhere in the path — no Anthropic / OpenAI imports; embedder is the only async call
-  - [ ] Use `describe.skipIf` for tests that need a real Nomic model (consistent with the existing `tests/integration/embedder.test.ts` pattern). CI runs the model-stubbed variants; locally-with-models variants skip-if-not-available
+  - [x] New integration suite in `tests/integration/indexer.test.ts` (uses `vitest.integration.config.ts`)
+  - [x] Round-trip: 3 conversations × 5 turns each → `indexer.ingest` for each → drain `IngestQueue` via `runEmbedWorker` → assert exact counts: 15 tasks processed, 9 vec_windows rows (3 per conv × 3 windows tail-slid), 27 window_messages rows (windowSize × windows × convs), 18 messages_fts rows (every message via the sprint-009 AFTER INSERT trigger).
+  - [x] Oversize round-trip: 13K-char prose turn → 1 parent (no embed task) + N chunks linked via `parent_message_id` → only chunks get embed tasks → each chunk participates in window assembly. `ix_messages_parent` reverse-lookup verified.
+  - [x] Crash-recovery round-trip (inline simulation): claim a task, manually backdate `started_at` -1h, drain → stale-claim reset path re-claims and completes; orphan ends in `completed`; no failed tasks; no double-write to vec_windows (DELETE+INSERT idempotency).
+  - [x] No LLM calls anywhere in the path — `Object.keys(require.cache)` defensive check asserts no `@anthropic-ai/sdk` / `openai` / `pg` / `@supabase` modules loaded.
+  - [x] `describe.skipIf(skipSlow)` gate for the real-Nomic round-trip variant; consistent with the existing `tests/integration/embedder.test.ts` pattern. CI runs the stubbed variants (4 tests); locally-with-models variant adds 1 more.
+  - [x] **AC deviation recorded:** original AC said `storeAsync` end-to-end. Per the Sprint-Level Technical Context `src/client.ts` stays untouched in sprint-015 — `storeAsync` still calls the legacy conversation-level `enqueue`. Wiring `storeAsync` to `indexer.ingest` is sprint-016's concern. The integration tests therefore use `indexer.ingest` directly — same path Story 6's worker drains against. Documented in the test file's header.
 - **Testing approach:** The artifacts ARE the tests — integration suite exercises the full path. Mock the embedder for CI-friendly variants; gate the real-model variants behind the existing `skipSlow` / `embedderModel` env-var pattern.
 - **QA:** N/A — backend.
 - **Planned commits:**

@@ -312,6 +312,10 @@ export const resolve = <TInput>(
 // --- Sanitizer ---
 
 const TYPE_DESCRIPTIONS: Record<string, string> = {
+  api_key: 'API key',
+  auth_token: 'Authentication token',
+  private_key: 'Private key',
+  secret: 'Secret',
   identity_number: 'Identity number',
   bank_account: 'Bank account number',
   credit_card: 'Credit card number',

@@ -165,15 +165,58 @@ describe('privacy pipeline end-to-end', () => {
     expect(revealed).toEqual({ text, revealedValues: [] });
   });
 
-  it('scrubOutput removes revealed values, placeholders, and structured leftovers', () => {
+  it('scrubOutput removes revealed values, placeholders, and structured secret leftovers', () => {
     const text =
-      'Contact alice@example.com or [SENSITIVE:phone_number:def-456] and password=supersecret.';
+      'Contact alice@example.com or [SENSITIVE:phone_number:def-456] and sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456.';
 
     const scrubbed = scrubOutput(text, ['alice@example.com']);
 
     expect(scrubbed).not.toContain('alice@example.com');
     expect(scrubbed).not.toContain('[SENSITIVE:');
-    expect(scrubbed).not.toContain('password=supersecret');
+    expect(scrubbed).not.toContain('sk-ant-api03');
+  });
+
+  it('round-trips custom regex matches through the vault', async () => {
+    clearResolvedStringRegistry();
+
+    const text = 'Use acme_tk_ABC12345 for the sandbox.';
+    const mockClient = createMockLlmClient([]);
+
+    const result = expectSuccess(
+      await secureAndRedact(text, {
+        client: mockClient,
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-custom-regex',
+        classifier: {
+          deterministic: {
+            customPatternsPath: '/tmp/pristine-missing-redaction.json',
+            customPatterns: [
+              {
+                id: 'acme',
+                type: 'api_key',
+                pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
+                confidence: 0.95,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(result.redactedText).not.toContain('acme_tk_ABC12345');
+    expect(result.redactedText).toMatch(/\[SENSITIVE:api_key:[0-9a-f-]+\]/);
+
+    const revealed = await reveal(result.redactedText, {
+      vaultStore,
+      keyManager,
+      kekManager,
+      userId: 'user-custom-regex',
+    });
+
+    expect(revealed.text).toContain('acme_tk_ABC12345');
+    expect(revealed.revealedValues).toEqual(['acme_tk_ABC12345']);
   });
 
   it('scrubOutput returns text unchanged when there is nothing sensitive to remove', () => {

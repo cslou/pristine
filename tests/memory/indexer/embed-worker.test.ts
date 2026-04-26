@@ -204,8 +204,19 @@ describe('processEmbedTask', () => {
       processEmbedTask({ db, embedder, windowWriter, config }, task),
     ).rejects.toBeInstanceOf(IngestQueueError);
     expect(calls).toHaveLength(0);
-    // convA's corpus is intact — no windows accidentally written there.
-    expect(convA).not.toBe(convB);
+    // Real corpus-integrity check: no window rows written to either side.
+    const vecCountA = (
+      db.prepare('SELECT COUNT(*) AS c FROM vec_windows WHERE conversation_id = ?').get(convA) as {
+        c: number;
+      }
+    ).c;
+    const vecCountB = (
+      db.prepare('SELECT COUNT(*) AS c FROM vec_windows WHERE conversation_id = ?').get(convB) as {
+        c: number;
+      }
+    ).c;
+    expect(vecCountA).toBe(0);
+    expect(vecCountB).toBe(0);
   });
 
   it('throws InvalidArgumentError when taskType is not embed-message', async () => {

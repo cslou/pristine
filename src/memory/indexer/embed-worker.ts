@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Embedder } from '../../core/interfaces.js';
-import { IngestQueueError } from '../../core/errors.js';
+import { IngestQueueError, InvalidArgumentError } from '../../core/errors.js';
 import type { IngestQueue, IngestTask } from '../../queue/ingest-queue.js';
 import type { ResolvedIndexerConfig } from './index.js';
 import {
@@ -43,25 +43,35 @@ export interface EmbedWorkerDeps {
  * markFailed/resetToPending per the queue's retryable-error logic.
  */
 export const processEmbedTask = async (deps: EmbedWorkerDeps, task: IngestTask): Promise<void> => {
+  // Programming-contract violations — the dispatch layer (IngestQueue.
+  // processNext) shouldn't hand us these. InvalidArgumentError keeps these
+  // distinct from queue-infrastructure faults (IngestQueueError) so the
+  // queue's retryable-error classifier never accidentally picks them up.
   if (task.taskType !== 'embed-message') {
-    throw new IngestQueueError(
+    throw new InvalidArgumentError(
       `processEmbedTask: expected task_type 'embed-message', got '${task.taskType}'`,
     );
   }
   if (task.messageId === null) {
-    throw new IngestQueueError(
+    throw new InvalidArgumentError(
       `processEmbedTask: embed-message task ${task.id} has no message_id (corruption?)`,
     );
   }
 
+  // Filter by conversation_id too — a task whose messageId references a
+  // message from another conversation (e.g., stale task across a
+  // conversation delete) would otherwise compute windows against the
+  // wrong corpus. Defense in depth.
   const messageRow = deps.db
-    .prepare('SELECT id, role, content, sort_order FROM messages WHERE id = ?')
-    .get(task.messageId) as
+    .prepare(
+      'SELECT id, role, content, sort_order FROM messages WHERE id = ? AND conversation_id = ?',
+    )
+    .get(task.messageId, task.conversationId) as
     | { id: number; role: string; content: string; sort_order: number }
     | undefined;
   if (!messageRow) {
     throw new IngestQueueError(
-      `processEmbedTask: message ${task.messageId} not found (referenced by task ${task.id})`,
+      `processEmbedTask: message ${task.messageId} not found in conversation ${task.conversationId} (referenced by task ${task.id})`,
     );
   }
 

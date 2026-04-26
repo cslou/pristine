@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ConversationStore } from '../../../src/conversations/store.js';
 import { createDatabase } from '../../../src/core/database.js';
+import { IngestQueueError, InvalidArgumentError } from '../../../src/core/errors.js';
 import type { Embedder } from '../../../src/core/interfaces.js';
 import {
   createEmbedTaskHandler,
@@ -134,18 +135,15 @@ describe('processEmbedTask', () => {
     ]);
   });
 
-  it('does nothing if the message is in no windows (out-of-range sort_order, defensive)', async () => {
+  it('throws IngestQueueError when the referenced message has been deleted (stale task)', async () => {
     const { conversationId, messageIds } = seedConversationWithMessages(
       ['m0', 'm1', 'm2'],
-      'user-defensive',
+      'user-stale',
     );
     const { embedder, calls } = makeStubEmbedder();
     const windowWriter = createWindowWriter(db);
     const config = { windowSize: 3, windowOverlap: 1 };
 
-    // Construct a task with a stale messageId (deleted). processEmbedTask
-    // should throw IngestQueueError ("message not found") rather than
-    // silently no-op — that's the contract.
     const staleId = messageIds[2];
     db.prepare('DELETE FROM window_messages WHERE message_id = ?').run(staleId);
     db.prepare('DELETE FROM messages WHERE id = ?').run(staleId);
@@ -153,7 +151,7 @@ describe('processEmbedTask', () => {
     const task: IngestTask = {
       id: 'task-stale',
       conversationId,
-      userId: 'user-defensive',
+      userId: 'user-stale',
       taskType: 'embed-message',
       messageId: staleId,
       projectId: 'p',
@@ -165,13 +163,52 @@ describe('processEmbedTask', () => {
       completedAt: null,
     };
 
-    await expect(processEmbedTask({ db, embedder, windowWriter, config }, task)).rejects.toThrow(
-      /not found/,
-    );
+    await expect(
+      processEmbedTask({ db, embedder, windowWriter, config }, task),
+    ).rejects.toBeInstanceOf(IngestQueueError);
     expect(calls).toHaveLength(0);
   });
 
-  it('rejects a task whose taskType is not embed-message', async () => {
+  it('throws IngestQueueError when the message exists but in a DIFFERENT conversation (corruption guard)', async () => {
+    // Defense in depth: if a task's messageId references a message from
+    // another conversation (stale task across a delete + reuse), the
+    // conversation_id filter on the SELECT prevents windows being computed
+    // against the wrong corpus.
+    const { conversationId: convA, messageIds: idsA } = seedConversationWithMessages(
+      ['a0', 'a1'],
+      'user-a',
+    );
+    const { conversationId: convB } = seedConversationWithMessages(['b0'], 'user-b');
+
+    const { embedder, calls } = makeStubEmbedder();
+    const windowWriter = createWindowWriter(db);
+    const config = { windowSize: 3, windowOverlap: 1 };
+
+    // Task says conversationId = convB but messageId points at convA.
+    const task: IngestTask = {
+      id: 'task-mismatch',
+      conversationId: convB,
+      userId: 'user-b',
+      taskType: 'embed-message',
+      messageId: idsA[0],
+      projectId: 'p',
+      sessionId: null,
+      status: 'processing',
+      error: null,
+      createdAt: 'now',
+      startedAt: 'now',
+      completedAt: null,
+    };
+
+    await expect(
+      processEmbedTask({ db, embedder, windowWriter, config }, task),
+    ).rejects.toBeInstanceOf(IngestQueueError);
+    expect(calls).toHaveLength(0);
+    // convA's corpus is intact — no windows accidentally written there.
+    expect(convA).not.toBe(convB);
+  });
+
+  it('throws InvalidArgumentError when taskType is not embed-message', async () => {
     const { embedder } = makeStubEmbedder();
     const windowWriter = createWindowWriter(db);
     const config = { windowSize: 3, windowOverlap: 1 };
@@ -191,12 +228,12 @@ describe('processEmbedTask', () => {
       completedAt: null,
     };
 
-    await expect(processEmbedTask({ db, embedder, windowWriter, config }, task)).rejects.toThrow(
-      /expected task_type/,
-    );
+    await expect(
+      processEmbedTask({ db, embedder, windowWriter, config }, task),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
   });
 
-  it('rejects an embed-message task with null messageId (corruption)', async () => {
+  it('throws InvalidArgumentError on embed-message task with null messageId (corruption)', async () => {
     const { embedder } = makeStubEmbedder();
     const windowWriter = createWindowWriter(db);
     const config = { windowSize: 3, windowOverlap: 1 };
@@ -216,9 +253,9 @@ describe('processEmbedTask', () => {
       completedAt: null,
     };
 
-    await expect(processEmbedTask({ db, embedder, windowWriter, config }, task)).rejects.toThrow(
-      /no message_id/,
-    );
+    await expect(
+      processEmbedTask({ db, embedder, windowWriter, config }, task),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
   });
 });
 

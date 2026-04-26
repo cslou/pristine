@@ -159,17 +159,17 @@
 - **As a** the indexer ingesting a message that exceeds the embedding-context budget, **I want** to split it into chunks linked via `parent_message_id` so each chunk fits the embedder, **so that** Phase-4 retrieval can resolve a window hit back to the parent message via `ix_messages_parent` without losing the original turn boundary.
 - **Dependencies:** Stories 2 + 3.
 - **Acceptance criteria:**
-  - [ ] `src/memory/orchestrator/chunker.ts` (preserved through Sprint-013) gains a NEW exported helper `splitOversizeMessage(message, embedder): SplitResult[]` alongside the existing `chunkConversation` — the existing function is NOT renamed or replaced
-  - [ ] Threshold: messages with token count > 3000 trigger chunking (Graphiti default)
-  - [ ] Split policy:
-    - For code-tagged content (role `'tool'` with code-fenced markdown OR explicit `mimeType` hint if added later) → split at AST boundaries (function/class/top-level statement); fall back to line-aware split if AST parse fails
-    - For prose content → split at paragraph boundaries with 200-token overlap between chunks
-    - Never split mid-message — Graphiti invariant; the chunk boundary is between sub-segments
-  - [ ] Chunk rows go through `addMessage` (Story 2 reuses this) so they inherit project_id from parent + atomic sort_order semantics
-  - [ ] Chunks are individually eligible for window assembly — Story 3's `computeWindowsForMessage` treats them as ordinary messages
-  - [ ] Round-trip test: synthetic 10K-token message → 4 chunks (200 token overlap means each effective ~2800 tokens) all linked via `parent_message_id` to the original
-  - [ ] AST-fallback test: pass garbage code that fails AST parse → falls back to line-aware split without throwing
-  - [ ] Tokenizer used for the count is the same as the embedder's tokenizer (Nomic v1.5) — call `embedder.countTokens(text)` per spec consistency
+  - [x] `src/memory/orchestrator/chunker.ts` (preserved through Sprint-013) gains a NEW exported helper `splitOversizeMessage(message, options): SplitResult[]` alongside the existing `chunkConversation` — the existing function is NOT renamed or replaced. Signature deviation from sprint sketch: takes `(message, options)` instead of `(message, embedder)` because the Embedder interface ships only `embed`/`embedBatch` (no `countTokens` accessor); options carry an optional pluggable `tokenCounter`
+  - [x] Threshold: messages with token count > 3000 trigger chunking (Graphiti default; `OVERSIZE_TOKEN_THRESHOLD` exported)
+  - [x] Split policy:
+    - For code-tagged content (role `'tool'` with code-fenced markdown OR explicit `mimeType` hint = `text/x-typescript`/`text/x-javascript`/`application/typescript`/`application/javascript`) → split at AST boundaries (function/class/top-level statement) via `@babel/parser` (TS plugin + JSX); strips fence delimiters before parsing; falls back to line-aware split on ANY parser error (garbage code doesn't crash)
+    - For prose content → split at paragraph boundaries (`\n\n`) with 200-token overlap (`OVERSIZE_OVERLAP_TOKENS`); falls back to single-newline boundaries when no double-newlines exist
+    - Never split mid-segment — Graphiti invariant; a single oversize segment becomes its own chunk regardless of size
+  - [x] Chunk rows go through `addMessage` via `indexer.ingest()` so they inherit project_id from parent + atomic sort_order semantics + `parent_message_id` linkage. Parent row stores the original full content (NO embed-task — too big to embed); each chunk row gets an embed-message task
+  - [x] Chunks are individually eligible for window assembly — Story 3's `computeWindowsForMessage` treats them as ordinary messages (each chunk has its own sort_order in the conversation)
+  - [x] Round-trip test (oversize prose) — multi-paragraph oversize content produces multiple chunks all linked to the parent via `parent_message_id`; only chunks get embed tasks
+  - [x] AST-fallback test: garbage code that fails parse → falls back to line-aware split without throwing
+  - [x] Token counter — `defaultTokenCounter` heuristic (~4 chars/token) ships built-in; pluggable via `tokenCounter: TokenCounter` in options when a real tokenizer becomes available. Trade-off documented in JSDoc — exact counts matter less than catching obvious oversize cases (threshold is well below Nomic v1.5's 8192 hard limit)
 - **Testing approach:** Unit tests in `tests/memory/orchestrator/chunker.test.ts`. Mock the tokenizer for deterministic counts; mock the embedder for the round-trip integration. Use synthetic prose (Lorem-Ipsum-style) and synthetic TS/JS code (matched to the chosen AST parser — see Technical Notes).
 - **QA:** N/A — backend.
 - **Planned commits:**

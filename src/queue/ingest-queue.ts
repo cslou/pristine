@@ -87,10 +87,28 @@ export interface IngestTask {
   readonly completedAt: string | null;
 }
 
+/**
+ * Pluggable handler for `embed-message` tasks. Called by `processNext()`
+ * after a task is claimed. The handler does the embed work (load message
+ * + compute windows + assemble + upsert vec_windows / window_messages);
+ * `processNext` owns the lifecycle (markCompleted on success,
+ * resetToPending on retryable error, markFailed on terminal error).
+ *
+ * Sprint-015 Story 6 — `src/memory/indexer/embed-worker.ts` provides the
+ * production handler; tests can inject stubs.
+ */
+export type EmbedTaskHandler = (task: IngestTask) => Promise<void>;
+
 export interface IngestQueueConfig {
   readonly db: Database.Database;
   readonly orchestrator: Orchestrator | null;
   readonly conversationStore: ConversationStore;
+  /**
+   * Optional handler for `embed-message` tasks. When supplied,
+   * `processNext()` dispatches embed-message claims to this handler
+   * instead of the orchestrator path.
+   */
+  readonly embedTaskHandler?: EmbedTaskHandler;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +161,7 @@ export class IngestQueue {
   private readonly db: Database.Database;
   private readonly orchestrator: Orchestrator | null;
   private readonly conversationStore: ConversationStore;
+  private readonly embedTaskHandler: EmbedTaskHandler | null;
   // Cached at construction so a 100-turn indexer batch reuses one
   // prepared statement instead of compiling the SQL 100 times.
   private readonly insertEmbedTaskStmt: Database.Statement;
@@ -151,6 +170,7 @@ export class IngestQueue {
     this.db = config.db;
     this.orchestrator = config.orchestrator;
     this.conversationStore = config.conversationStore;
+    this.embedTaskHandler = config.embedTaskHandler ?? null;
     initIngestQueueTables(config.db);
     this.insertEmbedTaskStmt = this.db.prepare(
       `INSERT INTO pending_ingest_tasks
@@ -269,45 +289,74 @@ export class IngestQueue {
   }
 
   /**
-   * Claim and process the next pending task.
-   * On retryable errors (Ollama down), resets to pending for retry.
-   * On terminal errors, marks as failed.
-   * Returns the claimed task, or null if queue is empty.
+   * Claim and process the next pending task. Dispatches on `task_type`:
+   *
+   *   - **embed-message** (sprint-015 Story 6): delegates to the
+   *     `embedTaskHandler` configured at construction. The handler does
+   *     the indexer work (load message + compute windows + assemble +
+   *     upsert vec_windows / window_messages); this method owns the
+   *     lifecycle. If no handler is configured, the task is marked
+   *     failed with a clear error so it doesn't sit pending forever.
+   *
+   *   - **extract-conversation** (legacy spec-003): delegates to the
+   *     `orchestrator.ingest(...)` pipeline. spec-005 Phase 1 removed the
+   *     orchestrator from runtime; with `orchestrator: null` this path
+   *     throws `IngestQueueError`. The path stays for the (currently
+   *     dead-letter) backward-compat tests that pin the contract — and
+   *     for any future re-introduction of orchestrator-style processing.
+   *
+   * On retryable errors (Ollama down), resets to pending for retry. On
+   * terminal errors, marks as failed. Returns the claimed task, or null
+   * if the queue is empty.
    */
   public async processNext(): Promise<IngestTask | null> {
-    const orchestrator = this.orchestrator;
-    if (!orchestrator) {
-      throw new IngestQueueError(
-        'processNext() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
-          'Conversations can still be enqueued via enqueue(); processing will be reintroduced once the Phase-2 indexer primitive lands.',
-      );
-    }
-
     const task = this.claimNext();
     if (!task) return null;
 
     try {
-      const stored = this.conversationStore.getConversation(task.conversationId);
-      if (!stored) {
-        const errorMsg = `Conversation ${task.conversationId} not found`;
-        this.markFailed(task.id, errorMsg);
-        return task;
+      if (task.taskType === 'embed-message') {
+        if (!this.embedTaskHandler) {
+          throw new IngestQueueError(
+            'IngestQueue.processNext: embed-message task claimed but no embedTaskHandler is configured. ' +
+              'Pass `embedTaskHandler` in IngestQueueConfig — typically via scripts/embed-worker.ts.',
+          );
+        }
+        await this.embedTaskHandler(task);
+        this.markCompleted(task.id);
+      } else {
+        // Legacy spec-003 extract path. Orchestrator is null in spec-005
+        // Phase-1; this branch throws IngestQueueError until/unless an
+        // orchestrator-style processor is reintroduced.
+        const orchestrator = this.orchestrator;
+        if (!orchestrator) {
+          throw new IngestQueueError(
+            'processNext() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
+              'Conversations can still be enqueued via enqueue(); processing will be reintroduced once the Phase-2 indexer primitive lands.',
+          );
+        }
+
+        const stored = this.conversationStore.getConversation(task.conversationId);
+        if (!stored) {
+          const errorMsg = `Conversation ${task.conversationId} not found`;
+          this.markFailed(task.id, errorMsg);
+          return task;
+        }
+
+        const messages: Message[] = stored.messages.map((m) => ({
+          role:
+            m.role === 'system' || m.role === 'user' || m.role === 'assistant'
+              ? (m.role as Message['role'])
+              : 'user',
+          content: m.content,
+          ...(m.timestamp ? { timestamp: m.timestamp } : {}),
+        }));
+
+        await orchestrator.ingest(messages, task.userId, {
+          sourceConversationId: task.conversationId,
+        });
+
+        this.markCompleted(task.id);
       }
-
-      const messages: Message[] = stored.messages.map((m) => ({
-        role:
-          m.role === 'system' || m.role === 'user' || m.role === 'assistant'
-            ? (m.role as Message['role'])
-            : 'user',
-        content: m.content,
-        ...(m.timestamp ? { timestamp: m.timestamp } : {}),
-      }));
-
-      await orchestrator.ingest(messages, task.userId, {
-        sourceConversationId: task.conversationId,
-      });
-
-      this.markCompleted(task.id);
     } catch (error: unknown) {
       if (isRetryableError(error)) {
         this.resetToPending(task.id);

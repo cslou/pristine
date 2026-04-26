@@ -18,37 +18,49 @@ describe('safety scan', () => {
   });
 
   it('detects obvious structured survivors', () => {
-    const text = 'Reach me at alice@example.com or use password=supersecret.';
+    const text =
+      'Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.';
     const violations = findSafetyViolations(text);
 
-    expect(violations.map((violation) => violation.type)).toEqual(['email_address', 'secret']);
+    expect(violations.map((violation) => violation.type)).toEqual(['api_key', 'private_key']);
   });
 
-  it('detects phone numbers and ssns but does not confuse ISO dates for phones', () => {
-    const text = 'Phone 555-867-5309, SSN 123-45-6789, date 2024-01-15.';
+  it('detects private key blocks and does not confuse naked EVM hashes for private keys', () => {
+    const text = [
+      '-----BEGIN PRIVATE KEY-----',
+      'abc123',
+      '-----END PRIVATE KEY-----',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    ].join('\n');
     const violations = findSafetyViolations(text);
 
-    expect(violations.map((violation) => violation.type)).toEqual([
-      'phone_number',
-      'identity_number',
-    ]);
-    expect(violations.some((violation) => violation.text === '2024-01-15')).toBe(false);
+    expect(violations.map((violation) => violation.type)).toEqual(['private_key']);
+    expect(
+      violations.some((violation) =>
+        violation.text.includes(
+          '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        ),
+      ),
+    ).toBe(false);
   });
 
-  it('uses luhn validation for card-like values', () => {
-    const valid = findSafetyViolations('Card 4111 1111 1111 1111');
-    const invalid = findSafetyViolations('Card 4111 1111 1111 1112');
+  it('validates JWT-like values', () => {
+    const valid = findSafetyViolations(
+      'Token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature',
+    );
+    const invalid = findSafetyViolations('Token eyJabc.eyJdef.signature');
 
-    expect(valid.map((violation) => violation.type)).toEqual(['credit_card']);
+    expect(valid.map((violation) => violation.type)).toEqual(['auth_token']);
     expect(invalid).toHaveLength(0);
   });
 
   it('scrubs structured sensitive patterns from text', () => {
-    const text = 'Card 4111 1111 1111 1111 and api_key=supersecret';
+    const text =
+      'Key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     const scrubbed = scrubStructuredSensitivePatterns(text);
 
-    expect(scrubbed).not.toContain('4111 1111 1111 1111');
-    expect(scrubbed).not.toContain('api_key=supersecret');
+    expect(scrubbed).not.toContain('sk-ant-api03');
+    expect(scrubbed).not.toContain('DEPLOYER_PRIVATE_KEY=');
   });
 
   it('strips placeholders before stand-alone structured scrubbing', () => {

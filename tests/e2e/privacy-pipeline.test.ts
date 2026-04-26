@@ -122,10 +122,10 @@ describe.skipIf(!ollamaAvailable)(
       expect(revealed.text).toContain('bob@test.com');
     }, 120000);
 
-    it('deterministic classifier detects credit card alongside LLM', async () => {
+    it('deterministic classifier detects API keys alongside LLM', async () => {
       clearResolvedStringRegistry();
 
-      const text = 'Card number 4111111111111111 for John.';
+      const text = 'API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 for John.';
       const result = expectSuccess(
         await secureAndRedact(text, {
           client,
@@ -136,7 +136,7 @@ describe.skipIf(!ollamaAvailable)(
         }),
       );
 
-      expect(result.redactedText).not.toContain('4111111111111111');
+      expect(result.redactedText).not.toContain('sk-ant-api03');
       expect(result.redactedText).toMatch(/\[SENSITIVE:/);
     }, 120000);
   },

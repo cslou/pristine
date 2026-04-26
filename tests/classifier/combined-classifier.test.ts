@@ -149,11 +149,11 @@ describe('combined classifier LLM failure modes', () => {
     };
 
     const classifier = createCombinedClassifier(client, { onLlmFailure: 'degrade' });
-    const report = await classifier.classify('Reach me at alice@example.com');
+    const report = await classifier.classify('Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456');
 
     expect(report.hasSensitiveContent).toBe(true);
     expect(report.entities).toHaveLength(1);
-    expect(report.entities[0]!.type).toBe('email_address');
+    expect(report.entities[0]!.type).toBe('api_key');
     expect(report.warnings).toHaveLength(1);
     expect(report.warnings?.[0]).toMatch(/llm offline/);
   });
@@ -165,9 +165,9 @@ describe('combined classifier LLM failure modes', () => {
 
     const classifier = createCombinedClassifier(client);
 
-    await expect(classifier.classify('Reach me at alice@example.com')).rejects.toThrow(
-      /Classification blocked/,
-    );
+    await expect(
+      classifier.classify('Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456'),
+    ).rejects.toThrow(/Classification blocked/);
   });
 
   it('keeps fail-closed ungroundable findings as full-span entities even when degrade mode is enabled', async () => {

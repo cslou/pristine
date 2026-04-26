@@ -93,7 +93,7 @@ const uniqueStrings = (values: readonly string[]): readonly string[] => {
 };
 
 /**
- * Classify text for PII, redact detected entities with placeholders,
+ * Classify text for sensitive content, redact detected entities with placeholders,
  * encrypt original values, and store them in the vault.
  */
 export async function secureAndRedact(

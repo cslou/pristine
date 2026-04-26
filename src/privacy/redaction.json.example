@@ -1,0 +1,29 @@
+{
+  "patterns": [
+    {
+      "id": "acme-token",
+      "name": "Acme API Token",
+      "type": "api_key",
+      "pattern": "\\bacme_tk_[A-Za-z0-9]{32}\\b",
+      "flags": "i",
+      "confidence": 0.95,
+      "enabled": true
+    },
+    {
+      "id": "internal-session-token",
+      "name": "Internal Session Token",
+      "type": "auth_token",
+      "pattern": "\\bsess_[A-Za-z0-9_-]{40,}\\b",
+      "confidence": 0.9,
+      "enabled": true
+    },
+    {
+      "id": "company-secret",
+      "name": "Company Secret",
+      "type": "secret",
+      "pattern": "\\bcompany_secret_[A-Fa-f0-9]{48}\\b",
+      "confidence": 0.95,
+      "enabled": true
+    }
+  ]
+}

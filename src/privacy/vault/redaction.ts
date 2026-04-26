@@ -68,6 +68,14 @@ const buildPlaceholderLabel = (type: string, originalText: string): string => {
       const localPrefix = (local[0] ?? 'x').toLowerCase();
       return `${localPrefix}***@${domain}`;
     }
+    case 'api_key':
+      return 'key-saved';
+    case 'auth_token':
+      return 'token-saved';
+    case 'private_key':
+      return 'private-key-saved';
+    case 'secret':
+      return 'secret-saved';
     case 'physical_address':
       return 'address-saved';
     default:

@@ -1,12 +1,14 @@
 import type Database from 'better-sqlite3';
 import type { ConversationStore } from '../../conversations/store.js';
 import { ConversationNotFoundError, InvalidArgumentError } from '../../core/errors.js';
+import type { Embedder } from '../../core/interfaces.js';
 import type { IngestQueue } from '../../queue/ingest-queue.js';
 import {
   splitOversizeMessage,
   type SplitOversizeOptions,
   type TokenCounter,
 } from '../orchestrator/chunker.js';
+import { buildSessionVector } from './session-vector.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -83,6 +85,21 @@ export interface Indexer {
    * rollback cheap.
    */
   ingest(turns: readonly IndexTurn[], opts: IndexOptions): IndexResult;
+  /**
+   * Embed an entire conversation as a single 768-d vector and write it to
+   * `vec_sessions`. The session vector is Phase-4's coarse-grained
+   * retrieval signal alongside the fine-grained `vec_windows`. Sprint-015
+   * Story 5 (spec-005 §5.1.2 / §16 Phase 3 P3-S4).
+   *
+   * Sprint-015 calls this only on explicit consumer demand — NOT
+   * auto-invoked by `ingest()`. Auto-build-on-ingest hooks can land in
+   * sprint-016 once retrieval pressure is real and the cost/benefit is
+   * concrete.
+   *
+   * Throws `ConversationNotFoundError` if `conversationId` doesn't
+   * resolve. No-op when the conversation has zero messages.
+   */
+  buildSessionVector(conversationId: string): Promise<void>;
   /** The resolved (defaults-applied) config. Read by Stories 3 + 6. */
   readonly config: ResolvedIndexerConfig;
 }
@@ -91,6 +108,14 @@ export interface IndexerDeps {
   readonly db: Database.Database;
   readonly conversationStore: ConversationStore;
   readonly ingestQueue: IngestQueue;
+  /**
+   * Embedder used by `buildSessionVector` (sprint-015 Story 5). Optional
+   * — the indexer's `ingest()` path doesn't embed (the worker does), so
+   * if the consumer never calls `buildSessionVector()` they don't need to
+   * pass an embedder. Calling `buildSessionVector()` without one throws
+   * `InvalidArgumentError`.
+   */
+  readonly embedder?: Embedder;
   readonly config?: IndexerConfig;
   /**
    * Optional override for the oversize-chunker — token counter + threshold
@@ -231,7 +256,18 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
     return runTransaction();
   };
 
-  return { ingest, config };
+  const buildSessionVectorFacade = async (conversationId: string): Promise<void> => {
+    if (deps.embedder === undefined) {
+      throw new InvalidArgumentError(
+        'Indexer.buildSessionVector: deps.embedder is required for session-vector builds',
+      );
+    }
+    // Empty-conversationId guard lives in the helper (buildSessionVector)
+    // so direct callers and facade callers see the same semantics.
+    await buildSessionVector(deps.db, deps.embedder, conversationId);
+  };
+
+  return { ingest, buildSessionVector: buildSessionVectorFacade, config };
 };
 
 // Re-export TokenCounter for consumers that want to inject a real tokenizer.

@@ -202,15 +202,16 @@
 - **As a** the SDK consumer (or the embed-worker as a follow-up step), **I want** `indexer.buildSessionVector(conversationId)` to embed the whole conversation as a single 768-d vector and write it to `vec_sessions`, **so that** Phase-4's coarse-grained retrieval has a session-level signal alongside the fine-grained window vectors.
 - **Dependencies:** Stories 2 + 3.
 - **Acceptance criteria:**
-  - [ ] New helper `src/memory/indexer/session-vector.ts`: `buildSessionVector(db, embedder, conversationId): Promise<void>`
-  - [ ] `indexer.buildSessionVector(conversationId)` is exposed as a method on the `Indexer` returned by `createIndexer()` (per spec §5.1.2) — the internal `session-vector.ts` helper is wired through the facade so consumers call it via the same indexer instance they use for `ingest()`
-  - [ ] Loads all messages for the conversation in `sort_order ASC`, role-prefixes each (`role: content`), joins with newline, embeds once
-  - [ ] Writes via DELETE + INSERT into `vec_sessions` inside `db.transaction` (the vec0 replace idiom — pinned by Sprint-014 tests; vec_sessions PK on `conversation_id` rejects raw INSERT OR REPLACE)
-  - [ ] Sets the `+updated_at` auxiliary column to `Date.now()` (unix ms; bind as `BigInt`)
-  - [ ] Throws `ConversationNotFoundError` when the conversation id doesn't resolve
-  - [ ] No-op when the conversation has zero messages (don't write a session vector for an empty conversation; document the contract)
-  - [ ] Round-trip test: 4-message conversation → builds session vector → reads back via `vec_sessions` SELECT → bit-identical Float32Array; `updated_at` is a unix-ms integer within 60s of `Date.now()`
-  - [ ] Re-build idempotency: calling `buildSessionVector` twice for the same conversation overwrites cleanly (DELETE+INSERT, fresh updated_at)
+  - [x] New helper `src/memory/indexer/session-vector.ts`: `buildSessionVector(db, embedder, conversationId): Promise<void>`
+  - [x] `indexer.buildSessionVector(conversationId)` is exposed as a method on the `Indexer` returned by `createIndexer()` (per spec §5.1.2). `IndexerDeps.embedder` is optional (ingest doesn't need an embedder — the worker does); calling `buildSessionVector` without one throws `InvalidArgumentError`
+  - [x] Loads all messages for the conversation in `sort_order ASC`, role-prefixes each (`role: content` via the existing `formatMessageForEmbed` helper from Story 3), joins with newline, embeds once
+  - [x] Writes via DELETE + INSERT into `vec_sessions` inside `db.transaction` (the vec0 replace idiom pinned by Sprint-014 tests; vec_sessions PK on `conversation_id` rejects raw INSERT OR REPLACE)
+  - [x] Sets the `+updated_at` auxiliary column to `Date.now()` (unix ms; bind as `BigInt(Date.now())` per the vec0 INTEGER metadata contract)
+  - [x] Throws `ConversationNotFoundError` when the conversation id doesn't resolve (pre-check before the embedder call so a doomed batch doesn't burn an embed)
+  - [x] No-op when the conversation has zero messages — no embedder call, no `vec_sessions` row written. Phase-4 retrieval treats a missing row as "no session-level signal yet." Documented contract.
+  - [x] Round-trip test: 4-message conversation → builds session vector → reads back via `vec_sessions` SELECT → bit-identical Float32Array; `updated_at` within 60s of `Date.now()`
+  - [x] Re-build idempotency: calling `buildSessionVector` twice for the same conversation overwrites cleanly (DELETE+INSERT, fresh updated_at, single row)
+  - [x] Atomicity test: embedder failure leaves no partial `vec_sessions` row (the DELETE inside the transaction would otherwise wipe the prior row before the failed INSERT — verified that the rollback restores the prior state when there was one and leaves the table empty when there wasn't)
 - **Testing approach:** Unit tests with the in-memory test DB + stubbed embedder (deterministic vectors). Verify role-prefix concat + DELETE+INSERT semantics. The bit-identical round-trip assertion follows the Sprint-014 Story 2 pattern.
 - **QA:** N/A — backend.
 - **Planned commits:**

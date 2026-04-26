@@ -234,8 +234,10 @@
               &lt;0.5s for ≤100 turns.
             </td>
             <td>
-              <code>tests/memory/indexer/ingest.test.ts</code> (21 tests, perf bound pinned)
-              + <code>tests/integration/indexer.test.ts</code> round-trip
+              <code>tests/memory/indexer/ingest.test.ts</code> (21 tests at sprint close —
+              18 added by Story 2 + 3 oversize-ingest tests added by Story 4 to the same
+              file), perf bound pinned via <code>performance.now()</code>; plus
+              <code>tests/integration/indexer.test.ts</code> round-trip
               (3 conv × 5 turns → 15 tasks, 9 vec_windows, 27 window_messages, 18 FTS5)
             </td>
           </tr>
@@ -288,6 +290,16 @@
           </tr>
         </tbody>
       </table>
+
+      <div class="note">
+        <strong>AC deviation recorded.</strong> The original Eval-story AC listed
+        <code>storeAsync</code> end-to-end as a required Slide 2 demonstrated flow. Per the
+        Sprint-Level Technical Context, <code>src/client.ts</code> stayed untouched in
+        sprint-015 — <code>storeAsync</code>'s rewire is sprint-016's first move. This deck
+        therefore demonstrates <code>indexer.ingest</code> directly (the same path Story 6's
+        worker drains against), with full corpus shape verified by Story 7's integration
+        suite.
+      </div>
 
       <h2>Crash-recovery contract (verified)</h2>
       <pre>1. claimNext sets status='processing', started_at=now
@@ -496,6 +508,40 @@ COMMIT;</pre>
         vec0 does not support INSERT OR REPLACE on (conversation_id, window_index). DELETE+INSERT
         idiom pinned by sprint-014 Story 2 PK-rejection test; reused by sprint-015 Story 3's
         <code>upsertWindow</code> + Story 5's <code>buildSessionVector</code>.
+      </p>
+
+      <h2>EXPLAIN QUERY PLAN (vec_windows write path + window-assembly read)</h2>
+      <p class="subtitle">
+        Captured against a fresh schema via <code>better-sqlite3</code>'s
+        <code>EXPLAIN QUERY PLAN</code> on the four queries the embed-worker hot path issues.
+        vec0 virtual tables expose their plan as
+        <code>VIRTUAL TABLE INDEX 0:1</code> — vec0 reports its key-restricted lookup via a
+        single token; <code>(conversation_id, window_index)</code> is the only restricted
+        path. Regular tables show their B-tree index by name.
+      </p>
+      <pre>-- DELETE FROM vec_windows WHERE conversation_id = ? AND window_index = ?
+SCAN vec_windows VIRTUAL TABLE INDEX 0:1
+   (vec0 internally restricts the scan to the (conv_id, win_idx) key)
+
+-- DELETE FROM window_messages WHERE conversation_id = ? AND window_index = ?
+SEARCH window_messages USING COVERING INDEX sqlite_autoindex_window_messages_1
+   (conversation_id=? AND window_index=?)
+   ↑ PK leading-column prefix scan; covering — no row fetch needed
+
+-- INSERT INTO vec_windows ... — vec0-internal write path; no plan output.
+
+-- SELECT id, role, content FROM messages
+--   WHERE conversation_id = ? AND sort_order &gt;= ? AND sort_order &lt;= ?
+--   ORDER BY sort_order ASC
+SEARCH messages USING INDEX ix_messages_conv_sort
+   (conversation_id=? AND sort_order&gt;? AND sort_order&lt;?)
+   ↑ Spec-005 §12 retrieval index; sort_order range scan + ORDER BY
+     served by the index (no temp B-tree).</pre>
+      <p class="subtitle">
+        All three explained queries hit an index. No full-table scans on the embed-worker hot
+        path. <code>ix_messages_conv_sort</code> (sprint-014 Story 1) is load-bearing — it
+        serves both the range filter AND the <code>ORDER BY sort_order ASC</code> clause from
+        the same B-tree pass.
       </p>
 
       <h2>Review-loop summary</h2>

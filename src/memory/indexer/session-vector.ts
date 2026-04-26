@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
-import { ConversationNotFoundError } from '../../core/errors.js';
+import { ConversationNotFoundError, InvalidArgumentError } from '../../core/errors.js';
 import type { Embedder } from '../../core/interfaces.js';
+import { defaultTokenCounter, type TokenCounter } from '../orchestrator/chunker.js';
 import { formatMessageForEmbed, type WindowMessageRow } from './windows.js';
 
 // ---------------------------------------------------------------------------
@@ -8,26 +9,51 @@ import { formatMessageForEmbed, type WindowMessageRow } from './windows.js';
 // ---------------------------------------------------------------------------
 
 /**
+ * Maximum tokens of joined session text the embedder will accept in one
+ * pass. Nomic v1.5's hard context is 8192; we cap at 3000 (the same
+ * Graphiti-default threshold the chunker uses for oversize messages) so
+ * `buildSessionVector` fails loudly rather than silently producing a
+ * vector for a truncated prefix when the conversation grows past what
+ * one embed pass can represent.
+ */
+export const MAX_SESSION_VECTOR_TOKENS = 3000;
+
+export interface BuildSessionVectorOptions {
+  readonly tokenCounter?: TokenCounter;
+  readonly maxTokens?: number;
+}
+
+/**
  * Embed an entire conversation as a single 768-d vector and store it in
  * `vec_sessions`. Phase-4 hybrid retrieval reads this row as the
  * coarse-grained session signal alongside the fine-grained `vec_windows`.
  *
- * Flow (all inside a single `db.transaction`):
+ * Flow:
  *   1. Verify the conversation exists; throw `ConversationNotFoundError`
- *      if it doesn't.
- *   2. Load all messages for the conversation in `sort_order ASC`.
+ *      if it doesn't (synchronous read).
+ *   2. Load all messages for the conversation in `sort_order ASC`
+ *      (synchronous read).
  *   3. If the conversation has zero messages → return early (no-op; no
  *      vec_sessions write). Documented contract: an empty conversation
  *      has nothing to embed.
  *   4. Role-prefix each message (`role: content` per spec-005 §16) and
- *      join with newlines; embed once via the supplied embedder.
- *   5. DELETE existing `vec_sessions` row for `conversation_id` (vec0 PK
- *      rejects INSERT OR REPLACE — this is the verified replace idiom from
- *      sprint-014 Story 2's PK-rejection test).
- *   6. INSERT the fresh row with `+updated_at = BigInt(Date.now())`.
+ *      join with newlines.
+ *   5. **Pre-embed token guard** — if the joined text exceeds
+ *      `MAX_SESSION_VECTOR_TOKENS` per `tokenCounter` (default
+ *      ~4-chars/token heuristic), throw `InvalidArgumentError`. Avoids
+ *      silently producing a session vector for a truncated prefix when
+ *      the conversation overflows the embedder's context.
+ *   6. Embed once via the supplied embedder (async; runs OUTSIDE the
+ *      write transaction because better-sqlite3's `db.transaction`
+ *      wrapper is synchronous).
+ *   7. Inside `db.transaction(...)`: DELETE the existing `vec_sessions`
+ *      row for `conversation_id` (vec0 PK rejects INSERT OR REPLACE —
+ *      sprint-014 Story 2's PK-rejection test contract), then INSERT the
+ *      fresh row with `+updated_at = BigInt(Date.now())`.
  *
- * `db.transaction(...)` makes the read + delete + insert atomic — a partial
- * failure rolls back rather than leaving a stale or torn row.
+ * The `db.transaction` wraps only steps 7's DELETE + INSERT, so a thrown
+ * embedder (step 6) never opens a transaction at all — the prior
+ * vec_sessions row, if any, is untouched.
  *
  * **BigInt at the vec0 bind boundary:** `vec_sessions.+updated_at INTEGER`
  * is a vec0 auxiliary column; better-sqlite3 binds plain JS numbers as
@@ -41,12 +67,15 @@ export const buildSessionVector = async (
   db: Database.Database,
   embedder: Embedder,
   conversationId: string,
+  options: BuildSessionVectorOptions = {},
 ): Promise<void> => {
-  // Verify the conversation exists outside the write transaction so we can
-  // throw a meaningful error before doing the (potentially slow) embedder
-  // call. Reading + writing in the same transaction would also work, but
-  // the embed-then-write is async and can't sit inside better-sqlite3's
-  // sync transaction wrapper.
+  if (conversationId === '') {
+    throw new InvalidArgumentError('buildSessionVector: conversationId must be non-empty');
+  }
+
+  const tokenCounter = options.tokenCounter ?? defaultTokenCounter;
+  const maxTokens = options.maxTokens ?? MAX_SESSION_VECTOR_TOKENS;
+
   const conversationRow = db
     .prepare('SELECT 1 AS present FROM conversations WHERE id = ?')
     .get(conversationId) as { present: number } | undefined;
@@ -71,6 +100,14 @@ export const buildSessionVector = async (
   }
 
   const text = messageRows.map(formatMessageForEmbed).join('\n');
+  const tokens = tokenCounter(text);
+  if (tokens > maxTokens) {
+    throw new InvalidArgumentError(
+      `buildSessionVector: conversation ${conversationId} exceeds session-vector token budget (${tokens} > ${maxTokens}). ` +
+        `Chunk the conversation first or raise maxTokens explicitly. Nomic v1.5's hard context is 8192.`,
+    );
+  }
+
   const vec = await embedder.embed(text);
   const embedding = Float32Array.from(vec);
   const embeddingBuf = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);

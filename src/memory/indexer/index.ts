@@ -262,11 +262,8 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
         'Indexer.buildSessionVector: deps.embedder is required for session-vector builds',
       );
     }
-    if (conversationId === '') {
-      throw new InvalidArgumentError(
-        'Indexer.buildSessionVector: conversationId must be non-empty',
-      );
-    }
+    // Empty-conversationId guard lives in the helper (buildSessionVector)
+    // so direct callers and facade callers see the same semantics.
     await buildSessionVector(deps.db, deps.embedder, conversationId);
   };
 

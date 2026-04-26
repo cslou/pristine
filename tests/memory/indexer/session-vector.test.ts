@@ -155,6 +155,81 @@ describe('buildSessionVector (helper)', () => {
     expect(count).toBe(0);
   });
 
+  it('preserves the prior vec_sessions row when the embedder throws on rebuild', async () => {
+    // Atomicity / rollback case the prior /review flagged: a prior session
+    // vector exists; the embedder fails on rebuild; the prior row stays
+    // intact. Achieved because the embed runs BEFORE the DELETE+INSERT
+    // transaction opens — the transaction never starts on failure.
+    const conversationId = store.addConversation(makeMessages(['hi']), 'user-prior');
+    const { embedder: goodEmbedder } = makeStubEmbedder(Array.from({ length: 768 }, () => 0.123));
+    await buildSessionVector(db, goodEmbedder, conversationId);
+
+    const priorRow = db
+      .prepare('SELECT updated_at FROM vec_sessions WHERE conversation_id = ?')
+      .get(conversationId) as { updated_at: number | bigint };
+    const priorUpdatedAt = Number(priorRow.updated_at);
+
+    const failingEmbedder: Embedder = {
+      embed: async (): Promise<number[]> => {
+        throw new Error('rebuild failure');
+      },
+      embedBatch: async (): Promise<number[][]> => {
+        throw new Error('not used');
+      },
+    };
+
+    await expect(buildSessionVector(db, failingEmbedder, conversationId)).rejects.toThrow(
+      'rebuild failure',
+    );
+
+    // Prior row still present, unchanged.
+    const after = db
+      .prepare('SELECT updated_at, embedding FROM vec_sessions WHERE conversation_id = ?')
+      .all(conversationId) as { updated_at: number | bigint; embedding: Buffer }[];
+    expect(after).toHaveLength(1);
+    expect(Number(after[0].updated_at)).toBe(priorUpdatedAt);
+    const stored = readEmbedding(after[0].embedding);
+    expect(stored[0]).toBeCloseTo(0.123, 4);
+  });
+
+  it('throws InvalidArgumentError when joined session text exceeds the token budget', async () => {
+    const conversationId = store.addConversation(makeMessages(['hi']), 'user-toobig');
+    const { embedder, calls } = makeStubEmbedder();
+    // Inject a tokenCounter that always returns a count above the
+    // (default 3000) maxTokens — exercises the guard without requiring
+    // 12K chars of fixture content.
+    await expect(
+      buildSessionVector(db, embedder, conversationId, {
+        tokenCounter: () => 999_999,
+      }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+    expect(calls).toHaveLength(0); // Embedder NOT called.
+    const count = (
+      db
+        .prepare('SELECT COUNT(*) AS c FROM vec_sessions WHERE conversation_id = ?')
+        .get(conversationId) as { c: number }
+    ).c;
+    expect(count).toBe(0);
+  });
+
+  it('respects an explicitly-raised maxTokens option', async () => {
+    const conversationId = store.addConversation(makeMessages(['hi']), 'user-bigmax');
+    const { embedder, calls } = makeStubEmbedder();
+    // tokenCounter returns 5000; default maxTokens=3000 would throw, but
+    // raising maxTokens to 10000 lets it through.
+    await buildSessionVector(db, embedder, conversationId, {
+      tokenCounter: () => 5000,
+      maxTokens: 10_000,
+    });
+    expect(calls).toHaveLength(1);
+    const count = (
+      db
+        .prepare('SELECT COUNT(*) AS c FROM vec_sessions WHERE conversation_id = ?')
+        .get(conversationId) as { c: number }
+    ).c;
+    expect(count).toBe(1);
+  });
+
   it('does not write a partial row if the embedder throws (transaction rollback)', async () => {
     const conversationId = store.addConversation(makeMessages(['hi']), 'user-fail');
     const failingEmbedder: Embedder = {

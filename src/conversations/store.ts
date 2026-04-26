@@ -623,24 +623,37 @@ export class ConversationStore {
 
   /**
    * Delete a conversation and all its associated messages, plus any indexer
-   * artefacts (window_messages, vec_windows, vec_sessions). FTS index entries
+   * artefacts (window_messages, vec_windows, vec_sessions) AND any pending
+   * ingest queue rows that reference the conversation. FTS index entries
    * are removed automatically via the AFTER DELETE trigger on messages.
    * No-op if the conversation does not exist. Intended for partial-ingest
    * recovery — not a general delete-a-user-conversation API.
    *
-   * Order matters: window_messages.message_id has FK to messages.id, so the
-   * window_messages rows MUST be removed before the messages rows. vec_windows
-   * and vec_sessions have no FK (vec0 does not enforce them), but we DELETE
-   * those vector rows in the same transaction so orphans never accumulate
-   * after a recovery. window_messages targets its own conversation_id column
-   * (the PK leading column) rather than joining through messages.id, so this
-   * step does not depend on messages rows still existing.
+   * Order matters:
+   *   - `window_messages.message_id` has FK to `messages.id`, so its rows
+   *     MUST be removed before the messages rows.
+   *   - `pending_ingest_tasks.conversation_id` has FK to `conversations.id`
+   *     (sprint-015 schema), so its rows MUST be removed before the
+   *     conversations row. Without this DELETE, the partial-ingest recovery
+   *     scenario this method exists for (calling `deleteById` while embed
+   *     tasks are still pending) FK-fails on the conversations DELETE — the
+   *     transaction rolls back and the conversation stays in a half-indexed
+   *     state.
+   *   - `vec_windows` / `vec_sessions` have no FK (vec0 does not enforce
+   *     them), but we DELETE those vector rows in the same transaction so
+   *     orphans never accumulate after a recovery.
+   *   - `window_messages` targets its own `conversation_id` column (the PK
+   *     leading column) rather than joining through `messages.id`, so this
+   *     step does not depend on messages rows still existing.
    */
   public deleteById(conversationId: string): void {
     const runTransaction = this.db.transaction(() => {
       this.db.prepare('DELETE FROM window_messages WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM vec_windows WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM vec_sessions WHERE conversation_id = ?').run(conversationId);
+      this.db
+        .prepare('DELETE FROM pending_ingest_tasks WHERE conversation_id = ?')
+        .run(conversationId);
       this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
     });

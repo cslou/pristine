@@ -222,6 +222,17 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
           // parent row. Only the chunks get embed-message tasks (the
           // parent's content is too big to embed as one window — that's
           // the whole reason we chunked).
+          //
+          // **Content asymmetry between parent and chunks.** The parent
+          // stores `turn.content` — the ORIGINAL content as the caller
+          // supplied it (including any Markdown code-fence delimiters).
+          // The chunks store `chunk.content` from `splitOversizeMessage`
+          // — for code-fenced content, that's the FENCE-STRIPPED form
+          // (the AST splitter strips ```ts ... ``` before parsing). So
+          // Phase-4 retrieval consumers reading "the original turn"
+          // should follow `parent_message_id` to the parent row; consumers
+          // joining chunks see the stripped form. Documented so future
+          // story work picking the right field is unambiguous.
           parentMessageId = deps.conversationStore.addMessage(opts.conversationId, {
             role: turn.role,
             content: turn.content,

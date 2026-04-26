@@ -325,6 +325,136 @@ describe('Indexer.ingest error propagation', () => {
   });
 });
 
+describe('Indexer.ingest oversize-message chunking (sprint-015 Story 4)', () => {
+  it('splits an oversize prose turn into N chunks linked via parent_message_id', () => {
+    const conversationId = store.addConversation(makeMessages(['seed']), 'user-oversize');
+    // Inject a tiny threshold + char-tokens counter so we don't have to
+    // produce 12K chars of content. Parent is one big paragraph that
+    // exceeds the 50-char threshold; after splitting it should yield
+    // multiple chunks.
+    const oversize = 'paragraph 1\n\nparagraph 2\n\nparagraph 3\n\nparagraph 4';
+    const indexer = createIndexer({
+      db,
+      conversationStore: store,
+      ingestQueue: queue,
+      oversizeOptions: {
+        tokenCounter: (text: string) => text.length,
+        threshold: 20,
+        overlapTokens: 0,
+      },
+    });
+
+    const result = indexer.ingest([{ role: 'user', content: oversize }], {
+      projectId: 'proj-oversize',
+      conversationId,
+    });
+
+    // result.messageIds[0] is the parent; the rest are chunks.
+    expect(result.messageIds.length).toBeGreaterThan(2); // 1 parent + ≥2 chunks
+    const parentId = result.messageIds[0];
+    const chunkIds = result.messageIds.slice(1);
+
+    // Chunks have parent_message_id = parentId; parent has parent_message_id = NULL.
+    const parentRow = db
+      .prepare('SELECT parent_message_id FROM messages WHERE id = ?')
+      .get(parentId) as { parent_message_id: number | null };
+    expect(parentRow.parent_message_id).toBeNull();
+
+    for (const cid of chunkIds) {
+      const row = db.prepare('SELECT parent_message_id FROM messages WHERE id = ?').get(cid) as {
+        parent_message_id: number | null;
+      };
+      expect(row.parent_message_id).toBe(parentId);
+    }
+
+    // embed-message tasks: only chunks get tasks; parent does NOT.
+    expect(result.taskIds.length).toBe(chunkIds.length);
+    const taskMessageIds = (
+      db
+        .prepare(
+          "SELECT message_id FROM pending_ingest_tasks WHERE task_type = 'embed-message' AND conversation_id = ? ORDER BY message_id ASC",
+        )
+        .all(conversationId) as { message_id: number }[]
+    ).map((r) => r.message_id);
+    expect(taskMessageIds.slice().sort((a, b) => a - b)).toEqual(
+      chunkIds.slice().sort((a, b) => a - b),
+    );
+    expect(taskMessageIds).not.toContain(parentId);
+  });
+
+  it('does NOT split a below-threshold turn (no parent row, no chunks)', () => {
+    const conversationId = store.addConversation(makeMessages(['seed']), 'user-small');
+    const indexer = createIndexer({
+      db,
+      conversationStore: store,
+      ingestQueue: queue,
+      oversizeOptions: {
+        tokenCounter: (text: string) => text.length,
+        threshold: 1000,
+      },
+    });
+
+    const result = indexer.ingest([{ role: 'user', content: 'short' }], {
+      projectId: 'p',
+      conversationId,
+    });
+
+    // Single message, no parent linkage.
+    expect(result.messageIds).toHaveLength(1);
+    const row = db
+      .prepare('SELECT parent_message_id FROM messages WHERE id = ?')
+      .get(result.messageIds[0]) as { parent_message_id: number | null };
+    expect(row.parent_message_id).toBeNull();
+
+    // Task is enqueued for the single message.
+    expect(result.taskIds).toHaveLength(1);
+  });
+
+  it('routes mimeType=text/x-typescript through the AST splitter (chunks linked to parent)', () => {
+    const conversationId = store.addConversation(makeMessages(['seed']), 'user-code');
+    const code = `
+function alpha() { return 1; }
+function beta() { return 2; }
+function gamma() { return 3; }
+function delta() { return 4; }
+`.trim();
+    const indexer = createIndexer({
+      db,
+      conversationStore: store,
+      ingestQueue: queue,
+      oversizeOptions: {
+        tokenCounter: (text: string) => text.length,
+        threshold: 50,
+        overlapTokens: 0,
+      },
+    });
+
+    const result = indexer.ingest(
+      [{ role: 'user', content: code, mimeType: 'text/x-typescript' }],
+      { projectId: 'p', conversationId },
+    );
+
+    // 1 parent + multiple chunks (one per AST top-level function, packed).
+    expect(result.messageIds.length).toBeGreaterThan(1);
+    const parentId = result.messageIds[0];
+    const chunkRows = db
+      .prepare(
+        'SELECT id, parent_message_id, content FROM messages WHERE conversation_id = ? AND parent_message_id IS NOT NULL ORDER BY sort_order ASC',
+      )
+      .all(conversationId) as { id: number; parent_message_id: number; content: string }[];
+    expect(chunkRows.length).toBeGreaterThan(0);
+    for (const row of chunkRows) {
+      expect(row.parent_message_id).toBe(parentId);
+    }
+    // Concatenated chunks should contain every function signature.
+    const allText = chunkRows.map((r) => r.content).join('\n');
+    expect(allText).toContain('alpha');
+    expect(allText).toContain('beta');
+    expect(allText).toContain('gamma');
+    expect(allText).toContain('delta');
+  });
+});
+
 describe('Indexer.ingest does NOT do embedding work synchronously', () => {
   it('returns before any embed-message task transitions to processing', () => {
     // Phase-3 contract: embedding is offloaded to the worker. After ingest()

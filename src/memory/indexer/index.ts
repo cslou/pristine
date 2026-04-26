@@ -2,6 +2,11 @@ import type Database from 'better-sqlite3';
 import type { ConversationStore } from '../../conversations/store.js';
 import { ConversationNotFoundError, InvalidArgumentError } from '../../core/errors.js';
 import type { IngestQueue } from '../../queue/ingest-queue.js';
+import {
+  splitOversizeMessage,
+  type SplitOversizeOptions,
+  type TokenCounter,
+} from '../orchestrator/chunker.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -29,6 +34,11 @@ export interface ResolvedIndexerConfig {
  * One conversational turn the caller wants indexed. Mirrors the input shape
  * of `ConversationStore.addMessage`.
  *
+ * `mimeType` is an optional hint that routes oversize chunking through the
+ * AST splitter (e.g., `text/x-typescript`) instead of the prose splitter.
+ * Sprint-015 Story 4. The field is NOT stored on the messages row — it
+ * influences chunking only.
+ *
  * Note on naming: this module deliberately uses `Index*` names rather than
  * `Ingest*` because `IngestOptions` and `IngestResult` are already taken in
  * `src/core/types.ts` for the (now-removed-from-runtime) orchestrator
@@ -39,6 +49,7 @@ export interface IndexTurn {
   readonly role: string;
   readonly content: string;
   readonly timestamp?: string;
+  readonly mimeType?: string;
 }
 
 export interface IndexOptions {
@@ -81,6 +92,12 @@ export interface IndexerDeps {
   readonly conversationStore: ConversationStore;
   readonly ingestQueue: IngestQueue;
   readonly config?: IndexerConfig;
+  /**
+   * Optional override for the oversize-chunker — token counter + threshold
+   * + overlap. Sprint-015 Story 4. Defaults match Graphiti
+   * (3000 tokens, 200-token overlap, ~4-chars/token heuristic).
+   */
+  readonly oversizeOptions?: SplitOversizeOptions;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +140,7 @@ const resolveConfig = (config?: IndexerConfig): ResolvedIndexerConfig => {
 
 export const createIndexer = (deps: IndexerDeps): Indexer => {
   const config = resolveConfig(deps.config);
+  const oversizeOptions = deps.oversizeOptions;
 
   const ingest = (turns: readonly IndexTurn[], opts: IndexOptions): IndexResult => {
     if (turns.length === 0) {
@@ -158,21 +176,53 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
       const taskIds: string[] = [];
 
       for (const turn of turns) {
-        const messageId = deps.conversationStore.addMessage(opts.conversationId, {
-          role: turn.role,
-          content: turn.content,
-          ...(turn.timestamp !== undefined ? { timestamp: turn.timestamp } : {}),
-        });
-        messageIds.push(messageId);
+        // Story 4 — oversize chunker. Below-threshold turns return as a
+        // single-element array (cheap no-op); above-threshold turns split
+        // into N chunks. We write the parent FIRST, then each chunk with
+        // parent_message_id set so Phase-4 can resolve a window hit back
+        // to the original turn via ix_messages_parent.
+        const chunks = splitOversizeMessage(
+          {
+            role: turn.role,
+            content: turn.content,
+            ...(turn.timestamp !== undefined ? { timestamp: turn.timestamp } : {}),
+            ...(turn.mimeType !== undefined ? { mimeType: turn.mimeType } : {}),
+          },
+          oversizeOptions ?? {},
+        );
 
-        const taskId = deps.ingestQueue.enqueueMessageEmbed({
-          messageId,
-          conversationId: opts.conversationId,
-          userId,
-          projectId: opts.projectId,
-          ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
-        });
-        taskIds.push(taskId);
+        let parentMessageId: number | undefined;
+        if (chunks.length > 1) {
+          // Oversize path: write the original turn's full content as the
+          // parent row. Only the chunks get embed-message tasks (the
+          // parent's content is too big to embed as one window — that's
+          // the whole reason we chunked).
+          parentMessageId = deps.conversationStore.addMessage(opts.conversationId, {
+            role: turn.role,
+            content: turn.content,
+            ...(turn.timestamp !== undefined ? { timestamp: turn.timestamp } : {}),
+          });
+          messageIds.push(parentMessageId);
+        }
+
+        for (const chunk of chunks) {
+          const messageId = deps.conversationStore.addMessage(opts.conversationId, {
+            role: chunk.role,
+            content: chunk.content,
+            ...(chunk.timestamp !== undefined ? { timestamp: chunk.timestamp } : {}),
+            ...(parentMessageId !== undefined ? { parentMessageId } : {}),
+          });
+          messageIds.push(messageId);
+
+          const taskId = deps.ingestQueue.enqueueMessageEmbed({
+            messageId,
+            conversationId: opts.conversationId,
+            userId,
+            projectId: opts.projectId,
+            ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+          });
+          taskIds.push(taskId);
+        }
       }
 
       return { messageIds, taskIds };
@@ -183,3 +233,6 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
 
   return { ingest, config };
 };
+
+// Re-export TokenCounter for consumers that want to inject a real tokenizer.
+export type { TokenCounter };

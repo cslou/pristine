@@ -7,7 +7,7 @@ import { createDatabase } from '../../src/core/database.js';
 import { ConversationStore } from '../../src/conversations/store.js';
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 import type { Orchestrator } from '../../src/core/interfaces.js';
-import { AppError, EmbedderError, IngestQueueError } from '../../src/core/errors.js';
+import { AppError, EmbedderError } from '../../src/core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -418,7 +418,13 @@ describe('IngestQueue', () => {
   // -------------------------------------------------------------------------
 
   describe('processNext() orchestrator guard', () => {
-    it('throws IngestQueueError when constructed with a null orchestrator', async () => {
+    it('marks legacy extract-conversation tasks failed when orchestrator is null (spec-005 Phase-1 state)', async () => {
+      // Pre-Story-6 contract: processNext threw IngestQueueError upfront on
+      // null orchestrator. Story 6 changed processNext to dispatch by
+      // task_type — the throw is now caught inside the try-catch and the
+      // specific task is marked 'failed' with the error message preserved.
+      // More graceful: one bad legacy task no longer poisons the whole
+      // worker loop.
       const localDb = createDatabase(':memory:');
       try {
         const localStore = new ConversationStore(localDb);
@@ -427,12 +433,16 @@ describe('IngestQueue', () => {
           orchestrator: null,
           conversationStore: localStore,
         });
-        nullQueue.enqueue(sampleConversation, 'user-guard');
+        const taskId = nullQueue.enqueue(sampleConversation, 'user-guard');
 
-        await expect(nullQueue.processNext()).rejects.toThrow(IngestQueueError);
-        await expect(nullQueue.processNext()).rejects.toThrow(
-          'orchestrator pipeline was removed in spec-005 Phase 1',
-        );
+        const task = await nullQueue.processNext();
+        expect(task).not.toBeNull();
+
+        const row = localDb
+          .prepare('SELECT status, error FROM pending_ingest_tasks WHERE id = ?')
+          .get(taskId) as { status: string; error: string };
+        expect(row.status).toBe('failed');
+        expect(row.error).toContain('orchestrator pipeline was removed in spec-005 Phase 1');
       } finally {
         localDb.close();
       }

@@ -351,7 +351,19 @@ Use `~/projects/harness-config/templates/evaluation-matrix.md` to pick the tool 
 - **New user flows folded into spec** — `indexer.ingest` and `indexer.buildSessionVector` added to `docs/specs/implementation-spec-005.md` §15 before sprint completion
 
 ### Completion
-- **Stories shipped:** *(filled at sprint close)*
-- **Commits:** *(filled at sprint close)*
-- **New dependencies:** None expected — sprint reuses better-sqlite3 / sqlite-vec / @huggingface/transformers; no new packages
-- **Retro:** *(optional — flag anything unexpected)*
+- **Stories shipped:** 7 / 7 feature stories + Eval. PR #116 (Story 1), #117 (Story 2), #118 (Story 3), #119 (Story 4), #120 (Story 5), #121 (Story 6), #122 (Story 7), eval PR (this).
+- **Commits:** 38 against `sprint-015` branch (including merges + per-story fix commits from /review-fix loops). Per-story commit count averaged ~5 (within the 5-8 budget).
+- **New dependencies:** `@babel/parser@7.29.2` — required by Story 4's AST-aware oversize-message chunker. Pure-JS, no native binding. Pinned exact per repo convention.
+- **Test count:** 451 → 536 unit (+85), plus 4 new CI integration tests + 1 real-Nomic-gated integration test.
+- **GH #113** closed by Story 1.
+- **Sprint-016 follow-ups documented in eval deck Slide 5:**
+  1. Wire `storeAsync` → `indexer.ingest` (client.ts stayed untouched per sprint plan).
+  2. Oversize-parent window-bloat — surfaced by Story 7's integration test; architectural fix needed.
+  3. Auto-build session vectors on ingest (currently explicit-only).
+  4. UUID migration for `messages.id` (#106 still open).
+  5. Types-in-core convention follow-up (multiple P2 flags across stories).
+- **Retro highlights:**
+  - **Schema-vs-AC mismatches surfaced twice:** Story 2 needed `pending_ingest_tasks` columns the AC implied (task_type + per-message fields); Story 7 needed `storeAsync` rewired but the AC referenced storeAsync end-to-end. Both deferred as scope-expansion / scope-shrink decisions and recorded inline. Future sprint planning: cross-check ACs against current schema before drafting.
+  - **`/review` loop produced ~3 actionable findings per story on average.** The single most valuable convergence: 5-reviewer agreement on Story 3's per-call-prepared-statement pattern → factory refactor (`createWindowWriter`) caught a real perf concern Story 6's worker would have hit at scale.
+  - **`require.cache`-doesn't-exist-in-ESM** caught by Story 7 review — replaced with a static filesystem-grep over src/ that's both ESM-safe and broader-coverage.
+  - **Inline simulation pattern for crash-recovery** worked well: backdate `started_at`, re-run `processNext`, observe stale-claim reset path. Cleaner than wrestling with subprocess + in-memory DB incompatibility.

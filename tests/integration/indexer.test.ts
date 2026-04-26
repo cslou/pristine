@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConversationStore } from '../../src/conversations/store.js';
 import { createDatabase } from '../../src/core/database.js';
@@ -219,11 +220,15 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     // Phase-4 retrieval reverse-lookup: given a parent id, find all
     // chunks. Uses the `ix_messages_parent` index added in sprint-014
     // Story 1; this query exercises that index path directly (filters by
-    // parent_message_id, not by primary key).
+    // parent_message_id, not by primary key). Sorted both sides so the
+    // assertion isn't implicitly coupled to the ingest's insertion-order
+    // contract — ix_messages_parent is what's under test, not ordering.
     const chunkRows = p.db
-      .prepare('SELECT id FROM messages WHERE parent_message_id = ? ORDER BY sort_order ASC')
+      .prepare('SELECT id FROM messages WHERE parent_message_id = ?')
       .all(parentId) as { id: number }[];
-    expect(chunkRows.map((r) => r.id)).toEqual(chunkIds);
+    expect(chunkRows.map((r) => r.id).sort((a, b) => a - b)).toEqual(
+      chunkIds.slice().sort((a, b) => a - b),
+    );
   });
 
   it('crash-recovery round-trip: claim + backdate stale + drain → all complete', async () => {
@@ -305,11 +310,19 @@ describe('indexer end-to-end (stubbed embedder)', () => {
         ),
     );
 
+    // Anchor to the test file's location so the test doesn't depend on
+    // process.cwd() — robust to vitest running from a subdirectory.
+    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../src');
+
     const offenders: string[] = [];
     const walk = (dir: string): void => {
       for (const name of readdirSync(dir)) {
         const full = join(dir, name);
-        const stat = statSync(full);
+        // lstatSync (not statSync) — don't follow symlinks. Symlinks
+        // inside src/ are unusual but a loop would crash the test with
+        // a stack overflow, so just skip them.
+        const stat = lstatSync(full);
+        if (stat.isSymbolicLink()) continue;
         if (stat.isDirectory()) {
           walk(full);
           continue;
@@ -324,7 +337,7 @@ describe('indexer end-to-end (stubbed embedder)', () => {
       }
     };
 
-    walk('src');
+    walk(srcRoot);
     expect(offenders, offenders.join('\n')).toEqual([]);
   });
 });

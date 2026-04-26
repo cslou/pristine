@@ -207,9 +207,15 @@ const splitByAst = (
   tokenCounter: TokenCounter,
   threshold: number,
 ): SplitResult[] => {
+  // Strip Markdown code-fence delimiters before parsing. Without this,
+  // ```ts...``` would parse as a chain of template literals (one giant
+  // top-level expression = one giant chunk) instead of the function /
+  // class / statement boundaries inside the fence.
+  const codeText = stripCodeFence(message.content);
+
   // Parse as a TS module — most permissive; accepts JS too, plus type
   // annotations. JSX is enabled to avoid choking on common React code.
-  const ast = babelParse(message.content, {
+  const ast = babelParse(codeText, {
     sourceType: 'module',
     allowReturnOutsideFunction: true,
     allowAwaitOutsideFunction: true,
@@ -241,16 +247,23 @@ const splitByAst = (
   const sliced: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     const start = segments[i].start;
-    const end = i === segments.length - 1 ? message.content.length : segments[i + 1].start;
-    sliced.push(message.content.slice(start, end));
+    const end = i === segments.length - 1 ? codeText.length : segments[i + 1].start;
+    sliced.push(codeText.slice(start, end));
   }
   // Preserve any leading whitespace before the first node by prepending
   // it to the first segment.
   if (segments[0].start > 0) {
-    sliced[0] = message.content.slice(0, segments[0].start) + sliced[0];
+    sliced[0] = codeText.slice(0, segments[0].start) + sliced[0];
   }
 
   return assembleChunks(message, sliced, '', tokenCounter, threshold, 0);
+};
+
+// Remove leading/trailing Markdown code-fence lines if present. Single-pass
+// regex; idempotent on un-fenced input.
+const stripCodeFence = (content: string): string => {
+  const fenceMatch = content.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```\s*$/);
+  return fenceMatch ? fenceMatch[1] : content;
 };
 
 // ---------------------------------------------------------------------------

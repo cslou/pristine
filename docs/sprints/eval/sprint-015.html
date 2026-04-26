@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sprint-015 Evaluation — Spec-005 Phase 3 Indexer Primitive</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        --bg: #0f1419;
+        --bg2: #1a1f2e;
+        --fg: #e6e6e6;
+        --fg-dim: #9aa4b8;
+        --accent: #7dd3fc;
+        --accent2: #a7f3d0;
+        --warn: #fbbf24;
+        --pass: #22c55e;
+        --fail: #ef4444;
+        --border: #2a3343;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.5;
+      }
+      body { padding: 2rem; max-width: 1100px; margin: 0 auto; }
+      .slide {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        scroll-margin-top: 1rem;
+      }
+      .slide-num {
+        display: inline-block;
+        background: var(--accent);
+        color: var(--bg);
+        padding: 0.15rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+      }
+      h1 { font-size: 1.8rem; margin: 0.75rem 0 0.5rem; color: var(--accent); }
+      h2 {
+        font-size: 1.05rem;
+        color: var(--accent2);
+        margin: 1.5rem 0 0.5rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.25rem;
+      }
+      .subtitle { color: var(--fg-dim); font-size: 0.95rem; margin: 0 0 1rem; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+        margin: 0.5rem 0;
+      }
+      th, td {
+        text-align: left;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th { color: var(--accent2); font-weight: 600; }
+      code, pre {
+        font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+        font-size: 0.82rem;
+      }
+      code { background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 3px; }
+      pre {
+        background: var(--bg);
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        margin: 0.5rem 0;
+        line-height: 1.35;
+      }
+      .pass { color: var(--pass); font-weight: 600; }
+      .fail { color: var(--fail); font-weight: 600; }
+      .warn { color: var(--warn); }
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+      .metric {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+      }
+      .metric-label { color: var(--fg-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .metric-value { font-size: 1.4rem; font-weight: 700; margin-top: 0.25rem; color: var(--accent); }
+      ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+      li { margin: 0.25rem 0; }
+      .nav {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border);
+        margin: -2rem -2rem 2rem -2rem;
+        padding-left: 2rem;
+        font-size: 0.85rem;
+        z-index: 10;
+      }
+      .nav a { color: var(--fg-dim); text-decoration: none; margin-right: 1rem; }
+      .nav a:hover { color: var(--accent); }
+      .note {
+        background: #1f2937;
+        border-left: 3px solid var(--warn);
+        padding: 0.5rem 1rem;
+        margin: 0.5rem 0;
+        font-size: 0.9rem;
+        color: var(--fg-dim);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <a href="#s1">1. Summary</a>
+      <a href="#s2">2. User flows</a>
+      <a href="#s3">3. Key changes</a>
+      <a href="#s4">4. Test &amp; eval</a>
+      <a href="#s5">5. Hygiene + AC matrix</a>
+    </div>
+
+    <!-- SLIDE 1 -->
+    <section id="s1" class="slide">
+      <span class="slide-num">SLIDE 1 / 5</span>
+      <h1>Sprint-015 Summary — Spec-005 Phase 3 Indexer Primitive</h1>
+      <p class="subtitle">
+        First sprint to actually write to <code>vec_windows</code>, <code>window_messages</code>, and
+        <code>vec_sessions</code>. Sprint-014 provisioned the schema; sprint-015 turns raw turns
+        into a populated corpus via <code>indexer.ingest()</code> + the embed-worker. Sprint-016 will
+        wire retrieval against this corpus.
+      </p>
+
+      <h2>Goal</h2>
+      <p>
+        Execute spec-005 §16 Phase 3 — ship the indexer primitive (<code>indexer.ingest</code>,
+        <code>indexer.buildSessionVector</code>), adapt the chunker for oversize-message handling,
+        and rewrite the worker so Phase-3's hybrid retrieval has data to query against in sprint-016.
+      </p>
+
+      <h2>Stories shipped</h2>
+      <table>
+        <thead>
+          <tr><th>Story</th><th>PR</th><th>Outcome</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1 — deleteById cascade (#113 blocker)</td>
+            <td>#116</td>
+            <td><span class="pass">Merged</span> — closes GH #113</td>
+          </tr>
+          <tr>
+            <td>2 — indexer.ingest() facade + IndexerConfig + atomic insert + task enqueue</td>
+            <td>#117</td>
+            <td><span class="pass">Merged</span></td>
+          </tr>
+          <tr>
+            <td>3 — Sliding-window assembly + vec_windows / window_messages writes</td>
+            <td>#118</td>
+            <td><span class="pass">Merged</span></td>
+          </tr>
+          <tr>
+            <td>4 — splitOversizeMessage helper + indexer wiring</td>
+            <td>#119</td>
+            <td><span class="pass">Merged</span></td>
+          </tr>
+          <tr>
+            <td>5 — buildSessionVector + vec_sessions writes</td>
+            <td>#120</td>
+            <td><span class="pass">Merged</span></td>
+          </tr>
+          <tr>
+            <td>6 — embed-worker rewrite + un-stub processNext</td>
+            <td>#121</td>
+            <td><span class="pass">Merged</span></td>
+          </tr>
+          <tr>
+            <td>7 — End-to-end integration tests</td>
+            <td>#122</td>
+            <td><span class="pass">Merged</span></td>
+          </tr>
+          <tr>
+            <td>Eval — this deck</td>
+            <td>—</td>
+            <td><span class="pass">Shipping</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="grid-3">
+        <div class="metric">
+          <div class="metric-label">Stories merged</div>
+          <div class="metric-value">7 / 7</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Test count delta</div>
+          <div class="metric-value">+85</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Mergeability ≥ 4 / 5</div>
+          <div class="metric-value">7 / 7</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2 -->
+    <section id="s2" class="slide">
+      <span class="slide-num">SLIDE 2 / 5</span>
+      <h1>User Flows Demonstrated</h1>
+      <p class="subtitle">
+        The Phase-3 pipeline is the new entrypoint Sprint-016's searcher reads from. Two new user
+        flows shipped; one existing flow (<code>storeAsync</code> → <code>processNext</code>) is
+        partially unblocked — full <code>storeAsync</code> rewire is sprint-016's concern, but
+        <code>processNext()</code> no longer throws.
+      </p>
+
+      <h2>New (this sprint)</h2>
+      <table>
+        <thead>
+          <tr><th>Flow</th><th>Verified by</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <code>indexer.ingest(turns, { projectId, conversationId, sessionId })</code> —
+              atomic message insert + per-message embed-task enqueue. Returns synchronously
+              &lt;0.5s for ≤100 turns.
+            </td>
+            <td>
+              <code>tests/memory/indexer/ingest.test.ts</code> (21 tests at sprint close —
+              18 added by Story 2 + 3 oversize-ingest tests added by Story 4 to the same
+              file), perf bound pinned via <code>performance.now()</code>; plus
+              <code>tests/integration/indexer.test.ts</code> round-trip
+              (3 conv × 5 turns → 15 tasks, 9 vec_windows, 27 window_messages, 18 FTS5)
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>indexer.buildSessionVector(conversationId)</code> — concat all messages,
+              embed once, DELETE+INSERT into <code>vec_sessions</code>. Pre-embed token-budget
+              guard prevents silent truncation past Nomic v1.5's 8192-token context.
+            </td>
+            <td>
+              <code>tests/memory/indexer/session-vector.test.ts</code> (11 tests:
+              round-trip, idempotency, atomicity, token-guard)
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>scripts/embed-worker.ts</code> CLI — wires real <code>LocalEmbedder</code>
+              + <code>IngestQueue</code> + <code>WindowWriter</code>; <code>runEmbedWorker</code>
+              drains queue, self-terminates on idle.
+            </td>
+            <td>
+              <code>tests/memory/indexer/embed-worker.test.ts</code> (8 tests, including
+              crash-recovery via inline stale-claim simulation)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Affected (existing)</h2>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              <code>IngestQueue.processNext()</code>: was a stub that threw on null orchestrator.
+              Now dispatches by <code>task_type</code>: <code>embed-message</code> calls the
+              injected handler (Story 6); legacy <code>extract-conversation</code> falls through
+              to the orchestrator path (still throws under spec-005's <code>orchestrator: null</code>,
+              but the throw is now CAUGHT inside the try-catch and converted to per-task
+              <code>markFailed</code> — the worker keeps draining other tasks).
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>storeAsync</code> (in <code>src/client.ts</code>): explicitly UNCHANGED per the
+              Sprint-Level Technical Context. Still routes through legacy
+              <code>IngestQueue.enqueue</code> (creates extract-conversation tasks). Wiring it to
+              <code>indexer.ingest</code> is sprint-016's first move. Documented in PR #122 +
+              sprint doc.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        <strong>AC deviation recorded.</strong> The original Eval-story AC listed
+        <code>storeAsync</code> end-to-end as a required Slide 2 demonstrated flow. Per the
+        Sprint-Level Technical Context, <code>src/client.ts</code> stayed untouched in
+        sprint-015 — <code>storeAsync</code>'s rewire is sprint-016's first move. This deck
+        therefore demonstrates <code>indexer.ingest</code> directly (the same path Story 6's
+        worker drains against), with full corpus shape verified by Story 7's integration
+        suite.
+      </div>
+
+      <h2>Crash-recovery contract (verified)</h2>
+      <pre>1. claimNext sets status='processing', started_at=now
+2. worker crashes / fails to call markCompleted
+3. claimNext (next call) flips rows older than 30s back to 'pending'
+4. processNext re-claims, dispatches, completes
+   → orphan ends in 'completed', no double-write to vec_windows
+     (upsertWindow's DELETE+INSERT is idempotent)</pre>
+      <p class="subtitle">
+        Inline simulation in tests/memory/indexer/embed-worker.test.ts and tests/integration/indexer.test.ts.
+        Real-process-kill is out of scope (subprocess + in-memory DB don't share state).
+      </p>
+    </section>
+
+    <!-- SLIDE 3 -->
+    <section id="s3" class="slide">
+      <span class="slide-num">SLIDE 3 / 5</span>
+      <h1>Key Changes</h1>
+
+      <h2>New modules</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>src/memory/indexer/index.ts</code></td>
+            <td>
+              <code>createIndexer(deps): Indexer</code> facade. Validates
+              <code>IndexerConfig</code>; <code>ingest()</code> wraps the per-turn loop
+              (chunker → addMessage → enqueueMessageEmbed) in one db.transaction; exposes
+              <code>buildSessionVector</code> on the same instance.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src/memory/indexer/windows.ts</code></td>
+            <td>
+              Pure-logic <code>computeWindowsForMessage</code> with tail-slide-back math +
+              direct first/last-window range computation; <code>assembleWindowEmbedding</code>;
+              <code>createWindowWriter</code> factory caching DELETE+INSERT statements for
+              <code>vec_windows</code> + <code>window_messages</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src/memory/indexer/session-vector.ts</code></td>
+            <td>
+              <code>buildSessionVector(db, embedder, conversationId, options?)</code>. Verify
+              + load + role-prefix concat + token-budget guard + embed + DELETE+INSERT
+              <code>vec_sessions</code> with <code>BigInt(Date.now())</code>.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src/memory/indexer/embed-worker.ts</code></td>
+            <td>
+              <code>processEmbedTask</code> (claim → load message → computeWindowsForMessage →
+              load constituent rows → assemble → upsert) + <code>createEmbedTaskHandler</code>
+              factory (matches <code>IngestQueueConfig.embedTaskHandler</code>) +
+              <code>runEmbedWorker</code> drain loop.
+            </td>
+          </tr>
+          <tr>
+            <td><code>scripts/embed-worker.ts</code></td>
+            <td>
+              CLI entrypoint. Wires real <code>LocalEmbedder</code> + queue +
+              <code>createEmbedTaskHandler</code>. Replaces the deleted sprint-013
+              <code>extract-worker.ts</code>.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Modified modules</h2>
+      <table>
+        <thead><tr><th>File</th><th>What changed</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>src/conversations/store.ts</code></td>
+            <td>
+              <code>deleteById</code> cascades to <code>window_messages</code> +
+              <code>vec_windows</code> + <code>vec_sessions</code> (closes GH #113);
+              <code>addMessage</code> returns inserted <code>messages.id</code> (was void; needed
+              for atomic per-message task enqueue); <code>getConversationUserId</code> added so
+              the indexer doesn't query <code>conversations</code> directly.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src/queue/ingest-queue.ts</code></td>
+            <td>
+              <code>pending_ingest_tasks</code> schema bump: new <code>task_type</code>,
+              <code>message_id</code>, <code>project_id</code>, <code>session_id</code> columns
+              + composite <code>(task_type, status)</code> index. New
+              <code>enqueueMessageEmbed</code> method (cached prepared statement). New
+              optional <code>embedTaskHandler</code> dep. <code>processNext</code> dispatches
+              by task_type.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src/memory/orchestrator/chunker.ts</code></td>
+            <td>
+              Added <code>splitOversizeMessage</code> alongside the existing
+              <code>chunkConversation</code>. AST splitter via <code>@babel/parser</code>
+              (TS + JSX plugins), prose paragraph splitter with 200-token overlap, line-aware
+              fallback. Strips Markdown code-fence delimiters before AST parse so inner code
+              parses correctly even with <code>\`\`\`</code> markers in strings/comments.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Issues closed</h2>
+      <ul>
+        <li>
+          <strong>GH #113</strong> — <code>deleteById</code> cascade to
+          <code>window_messages</code>. Closed by Story 1 / PR #116.
+        </li>
+      </ul>
+
+      <h2>New runtime dependency</h2>
+      <ul>
+        <li>
+          <code>@babel/parser@7.29.2</code> — pure-JS, no native binding. Pinned exact
+          per repo convention. Used only by Story 4's AST chunker.
+        </li>
+      </ul>
+
+      <h2>Schema deltas (npm run db:reset workflow)</h2>
+      <pre>-- pending_ingest_tasks (sprint-014 → sprint-015)
++ task_type TEXT NOT NULL DEFAULT 'extract-conversation'
+    CHECK (task_type IN ('extract-conversation', 'embed-message'))
++ message_id INTEGER         -- nullable; only embed-message rows set
++ project_id TEXT            -- nullable; only embed-message rows set
++ session_id TEXT            -- nullable; pass-through for Phase-5
++ INDEX idx_pending_ingest_tasks_type_status (task_type, status)
+
+-- messages (sprint-014 contract preserved; addMessage now returns id)</pre>
+    </section>
+
+    <!-- SLIDE 4 -->
+    <section id="s4" class="slide">
+      <span class="slide-num">SLIDE 4 / 5</span>
+      <h1>Test &amp; Eval Results</h1>
+
+      <h2>Per-story test-count delta</h2>
+      <table>
+        <thead>
+          <tr><th>Story</th><th>Tests added</th><th>Cumulative</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Pre-sprint baseline (post-sprint-014)</td><td>—</td><td>451</td></tr>
+          <tr><td>Story 1 — deleteById cascade</td><td>+2</td><td>453</td></tr>
+          <tr><td>Story 2 — indexer.ingest + IngestQueue tests + getConversationUserId</td><td>+23</td><td>476</td></tr>
+          <tr><td>Story 3 — windows.ts (math + writer + factory)</td><td>+20</td><td>496</td></tr>
+          <tr><td>Story 4 — chunker + indexer-wiring oversize tests</td><td>+17</td><td>513</td></tr>
+          <tr><td>Story 5 — buildSessionVector (helper + facade + token guard)</td><td>+11</td><td>524</td></tr>
+          <tr><td>Story 6 — embed-worker (processEmbedTask + drain + crash-recovery)</td><td>+8</td><td>532</td></tr>
+          <tr><td>Story 7 — integration suite (round-trip + oversize + crash + import-guard)</td><td>+4 (CI)</td><td>536</td></tr>
+        </tbody>
+      </table>
+      <p class="subtitle">
+        +85 net (CI variant). Real-Nomic round-trip variant adds 1 more under
+        <code>SKIP_SLOW_TESTS</code> unset.
+      </p>
+
+      <h2>Round-trip shape (3 conv × 5 turns, default config)</h2>
+      <p class="subtitle">
+        Pinned exactly by <code>tests/integration/indexer.test.ts</code> with the stubbed embedder.
+        Per-conversation: 1 seed + 5 ingested = 6 messages. With windowSize=3, overlap=1, stride=2,
+        the windows are <code>[0..2]</code>, <code>[2..4]</code>, <code>[3..5]</code> (last
+        tail-slid). All 3 windows are touched per conversation; idempotent
+        <code>upsertWindow</code> keeps the row count at exactly 3.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Surface</th><th>Expected</th><th>Asserted by test</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>SELECT COUNT(*) FROM messages</code></td><td>18</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td><code>SELECT COUNT(*) FROM vec_windows</code></td><td>9 (3 per conv)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td><code>SELECT COUNT(*) FROM window_messages</code></td><td>27 (windowSize × windows × convs)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td><code>SELECT COUNT(*) FROM messages_fts</code></td><td>18 (every message via AFTER INSERT trigger)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td><code>SELECT COUNT(*) FROM pending_ingest_tasks WHERE status = 'completed'</code></td><td>15 (only ingested messages get tasks)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td><code>SELECT COUNT(*) FROM pending_ingest_tasks WHERE status = 'failed'</code></td><td>0</td><td><span class="pass">PASS</span></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Performance bound (Story 2 AC)</h2>
+      <pre>indexer.ingest(100 turns, ...) → returns in &lt;500ms (CI threshold 1000ms)
+  Pinned by tests/memory/indexer/ingest.test.ts via performance.now() deltas
+  Local run typically completes in ~5ms (synchronous SQLite + atomic addMessage loop)</pre>
+
+      <h2>Sample populated DB shape</h2>
+      <pre>$ sqlite3 ~/.pristine/data/pristine.db "SELECT conversation_id, COUNT(*) FROM vec_windows GROUP BY conversation_id;"
+conv-A | 3
+conv-B | 3
+conv-C | 3
+
+$ sqlite3 ... "SELECT COUNT(*), task_type, status FROM pending_ingest_tasks GROUP BY task_type, status;"
+15 | embed-message | completed</pre>
+
+      <h2>Vec_windows write idiom (verified contract)</h2>
+      <pre>BEGIN;
+  DELETE FROM vec_windows WHERE conversation_id = ? AND window_index = ?;
+  DELETE FROM window_messages WHERE conversation_id = ? AND window_index = ?;
+  INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?);
+  -- one INSERT INTO window_messages per constituent message_id with explicit position
+COMMIT;</pre>
+      <p class="subtitle">
+        vec0 does not support INSERT OR REPLACE on (conversation_id, window_index). DELETE+INSERT
+        idiom pinned by sprint-014 Story 2 PK-rejection test; reused by sprint-015 Story 3's
+        <code>upsertWindow</code> + Story 5's <code>buildSessionVector</code>.
+      </p>
+
+      <h2>EXPLAIN QUERY PLAN (vec_windows write path + window-assembly read)</h2>
+      <p class="subtitle">
+        Captured against a fresh schema via <code>better-sqlite3</code>'s
+        <code>EXPLAIN QUERY PLAN</code> on the four queries the embed-worker hot path issues.
+        vec0 virtual tables expose their plan as
+        <code>VIRTUAL TABLE INDEX 0:1</code> — vec0 reports its key-restricted lookup via a
+        single token; <code>(conversation_id, window_index)</code> is the only restricted
+        path. Regular tables show their B-tree index by name.
+      </p>
+      <pre>-- DELETE FROM vec_windows WHERE conversation_id = ? AND window_index = ?
+SCAN vec_windows VIRTUAL TABLE INDEX 0:1
+   (vec0 internally restricts the scan to the (conv_id, win_idx) key)
+
+-- DELETE FROM window_messages WHERE conversation_id = ? AND window_index = ?
+SEARCH window_messages USING COVERING INDEX sqlite_autoindex_window_messages_1
+   (conversation_id=? AND window_index=?)
+   ↑ PK leading-column prefix scan; covering — no row fetch needed
+
+-- INSERT INTO vec_windows ... — vec0-internal write path; no plan output.
+
+-- SELECT id, role, content FROM messages
+--   WHERE conversation_id = ? AND sort_order &gt;= ? AND sort_order &lt;= ?
+--   ORDER BY sort_order ASC
+SEARCH messages USING INDEX ix_messages_conv_sort
+   (conversation_id=? AND sort_order&gt;? AND sort_order&lt;?)
+   ↑ Spec-005 §12 retrieval index; sort_order range scan + ORDER BY
+     served by the index (no temp B-tree).</pre>
+      <p class="subtitle">
+        All three explained queries hit an index. No full-table scans on the embed-worker hot
+        path. <code>ix_messages_conv_sort</code> (sprint-014 Story 1) is load-bearing — it
+        serves both the range filter AND the <code>ORDER BY sort_order ASC</code> clause from
+        the same B-tree pass.
+      </p>
+
+      <h2>Review-loop summary</h2>
+      <table>
+        <thead><tr><th>PR</th><th>/review</th><th>/review-fix</th><th>Final mergeability</th></tr></thead>
+        <tbody>
+          <tr><td>#116 (Story 1)</td><td>4/5 → fixes</td><td>5/5</td><td>5/5</td></tr>
+          <tr><td>#117 (Story 2)</td><td>3/5 → 5 P2 fixes + 1 P1 fix</td><td>4/5</td><td>4/5</td></tr>
+          <tr><td>#118 (Story 3)</td><td>3/5 → 3 P1 fixes</td><td>4/5</td><td>4/5</td></tr>
+          <tr><td>#119 (Story 4)</td><td>2/5 → 3 P1 fixes</td><td>4/5</td><td>4/5</td></tr>
+          <tr><td>#120 (Story 5)</td><td>3/5 → 2 P1 fixes</td><td>4/5</td><td>4/5</td></tr>
+          <tr><td>#121 (Story 6)</td><td>3/5 → 2 P1 fixes</td><td>4/5</td><td>4/5</td></tr>
+          <tr><td>#122 (Story 7)</td><td>2/5 → 3 actionable P1 fixes + 3 P2 polish</td><td>4/5</td><td>4/5</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SLIDE 5 -->
+    <section id="s5" class="slide">
+      <span class="slide-num">SLIDE 5 / 5</span>
+      <h1>Repo Hygiene + AC Matrix</h1>
+
+      <h2>Hygiene</h2>
+      <table>
+        <tbody>
+          <tr><td><code>main</code> clean</td><td><span class="pass">YES</span> — sprint-015 not yet merged to main; integration PR is the next step</td></tr>
+          <tr><td>No tmp files in <code>git status</code></td><td><span class="pass">YES</span></td></tr>
+          <tr><td>No dangling local feature branches</td><td><span class="pass">YES</span> — all 7 story branches merged + deleted</td></tr>
+          <tr><td>Pre-merge gate (lint + typecheck + 532 unit tests)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Conventional commits across the sprint</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Last <code>/review</code> or <code>/review-fix</code> turn ≥ 4/5 with no open P0/P1</td><td><span class="pass">PASS</span> — every story PR closed at 4/5</td></tr>
+        </tbody>
+      </table>
+
+      <h2>AC matrix (per feature story)</h2>
+      <table>
+        <thead><tr><th>Story</th><th>AC count</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>1 — deleteById cascade</td><td>5</td><td><span class="pass">5/5 PASS</span></td></tr>
+          <tr><td>2 — indexer.ingest facade + queue + addMessage return-id</td><td>8</td><td><span class="pass">8/8 PASS</span></td></tr>
+          <tr><td>3 — Sliding-window assembly + vec_windows / window_messages writes</td><td>7</td><td><span class="pass">7/7 PASS</span></td></tr>
+          <tr><td>4 — splitOversizeMessage helper + indexer wiring</td><td>9</td><td><span class="pass">9/9 PASS</span></td></tr>
+          <tr><td>5 — buildSessionVector + vec_sessions writes</td><td>10</td><td><span class="pass">10/10 PASS</span></td></tr>
+          <tr><td>6 — embed-worker rewrite + un-stub processNext</td><td>8</td><td><span class="pass">8/8 PASS</span></td></tr>
+          <tr><td>7 — End-to-end integration tests</td><td>7 + 1 deviation note</td><td><span class="pass">7/7 PASS</span> (deviation recorded)</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Documented sprint-016 follow-ups</h2>
+      <ul>
+        <li>
+          <strong>Wire <code>storeAsync</code> to <code>indexer.ingest</code></strong> —
+          <code>src/client.ts</code> stays untouched in sprint-015 per the Sprint-Level Technical
+          Context. <code>storeAsync</code> still calls the legacy
+          <code>IngestQueue.enqueue</code> (creates extract-conversation tasks that no longer
+          process). Sprint-016's first move.
+        </li>
+        <li>
+          <strong>Oversize-parent window-bloat</strong> — surfaced by Story 7's oversize
+          integration test. When a turn is split into parent + chunks, the parent row stores the
+          full ~13K-char content at its own <code>sort_order</code>. The window-assembler queries
+          messages by <code>sort_order</code> range, so a window spanning the parent's slot pulls
+          the full content into the embed text — would overflow Nomic v1.5's 8192-token context
+          in production. Stub embedder hides this in the test. Architectural fix needs window
+          assembly to skip parents-with-children (or a separate sort-order space for parents).
+        </li>
+        <li>
+          <strong>Auto-build session vectors</strong> — Story 5's <code>buildSessionVector</code>
+          is currently invoked only on explicit consumer demand. Auto-build-on-ingest hooks land
+          in sprint-016 once retrieval pressure is real and the cost/benefit is concrete.
+        </li>
+        <li>
+          <strong>UUID migration for <code>messages.id</code></strong> — GH #106 still open.
+          Spec-005 §13 sketches TEXT UUID; shipped schema is INTEGER PRIMARY KEY AUTOINCREMENT
+          (preserves sprint-009 FTS5 <code>content_rowid=rowid</code> linkage). All Phase-3 writes
+          use INTEGER throughout.
+        </li>
+        <li>
+          <strong>Convention follow-up</strong> — multiple P2s across stories flagged the
+          types-in-core convention deviation (CLAUDE.md says module contracts live in
+          <code>src/core/interfaces.ts</code>; the codebase keeps types local to their owning
+          modules per existing pattern). Uniform refactor when convenient.
+        </li>
+      </ul>
+
+      <h2>Sprint-integration PR</h2>
+      <p class="subtitle">
+        Next step: open <code>sprint-015 → main</code>. The integration PR runs the full
+        <code>/review</code> + <code>/review-fix</code> loop on the cumulative diff (cross-story
+        scrutiny). Per AGENTS.md §3, <strong>P0/P1 findings still block merge</strong>; P2s
+        already dismissed on the constituent story PRs may be re-dismissed with rationale.
+        <strong>Pause for explicit merge command before touching <code>main</code></strong>.
+      </p>
+    </section>
+  </body>
+</html>

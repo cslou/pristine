@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConversationStore } from '../../src/conversations/store.js';
 import { createDatabase } from '../../src/core/database.js';
@@ -110,12 +112,17 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     expect(tasksProcessed).toBe(15);
 
     // Per conversation: 1 seed + 5 ingested = 6 messages. With windowSize=3,
-    // overlap=1, stride=2: windows are [0..2], [2..4], [3..5] (tail-slid)
-    // = 3 distinct windows. The worker only processes tasks for the 5
-    // ingested messages (sortOrders 1-5) — the seed has no task. Windows
-    // touched: window 0 (contains sort_order 1 only — yes, ingested t0
-    // at sort_order=1 lives in window [0..2]); window 1 (contains 2,3,4);
-    // window 2 (contains 3,4,5). All 3 distinct windows are touched.
+    // overlap=1, stride=2: windows are [0..2], [2..4], [3..5] (tail-slid).
+    // The worker only processes tasks for the 5 ingested messages
+    // (sortOrders 1-5) — the seed (sort_order 0) has no task. Each task
+    // re-runs the upsert on every window the message participates in:
+    //   sort_order 1 (t0)  → window 0 [0..2]
+    //   sort_order 2 (t1)  → windows 0 [0..2] and 1 [2..4]
+    //   sort_order 3 (t2)  → windows 1 [2..4] and 2 [3..5]
+    //   sort_order 4 (t3)  → windows 1 [2..4] and 2 [3..5]
+    //   sort_order 5 (t4)  → window 2 [3..5]
+    // → all 3 distinct windows are touched per conversation; idempotent
+    // DELETE+INSERT in upsertWindow keeps the row count at 3.
     const windowsPerConv = 3;
     const expectedTotalWindows = 3 * windowsPerConv;
     const totalVecWindows = (
@@ -174,14 +181,15 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     expect(chunkIds.length).toBeGreaterThan(1);
 
     // Parent: parent_message_id = NULL; chunks: parent_message_id = parentId.
+    // Hoist the prepared statement once and reuse it for the chunk loop —
+    // avoids N+1 prepare() compilations.
     const parentRow = p.db
       .prepare('SELECT parent_message_id FROM messages WHERE id = ?')
       .get(parentId) as { parent_message_id: number | null };
     expect(parentRow.parent_message_id).toBeNull();
+    const chunkParentStmt = p.db.prepare('SELECT parent_message_id FROM messages WHERE id = ?');
     for (const cid of chunkIds) {
-      const row = p.db.prepare('SELECT parent_message_id FROM messages WHERE id = ?').get(cid) as {
-        parent_message_id: number | null;
-      };
+      const row = chunkParentStmt.get(cid) as { parent_message_id: number | null };
       expect(row.parent_message_id).toBe(parentId);
     }
 
@@ -208,13 +216,14 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     ).c;
     expect(vecCount).toBeGreaterThan(0);
 
-    // Phase-4 retrieval pattern: a window hit can resolve back to the
-    // parent message via `ix_messages_parent`. Verify the index is
-    // load-bearing — fetch a chunk, follow parent_message_id back.
-    const chunkRow = p.db
-      .prepare('SELECT parent_message_id FROM messages WHERE id = ?')
-      .get(chunkIds[0]) as { parent_message_id: number | null };
-    expect(chunkRow.parent_message_id).toBe(parentId);
+    // Phase-4 retrieval reverse-lookup: given a parent id, find all
+    // chunks. Uses the `ix_messages_parent` index added in sprint-014
+    // Story 1; this query exercises that index path directly (filters by
+    // parent_message_id, not by primary key).
+    const chunkRows = p.db
+      .prepare('SELECT id FROM messages WHERE parent_message_id = ? ORDER BY sort_order ASC')
+      .all(parentId) as { id: number }[];
+    expect(chunkRows.map((r) => r.id)).toEqual(chunkIds);
   });
 
   it('crash-recovery round-trip: claim + backdate stale + drain → all complete', async () => {
@@ -275,16 +284,48 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     expect(orphanFinalStatus).toBe('completed');
   });
 
-  it('does not invoke any LLM imports on the Phase-3 pipeline path', () => {
-    // Defensive grep-equivalent: enumerate the transitively-imported
-    // modules via Node's require.cache after the imports above ran.
-    // No Anthropic / OpenAI / pg / @supabase modules should be loaded.
-    const loaded = Array.from(Object.keys(require.cache ?? {}));
-    const banned = ['@anthropic-ai/sdk', 'openai', 'pg', '@supabase'];
-    for (const ban of banned) {
-      const hit = loaded.find((path) => path.includes(`/node_modules/${ban}/`));
-      expect(hit, `${ban} should not be loaded by the Phase-3 pipeline`).toBeUndefined();
-    }
+  it('does not import any LLM SDKs from any production source under src/', () => {
+    // Static check: walk src/ and assert no .ts file imports a banned
+    // module. The previous version of this test used `require.cache` to
+    // enumerate runtime-loaded modules — that was a no-op in ESM
+    // (require is undefined; require.cache resolves to undefined too,
+    // and the `?? {}` fallback silenced the failure). A static AST check
+    // is both more reliable and broader-coverage: it catches imports
+    // that haven't been exercised by the test path.
+    const banned = [
+      '@anthropic-ai/sdk',
+      'openai',
+      '\\bpg\\b', // postgres driver, not part of bigger token
+      '@supabase',
+    ];
+    const bannedPatterns = banned.map(
+      (b) =>
+        new RegExp(
+          `from\\s+['"]${b.replace(/\\b/g, '')}['"]|require\\(['"]${b.replace(/\\b/g, '')}['"]\\)`,
+        ),
+    );
+
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        const stat = statSync(full);
+        if (stat.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!full.endsWith('.ts')) continue;
+        const contents = readFileSync(full, 'utf8');
+        for (let i = 0; i < banned.length; i++) {
+          if (bannedPatterns[i].test(contents)) {
+            offenders.push(`${full} imports banned module ${banned[i]}`);
+          }
+        }
+      }
+    };
+
+    walk('src');
+    expect(offenders, offenders.join('\n')).toEqual([]);
   });
 });
 
@@ -329,5 +370,5 @@ describe.skipIf(skipSlow)('indexer end-to-end (real Nomic v1.5)', () => {
     } finally {
       await embedder.dispose();
     }
-  });
+  }, 300_000); // First-run downloads ~300 MB; default 15s would time out.
 });

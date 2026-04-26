@@ -133,13 +133,20 @@ export const splitOversizeMessage = (
   }
 
   if (isCodeContent(message)) {
+    // Strip the code fence once so both the AST path and the fallback
+    // line-splitter receive clean code — not the raw ``` delimiters.
+    const strippedContent = stripCodeFence(message.content);
+    const strippedMessage: OversizeMessageInput = {
+      ...message,
+      content: strippedContent,
+    };
     try {
-      return splitByAst(message, tokenCounter, threshold);
+      return splitByAst(strippedMessage, tokenCounter, threshold);
     } catch {
       // AST parser failure (garbage code, unsupported syntax) — fall
       // through to the line-aware splitter so the message still gets
       // chunked rather than overflowing the embedder.
-      return splitByLines(message, tokenCounter, threshold);
+      return splitByLines(strippedMessage, tokenCounter, threshold);
     }
   }
 
@@ -207,11 +214,10 @@ const splitByAst = (
   tokenCounter: TokenCounter,
   threshold: number,
 ): SplitResult[] => {
-  // Strip Markdown code-fence delimiters before parsing. Without this,
-  // ```ts...``` would parse as a chain of template literals (one giant
-  // top-level expression = one giant chunk) instead of the function /
-  // class / statement boundaries inside the fence.
-  const codeText = stripCodeFence(message.content);
+  // Caller is responsible for stripping code-fence delimiters before
+  // invoking splitByAst (done in splitOversizeMessage). message.content
+  // here is already bare code.
+  const codeText = message.content;
 
   // Parse as a TS module — most permissive; accepts JS too, plus type
   // annotations. JSX is enabled to avoid choking on common React code.
@@ -261,8 +267,13 @@ const splitByAst = (
 
 // Remove leading/trailing Markdown code-fence lines if present. Single-pass
 // regex; idempotent on un-fenced input.
+//
+// Greedy `([\s\S]*)` matches to the LAST close-fence rather than the first,
+// so code containing triple-backticks in strings or comments (e.g.
+// `// \`\`\`js`) is captured in full instead of being truncated.
+// `^\s*` allows for leading whitespace before the opening fence.
 const stripCodeFence = (content: string): string => {
-  const fenceMatch = content.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```\s*$/);
+  const fenceMatch = content.match(/^\s*```[a-zA-Z0-9_-]*\n([\s\S]*)\n```\s*$/);
   return fenceMatch ? fenceMatch[1] : content;
 };
 

@@ -1,0 +1,46 @@
+smoke: fresh DB at /tmp/pristine-smoke.db
+smoke: storeAsync → conversationId=d3c0ff91-590d-4955-911f-92891cc3632f
+smoke: pending tasks before drain: 6
+smoke: embed-worker draining (Nomic loads on first call — slow)...
+smoke: embed-worker processed 6 task(s) in 285 ms
+smoke: buildSessionVector ...
+smoke: buildSessionVector → ok
+
+smoke: populated-corpus counts (expected → actual):
+  OK   messages             6 → 6
+  OK   vec_windows          3 → 3
+  OK   window_messages      9 → 9
+  OK   vec_sessions         1 → 1
+  OK   messages_fts         6 → 6
+  OK   completed_tasks      6 → 6
+  OK   failed_tasks         0 → 0
+
+smoke: seeding second project for vectorSearch leak check ...
+smoke: drained second project — 4 tasks
+smoke: vectorSearch in smoke-project → 3 hits
+  OK   cross-project leak count   0 → 0
+
+smoke: ftsSearch error-code lookup round-trip ...
+smoke: ftsSearch '"PRSTN-9001"' → 1 hits
+  OK   fts error-code recall      1 → 1
+        score: 0.6553 (higher = more relevant)
+        snippet: I hit error <b>PRSTN-9001</b> on startup
+
+smoke: hybridSearch RRF fusion round-trip ...
+smoke: hybridSearch '"PRSTN-9001"' → 3 hits
+        window(0) score=0.0164 source=vector
+        message(11) score=0.0164 source=fts
+        window(1) score=0.0161 source=vector
+  OK   hybrid hits >= 1            ≥1 → 3
+
+smoke: 3-source hybrid (session vectors built) ...
+smoke: built session vectors for both seeded conversations
+smoke: 3-source hybridSearch in smoke-project → 5 hits
+        window(1) score=0.0164 source=vector
+        message(3) score=0.0164 source=fts
+        session(d3c0ff91) score=0.0164 source=session
+        window(0) score=0.0161 source=vector
+        window(2) score=0.0159 source=vector
+  OK   session hits >= 1           ≥1 → 1
+
+smoke: PASS — storeAsync pipeline matches expected behavior

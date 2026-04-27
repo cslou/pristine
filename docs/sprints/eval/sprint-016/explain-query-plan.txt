@@ -1,0 +1,4 @@
+EXPLAIN QUERY PLAN SELECT c.id FROM conversations c WHERE c.project_id = ? AND c.created_at >= ?;
+
+QUERY PLAN
+`--SEARCH c USING INDEX ix_conversations_project_started (project_id=? AND created_at>?)

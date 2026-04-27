@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sprint-016 Evaluation — storeAsync rewire + Phase 4 searcher primitive</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        --bg: #0f1419;
+        --bg2: #1a1f2e;
+        --fg: #e6e6e6;
+        --fg-dim: #9aa4b8;
+        --accent: #7dd3fc;
+        --accent2: #a7f3d0;
+        --warn: #fbbf24;
+        --pass: #22c55e;
+        --fail: #ef4444;
+        --border: #2a3343;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.5;
+      }
+      body { padding: 2rem; max-width: 1100px; margin: 0 auto; }
+      .slide {
+        background: var(--bg2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        scroll-margin-top: 1rem;
+      }
+      .slide-num {
+        display: inline-block;
+        background: var(--accent);
+        color: var(--bg);
+        padding: 0.15rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        letter-spacing: 0.05em;
+      }
+      h1 { font-size: 1.8rem; margin: 0.75rem 0 0.5rem; color: var(--accent); }
+      h2 {
+        font-size: 1.05rem;
+        color: var(--accent2);
+        margin: 1.5rem 0 0.5rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.25rem;
+      }
+      .subtitle { color: var(--fg-dim); font-size: 0.95rem; margin: 0 0 1rem; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.88rem;
+        margin: 0.5rem 0;
+      }
+      th, td {
+        text-align: left;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th { color: var(--accent2); font-weight: 600; }
+      code, pre {
+        font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+        font-size: 0.82rem;
+      }
+      code { background: var(--bg); padding: 0.1rem 0.35rem; border-radius: 3px; }
+      pre {
+        background: var(--bg);
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        margin: 0.5rem 0;
+        line-height: 1.35;
+      }
+      .pass { color: var(--pass); font-weight: 600; }
+      .fail { color: var(--fail); font-weight: 600; }
+      .warn { color: var(--warn); }
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+      .metric {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+      }
+      .metric-label { color: var(--fg-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .metric-value { font-size: 1.4rem; font-weight: 700; margin-top: 0.25rem; color: var(--accent); }
+      ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+      li { margin: 0.25rem 0; }
+      .nav {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--border);
+        margin: -2rem -2rem 2rem -2rem;
+        padding-left: 2rem;
+        font-size: 0.85rem;
+        z-index: 10;
+      }
+      .nav a { color: var(--fg-dim); text-decoration: none; margin-right: 1rem; }
+      .nav a:hover { color: var(--accent); }
+      .note {
+        background: #1f2937;
+        border-left: 3px solid var(--warn);
+        padding: 0.5rem 1rem;
+        margin: 0.5rem 0;
+        font-size: 0.9rem;
+        color: var(--fg-dim);
+      }
+      .source-tag {
+        display: inline-block;
+        font-size: 0.72rem;
+        padding: 0.05rem 0.4rem;
+        border-radius: 3px;
+        margin-left: 0.4rem;
+        font-weight: 600;
+      }
+      .src-vector { background: #1e3a8a; color: #bfdbfe; }
+      .src-fts { background: #064e3b; color: #a7f3d0; }
+      .src-session { background: #581c87; color: #e9d5ff; }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <a href="#s1">1. Summary</a>
+      <a href="#s2">2. User flows</a>
+      <a href="#s3">3. Key changes</a>
+      <a href="#s4">4. Test &amp; eval</a>
+      <a href="#s5">5. Hygiene + AC matrix</a>
+    </div>
+
+    <!-- SLIDE 1 -->
+    <section id="s1" class="slide">
+      <span class="slide-num">SLIDE 1 / 5</span>
+      <h1>Sprint-016 Summary — storeAsync rewire + Phase 4 searcher primitive</h1>
+      <p class="subtitle">
+        Closes the SDK-level ingest gap (sprint-015 retro deferral) and ships the spec-005 Phase 4
+        retrieval surface. <code>Pristine.create({...}).storeAsync(...)</code> now drives the
+        Phase-3 indexer pipeline end-to-end, and <code>pristine.searcher</code> exposes
+        <code>vectorSearch</code>, <code>ftsSearch</code>, <code>hybridSearch</code>, and
+        <code>sessionVectorSearch</code> with filter-first scoping + RRF fusion.
+      </p>
+
+      <h2>Goal</h2>
+      <p>
+        Wire <code>storeAsync</code> to <code>indexer.ingest</code> (sprint-015 deferred), then
+        ship spec-005 §16 Phase 4 — the searcher primitive — with bi-source then 3-source RRF
+        hybrid fusion across <code>vec_windows</code>, <code>messages_fts</code>, and
+        <code>vec_sessions</code>. Lock the contract via cross-cutting integration tests so
+        Phase 5 (<code>searcher.sql</code>) and Phase 7 (eval framework) can build on it.
+      </p>
+
+      <h2>Stories shipped</h2>
+      <table>
+        <thead>
+          <tr><th>Story</th><th>PR</th><th>Outcome</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1 — Wire storeAsync to indexer.ingest (sprint-015 deferred)</td>
+            <td>#126</td>
+            <td><span class="pass">Merged</span> — adds addEmptyConversation + atomic-tx envelope</td>
+          </tr>
+          <tr>
+            <td>2 — searcher.vectorSearch (P4-S1) — filter-first KNN over vec_windows</td>
+            <td>#127</td>
+            <td><span class="pass">Merged</span> — vec0 KNN read-path verified end-to-end</td>
+          </tr>
+          <tr>
+            <td>3 — searcher.ftsSearch (P4-S2) — bm25-normalized FTS5 over candidate set</td>
+            <td>#128</td>
+            <td><span class="pass">Merged</span> — typed-error catch via SQLITE_ERROR + regex</td>
+          </tr>
+          <tr>
+            <td>4 — searcher.hybridSearch (P4-S3) — vector + FTS RRF fusion (k=60)</td>
+            <td>#129</td>
+            <td><span class="pass">Merged</span> — Promise.allSettled + reciprocalRankFusion helper</td>
+          </tr>
+          <tr>
+            <td>5 — sessionVectorSearch + 3-source hybrid fan-out (P4-S4)</td>
+            <td>#130</td>
+            <td><span class="pass">Merged</span> — HybridHit kind: 'session' variant</td>
+          </tr>
+          <tr>
+            <td>6 — Cross-cutting tests (P4-S5)</td>
+            <td>#131</td>
+            <td><span class="pass">Merged</span> — 26 contract-pinning tests</td>
+          </tr>
+          <tr>
+            <td>Eval — this deck</td>
+            <td>—</td>
+            <td><span class="pass">Shipping</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="grid-3">
+        <div class="metric">
+          <div class="metric-label">Stories merged</div>
+          <div class="metric-value">6 / 6</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Pass rate</div>
+          <div class="metric-value pass">100%</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Test count delta</div>
+          <div class="metric-value">+ 138</div>
+        </div>
+      </div>
+
+      <h2>What changed structurally</h2>
+      <ul>
+        <li>
+          New SDK-public field <code>pristine.searcher</code> (full clients only;
+          <code>createLite</code> returns <code>null</code>) exposing 4 retrieval methods.
+        </li>
+        <li>
+          New module <code>src/memory/searcher/</code> (922 lines after Story 6) housing all
+          Phase-4 read-side logic.
+        </li>
+        <li>
+          <code>storeAsync</code> contract changed: returns <code>conversationId</code> instead
+          of <code>taskId</code>; <code>createLite().storeAsync()</code> now throws
+          <code>InvalidArgumentError</code>.
+        </li>
+        <li>
+          Legacy <code>IngestQueue.enqueue</code> + <code>extract-conversation</code> dispatch
+          + <code>Orchestrator</code> interface deleted (sprint-013's promised cleanup).
+        </li>
+      </ul>
+    </section>
+
+    <!-- SLIDE 2 -->
+    <section id="s2" class="slide">
+      <span class="slide-num">SLIDE 2 / 5</span>
+      <h1>User Flows Demonstrated</h1>
+      <p class="subtitle">
+        All 5 flows executed end-to-end against a single in-memory SQLite + real Nomic v1.5
+        embedder via <code>scripts/smoke-indexer.ts</code>. Single-script artifact below
+        consolidates corpus seeding, vectorSearch leak check, ftsSearch error-code recall,
+        bi-source RRF, and 3-source fan-out.
+      </p>
+
+      <h2>Smoke output (real Nomic v1.5)</h2>
+      <pre><code>smoke: fresh DB at /tmp/pristine-smoke.db
+smoke: storeAsync → conversationId=d3c0ff91-590d-4955-911f-92891cc3632f
+smoke: pending tasks before drain: 6
+smoke: embed-worker draining (Nomic loads on first call — slow)...
+smoke: embed-worker processed 6 task(s) in 285 ms
+smoke: buildSessionVector ...
+smoke: buildSessionVector → ok
+
+smoke: populated-corpus counts (expected → actual):
+  OK   messages             6 → 6
+  OK   vec_windows          3 → 3
+  OK   window_messages      9 → 9
+  OK   vec_sessions         1 → 1
+  OK   messages_fts         6 → 6
+  OK   completed_tasks      6 → 6
+  OK   failed_tasks         0 → 0
+
+smoke: seeding second project for vectorSearch leak check ...
+smoke: drained second project — 4 tasks
+smoke: vectorSearch in smoke-project → 3 hits
+  OK   cross-project leak count   0 → 0
+
+smoke: ftsSearch error-code lookup round-trip ...
+smoke: ftsSearch '"PRSTN-9001"' → 1 hits
+  OK   fts error-code recall      1 → 1
+        score: 0.6553 (higher = more relevant)
+        snippet: I hit error &lt;b&gt;PRSTN-9001&lt;/b&gt; on startup
+
+smoke: hybridSearch RRF fusion round-trip ...
+smoke: hybridSearch '"PRSTN-9001"' → 3 hits
+        window(0) score=0.0164 source=vector
+        message(11) score=0.0164 source=fts
+        window(1) score=0.0161 source=vector
+  OK   hybrid hits >= 1            ≥1 → 3
+
+smoke: 3-source hybrid (session vectors built) ...
+smoke: built session vectors for both seeded conversations
+smoke: 3-source hybridSearch in smoke-project → 5 hits
+        window(1) score=0.0164 source=vector
+        message(3)  score=0.0164 source=fts
+        session(d3c0ff91) score=0.0164 source=session
+        window(0) score=0.0161 source=vector
+        window(2) score=0.0159 source=vector
+  OK   session hits >= 1           ≥1 → 1
+
+smoke: PASS — storeAsync pipeline matches expected behavior</code></pre>
+
+      <div class="grid-2">
+        <div>
+          <h2>Flow 1 — storeAsync populates corpus</h2>
+          <ul>
+            <li><span class="pass">PASS</span> — 6 turns → 6 messages, 3 vec_windows, 9 window_messages</li>
+            <li><span class="pass">PASS</span> — buildSessionVector → 1 vec_sessions row</li>
+            <li><span class="pass">PASS</span> — 6 messages_fts rows, 6 completed embed tasks, 0 failed</li>
+            <li>Drain time on real Nomic: <strong>285ms</strong> for 6 messages</li>
+          </ul>
+          <h2>Flow 2 — vectorSearch filter-first KNN</h2>
+          <ul>
+            <li><span class="pass">PASS</span> — 3 hits in <code>smoke-project</code>; 0 leaks from <code>smoke-project-b</code></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Flow 3 — ftsSearch literal recall</h2>
+          <ul>
+            <li><span class="pass">PASS</span> — exactly 1 hit on <code>"PRSTN-9001"</code></li>
+            <li>Score: <strong>0.6553</strong> (bm25 → similarity transform)</li>
+            <li>Snippet rendered with <code>&lt;b&gt;...&lt;/b&gt;</code> tags</li>
+          </ul>
+          <h2>Flow 4 — hybridSearch bi-source RRF</h2>
+          <ul>
+            <li><span class="pass">PASS</span> — vector + FTS legs both surface</li>
+            <li>Source provenance correctly tagged per hit</li>
+          </ul>
+          <h2>Flow 5 — 3-source hybrid (cross-conversation reference)</h2>
+          <ul>
+            <li><span class="pass">PASS</span> — session leg contributes 1 hit (<span class="source-tag src-session">session</span>)</li>
+            <li>Mixed kinds in result: window + message + session</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="subtitle">
+        Raw smoke transcript: <code>docs/sprints/eval/sprint-016/smoke-output.txt</code>
+      </p>
+    </section>
+
+    <!-- SLIDE 3 -->
+    <section id="s3" class="slide">
+      <span class="slide-num">SLIDE 3 / 5</span>
+      <h1>Key Changes — searcher module + RRF fusion</h1>
+
+      <h2>Searcher module structure</h2>
+      <pre><code>src/memory/searcher/
+└── index.ts (922 lines)
+    ├── Public types     — SearchFilters, WindowHit, MessageHit, SessionHit, HybridHit, HybridSource
+    ├── Constants        — MAX_LIMIT (1000), VEC_DIM (768), distanceToScore, bm25ToScore
+    └── createSearcher() factory
+        ├── Hoisted prepared statements (resolveMessageIdsBatch, roleMatchesBatch)
+        ├── buildCandidateSql       — filter-first narrowing
+        ├── vectorSearch            — vec0 KNN over vec_windows
+        ├── ftsSearch               — bm25 over messages_fts
+        ├── sessionVectorSearch     — vec0 KNN over vec_sessions
+        └── hybridSearch            — Promise.allSettled + RRF (k=60)
+
+src/memory/retriever/ranking.ts (gained reciprocalRankFusion + RRF_DEFAULT_K)</code></pre>
+
+      <h2>RRF fusion formula (Cormack et al. 2009)</h2>
+      <pre><code>score(d) = Σᵢ 1 / (k + rankᵢ(d))     where k = 60
+
+Each leg contributes one term per document it ranked.
+Documents in multiple legs accumulate higher fused scores.
+Tie-breaking: stable first-seen order across input lists.</code></pre>
+
+      <h2>Filter-first candidate-set EXPLAIN QUERY PLAN</h2>
+      <pre><code>EXPLAIN QUERY PLAN
+SELECT c.id FROM conversations c
+WHERE c.project_id = ? AND c.created_at >= ?;
+
+QUERY PLAN
+`--SEARCH c USING INDEX ix_conversations_project_started (project_id=? AND created_at>?)</code></pre>
+      <p class="subtitle">
+        Index hit on <code>(project_id, created_at DESC)</code> — no full scan. Existing
+        <code>ix_conversations_project_started</code> from sprint-014 covers the hot path; no
+        new indexes needed.
+      </p>
+
+      <h2>storeAsync — before / after</h2>
+      <div class="grid-2">
+        <div>
+          <p style="color: var(--warn); margin-top: 0;"><strong>Before (broken)</strong></p>
+          <pre><code>public storeAsync(conversation, userId): string {
+  return this.ingestQueue.enqueue(
+    conversation, userId,
+  );
+  // ↑ writes task_type='extract-conversation'
+  // → processNext throws (orchestrator deleted
+  //   in sprint-013) — corpus stays empty.
+}</code></pre>
+        </div>
+        <div>
+          <p style="color: var(--pass); margin-top: 0;"><strong>After</strong></p>
+          <pre><code>public storeAsync(
+  conversation, userId, projectId?,
+): string {
+  if (this.indexer === null) throw …;
+  return this.db.transaction((): string => {
+    const id = this.conversationStore
+      .addEmptyConversation(userId, conversation, projectId);
+    this.indexer.ingest(conversation, {
+      projectId, conversationId: id,
+    });
+    return id;
+  })();
+}</code></pre>
+        </div>
+      </div>
+
+      <h2>HybridHit discriminated union</h2>
+      <pre><code>type HybridHit =
+  | { kind: 'window';  conversationId; windowIndex; messageIds; score; source }
+  | { kind: 'message'; conversationId; messageId; score; source; snippet? }
+  | { kind: 'session'; conversationId; score; source };
+
+type HybridSource = 'vector' | 'fts' | 'session' | 'both';
+
+// Stable ids for fusion (disjoint prefixes prevent collision):
+//   window:{conversationId}:{windowIndex}
+//   message:{messageId}
+//   session:{conversationId}</code></pre>
+    </section>
+
+    <!-- SLIDE 4 -->
+    <section id="s4" class="slide">
+      <span class="slide-num">SLIDE 4 / 5</span>
+      <h1>Test &amp; Eval Results</h1>
+
+      <h2>Per-story test-count delta</h2>
+      <table>
+        <thead>
+          <tr><th>Story</th><th>Tests added</th><th>Suite</th><th>Notable</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1 — storeAsync rewire</td>
+            <td>+3 unit, +3 integration</td>
+            <td>tests/client.test.ts, tests/integration/storeasync.test.ts</td>
+            <td>Atomic-tx rollback test pinned by /review-fix iter1</td>
+          </tr>
+          <tr>
+            <td>2 — vectorSearch</td>
+            <td>+18 integration</td>
+            <td>tests/integration/searcher-vector.test.ts</td>
+            <td>vec0 KNN read-path syntax verified; cross-project isolation pinned</td>
+          </tr>
+          <tr>
+            <td>3 — ftsSearch</td>
+            <td>+17 integration</td>
+            <td>tests/integration/searcher-fts.test.ts</td>
+            <td>FTS5 phrase / boolean / prefix queries; "no such table" propagates unchanged</td>
+          </tr>
+          <tr>
+            <td>4 — hybridSearch</td>
+            <td>+11 unit, +12 integration</td>
+            <td>tests/memory/retriever/ranking.test.ts, tests/integration/searcher-hybrid.test.ts</td>
+            <td>RRF math + tie-breaking + dual-error rethrow vector</td>
+          </tr>
+          <tr>
+            <td>5 — sessionVectorSearch + 3-source</td>
+            <td>+15 integration</td>
+            <td>tests/integration/searcher-session.test.ts</td>
+            <td>Cross-conversation reference recall pinned</td>
+          </tr>
+          <tr>
+            <td>6 — cross-cutting</td>
+            <td>+26 integration (24 stub + 2 gated Nomic)</td>
+            <td>tests/integration/searcher.test.ts</td>
+            <td>Filter matrix 5 dims × 3 methods; static src/ import guard</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Suite shape (sprint close)</h2>
+      <div class="grid-3">
+        <div class="metric">
+          <div class="metric-label">Unit tests</div>
+          <div class="metric-value">537</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Integration tests</div>
+          <div class="metric-value">666</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Test files</div>
+          <div class="metric-value">82</div>
+        </div>
+      </div>
+
+      <h2>Real-Nomic gate</h2>
+      <p class="subtitle">
+        Slow-test gate semantics: <code>SKIP_SLOW_TESTS=1</code> opts out (default in CI),
+        unset OR any other value opts in. Three suites have gated real-Nomic variants:
+        <code>tests/integration/embedder.test.ts</code>,
+        <code>tests/integration/indexer.test.ts</code>, and
+        <code>tests/integration/searcher.test.ts</code> (sprint-016 addition: 2 tests covering
+        vectorSearch + 3-source hybrid against real Nomic v1.5).
+      </p>
+
+      <h2>Cross-project isolation pinned</h2>
+      <table>
+        <thead><tr><th>Method</th><th>Pinned at</th></tr></thead>
+        <tbody>
+          <tr><td>vectorSearch</td><td>searcher-vector.test.ts + searcher.test.ts (cross-cutting)</td></tr>
+          <tr><td>ftsSearch</td><td>searcher-fts.test.ts + searcher.test.ts (cross-cutting)</td></tr>
+          <tr><td>hybridSearch</td><td>searcher-hybrid.test.ts + searcher-session.test.ts + searcher.test.ts</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Static src/ import guard</h2>
+      <p class="subtitle">
+        Walks the full <code>src/</code> tree (sprint-016 expanded scope from sprint-015's
+        narrower walk) to verify no banned LLM SDK imports:
+        <code>@anthropic-ai/sdk</code>, <code>openai</code>, <code>pg</code>,
+        <code>@supabase/*</code>. <span class="pass">PASS</span> — zero offenders.
+      </p>
+    </section>
+
+    <!-- SLIDE 5 -->
+    <section id="s5" class="slide">
+      <span class="slide-num">SLIDE 5 / 5</span>
+      <h1>Repo Hygiene + AC Matrix</h1>
+
+      <h2>Repo state at sprint close</h2>
+      <ul>
+        <li><span class="pass">main clean</span> — sprint-016 branch ready for integration PR; no working-tree drift</li>
+        <li><span class="pass">No tmp / debug files</span> — <code>.claude/</code> gitignored after Story 2 P0 fix</li>
+        <li><span class="pass">No dangling story branches</span> — all 6 story branches deleted from origin after merge</li>
+        <li><span class="pass">All tests green</span> — 537 unit + 666 integration pass on sprint-016 HEAD</li>
+        <li><span class="pass">Lint + typecheck green</span> — pre-merge gate passed for every story PR</li>
+      </ul>
+
+      <h2>AC matrix — every feature story's acceptance criteria</h2>
+      <table>
+        <thead>
+          <tr><th>Story</th><th>AC</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td rowspan="9">1</td><td>Pristine.create constructs Indexer + IngestQueue with embedTaskHandler</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>storeAsync composes addEmptyConversation + indexer.ingest, returns conversationId</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Duplicate behavior: findByMessages recovery, no second ingest</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Legacy IngestQueue.enqueue + extract-conversation dispatch deleted</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Orchestrator interface + client orchestrator field deleted</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>createLite().storeAsync throws InvalidArgumentError</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Atomic-tx envelope (added in /review-fix)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Integration test drives full path</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Spec-005 §15 Flow 1 updated</td><td><span class="pass">PASS</span></td></tr>
+
+          <tr><td rowspan="6">2</td><td>New module src/memory/searcher/ with createSearcher + types</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>pristine.searcher exposed; createLite returns null</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>vectorSearch filter-first KNN with messageIds resolution</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>EXPLAIN QUERY PLAN proves index hit (no scan)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Cross-project isolation + empty-candidate + limit guards</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>vec0 KNN read-path syntax verified end-to-end</td><td><span class="pass">PASS</span></td></tr>
+
+          <tr><td rowspan="4">3</td><td>ftsSearch returning MessageHit with bm25→[0,1) score</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>FTS5 syntax errors → InvalidArgumentError; infrastructure errors propagate</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Phrase / boolean / prefix operators tested</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Cross-project isolation + empty-corpus</td><td><span class="pass">PASS</span></td></tr>
+
+          <tr><td rowspan="5">4</td><td>reciprocalRankFusion in ranking.ts with k=60 default</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>hybridSearch parallel via Promise.allSettled + RRF fusion</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>HybridHit discriminated union (window | message [+ session in Story 5])</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Over-fetch limit*2 pinned by test</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Partial-empty + dual-error contracts pinned</td><td><span class="pass">PASS</span></td></tr>
+
+          <tr><td rowspan="5">5</td><td>sessionVectorSearch — filter-first KNN over vec_sessions</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>3-source hybrid fan-out + kind:'session' HybridHit variant</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Cross-conversation reference recall pinned</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Window-vs-session co-existence; empty-vec_sessions degrades gracefully</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>vec_sessions row-count > 0 fixture sanity check</td><td><span class="pass">PASS</span></td></tr>
+
+          <tr><td rowspan="6">6</td><td>tests/integration/searcher.test.ts cross-cutting suite</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Filter correctness matrix (5 dims × 3 methods)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Ranking stability across runs</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Window→messages resolution (vector + hybrid window-kind)</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Cross-project isolation pinned for all three methods</td><td><span class="pass">PASS</span></td></tr>
+          <tr><td>Static src/ filesystem grep guard for forbidden imports</td><td><span class="pass">PASS</span></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Sprint-close follow-ups (logged for next sprint)</h2>
+      <ul>
+        <li>FTS5 tokenizer migration (unicode61 → porter) — schema-modifying; deferred per sprint-level rule.</li>
+        <li>storeAsync auto-invoke buildSessionVector — open question per Story 5 Technical Notes; defer until Phase 7 eval signal.</li>
+        <li>Searcher module decomposition (922 lines, accumulating across Stories 2-5) — split into per-method files in a future sprint.</li>
+        <li>Embed-once optimization — vectorSearch + sessionVectorSearch each call <code>embedder.embed</code> for the same query in hybridSearch.</li>
+        <li>LLM-removal sprint — finalize the createLite vs Pristine.create factory taxonomy when llmClients + privacy classifier are removed.</li>
+      </ul>
+
+      <p class="subtitle" style="margin-top: 1.5rem;">
+        <strong>Final mergeability:</strong> 6 / 6 stories merged with mergeability ≥ 4/5
+        per /review. Sprint-integration PR (sprint-016 → main) follows.
+      </p>
+    </section>
+  </body>
+</html>

@@ -30,18 +30,30 @@ export interface SearchFilters {
   readonly projectId: string;
   readonly conversationId?: string;
   /**
-   * Role filter. A window matches if AT LEAST ONE of its constituent
-   * messages has the role. Window-level filtering is permissive because
-   * a window's text concatenates messages from multiple roles; treating
-   * the role filter as "must contain" is the most useful interpretation
-   * for retrieval.
+   * Role filter. **Semantics differ by method**:
    *
-   * **Caveat:** the role-filter post-pass runs over a fixed `limit*2`
-   * over-fetch from the KNN. If more than half the top-2*limit windows
-   * fail the role check, the returned array can be shorter than `limit`
-   * even when more matching windows exist further down the KNN ranking.
-   * Documented for callers; auto-grow over-fetch is deferred to Phase 7
-   * eval signal.
+   * - `vectorSearch`: a window matches if AT LEAST ONE of its
+   *   constituent messages has the role (permissive, window-level).
+   *   Window-level filtering is permissive because a window's text
+   *   concatenates messages from multiple roles; treating the role
+   *   filter as "must contain" is the most useful interpretation for
+   *   retrieval.
+   * - `ftsSearch`: a message matches if its OWN role equals the
+   *   filter (strict, message-level). FTS5 operates at message
+   *   granularity, so message-level matching is the natural fit.
+   *
+   * Story 4's `hybridSearch` will pass the same `filters` object to
+   * both methods; callers who pass `role: 'user'` should expect
+   * vectorSearch to surface windows where any message is from the user
+   * AND ftsSearch to surface only user-authored messages. The asymmetry
+   * is intentional given each engine's natural granularity.
+   *
+   * **Caveat (vectorSearch only):** the role-filter post-pass runs
+   * over a fixed `limit*2` over-fetch from the KNN. If more than half
+   * the top-2*limit windows fail the role check, the returned array
+   * can be shorter than `limit` even when more matching windows exist
+   * further down the KNN ranking. Documented for callers; auto-grow
+   * over-fetch is deferred to Phase 7 eval signal.
    */
   readonly role?: Role;
   /** ISO 8601 lower bound (inclusive) on `conversations.created_at`. */
@@ -67,8 +79,49 @@ export interface WindowHit {
   readonly messageIds: readonly number[];
 }
 
+export interface MessageHit {
+  readonly messageId: number;
+  readonly conversationId: string;
+  /**
+   * Similarity score, **higher = more relevant**. Computed as
+   * `|bm25| / (1 + |bm25|)` from FTS5's bm25() output (which SQLite
+   * returns as a non-positive number — more negative = more relevant).
+   * Score lives in [0, 1), approaching 1 as |bm25| grows, with 0
+   * meaning no relevance. Same "higher is better" convention as
+   * `WindowHit.score` so Story 4's RRF fusion sees consistent ordering
+   * across vector + FTS sources.
+   */
+  readonly score: number;
+  /**
+   * FTS5-rendered snippet of the matching content with `<b>...</b>` tags
+   * around the matched terms. Truncated to ~64 tokens around the match.
+   * Undefined when the FTS5 snippet helper returns an empty string
+   * (very short matches).
+   */
+  readonly snippet?: string;
+}
+
 export interface Searcher {
   vectorSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly WindowHit[]>;
+  /**
+   * FTS5 keyword search over `messages_fts`, scoped to the same
+   * `SearchFilters` as `vectorSearch`. Returns up to `limit` message
+   * hits in descending score order (more relevant first).
+   *
+   * **Tokenizer reality check (sprint-016).** `messages_fts` uses the
+   * default `unicode61` tokenizer (no `tokenize` clause in the DDL at
+   * `src/conversations/store.ts`), NOT porter — despite spec §5.5
+   * implying stem matching. Phrase / boolean / prefix queries work as
+   * expected; stem matching does NOT (`"running"` does not match
+   * `"run"`). Migrating to porter requires DROP + CREATE on the
+   * virtual table + a corpus rebuild and is deferred to a future
+   * sprint.
+   *
+   * **FTS5 query-syntax errors** (unbalanced quotes, invalid operators)
+   * are caught and rethrown as `InvalidArgumentError` — no raw SQLite
+   * errors leak to callers.
+   */
+  ftsSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly MessageHit[]>;
 }
 
 export interface SearcherDeps {
@@ -93,6 +146,22 @@ const VEC_DIM = 768;
 // score-descending order without any re-sort. Higher = more similar; this
 // is the convention Story 4's RRF fusion expects across all primitives.
 const distanceToScore = (distance: number): number => 1 / (1 + distance);
+
+// Convert FTS5 bm25() output to a similarity score in [0, 1). bm25 is
+// non-positive (more negative = more relevant per the SQLite
+// implementation): use |bm25| / (1 + |bm25|), monotonically increasing
+// in -bm25. bm25 = 0 → score = 0 (no relevance); bm25 → -∞ → score → 1.
+// NaN / +Infinity are guarded — they shouldn't occur from FTS5 in
+// practice, but the formula is undefined on them so we collapse to 0.
+const bm25ToScore = (bm25: number): number => {
+  if (!Number.isFinite(bm25)) return 0;
+  // Math.abs avoids the -0 quirk: -bm25 of 0 produces -0; Math.abs(0)
+  // produces +0. Functionally identical for comparisons (-0 === 0)
+  // but JSON.stringify(-0) and Object.is(-0, 0) differ, so this
+  // keeps the score stable for any test or serialization that cares.
+  const abs = Math.abs(bm25);
+  return abs / (1 + abs);
+};
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -319,5 +388,134 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     return hits;
   };
 
-  return { vectorSearch };
+  // ---- ftsSearch (sprint-016 Story 3 / spec-005 §16 P4-S2) ---------------
+  //
+  // FTS5 keyword search over `messages_fts`. The candidate-narrowing
+  // logic from `vectorSearch` is folded into a single JOIN-based SQL
+  // pass (no separate candidate-set query) because `messages_fts` joins
+  // through `messages` which already carries denormalized `project_id`,
+  // and `conversations` is needed only for date-range filters. Filter
+  // shape mirrors `SearchFilters` so callers can swap vector and FTS
+  // freely without rewriting filter args.
+
+  const ftsSearch = async (
+    query: string,
+    filters: SearchFilters,
+    limit: number,
+  ): Promise<readonly MessageHit[]> => {
+    if (typeof query !== 'string' || query.length === 0) {
+      throw new InvalidArgumentError('searcher.ftsSearch: query must be a non-empty string');
+    }
+    if (filters.projectId === '') {
+      throw new InvalidArgumentError('searcher.ftsSearch: filters.projectId must be non-empty');
+    }
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new InvalidArgumentError(
+        `searcher.ftsSearch: limit must be a positive integer, got ${String(limit)}`,
+      );
+    }
+    if (limit > MAX_LIMIT) {
+      throw new InvalidArgumentError(
+        `searcher.ftsSearch: limit must be <= ${MAX_LIMIT}, got ${limit}`,
+      );
+    }
+
+    // Build the filter conditions inline. project_id is sourced from
+    // messages (denormalized — same project_id on every message of a
+    // conversation, written by addConversation/addEmptyConversation).
+    // dateFrom/dateTo apply to conversations.created_at; we JOIN
+    // conversations only when those filters are present.
+    const conditions: string[] = ['messages_fts MATCH ?', 'm.project_id = ?'];
+    const params: unknown[] = [query, filters.projectId];
+
+    if (filters.conversationId !== undefined) {
+      conditions.push('m.conversation_id = ?');
+      params.push(filters.conversationId);
+    }
+    if (filters.role !== undefined) {
+      conditions.push('m.role = ?');
+      params.push(filters.role);
+    }
+
+    const needsConversationsJoin = filters.dateFrom !== undefined || filters.dateTo !== undefined;
+    if (filters.dateFrom !== undefined) {
+      conditions.push('c.created_at >= ?');
+      params.push(filters.dateFrom);
+    }
+    if (filters.dateTo !== undefined) {
+      conditions.push('c.created_at <= ?');
+      params.push(filters.dateTo);
+    }
+
+    const sql = `
+      SELECT m.id AS message_id,
+             m.conversation_id,
+             bm25(messages_fts) AS bm25,
+             snippet(messages_fts, 0, '<b>', '</b>', '...', 64) AS snippet
+      FROM messages_fts
+      JOIN messages m ON m.id = messages_fts.rowid
+      ${needsConversationsJoin ? 'JOIN conversations c ON c.id = m.conversation_id' : ''}
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY bm25 ASC
+      LIMIT ?
+    `;
+    params.push(limit);
+
+    let rows: {
+      message_id: number;
+      conversation_id: string;
+      bm25: number;
+      snippet: string | null;
+    }[];
+    try {
+      rows = db.prepare(sql).all(...params) as typeof rows;
+    } catch (error: unknown) {
+      // FTS5 query-syntax errors surface as better-sqlite3 SqliteError
+      // with code === 'SQLITE_ERROR' (the generic SQLite error code).
+      // BUT SQLITE_ERROR also fires on infrastructure failures we
+      // explicitly want to propagate — "no such table: messages_fts"
+      // (FTS5 not loaded), "no such column" (schema migration drift),
+      // etc. Use the AND of code + message-keyword regex so we wrap
+      // ONLY query-syntax patterns and propagate everything else with
+      // its original error class + code intact. Catastrophic codes
+      // (SQLITE_CORRUPT, SQLITE_BUSY) never reach the inner branch.
+      const code = (error as { code?: string }).code;
+      const msg = error instanceof Error ? error.message : '';
+      // Match TRUE FTS5 query-syntax error patterns only — never the
+      // bare "fts5" keyword. Infrastructure failures like "no such
+      // module: fts5" (extension not loaded) or "no such column:
+      // fts5_rank" (schema drift) ALSO contain "fts5", so matching that
+      // keyword would silently misclassify them as user-input errors.
+      // Real syntax errors always contain one of the structural-error
+      // keywords below or a "MATCH"-related token.
+      const looksLikeFtsSyntax =
+        /fts5: syntax error|syntax error near|unterminated|malformed (match|fts5)/i.test(msg) ||
+        /MATCH/.test(msg);
+      const isFtsSyntax = code === 'SQLITE_ERROR' && looksLikeFtsSyntax;
+      if (isFtsSyntax) {
+        throw new InvalidArgumentError(`searcher.ftsSearch: invalid FTS5 query — ${msg}`);
+      }
+      throw error;
+    }
+
+    return rows.map((row) => {
+      const hit: { -readonly [K in keyof MessageHit]: MessageHit[K] } = {
+        messageId: row.message_id,
+        conversationId: row.conversation_id,
+        score: bm25ToScore(row.bm25),
+      };
+      // FTS5's snippet() can return either '' (matched content too
+      // short to span a snippet window) OR null (content-table shadow
+      // desync — base-row content was deleted before snippet ran).
+      // Treat both as "no snippet"; omit the field so callers can
+      // rely on `hit.snippet ? renderSnippet(hit.snippet) : ...`.
+      const rawSnippet: unknown = row.snippet;
+      if (typeof rawSnippet === 'string' && rawSnippet !== '') {
+        hit.snippet = rawSnippet;
+      }
+      return hit;
+    });
+  };
+
+  return { vectorSearch, ftsSearch };
 };

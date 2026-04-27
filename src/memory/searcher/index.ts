@@ -196,24 +196,29 @@ export interface Searcher {
    */
   ftsSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly MessageHit[]>;
   /**
-   * Hybrid search: runs `vectorSearch` and `ftsSearch` in parallel and
-   * fuses the two ranked lists via reciprocal rank fusion (k=60).
-   * Returns up to `limit` `HybridHit`s in fused score order, each
-   * tagged with which primitive(s) surfaced it.
+   * Hybrid search: runs `vectorSearch`, `ftsSearch`, and
+   * `sessionVectorSearch` in parallel and fuses the three ranked lists
+   * via reciprocal rank fusion (k=60). Returns up to `limit`
+   * `HybridHit`s in fused score order, each tagged with which
+   * primitive(s) surfaced it.
    *
-   * **Over-fetch.** Both legs over-fetch `limit*2` so RRF has enough
-   * candidates to fuse meaningfully — a query that ranks 5 vector hits
-   * and 5 FTS hits with overlap should produce up to 10 fused hits, not
-   * just the top-5 of one side.
+   * **Over-fetch.** All three legs over-fetch `limit*2` so RRF has
+   * enough candidates to fuse meaningfully — a query that ranks
+   * candidates across vector, FTS, and session sources with overlap
+   * should produce a richer fused list than the top-`limit` of any one
+   * leg alone.
    *
-   * **Partial-empty resilience.** Either side returning empty does NOT
-   * short-circuit the other; `hybridSearch` returns the non-empty
-   * side's results unchanged.
+   * **Partial-empty resilience.** Any leg returning empty does NOT
+   * short-circuit the others; `hybridSearch` fuses whichever legs
+   * returned hits. Common case: a corpus that has only run
+   * `storeAsync` (no explicit `buildSessionVector` calls) will see
+   * the session leg return `[]`, and fusion proceeds over vector + FTS
+   * alone.
    *
-   * **Dual error.** If both legs reject simultaneously (e.g., embedder
-   * outage + FTS5 syntax error), `hybridSearch` rethrows the
-   * vectorSearch error — the embedder failure is the higher-impact
-   * one.
+   * **All-leg error.** If all three legs reject simultaneously (e.g.,
+   * embedder outage + FTS5 syntax error + session-leg failure),
+   * `hybridSearch` rethrows the vectorSearch error — the embedder
+   * failure is the higher-impact one.
    */
   hybridSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly HybridHit[]>;
   /**

@@ -856,50 +856,60 @@ Consumer calls: client.storeAsync(messages, userId, projectId?)
 
 ### Flow 2 — Retrieval (primitive)
 
-**Composes:** `searcher.hybridSearch` → filters → `vectorSearch` (over `vec_windows` and `vec_sessions`) + `ftsSearch` (over `messages_fts`) → RRF → (optional) reference neighbor-expansion helper
+**SDK surface (sprint-016 Stories 2-5):** `client.searcher.{vector,fts,session}Search` are individually callable for single-source retrieval; `client.searcher.hybridSearch` fans out across all three sources in parallel and fuses them with RRF (k=60). The hybrid path is the consumer-facing default; single-source methods are exposed for callers that need a specific signal (e.g., FTS-only for boolean queries).
+
+**Composes (hybrid):** `searcher.hybridSearch` → filters (over `conversations`) → `vectorSearch` (over `vec_windows`) ‖ `ftsSearch` (over `messages_fts`) ‖ `sessionVectorSearch` (over `vec_sessions`) → RRF over the three ranked lists → `HybridHit[]`
 
 ```
 Consumer calls: searcher.hybridSearch(query, filters, limit)
                     │
                     ▼
-   [Filters applied FIRST to build candidate set]
+   [Filters applied FIRST to build candidate conversation set]
    Build candidate SQL:
-     SELECT id FROM messages WHERE
-       project_id = filters.projectId
-       AND (timestamp BETWEEN ... if set)
-       AND (role IN (...) if set)
-       AND (conversation_id = ... if set)
-       AND parent_message_id IS NULL   ← only root messages by default
+     SELECT c.id AS conversation_id FROM conversations c WHERE
+       c.project_id = filters.projectId
+       AND (c.id = filters.conversationId          if set)
+       AND (c.created_at >= filters.dateFrom       if set)
+       AND (c.created_at <= filters.dateTo         if set)
+   (filters.role is applied per-leg, not at the candidate stage —
+    semantics differ by granularity; see SearchFilters JSDoc)
                     │
-          ┌─────────┴──────────┐
-          ▼                    ▼
-   vectorSearch on           ftsSearch on
-   candidate set             candidate set
-   - embed(query)            - FTS5 MATCH
-   - sqlite-vec KNN          - BM25 rank
-   - returns top 2N          - returns top 2N
-          │                    │
-          └─────────┬──────────┘
+        ┌───────────┼────────────┐
+        ▼           ▼            ▼
+   vectorSearch  ftsSearch   sessionVectorSearch
+   over          over        over
+   vec_windows   messages_fts vec_sessions
+   - embed(q)    - FTS5 MATCH - embed(q)
+   - vec0 KNN    - BM25 rank  - vec0 KNN
+   - join to     - join to    - join to
+     candidates    candidates   candidates
+   - top 2*limit - top 2*limit - top 2*limit
+        │           │            │
+        └───────────┼────────────┘
                     ▼
-         Reciprocal rank fusion (RRF)
+       Promise.allSettled — partial-failure resilient:
+         any leg returning [] does NOT short-circuit the others;
+         if all three legs reject, hybridSearch rethrows the
+         vectorSearch error (highest-impact)
                     ▼
-            Hit[] ranked by fused score
-                    │
+       Reciprocal rank fusion (k=60) over disjoint id-spaces:
+         vector hits keyed `window:<convId>:<windowIndex>`
+         FTS hits keyed `message:<messageId>`
+         session hits keyed `session:<convId>`
+       Each hit's source tag = 'vector' | 'fts' | 'session' | 'both'
                     ▼
-         (optional, reference-impl only)
-         neighborExpand(hit, ±N)
-         - wraps searcher.sql:
-             WHERE conversation_id = hit.conversation_id
-               AND turn_index BETWEEN (anchor - N) AND (anchor + N)
-         - returns message + N prior + N subsequent
-                    │
-                    ▼
-         ExpandedHit[] returned to caller
+            HybridHit[] (kind: 'window' | 'message' | 'session')
+            ranked by fused RRF score, truncated to `limit`
 ```
 
-**Key design — filter-first is deliberate:** sqlite-vec KNN over an unfiltered index can miss hits that fall outside the top-K globally but are top-K within a filter. For correctness, we pre-filter candidates, then KNN over them.
+**Key design notes:**
 
-**Latency:** ~100–200 ms for corpora up to ~100K messages. Query embedding ~50 ms; vector + FTS + RRF ≈ 100 ms.
+- **Filter-first is deliberate.** sqlite-vec KNN over an unfiltered index can miss hits that fall outside the top-K globally but are top-K within a filter. For correctness, we pre-filter candidates (via `conversations`), then KNN over them.
+- **3-source fan-out, not 2-source.** Story 5 added `sessionVectorSearch` as a third leg. Sessions provide a coarser-grained semantic signal than per-message windows — useful for "which conversations were about X" queries where window-level matches miss thematic relevance. Session vectors are populated by the explicit `indexer.buildSessionVector(conversationId)` call (NOT by `storeAsync`); a corpus that has only run `storeAsync` will see the session leg return `[]` and the hybrid result will fuse vector + FTS alone.
+- **Disjoint id-spaces.** Each leg returns hits over a different SQL identity (window vs message vs session); RRF needs unique keys across legs to avoid spurious "both" tags. Hybrid keys the fusion map by prefix (`window:` / `message:` / `session:`) so a window and a message that happen to share an integer id are treated as distinct candidates.
+- **Role-filter asymmetry.** `filters.role` is applied per-leg, not at the candidate stage: vectorSearch does a permissive "window contains a message of this role" post-pass over its `limit*2` over-fetch; ftsSearch applies a strict "message.role = filter" SQL clause; sessionVectorSearch silently ignores it (a session aggregates messages of every role). Documented at the `SearchFilters.role` field; intentional per-engine granularity fit.
+
+**Latency:** ~100–200 ms for corpora up to ~100K messages. Vector + session legs each embed the query independently (~50 ms each, parallel via `Promise.allSettled`); FTS leg adds ~10–20 ms; RRF fusion ≈ 5 ms. Sharing the embed across legs is a deferred optimization — flagged in Story 5 Technical Notes for sprint-017+ once eval signal demands it.
 
 ### Flow 3 — SQL query (primitive)
 

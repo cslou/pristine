@@ -804,50 +804,55 @@ Checklist derived from §8 Validation experiments plus architectural commitments
 
 Five flows — three primitive, two reference. Deferred reference integrations (see §5.2) get their flows in a future spec.
 
-### Flow 1 — Ingestion (primitive)
+### Flow 1 — Ingestion (primitive + SDK surface)
 
-**Composes:** `indexer.ingest` → `store.addMessage` → `IngestQueue.enqueue` → detached `embed-worker.ts` → `embedder.embed` → `vec_windows` (tail window assembled / re-embedded on each growth) + `messages_fts` per turn
+**SDK surface (sprint-016 Story 1):** `Pristine.create({...}).storeAsync(messages, userId, projectId?)` — fire-and-forget. Returns the `conversationId` synchronously; embed work runs asynchronously via the embed-worker. Composes the primitive flow described below.
+
+**Primitive composition:** `storeAsync` → `store.addEmptyConversation` (writes the conversation row + content_hash, no message rows yet) → `indexer.ingest` (writes message rows + enqueues per-message embed tasks, atomically) → `IngestQueue.processNext` (drained by detached `embed-worker.ts`) → `embedder.embed` → `vec_windows` (tail window assembled / re-embedded on each growth) + `messages_fts` per turn
 
 ```
-Consumer calls: indexer.ingest(turns, { projectId, conversationId, sessionId })
+Consumer calls: client.storeAsync(messages, userId, projectId?)
                     │
                     ▼
      [Fast path — <0.5s, caller unblocked]
-     Atomic transaction:
-       store.addConversation (if new)       ← reuses existing ConversationStore
-       store.addMessage × N                 ← extended with project_id, parent_message_id
-       IngestQueue.enqueue(message_id) × N  ← reuses existing queue
+     storeAsync orchestrates:
+       store.addEmptyConversation(userId, messages, projectId)   ← creates conversation row only;
+                                                                   content_hash computed from messages;
+                                                                   message_count starts at 0,
+                                                                   indexer.ingest bumps it
+       (on UNIQUE collision: store.findByMessages returns the existing id; early-return, no re-enqueue)
+
+       indexer.ingest(messages, { projectId, conversationId }):
+         atomic transaction:
+           store.addMessage × N                  ← per-turn (oversize chunker may split into chunks)
+           IngestQueue.enqueueMessageEmbed × N   ← one task per inserted message row
                     │
                     ▼
-     Caller returns
+     storeAsync returns conversationId
                     │
                     ▼
-     Detached embed-worker (rewrite of extract-worker.ts):
+     Detached embed-worker (sprint-015 Story 6, rewrite of extract-worker.ts):
        while queue not empty:
-         message = queue.claimNext()  ← self-healing stale-row reset
-         if len(message.content) > 3000 tok:
-           chunks = chunk(message, mode=content-aware)
-           for each chunk:
-             write chunk row with parent_message_id
-             insert into messages_fts
-             (chunks participate as individual messages in window assembly)
-         else:
-           insert into messages_fts
+         task = queue.claimNext()                ← self-healing stale-row reset
+         message = SELECT FROM messages WHERE id = task.message_id
+         insert into messages_fts (if not present)
          # Assemble/update tail window(s) that contain this message:
-         for each window covering this message's turn_index:
+         for each window covering this message's sort_order:
            window_text = concat(role-prefixed messages in window)
            embedder.embed(window_text)
            INSERT OR REPLACE into vec_windows + window_messages
-         queue.complete(message_id)
+         queue.markCompleted(task.id)
        exit on idle
 ```
 
 **Design notes:**
 
-- **Crash safety** — message row persisted in the same transaction as the pending task; worker crash recovers via self-healing claim (existing behavior from spec-003 Phase 5).
-- **Idempotency** — windows re-embed on each fill-up step via `INSERT OR REPLACE` keyed by `(conversation_id, window_index)`. Content-hash dedup applies at the message level to prevent duplicate ingestion from replays.
-- **Latency** — <0.5s for the hook path; ~0.1s per message in the worker (Nomic CPU embedding).
-- **Reuse** — this flow adopts the shape of `createRawIngestPipeline()` proposed in spec-003 Phase 10 (deprioritized at the time), with oversize-message handling and explicit project scoping added.
+- **storeAsync vs. indexer.ingest direct.** `storeAsync` is the consumer-facing one-shot ingest (whole conversation up front). `indexer.ingest` is the lower primitive that appends turns to an existing conversation — used by `storeAsync`'s composition and by callers that stream turns over time (e.g., `addEmptyConversation` once, then `indexer.ingest(newTurns)` per arrival). Both write through the same `pending_ingest_tasks` queue.
+- **`createLite()` does not expose `storeAsync`.** Lite has no embedder, so the indexer pipeline can't run; calling `createLite().storeAsync(...)` throws `InvalidArgumentError`. Lite remains useful for read-only flows (`searchConversations`, `getConversation`).
+- **Session vector is NOT auto-built.** `storeAsync` writes message + window vectors via the embed-worker; building `vec_sessions` is a separate explicit call (`indexer.buildSessionVector(conversationId)`). Sprint-015 §5 deferred auto-invocation until retrieval pressure is real; revisit in sprint-017+.
+- **Crash safety** — message row persisted in the same transaction as the pending task (within `indexer.ingest`'s outer transaction); worker crash recovers via self-healing claim (existing behavior from spec-003 Phase 5).
+- **Idempotency** — windows re-embed on each fill-up step via `INSERT OR REPLACE` keyed by `(conversation_id, window_index)`. Content-hash dedup applies at the conversation level via `UNIQUE(user_id, content_hash)` on `conversations`; `storeAsync`'s duplicate path returns the existing `conversationId` without re-enqueueing.
+- **Latency** — <0.5s for the synchronous storeAsync path (no model load — embedder + LLM clients are lazy); ~0.1s per message in the embed-worker (Nomic CPU embedding).
 
 ### Flow 2 — Retrieval (primitive)
 

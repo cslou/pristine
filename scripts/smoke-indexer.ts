@@ -205,6 +205,29 @@ const main = async (): Promise<void> => {
   }
   if (!ftsOk) allOk = false;
 
+  // -------------------------------------------------------------------
+  // Sprint-016 Story 4 — searcher.hybridSearch RRF fusion round-trip.
+  // Query for "PRSTN-9001" — the literal error code — and observe both
+  // the FTS leg (literal match on the user message) AND the vector
+  // leg (topical match on the windows around the error) surface, then
+  // get fused via RRF. Exercises end-to-end with real Nomic.
+  // -------------------------------------------------------------------
+  log('');
+  log('smoke: hybridSearch RRF fusion round-trip ...');
+  const hybridHits = await client.searcher.hybridSearch(
+    '"PRSTN-9001"',
+    { projectId: 'smoke-project-fts' },
+    5,
+  );
+  log(`smoke: hybridSearch '"PRSTN-9001"' → ${hybridHits.length} hits`);
+  for (const hit of hybridHits) {
+    const kind = hit.kind === 'window' ? `window(${hit.windowIndex})` : `message(${hit.messageId})`;
+    log(`        ${kind} score=${hit.score.toFixed(4)} source=${hit.source}`);
+  }
+  const hybridOk = hybridHits.length >= 1;
+  log(`  ${hybridOk ? 'OK ' : 'FAIL'}  hybrid hits >= 1            ≥1 → ${hybridHits.length}`);
+  if (!hybridOk) allOk = false;
+
   await client.dispose();
 
   if (!allOk) {

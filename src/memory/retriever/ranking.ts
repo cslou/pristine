@@ -6,6 +6,7 @@
 // time-aware boosts. Until then there is no runtime consumer in `src/` —
 // only the ranking.test.ts unit test.
 
+import { InvalidArgumentError } from '../../core/errors.js';
 import type { Memory, TemporalMode } from '../../core/types.js';
 
 /** Boost for facts that are currently valid (validUntil is undefined) in full mode */
@@ -106,7 +107,9 @@ export function reciprocalRankFusion<T>(
 ): T[] {
   const k = opts.k ?? RRF_DEFAULT_K;
   if (!Number.isFinite(k) || k <= 0) {
-    throw new Error(`reciprocalRankFusion: k must be a positive finite number, got ${String(k)}`);
+    throw new InvalidArgumentError(
+      `reciprocalRankFusion: k must be a positive finite number, got ${String(k)}`,
+    );
   }
 
   const scores = new Map<string, number>();

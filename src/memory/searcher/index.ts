@@ -12,7 +12,7 @@
 import type Database from 'better-sqlite3';
 import type { Embedder } from '../../core/interfaces.js';
 import { InvalidArgumentError } from '../../core/errors.js';
-import { reciprocalRankFusion } from '../retriever/ranking.js';
+import { reciprocalRankFusion, RRF_DEFAULT_K } from '../retriever/ranking.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -86,7 +86,17 @@ export interface WindowHit {
  *
  * - `'vector'` — only the vectorSearch leg matched
  * - `'fts'` — only the ftsSearch leg matched
- * - `'both'` — both legs matched (RRF naturally promotes consensus picks)
+ * - `'both'` — both legs matched
+ *
+ * **Sprint-016 reachability note.** In Story 4's bi-source design
+ * (vector + FTS), the id spaces are structurally disjoint —
+ * `window:{cid}:{idx}` from vectorSearch never collides with
+ * `message:{messageId}` from ftsSearch — so `'both'` cannot appear in
+ * Story 4 output. The variant is reserved for Story 5's
+ * `sessionVectorSearch`, where `session:{cid}` ids CAN appear in
+ * multiple fan-out legs (a session vector and a window vector both
+ * scoped to the same conversation). Pre-existing on the type so
+ * downstream consumers don't need a breaking change in Story 5.
  */
 export type HybridSource = 'vector' | 'fts' | 'both';
 
@@ -629,8 +639,17 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     if (vectorResult.status === 'rejected' && ftsResult.status === 'rejected') {
       // Both failed: rethrow the vector error per the documented
       // contract (embedder failure is the higher-impact one for
-      // operators).
-      throw vectorResult.reason as Error;
+      // operators). Promise.allSettled types `reason` as unknown —
+      // normalize before rethrow so a non-Error rejection (e.g., a
+      // string thrown by a buggy dependency) doesn't crash a downstream
+      // `catch (e) { e.message }` consumer with "cannot read properties
+      // of undefined". Wrapping non-Errors in InvalidArgumentError
+      // preserves the contract (a downstream typed catch still works).
+      const reason = vectorResult.reason;
+      if (reason instanceof Error) throw reason;
+      throw new InvalidArgumentError(
+        `searcher.hybridSearch: vector leg rejected with non-Error value: ${String(reason)}`,
+      );
     }
 
     const vectorHits: readonly WindowHit[] =
@@ -677,13 +696,14 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     // Compute the fused-rank score per id. The RRF helper returns items
     // in fused-score-descending order but doesn't surface scores; we
     // recompute locally to expose them on HybridHit.score (consumer
-    // contract for the unified hit type).
-    const RRF_K = 60;
+    // contract for the unified hit type). Reuse the helper's exported
+    // RRF_DEFAULT_K so a future tune of the constant in ranking.ts
+    // automatically applies here too.
     const fusedScores = new Map<string, number>();
     for (const list of [vectorAsHybrid, ftsAsHybrid]) {
       for (let rank = 0; rank < list.length; rank++) {
         const id = hybridIdOf(list[rank]);
-        fusedScores.set(id, (fusedScores.get(id) ?? 0) + 1 / (RRF_K + rank + 1));
+        fusedScores.set(id, (fusedScores.get(id) ?? 0) + 1 / (RRF_DEFAULT_K + rank + 1));
       }
     }
 

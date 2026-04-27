@@ -1,8 +1,5 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import type { Message } from '../core/types.js';
-import type { Orchestrator } from '../core/interfaces.js';
-import type { ConversationStore } from '../conversations/store.js';
 import { IngestQueueError } from '../core/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -15,22 +12,21 @@ const STALE_THRESHOLD_SECONDS = 30;
 // DDL
 // ---------------------------------------------------------------------------
 
-// `task_type` distinguishes the spec-003 conversation-level extract task
-// (default) from the spec-005 Phase-3 per-message embed task. The default
-// preserves the legacy enqueue() contract; embed-message rows are inserted
-// via enqueueMessageEmbed() and carry message_id + project_id + session_id
-// so the embed-worker (sprint-015 Story 6) can route per-message work
-// without re-querying the corpus on every claim.
-//
-// message_id / project_id / session_id are nullable: extract-conversation
-// rows don't carry them, embed-message rows always do.
+// `task_type` is now a singleton: spec-005 Phase 3 (sprint-015) introduced
+// per-message embed tasks; sprint-016 Story 1 deleted the legacy
+// extract-conversation surface (orchestrator pipeline removed in spec-005
+// Phase 1). The CHECK constraint is preserved as a closed-set enum so
+// future task types can be added explicitly. message_id / project_id /
+// session_id are NOT NULL on the embed-message shape — kept nullable in
+// DDL only for backward-compatibility with on-disk rows from earlier
+// sprints; new inserts always populate them.
 const INGEST_QUEUE_DDL = `
 CREATE TABLE IF NOT EXISTS pending_ingest_tasks (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL REFERENCES conversations(id),
   user_id TEXT NOT NULL,
-  task_type TEXT NOT NULL DEFAULT 'extract-conversation'
-    CHECK (task_type IN ('extract-conversation', 'embed-message')),
+  task_type TEXT NOT NULL DEFAULT 'embed-message'
+    CHECK (task_type IN ('embed-message')),
   message_id INTEGER,
   project_id TEXT,
   session_id TEXT,
@@ -70,7 +66,7 @@ interface IngestTaskRow {
   completed_at: string | null;
 }
 
-export type IngestTaskType = 'extract-conversation' | 'embed-message';
+export type IngestTaskType = 'embed-message';
 
 export interface IngestTask {
   readonly id: string;
@@ -101,12 +97,12 @@ export type EmbedTaskHandler = (task: IngestTask) => Promise<void>;
 
 export interface IngestQueueConfig {
   readonly db: Database.Database;
-  readonly orchestrator: Orchestrator | null;
-  readonly conversationStore: ConversationStore;
   /**
-   * Optional handler for `embed-message` tasks. When supplied,
-   * `processNext()` dispatches embed-message claims to this handler
-   * instead of the orchestrator path.
+   * Handler for `embed-message` tasks invoked by `processNext()` after a
+   * task is claimed. Optional at config time so tests can construct a
+   * queue purely to enqueue rows without wiring the embed pipeline; calling
+   * `processNext()` without one configured marks the claimed task failed
+   * with a clear error.
    */
   readonly embedTaskHandler?: EmbedTaskHandler;
 }
@@ -159,8 +155,6 @@ const isRetryableError = (error: unknown): boolean => {
 
 export class IngestQueue {
   private readonly db: Database.Database;
-  private readonly orchestrator: Orchestrator | null;
-  private readonly conversationStore: ConversationStore;
   private readonly embedTaskHandler: EmbedTaskHandler | null;
   // Cached at construction so a 100-turn indexer batch reuses one
   // prepared statement instead of compiling the SQL 100 times.
@@ -168,8 +162,6 @@ export class IngestQueue {
 
   public constructor(config: IngestQueueConfig) {
     this.db = config.db;
-    this.orchestrator = config.orchestrator;
-    this.conversationStore = config.conversationStore;
     this.embedTaskHandler = config.embedTaskHandler ?? null;
     initIngestQueueTables(config.db);
     this.insertEmbedTaskStmt = this.db.prepare(
@@ -182,47 +174,6 @@ export class IngestQueue {
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
-
-  /**
-   * Atomically store a conversation and enqueue it for extraction.
-   * Returns the task ID, or empty string if the conversation is a duplicate.
-   */
-  public enqueue(
-    conversation: readonly {
-      readonly role: string;
-      readonly content: string;
-      readonly timestamp?: string;
-    }[],
-    userId: string,
-  ): string {
-    const taskId = randomUUID();
-
-    const insertTask = this.db.prepare(
-      `INSERT INTO pending_ingest_tasks (id, conversation_id, user_id)
-       VALUES (?, ?, ?)`,
-    );
-
-    const runTransaction = this.db.transaction(() => {
-      let conversationId: string;
-      try {
-        conversationId = this.conversationStore.addConversation(conversation, userId);
-      } catch (error: unknown) {
-        if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
-          return null;
-        }
-        const msg = error instanceof Error ? error.message : 'unknown error';
-        throw new IngestQueueError(`Failed to enqueue conversation: ${msg}`);
-      }
-      insertTask.run(taskId, conversationId, userId);
-      return taskId;
-    });
-
-    const result = runTransaction();
-    if (result === null) {
-      return '';
-    }
-    return result;
-  }
 
   /**
    * Enqueue a per-message embed task. Used by the spec-005 Phase-3 indexer
@@ -289,74 +240,29 @@ export class IngestQueue {
   }
 
   /**
-   * Claim and process the next pending task. Dispatches on `task_type`:
-   *
-   *   - **embed-message** (sprint-015 Story 6): delegates to the
-   *     `embedTaskHandler` configured at construction. The handler does
-   *     the indexer work (load message + compute windows + assemble +
-   *     upsert vec_windows / window_messages); this method owns the
-   *     lifecycle. If no handler is configured, the task is marked
-   *     failed with a clear error so it doesn't sit pending forever.
-   *
-   *   - **extract-conversation** (legacy spec-003): delegates to the
-   *     `orchestrator.ingest(...)` pipeline. spec-005 Phase 1 removed the
-   *     orchestrator from runtime; with `orchestrator: null` this path
-   *     throws `IngestQueueError`. The path stays for the (currently
-   *     dead-letter) backward-compat tests that pin the contract — and
-   *     for any future re-introduction of orchestrator-style processing.
-   *
-   * On retryable errors (Ollama down), resets to pending for retry. On
-   * terminal errors, marks as failed. Returns the claimed task, or null
-   * if the queue is empty.
+   * Claim and process the next pending `embed-message` task by delegating
+   * to the `embedTaskHandler` configured at construction. The handler
+   * does the indexer work (load message + compute windows + assemble +
+   * upsert vec_windows / window_messages); this method owns the
+   * lifecycle (markCompleted on success, resetToPending on retryable
+   * error, markFailed on terminal error). If no handler is configured,
+   * the task is marked failed with a clear error so it doesn't sit
+   * pending forever. Returns the claimed task, or null if the queue is
+   * empty.
    */
   public async processNext(): Promise<IngestTask | null> {
     const task = this.claimNext();
     if (!task) return null;
 
     try {
-      if (task.taskType === 'embed-message') {
-        if (!this.embedTaskHandler) {
-          throw new IngestQueueError(
-            'IngestQueue.processNext: embed-message task claimed but no embedTaskHandler is configured. ' +
-              'Pass `embedTaskHandler` in IngestQueueConfig — typically via scripts/embed-worker.ts.',
-          );
-        }
-        await this.embedTaskHandler(task);
-        this.markCompleted(task.id);
-      } else {
-        // Legacy spec-003 extract path. Orchestrator is null in spec-005
-        // Phase-1; this branch throws IngestQueueError until/unless an
-        // orchestrator-style processor is reintroduced.
-        const orchestrator = this.orchestrator;
-        if (!orchestrator) {
-          throw new IngestQueueError(
-            'processNext() is unavailable: the LOCOMO-aimed orchestrator pipeline was removed in spec-005 Phase 1. ' +
-              'Conversations can still be enqueued via enqueue(); processing will be reintroduced once the Phase-2 indexer primitive lands.',
-          );
-        }
-
-        const stored = this.conversationStore.getConversation(task.conversationId);
-        if (!stored) {
-          const errorMsg = `Conversation ${task.conversationId} not found`;
-          this.markFailed(task.id, errorMsg);
-          return task;
-        }
-
-        const messages: Message[] = stored.messages.map((m) => ({
-          role:
-            m.role === 'system' || m.role === 'user' || m.role === 'assistant'
-              ? (m.role as Message['role'])
-              : 'user',
-          content: m.content,
-          ...(m.timestamp ? { timestamp: m.timestamp } : {}),
-        }));
-
-        await orchestrator.ingest(messages, task.userId, {
-          sourceConversationId: task.conversationId,
-        });
-
-        this.markCompleted(task.id);
+      if (!this.embedTaskHandler) {
+        throw new IngestQueueError(
+          'IngestQueue.processNext: embed-message task claimed but no embedTaskHandler is configured. ' +
+            'Pass `embedTaskHandler` in IngestQueueConfig — typically via scripts/embed-worker.ts.',
+        );
       }
+      await this.embedTaskHandler(task);
+      this.markCompleted(task.id);
     } catch (error: unknown) {
       if (isRetryableError(error)) {
         this.resetToPending(task.id);

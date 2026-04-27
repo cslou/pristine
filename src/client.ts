@@ -7,13 +7,18 @@ import type {
   RevealResult,
   SecureAndRedactResult,
 } from './core/types.js';
-import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
+import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
+import { IngestQueueError, InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createEmbedder } from './embedder/index.js';
 import { ConversationStore } from './conversations/store.js';
 import { IngestQueue } from './queue/ingest-queue.js';
+import { createIndexer, type Indexer } from './memory/indexer/index.js';
+import { createEmbedTaskHandler } from './memory/indexer/embed-worker.js';
+import { createWindowWriter } from './memory/indexer/windows.js';
+import { createSearcher, type Searcher } from './memory/searcher/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
@@ -47,10 +52,19 @@ export interface PristineLiteConfig {
 // ---------------------------------------------------------------------------
 
 export class PristineLocal {
-  public readonly orchestrator: Orchestrator | null;
   public readonly ingestQueue: IngestQueue;
+  /**
+   * Public retrieval primitive (sprint-016 Story 2 / spec-005 Phase 4).
+   * Defined on full clients (`Pristine.create({...})`) and `null` on
+   * lite clients — the vector path needs an embedder. Asymmetry vs
+   * `indexer` (private) is deliberate: `searcher` is the consumer-facing
+   * query surface, `indexer` is plumbing that `storeAsync` drives
+   * internally.
+   */
+  public readonly searcher: Searcher | null;
 
   private readonly conversationStore: ConversationStore;
+  private readonly indexer: Indexer | null;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
   private readonly llmClients: LlmClients;
@@ -62,9 +76,10 @@ export class PristineLocal {
   private readonly ownsLlmClients: boolean;
 
   private constructor(deps: {
-    orchestrator: Orchestrator | null;
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
+    indexer: Indexer | null;
+    searcher: Searcher | null;
     db: Database.Database;
     embedder: Embedder;
     llmClients: LlmClients;
@@ -75,9 +90,10 @@ export class PristineLocal {
     ownsEmbedder: boolean;
     ownsLlmClients: boolean;
   }) {
-    this.orchestrator = deps.orchestrator;
     this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
+    this.indexer = deps.indexer;
+    this.searcher = deps.searcher;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.llmClients = deps.llmClients;
@@ -112,11 +128,30 @@ export class PristineLocal {
 
     const conversationStore = new ConversationStore(db);
 
+    // Indexer + embed-worker wiring (sprint-015 Phase 3 / sprint-016 Story 1).
+    // Mirrors scripts/embed-worker.ts: build a temp queue solely to read the
+    // indexer's resolved config, then construct the production queue with the
+    // embed-task handler bound. The temp queue shares the same pending_ingest_tasks
+    // table; nothing is written to it.
+    const windowWriter = createWindowWriter(db);
+    const tempQueue = new IngestQueue({ db });
+    const indexer = createIndexer({
+      db,
+      conversationStore,
+      ingestQueue: tempQueue,
+      embedder,
+    });
     const ingestQueue = new IngestQueue({
       db,
-      orchestrator: null,
-      conversationStore,
+      embedTaskHandler: createEmbedTaskHandler({
+        db,
+        embedder,
+        windowWriter,
+        config: indexer.config,
+      }),
     });
+
+    const searcher = createSearcher({ db, embedder });
 
     const keysDir =
       config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
@@ -125,9 +160,10 @@ export class PristineLocal {
     const vaultStore = createSqliteVaultStore(db);
 
     return new PristineLocal({
-      orchestrator: null,
       ingestQueue,
       conversationStore,
+      indexer,
+      searcher,
       db,
       embedder,
       llmClients,
@@ -142,8 +178,14 @@ export class PristineLocal {
 
   /**
    * Lightweight client with only DB, ConversationStore, and IngestQueue.
-   * No Ollama connection, no embedder, no LLM clients.
-   * Supports storeAsync(), searchConversations(), and getConversation().
+   * No embedder, no LLM clients, no indexer. Supports `searchConversations()`
+   * and `getConversation()` for read-only flows.
+   *
+   * `storeAsync()` is NOT available on lite clients — the indexer pipeline
+   * requires an embedder. Calling `createLite().storeAsync(...)` throws
+   * `InvalidArgumentError`. For ingest, use `Pristine.create({...})` instead;
+   * the embedder loads lazily so synchronous startup paths still pay only
+   * the construction cost.
    */
   public static createLite(config: PristineLiteConfig = {}): PristineLocal {
     const ownsDb = config.db === undefined;
@@ -151,16 +193,13 @@ export class PristineLocal {
       config.db ?? createDefaultDatabase(config.baseDir ? `${config.baseDir}/data` : undefined);
 
     const conversationStore = new ConversationStore(db);
-    const ingestQueue = new IngestQueue({
-      db,
-      orchestrator: null,
-      conversationStore,
-    });
+    const ingestQueue = new IngestQueue({ db });
 
     return new PristineLocal({
-      orchestrator: null,
       ingestQueue,
       conversationStore,
+      indexer: null,
+      searcher: null,
       db,
       embedder: null as unknown as Embedder,
       llmClients: null as unknown as LlmClients,
@@ -178,12 +217,80 @@ export class PristineLocal {
   // -------------------------------------------------------------------------
 
   /**
-   * Fire-and-forget: enqueue a conversation for background processing.
-   * Returns the task ID, or empty string if the conversation is a duplicate
-   * (same userId + same content hash).
+   * Fire-and-forget: store a conversation and enqueue per-message embed
+   * tasks the embed-worker drains asynchronously. Returns the conversation
+   * id (NOT a task id — the conversation handle is the load-bearing
+   * identifier for downstream search).
+   *
+   * On duplicate (same userId + same content hash), returns the existing
+   * conversation id without re-enqueueing — the prior call's tasks remain
+   * the source of truth.
+   *
+   * Requires a fully-constructed `Pristine.create({...})`. `createLite()`
+   * has no embedder, so the indexer pipeline can't run; calling
+   * `createLite().storeAsync(...)` throws `InvalidArgumentError`.
    */
-  public storeAsync(conversation: readonly Message[], userId: string): string {
-    return this.ingestQueue.enqueue(conversation, userId);
+  public storeAsync(conversation: readonly Message[], userId: string, projectId?: string): string {
+    const indexer = this.indexer;
+    if (indexer === null) {
+      throw new InvalidArgumentError(
+        'storeAsync requires Pristine.create() — createLite has no embedder; for ingest, use Pristine.create() (the embedder loads lazily, so synchronous startup paths still pay only construction cost)',
+      );
+    }
+    // Normalize projectId once so the conversation row and the embed
+    // tasks land with the same project_id. Empty string is treated as
+    // "unset" to mirror addEmptyConversation's resolution logic (see
+    // src/conversations/store.ts:613); without this, passing
+    // projectId: '' would write the conversation row but make
+    // indexer.ingest throw on opts.projectId === '' — leaving an
+    // orphaned conversation row. Empty userId falls back to 'default'
+    // to match the pre-existing addConversation/addEmptyConversation
+    // contract (single-device local-first SDK; cross-user commingling
+    // is not a threat model concern here — see CLAUDE.md project
+    // intro). A project-wide refactor to reject empty userIds belongs
+    // in a separate hardening sprint.
+    const resolvedProjectId =
+      projectId !== undefined && projectId !== '' ? projectId : userId !== '' ? userId : 'default';
+
+    // Atomic envelope: when both addEmptyConversation AND indexer.ingest
+    // run, they commit or roll back together. The duplicate-recovery
+    // early-return path (UNIQUE collision → findByMessages → return
+    // existing.id) writes nothing inside the transaction; the commit
+    // is a no-op against the existing already-committed conversation
+    // row. better-sqlite3 nests inner db.transaction() calls
+    // (indexer.ingest has its own) as SAVEPOINTs, so the outer
+    // transaction is sufficient. Without this envelope, a crash between
+    // the two steps would leave a content_hash-locked conversation row
+    // with message_count=0 and no embed tasks — permanently
+    // unrecoverable because the duplicate guard returns the orphan id
+    // on retry.
+    const runStore = this.db.transaction((): string => {
+      let id: string;
+      try {
+        id = this.conversationStore.addEmptyConversation(userId, conversation, resolvedProjectId);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+          const existing = this.conversationStore.findByMessages(userId, conversation);
+          if (existing === null) {
+            // The conversation matched on UNIQUE(user_id, content_hash)
+            // but findByMessages returned null — most likely cause is a
+            // concurrent delete that ran between the failed INSERT and
+            // the SELECT. Less likely: content-hash drift (a bug in
+            // computeConversationContentHash, which is deterministic).
+            // Either way, retry will re-ingest cleanly.
+            throw new IngestQueueError(
+              'Duplicate detected but conversation no longer exists — concurrent delete? Retry to re-ingest',
+            );
+          }
+          return existing.id;
+        }
+        throw error;
+      }
+      indexer.ingest(conversation, { projectId: resolvedProjectId, conversationId: id });
+      return id;
+    });
+
+    return runStore();
   }
 
   // -------------------------------------------------------------------------

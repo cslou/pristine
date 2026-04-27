@@ -1,8 +1,12 @@
 /**
- * CLI script: store a conversation for background extraction.
+ * CLI script: store a conversation and enqueue per-message embed tasks.
  *
- * Reads conversation JSON from stdin, enqueues via createLite(), spawns
- * a detached extract-worker, and exits immediately (<0.5s).
+ * Reads conversation JSON from stdin, hands it to
+ * `Pristine.create({...}).storeAsync(...)`, spawns a detached
+ * embed-worker to drain the queue, and exits immediately. The
+ * embedder + LLM clients construct lazily — no model load happens on
+ * the synchronous path, so startup stays under the agent-integration
+ * <0.5s budget.
  *
  * Usage:
  *   echo '{"messages":[...]}' | npx tsx scripts/store.ts --user-id <userId> [--db-path <path>]
@@ -11,6 +15,8 @@ import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDatabase } from '../src/core/database.js';
+import { LocalEmbedder } from '../src/embedder/local/index.js';
+import { createLlmClients } from '../src/engine/index.js';
 import { PristineLocal } from '../src/index.js';
 import type { Message } from '../src/core/types.js';
 
@@ -64,7 +70,7 @@ export async function readStdin(): Promise<string> {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function spawnWorker(dbPath?: string): void {
-  const workerScript = join(__dirname, 'extract-worker.ts');
+  const workerScript = join(__dirname, 'embed-worker.ts');
   const args = ['tsx', workerScript];
   if (dbPath) {
     args.push('--db-path', dbPath);
@@ -103,9 +109,16 @@ export async function main(argv: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const client = args.dbPath
-    ? PristineLocal.createLite({ db: createDatabase(args.dbPath) })
-    : PristineLocal.createLite();
+  // Pass-through DI keeps the synchronous-startup contract: LocalEmbedder
+  // and LlamaCppClient/OllamaClient lazy-load on first call (embed/generate),
+  // not on construction. createLlmClients() reads ~/.pristine/models.json
+  // synchronously but does no model I/O until generate() runs.
+  const db = args.dbPath ? createDatabase(args.dbPath) : undefined;
+  const client = await PristineLocal.create({
+    ...(db !== undefined ? { db } : {}),
+    embedder: new LocalEmbedder(),
+    llmClients: createLlmClients(),
+  });
 
   const messages: Message[] = parsed.messages.map((m) => ({
     role:
@@ -115,13 +128,17 @@ export async function main(argv: string[]): Promise<void> {
     content: m.content,
     ...(m.timestamp ? { timestamp: m.timestamp } : {}),
   }));
-  const taskId = client.storeAsync(messages, args.userId);
 
-  if (taskId === '') {
-    process.stdout.write(JSON.stringify({ status: 'duplicate', taskId: null }) + '\n');
-  } else {
-    process.stdout.write(JSON.stringify({ status: 'enqueued', taskId }) + '\n');
+  let conversationId: string;
+  try {
+    conversationId = client.storeAsync(messages, args.userId);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'unknown error';
+    process.stderr.write(JSON.stringify({ error: msg }) + '\n');
+    process.exit(1);
   }
+
+  process.stdout.write(JSON.stringify({ status: 'stored', conversationId }) + '\n');
 
   spawnWorker(args.dbPath);
 }

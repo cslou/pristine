@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
+import { InvalidArgumentError } from '../src/core/errors.js';
 import type { LlmClient, Embedder } from '../src/core/interfaces.js';
 import type { LlmClients } from '../src/engine/index.js';
 
@@ -188,38 +189,46 @@ describe('PristineLocal', () => {
       });
 
       expect(client.ingestQueue).toBeDefined();
-      expect(client.ingestQueue.enqueue).toBeTypeOf('function');
       expect(client.ingestQueue.claimNext).toBeTypeOf('function');
       expect(client.ingestQueue.processNext).toBeTypeOf('function');
     });
   });
 
   describe('storeAsync()', () => {
-    it('enqueues a conversation and returns task ID', async () => {
+    it('stores conversation, returns conversationId, and enqueues one embed task per message', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
-      const taskId = client.storeAsync([{ role: 'user', content: 'I like coffee' }], 'test-user');
+      const conversationId = client.storeAsync(
+        [
+          { role: 'user', content: 'I like coffee' },
+          { role: 'assistant', content: 'Espresso is excellent' },
+        ],
+        'test-user',
+      );
 
-      expect(taskId).toBeTruthy();
-      expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
-      expect(client.ingestQueue.pending).toBe(1);
+      expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
+      // Indexer enqueues one embed-message task per inserted message.
+      expect(client.ingestQueue.pending).toBe(2);
     });
 
-    it('returns empty string for duplicate conversation', async () => {
+    it('returns existing conversationId for duplicate conversation without re-enqueueing', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
-      client.storeAsync([{ role: 'user', content: 'I like coffee' }], 'test-user');
-      const result = client.storeAsync([{ role: 'user', content: 'I like coffee' }], 'test-user');
+      const messages = [{ role: 'user' as const, content: 'I like coffee' }];
+      const first = client.storeAsync(messages, 'test-user');
+      const second = client.storeAsync(messages, 'test-user');
 
-      expect(result).toBe('');
+      expect(second).toBe(first);
+      // Only the first call enqueued tasks; the duplicate path returns early.
+      expect(client.ingestQueue.pending).toBe(1);
     });
   });
 
@@ -234,49 +243,37 @@ describe('PristineLocal', () => {
       liteDb.close();
     });
 
-    it('storeAsync() works on lite clients', () => {
+    it('storeAsync() throws on lite clients (no embedder, no indexer)', () => {
       const liteDb = createDatabase(':memory:');
       const client = PristineLocal.createLite({ db: liteDb });
 
-      const taskId = client.storeAsync([{ role: 'user', content: 'Hello from lite' }], 'lite-user');
-
-      expect(taskId).toBeTruthy();
-      expect(client.ingestQueue.pending).toBe(1);
+      expect(() =>
+        client.storeAsync([{ role: 'user', content: 'Hello from lite' }], 'lite-user'),
+      ).toThrow(InvalidArgumentError);
 
       liteDb.close();
     });
 
-    it('searchConversations() works on lite clients', () => {
+    it('searcher is null on lite clients (no embedder)', () => {
       const liteDb = createDatabase(':memory:');
       const client = PristineLocal.createLite({ db: liteDb });
 
-      client.storeAsync([{ role: 'user', content: 'I love espresso coffee' }], 'lite-user');
+      expect(client.searcher).toBeNull();
 
-      const results = client.searchConversations({
-        userId: 'lite-user',
-        keyword: 'espresso',
+      liteDb.close();
+    });
+  });
+
+  describe('searcher exposure', () => {
+    it('full client exposes pristine.searcher with vectorSearch method', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
       });
 
-      expect(results).toHaveLength(1);
-      expect(results[0].snippet).toContain('<b>espresso</b>');
-
-      liteDb.close();
-    });
-
-    it('getConversation() works on lite clients', () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      client.storeAsync([{ role: 'user', content: 'Test message' }], 'lite-user');
-
-      const conversations = client.searchConversations({ userId: 'lite-user' });
-      const detail = client.getConversation(conversations[0].id);
-
-      expect(detail).not.toBeNull();
-      expect(detail!.messages).toHaveLength(1);
-      expect(detail!.messages[0].content).toBe('Test message');
-
-      liteDb.close();
+      expect(client.searcher).not.toBeNull();
+      expect(typeof client.searcher?.vectorSearch).toBe('function');
     });
   });
 });

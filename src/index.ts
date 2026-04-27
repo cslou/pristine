@@ -12,12 +12,9 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 export type {
   ConversationDetail,
   ConversationSearchResult,
-  IngestOptions,
-  IngestResult,
   Memory,
   Message,
   MessageRole,
-  PipelineStep,
   SecureAndRedactResult,
   RevealResult,
 } from './core/types.js';
@@ -26,7 +23,7 @@ export type {
 // Interfaces (for DI, custom implementations, and test mocks)
 // ---------------------------------------------------------------------------
 
-export type { Embedder, LlmClient, Orchestrator } from './core/interfaces.js';
+export type { Embedder, LlmClient } from './core/interfaces.js';
 
 export type { LlmClients } from './engine/index.js';
 
@@ -48,3 +45,18 @@ export { createDatabase } from './core/database.js';
 
 export { IngestQueue } from './queue/ingest-queue.js';
 export type { IngestTask, IngestQueueConfig } from './queue/ingest-queue.js';
+
+// ---------------------------------------------------------------------------
+// Searcher (spec-005 Phase 4 retrieval primitive)
+// ---------------------------------------------------------------------------
+
+export type {
+  Searcher,
+  SearchFilters,
+  WindowHit,
+  MessageHit,
+  SessionHit,
+  HybridHit,
+  HybridSource,
+  Role,
+} from './memory/searcher/index.js';

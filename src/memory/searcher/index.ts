@@ -42,12 +42,18 @@ export interface SearchFilters {
    * - `ftsSearch`: a message matches if its OWN role equals the
    *   filter (strict, message-level). FTS5 operates at message
    *   granularity, so message-level matching is the natural fit.
+   * - `sessionVectorSearch`: **silently ignored**. A session vector
+   *   aggregates messages of every role; a role-scoped session query
+   *   is a category error rather than a useful filter. Documented
+   *   here at the field definition so callers see the gap without
+   *   navigating to the method JSDoc.
    *
-   * Story 4's `hybridSearch` will pass the same `filters` object to
-   * both methods; callers who pass `role: 'user'` should expect
-   * vectorSearch to surface windows where any message is from the user
-   * AND ftsSearch to surface only user-authored messages. The asymmetry
-   * is intentional given each engine's natural granularity.
+   * `hybridSearch` passes the same `filters` object to all three
+   * methods; callers who pass `role: 'user'` should expect
+   * vectorSearch to surface windows where any message is from the
+   * user, ftsSearch to surface only user-authored messages, and
+   * sessionVectorSearch to ignore the constraint. The asymmetry is
+   * intentional given each engine's natural granularity.
    *
    * **Caveat (vectorSearch only):** the role-filter post-pass runs
    * over a fixed `limit*2` over-fetch from the KNN. If more than half
@@ -839,11 +845,15 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       kind: 'session' as const,
       conversationId: h.conversationId,
       score: h.score,
-      source: 'fts' as const, // placeholder — overwritten in the post-fusion pass
+      source: 'session' as const,
     }));
-    // Sessions come back tagged as 'fts' as a placeholder so the type
-    // shape is uniform; the per-leg-id-Set step below correctly tags
-    // them as 'session' (not 'fts') in the final output.
+    // Initial source tag matches the leg of origin so the intermediate
+    // state is accurate (debuggers / logs reading sessionAsHybrid before
+    // the post-fusion pass see the right value). The post-fusion pass
+    // below replaces it with 'both' on the rare case where the same id
+    // surfaces from multiple legs (with disjoint id-space prefixes
+    // today, that requires a future change to id derivation — kept on
+    // the type for forward-compat).
 
     // Build per-leg id sets so we can tag the post-fusion `source`
     // field accurately.

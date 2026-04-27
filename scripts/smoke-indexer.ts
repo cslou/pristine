@@ -122,6 +122,54 @@ const main = async (): Promise<void> => {
     log(`  ${ok ? 'OK ' : 'FAIL'}  ${k.padEnd(18)} ${String(exp).padStart(3)} → ${act}`);
   }
 
+  // -------------------------------------------------------------------
+  // Sprint-016 Story 2 — searcher.vectorSearch two-project leak check.
+  // Seed a SECOND project with deliberately overlapping content; query
+  // project-A; assert zero hits leak from project-B. Pins the
+  // filter-first project-isolation contract end-to-end against the
+  // real Nomic embedder (not just the stub used in unit tests).
+  // -------------------------------------------------------------------
+  log('');
+  log('smoke: seeding second project for vectorSearch leak check ...');
+  const otherProjectId = 'smoke-project-b';
+  client.storeAsync(
+    [
+      { role: 'user', content: 'turn one — talking about indexing' },
+      { role: 'assistant', content: 'turn two — asking about retrieval' },
+      { role: 'user', content: 'turn three — explaining sliding windows' },
+      { role: 'assistant', content: 'turn four — clarifying the overlap' },
+    ],
+    'smoke-user-b',
+    otherProjectId,
+  );
+  const processedB = await runEmbedWorker(client.ingestQueue);
+  log(`smoke: drained second project — ${processedB} tasks`);
+
+  if (client.searcher === null) {
+    log('smoke: FAIL — pristine.searcher is null on full client; should be exposed');
+    process.exit(1);
+  }
+  const hitsA = await client.searcher.vectorSearch(
+    'sliding windows',
+    { projectId },
+    10,
+  );
+  log(`smoke: vectorSearch in ${projectId} → ${hitsA.length} hits`);
+  const stmt = db.prepare('SELECT project_id FROM conversations WHERE id = ?');
+  let leaks = 0;
+  for (const hit of hitsA) {
+    const row = stmt.get(hit.conversationId) as { project_id: string } | undefined;
+    if (row === undefined) {
+      log(`smoke: FAIL — hit conversationId ${hit.conversationId} not found in DB`);
+      leaks++;
+      continue;
+    }
+    if (row.project_id !== projectId) leaks++;
+  }
+  const leakOk = leaks === 0;
+  log(`  ${leakOk ? 'OK ' : 'FAIL'}  cross-project leak count   0 → ${leaks}`);
+  if (!leakOk) allOk = false;
+
   await client.dispose();
 
   if (!allOk) {

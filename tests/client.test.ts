@@ -253,5 +253,27 @@ describe('PristineLocal', () => {
 
       liteDb.close();
     });
+
+    it('searcher is null on lite clients (no embedder)', () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      expect(client.searcher).toBeNull();
+
+      liteDb.close();
+    });
+  });
+
+  describe('searcher exposure', () => {
+    it('full client exposes pristine.searcher with vectorSearch method', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      expect(client.searcher).not.toBeNull();
+      expect(typeof client.searcher?.vectorSearch).toBe('function');
+    });
   });
 });

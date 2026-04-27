@@ -18,6 +18,7 @@ import { IngestQueue } from './queue/ingest-queue.js';
 import { createIndexer, type Indexer } from './memory/indexer/index.js';
 import { createEmbedTaskHandler } from './memory/indexer/embed-worker.js';
 import { createWindowWriter } from './memory/indexer/windows.js';
+import { createSearcher, type Searcher } from './memory/searcher/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
@@ -52,6 +53,15 @@ export interface PristineLiteConfig {
 
 export class PristineLocal {
   public readonly ingestQueue: IngestQueue;
+  /**
+   * Public retrieval primitive (sprint-016 Story 2 / spec-005 Phase 4).
+   * Defined on full clients (`Pristine.create({...})`) and `null` on
+   * lite clients — the vector path needs an embedder. Asymmetry vs
+   * `indexer` (private) is deliberate: `searcher` is the consumer-facing
+   * query surface, `indexer` is plumbing that `storeAsync` drives
+   * internally.
+   */
+  public readonly searcher: Searcher | null;
 
   private readonly conversationStore: ConversationStore;
   private readonly indexer: Indexer | null;
@@ -69,6 +79,7 @@ export class PristineLocal {
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
     indexer: Indexer | null;
+    searcher: Searcher | null;
     db: Database.Database;
     embedder: Embedder;
     llmClients: LlmClients;
@@ -82,6 +93,7 @@ export class PristineLocal {
     this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
     this.indexer = deps.indexer;
+    this.searcher = deps.searcher;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.llmClients = deps.llmClients;
@@ -139,6 +151,8 @@ export class PristineLocal {
       }),
     });
 
+    const searcher = createSearcher({ db, embedder });
+
     const keysDir =
       config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
     const keyManager = new FileSystemKeyManager({ keysDir });
@@ -149,6 +163,7 @@ export class PristineLocal {
       ingestQueue,
       conversationStore,
       indexer,
+      searcher,
       db,
       embedder,
       llmClients,
@@ -184,6 +199,7 @@ export class PristineLocal {
       ingestQueue,
       conversationStore,
       indexer: null,
+      searcher: null,
       db,
       embedder: null as unknown as Embedder,
       llmClients: null as unknown as LlmClients,

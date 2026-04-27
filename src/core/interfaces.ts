@@ -1,11 +1,7 @@
 import type {
   ClassificationPipelineResult,
-  IngestOptions,
-  IngestResult,
   JsonSchema,
   KeyPairWithStatus,
-  Message,
-  PipelineStep,
   SensitivityReport,
   VaultEntry,
   VaultEntryInput,
@@ -61,24 +57,4 @@ export interface KeyManager {
 export interface VaultStore {
   addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
   getEntriesByPlaceholderIds(userId: string, placeholderIds: string[]): Promise<VaultEntry[]>;
-}
-
-// ---------------------------------------------------------------------------
-// Orchestrator
-//
-// Phase-1 surface is ingest-only — IngestQueue.processNext() calls
-// orchestrator.ingest() when the queue is wired to a full pipeline. All four
-// retrieve/search/search-pipeline members are deferred to spec-005 Phase 2+
-// (indexer + searcher primitives); re-exposing them here without a live
-// implementation would be a phantom contract.
-// ---------------------------------------------------------------------------
-
-export interface Orchestrator {
-  ingest(
-    conversation: readonly Message[],
-    userId: string,
-    options?: IngestOptions,
-  ): Promise<IngestResult>;
-  readonly ingestSteps: readonly PipelineStep[];
-  registerIngestStep(step: PipelineStep): void;
 }

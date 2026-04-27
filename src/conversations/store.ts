@@ -586,6 +586,46 @@ export class ConversationStore {
   }
 
   /**
+   * Create an empty conversation row whose `content_hash` is computed from
+   * the supplied messages — but DO NOT insert the messages themselves.
+   * Returns the new conversation id.
+   *
+   * Composes with `createIndexer().ingest(messages, { conversationId })`
+   * to provide one-shot ingest without double-inserting messages: this
+   * method writes the conversation row + content_hash; the indexer writes
+   * the message rows + enqueues per-message embed tasks (preserving the
+   * oversize-chunker behavior). Used by `client.storeAsync` (sprint-016
+   * Story 1).
+   *
+   * Throws on duplicate `(user_id, content_hash)` — same UNIQUE-constraint
+   * surface as `addConversation`. Callers detect duplicates via
+   * `error.message.includes('UNIQUE constraint failed')` and recover the
+   * existing id via `findByMessages`.
+   */
+  public addEmptyConversation(
+    userId: string,
+    messages: readonly { readonly role: string; readonly content: string }[],
+    projectId?: string,
+  ): string {
+    const id = randomUUID();
+    const contentHash = computeConversationContentHash(messages);
+    const explicitProject = projectId !== undefined && projectId !== '' ? projectId : undefined;
+    const resolvedProjectId = explicitProject ?? (userId !== '' ? userId : 'default');
+
+    // message_count starts at 0; indexer.ingest's per-message addMessage
+    // calls bump it to the eventual total. Setting it to messages.length
+    // up-front would double-count once the indexer's bumps land.
+    this.db
+      .prepare(
+        `INSERT INTO conversations (id, user_id, content_hash, message_count, project_id)
+         VALUES (?, ?, ?, 0, ?)`,
+      )
+      .run(id, userId, contentHash, resolvedProjectId);
+
+    return id;
+  }
+
+  /**
    * Look up a conversation row by (userId, content_hash) using the same
    * hashing algorithm as addConversation. Returns the conversation id when
    * a row exists, or null otherwise. Used for partial-ingest recovery: the

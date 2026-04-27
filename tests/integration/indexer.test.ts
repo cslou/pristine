@@ -63,8 +63,6 @@ const buildPipeline = (embedder: Embedder): PipelineDeps => {
 
   const queue = new IngestQueue({
     db,
-    orchestrator: null,
-    conversationStore: store,
     embedTaskHandler: createEmbedTaskHandler({ db, embedder, windowWriter, config }),
   });
 

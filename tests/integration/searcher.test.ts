@@ -595,48 +595,63 @@ describe('searcher cross-cutting — static import guard', () => {
 // 7. Real-Nomic recall sanity check — gated by SKIP_SLOW_TESTS=0
 // ---------------------------------------------------------------------------
 
+// Real Nomic v1.5 loads the model on first embed() call (~3-5s) and
+// then runs ~50-100ms per subsequent embed. seedCompactCorpus runs 36
+// embed calls + 6 buildSessionVector calls, so the beforeEach can take
+// 30-60s. Default vitest hookTimeout is 10s — raise it per-hook + the
+// `it` timeout per-test via the per-API timeout argument since vitest
+// doesn't accept hookTimeout as a describe-block option in TS.
+const SLOW_TEST_TIMEOUT_MS = 120_000;
 describe.skipIf(skipSlow)('searcher cross-cutting — real Nomic v1.5 recall sanity (gated)', () => {
   let p: PipelineDeps;
 
   beforeEach(async () => {
     p = buildPipeline(new LocalEmbedder());
     await seedCompactCorpus(p);
-  });
+  }, SLOW_TEST_TIMEOUT_MS);
 
   afterEach(() => {
     p.db.close();
   });
 
-  it('vectorSearch with real Nomic surfaces a topically-related window', async () => {
-    const hits = await p.searcher.vectorSearch(
-      'training neural networks with gradient descent',
-      { projectId: 'proj-alpha' },
-      5,
-    );
-    expect(hits.length).toBeGreaterThan(0);
-    // First hit should be from one of the ML-themed windows in
-    // proj-alpha's first conversation (the 'machine learning topic
-    // one' / 'gradient descent topic two' set), not the cooking
-    // conversation. Assert by checking conversation-id matches the
-    // first conversation the seeder created in proj-alpha.
-    const firstConvMessageStmt = p.db.prepare(
-      'SELECT conversation_id FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE project_id = ?) ORDER BY id ASC LIMIT 1',
-    );
-    const firstConv = (firstConvMessageStmt.get('proj-alpha') as { conversation_id: string })
-      .conversation_id;
-    expect(hits[0].conversationId).toBe(firstConv);
-  });
+  it(
+    'vectorSearch with real Nomic surfaces a topically-related window',
+    async () => {
+      const hits = await p.searcher.vectorSearch(
+        'training neural networks with gradient descent',
+        { projectId: 'proj-alpha' },
+        5,
+      );
+      expect(hits.length).toBeGreaterThan(0);
+      // First hit should be from one of the ML-themed windows in
+      // proj-alpha's first conversation (the 'machine learning topic
+      // one' / 'gradient descent topic two' set), not the cooking
+      // conversation. Assert by checking conversation-id matches the
+      // first conversation the seeder created in proj-alpha.
+      const firstConvMessageStmt = p.db.prepare(
+        'SELECT conversation_id FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE project_id = ?) ORDER BY id ASC LIMIT 1',
+      );
+      const firstConv = (firstConvMessageStmt.get('proj-alpha') as { conversation_id: string })
+        .conversation_id;
+      expect(hits[0].conversationId).toBe(firstConv);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 
-  it('hybridSearch with real Nomic returns hits across all three sources', async () => {
-    const hits = await p.searcher.hybridSearch(
-      'machine learning gradient descent',
-      { projectId: 'proj-alpha' },
-      20,
-    );
-    expect(hits.length).toBeGreaterThan(0);
-    // Real Nomic + populated vec_sessions should produce at least
-    // one session hit alongside the window/message hits.
-    const sessionHits = hits.filter((h) => h.kind === 'session');
-    expect(sessionHits.length).toBeGreaterThan(0);
-  });
+  it(
+    'hybridSearch with real Nomic returns hits across all three sources',
+    async () => {
+      const hits = await p.searcher.hybridSearch(
+        'machine learning gradient descent',
+        { projectId: 'proj-alpha' },
+        20,
+      );
+      expect(hits.length).toBeGreaterThan(0);
+      // Real Nomic + populated vec_sessions should produce at least
+      // one session hit alongside the window/message hits.
+      const sessionHits = hits.filter((h) => h.kind === 'session');
+      expect(sessionHits.length).toBeGreaterThan(0);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 });

@@ -41,7 +41,12 @@ import { IngestQueue } from '../../src/queue/ingest-queue.js';
 //   4. Window→messages resolution
 //   5. Cross-project isolation across all three methods
 //   6. Static src/ filesystem grep guard for forbidden LLM imports
-//   7. Real-Nomic recall sanity check (gated by SKIP_SLOW_TESTS=0)
+//   7. Real-Nomic recall sanity check (skipped when SKIP_SLOW_TESTS=1)
+//
+// Slow-test gate semantics: `SKIP_SLOW_TESTS=1` opts out (default in
+// CI), unset OR any other value opts in. This matches the established
+// pattern at tests/integration/indexer.test.ts and tests/integration/
+// embedder.test.ts.
 
 const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
 
@@ -150,18 +155,37 @@ const seedCompactCorpus = async (
 // 2. Filter correctness matrix — N filter dims × 3 methods
 // ---------------------------------------------------------------------------
 
+type SearchMethod = 'vector' | 'fts' | 'hybrid';
+
+interface MethodHit {
+  readonly conversationId: string;
+  readonly windowIndex?: number;
+  readonly messageId?: number;
+  readonly kind?: 'window' | 'message' | 'session';
+}
+
 interface FilterCase {
   readonly name: string;
   readonly mutate: (
     base: SearchFilters,
     ids: ReadonlyMap<string, readonly string[]>,
-  ) => SearchFilters;
+    p: PipelineDeps,
+  ) => Promise<SearchFilters> | SearchFilters;
   readonly query: string;
   readonly assertOnHit: (
-    hit: { conversationId: string },
+    hit: MethodHit,
+    method: SearchMethod,
     p: PipelineDeps,
     ids: ReadonlyMap<string, readonly string[]>,
   ) => void;
+  /**
+   * Expected hits.length > 0 per method. Default true for all three.
+   * The role filter case overrides ftsSearch to false because the
+   * 'machine learning' query against the seed corpus may produce zero
+   * user-role message matches under FTS5's strict message-level role
+   * filter (depends on which messages happen to land at even indices).
+   */
+  readonly expectHits?: Partial<Record<SearchMethod, boolean>>;
 }
 
 const filterCases = (): readonly FilterCase[] => [
@@ -169,7 +193,7 @@ const filterCases = (): readonly FilterCase[] => [
     name: 'projectId narrows to project',
     mutate: (base) => ({ ...base, projectId: 'proj-alpha' }),
     query: 'machine learning',
-    assertOnHit: (hit, p) => {
+    assertOnHit: (hit, _method, p) => {
       const row = p.db
         .prepare('SELECT project_id FROM conversations WHERE id = ?')
         .get(hit.conversationId) as { project_id: string } | undefined;
@@ -185,49 +209,109 @@ const filterCases = (): readonly FilterCase[] => [
       conversationId: ids.get('proj-alpha')![0],
     }),
     query: 'machine learning',
-    assertOnHit: (hit, _p, ids) => {
+    assertOnHit: (hit, _method, _p, ids) => {
       expect(hit.conversationId).toBe(ids.get('proj-alpha')![0]);
     },
   },
   {
-    name: 'role narrows hits to messages of that role (vectorSearch is permissive at window-level; ftsSearch is strict)',
+    name: 'role narrows hits to messages of that role',
     mutate: (base) => ({ ...base, projectId: 'proj-alpha', role: 'user' as Role }),
     query: 'machine learning',
-    // Asserted method-specifically below — the role filter has different
-    // semantics for each method (per SearchFilters.role JSDoc).
-    assertOnHit: () => {
-      /* verified per-method in the loop below */
+    assertOnHit: (hit, method, p) => {
+      // Role-filter contract differs per method (per SearchFilters.role
+      // JSDoc). Assert each method's semantics:
+      //   vectorSearch: window contains AT LEAST ONE user-role message
+      //                 (permissive, window-level)
+      //   ftsSearch:    the matched message itself has role='user'
+      //                 (strict, message-level)
+      //   hybridSearch: depends on hit.kind — window hits use vector
+      //                 semantics, message hits use fts semantics,
+      //                 session hits ignore role (filter doesn't apply)
+      if (method === 'vector' || (method === 'hybrid' && hit.kind === 'window')) {
+        expect(hit.windowIndex).toBeDefined();
+        const row = p.db
+          .prepare(
+            `SELECT 1 AS hit FROM window_messages wm
+             JOIN messages m ON m.id = wm.message_id
+             WHERE wm.conversation_id = ? AND wm.window_index = ? AND m.role = 'user'
+             LIMIT 1`,
+          )
+          .get(hit.conversationId, hit.windowIndex!) as { hit: number } | undefined;
+        expect(row).toBeDefined();
+      } else if (method === 'fts' || (method === 'hybrid' && hit.kind === 'message')) {
+        expect(hit.messageId).toBeDefined();
+        const row = p.db.prepare('SELECT role FROM messages WHERE id = ?').get(hit.messageId!) as
+          | { role: string }
+          | undefined;
+        expect(row).toBeDefined();
+        expect(row?.role).toBe('user');
+      }
+      // hybridSearch session hits: role filter ignored at session
+      // granularity (documented behavior). No assertion needed.
     },
+    // FTS5 may return zero user-role hits for the 'machine learning'
+    // query against the synthetic corpus depending on which message
+    // indices are user vs assistant. Vectorsearch has wider window
+    // coverage so always returns at least one matching window.
+    expectHits: { fts: false },
   },
   {
-    name: 'dateFrom restricts to created_at >= bound',
-    mutate: (base) => ({
-      ...base,
-      projectId: 'proj-alpha',
-      dateFrom: '1970-01-01T00:00:00.000Z',
-    }),
+    name: 'dateFrom restricts to created_at >= bound (split corpus by latest conversation)',
+    // Use the LATEST conversation's created_at as the bound — anything
+    // before it gets excluded. Asserts the filter actually narrows
+    // rather than tautologically passing every record.
+    mutate: async (base, ids, p) => {
+      const allIds = Array.from(ids.values()).flat();
+      const stmt = p.db.prepare(
+        'SELECT created_at FROM conversations WHERE id = ? ORDER BY created_at DESC',
+      );
+      const timestamps = allIds.map((id) => (stmt.get(id) as { created_at: string }).created_at);
+      // Sort descending; pick the latest. Any conversation with
+      // created_at < latest is excluded.
+      timestamps.sort().reverse();
+      return { ...base, projectId: 'proj-alpha', dateFrom: timestamps[0] };
+    },
     query: 'machine learning',
-    assertOnHit: (hit, p) => {
+    assertOnHit: (hit, _method, p) => {
       const row = p.db
         .prepare('SELECT created_at FROM conversations WHERE id = ?')
         .get(hit.conversationId) as { created_at: string };
-      expect(row.created_at >= '1970-01-01T00:00:00.000Z').toBe(true);
+      // Every hit must be on or after the bound (which is the latest
+      // conversation's created_at).
+      const allTs = (
+        p.db.prepare('SELECT created_at FROM conversations').all() as {
+          created_at: string;
+        }[]
+      ).map((r) => r.created_at);
+      const max = allTs.sort().reverse()[0];
+      expect(row.created_at >= max).toBe(true);
     },
   },
   {
-    name: 'dateTo restricts to created_at <= bound (far future allows all)',
-    mutate: (base) => ({
-      ...base,
-      projectId: 'proj-alpha',
-      dateTo: '2099-12-31T23:59:59.999Z',
-    }),
+    name: 'dateTo restricts to created_at <= bound (split corpus by earliest conversation)',
+    mutate: async (base, ids, p) => {
+      const allIds = Array.from(ids.values()).flat();
+      const stmt = p.db.prepare('SELECT created_at FROM conversations WHERE id = ?');
+      const timestamps = allIds.map((id) => (stmt.get(id) as { created_at: string }).created_at);
+      timestamps.sort();
+      return { ...base, projectId: 'proj-alpha', dateTo: timestamps[0] };
+    },
     query: 'machine learning',
-    assertOnHit: (hit, p) => {
+    assertOnHit: (hit, _method, p) => {
       const row = p.db
         .prepare('SELECT created_at FROM conversations WHERE id = ?')
         .get(hit.conversationId) as { created_at: string };
-      expect(row.created_at <= '2099-12-31T23:59:59.999Z').toBe(true);
+      const allTs = (
+        p.db.prepare('SELECT created_at FROM conversations').all() as {
+          created_at: string;
+        }[]
+      ).map((r) => r.created_at);
+      const min = allTs.sort()[0];
+      expect(row.created_at <= min).toBe(true);
     },
+    // dateTo at the earliest conversation may exclude all conversations
+    // whose timestamps are strictly later — fts/vector may return zero.
+    expectHits: { fts: false, vector: false, hybrid: false },
   },
 ];
 
@@ -245,27 +329,51 @@ describe('searcher cross-cutting — filter correctness matrix (5 dims × 3 meth
   });
 
   for (const fc of filterCases()) {
+    const expectVector = fc.expectHits?.vector ?? true;
+    const expectFts = fc.expectHits?.fts ?? true;
+    const expectHybrid = fc.expectHits?.hybrid ?? true;
+
     it(`vectorSearch — ${fc.name}`, async () => {
-      const filters = fc.mutate({ projectId: '_unused_' }, ids);
+      const filters = await fc.mutate({ projectId: '_unused_' }, ids, p);
       const hits = await p.searcher.vectorSearch(fc.query, filters, 10);
-      expect(hits.length).toBeGreaterThan(0);
-      for (const hit of hits) fc.assertOnHit(hit, p, ids);
+      if (expectVector) expect(hits.length).toBeGreaterThan(0);
+      for (const hit of hits) {
+        fc.assertOnHit(
+          { conversationId: hit.conversationId, windowIndex: hit.windowIndex, kind: 'window' },
+          'vector',
+          p,
+          ids,
+        );
+      }
     });
 
     it(`ftsSearch — ${fc.name}`, async () => {
-      const filters = fc.mutate({ projectId: '_unused_' }, ids);
+      const filters = await fc.mutate({ projectId: '_unused_' }, ids, p);
       const hits = await p.searcher.ftsSearch(fc.query, filters, 10);
-      // ftsSearch may return zero for some filter cases (e.g., role
-      // filter combined with a query that doesn't match a user-role
-      // message). Assert per-hit correctness when results exist.
-      for (const hit of hits) fc.assertOnHit(hit, p, ids);
+      if (expectFts) expect(hits.length).toBeGreaterThan(0);
+      for (const hit of hits) {
+        fc.assertOnHit(
+          { conversationId: hit.conversationId, messageId: hit.messageId, kind: 'message' },
+          'fts',
+          p,
+          ids,
+        );
+      }
     });
 
     it(`hybridSearch — ${fc.name}`, async () => {
-      const filters = fc.mutate({ projectId: '_unused_' }, ids);
+      const filters = await fc.mutate({ projectId: '_unused_' }, ids, p);
       const hits = await p.searcher.hybridSearch(fc.query, filters, 10);
-      expect(hits.length).toBeGreaterThan(0);
-      for (const hit of hits) fc.assertOnHit(hit, p, ids);
+      if (expectHybrid) expect(hits.length).toBeGreaterThan(0);
+      for (const hit of hits) {
+        const methodHit: MethodHit = {
+          conversationId: hit.conversationId,
+          kind: hit.kind,
+          ...(hit.kind === 'window' ? { windowIndex: hit.windowIndex } : {}),
+          ...(hit.kind === 'message' ? { messageId: hit.messageId } : {}),
+        };
+        fc.assertOnHit(methodHit, 'hybrid', p, ids);
+      }
     });
   }
 });
@@ -420,19 +528,32 @@ describe('searcher cross-cutting — cross-project isolation', () => {
 // ---------------------------------------------------------------------------
 
 describe('searcher cross-cutting — static import guard', () => {
-  it('no banned LLM SDK imports in src/memory/searcher/', () => {
-    const banned = ['@anthropic-ai/sdk', 'openai', '\\bpg\\b', '@supabase'];
-    const bannedPatterns = banned.map(
-      (b) =>
-        new RegExp(
-          `from\\s+['"]${b.replace(/\\b/g, '')}['"]|require\\(['"]${b.replace(/\\b/g, '')}['"]\\)`,
-        ),
-    );
+  it('no banned LLM SDK imports anywhere under src/', () => {
+    // Walk the FULL src/ tree (sprint AC line 239). Same pattern as
+    // sprint-015 Story 7's import guard but anchored at src/ rather
+    // than a subdirectory. Catches any module — searcher, indexer,
+    // queue, retriever, sanitizer, etc. — that introduces a banned
+    // SDK dependency.
+    const banned = [
+      {
+        label: '@anthropic-ai/sdk',
+        regex: /from\s+['"]@anthropic-ai\/sdk['"]|require\(['"]@anthropic-ai\/sdk['"]\)/,
+      },
+      { label: 'openai', regex: /from\s+['"]openai['"]|require\(['"]openai['"]\)/ },
+      // pg = postgres driver. Match exact-name only so 'pgcrypto',
+      // 'pg-promise', etc. don't false-positive.
+      { label: 'pg', regex: /from\s+['"]pg['"]|require\(['"]pg['"]\)/ },
+      // @supabase/* covers all submodules: @supabase/supabase-js,
+      // @supabase/auth-js, etc. The original story-1 pattern matched
+      // bare '@supabase' only; this catches the realistic submodule
+      // imports too.
+      {
+        label: '@supabase/*',
+        regex: /from\s+['"]@supabase\/[^'"]+['"]|require\(['"]@supabase\/[^'"]+['"]\)/,
+      },
+    ];
 
-    const searcherRoot = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      '../../src/memory/searcher',
-    );
+    const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../src');
 
     const offenders: string[] = [];
     const walk = (dir: string): void => {
@@ -446,15 +567,15 @@ describe('searcher cross-cutting — static import guard', () => {
         }
         if (!full.endsWith('.ts')) continue;
         const contents = readFileSync(full, 'utf8');
-        for (let i = 0; i < banned.length; i++) {
-          if (bannedPatterns[i].test(contents)) {
-            offenders.push(`${full} imports banned module ${banned[i]}`);
+        for (const { label, regex } of banned) {
+          if (regex.test(contents)) {
+            offenders.push(`${full} imports banned module ${label}`);
           }
         }
       }
     };
 
-    walk(searcherRoot);
+    walk(srcRoot);
     expect(offenders, offenders.join('\n')).toEqual([]);
   });
 });

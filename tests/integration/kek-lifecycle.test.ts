@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
@@ -9,31 +9,12 @@ import { migrateToKek } from '../../src/privacy/migration.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import { computeKeyFingerprint, wrapDek } from '../../src/privacy/vault/asymmetric-crypto.js';
 import { encodeBase64Url } from '../../src/privacy/vault/base64url.js';
-import type { LlmClient } from '../../src/core/interfaces.js';
 import type { SecureAndRedactResult, ZkV2EncryptedValueMetadata } from '../../src/core/types.js';
 
 let db: Database.Database;
 let keyManager: InMemoryKeyManager;
 let kekManager: KekManager;
 let vaultStore: SqliteVaultStore;
-
-const createMockClient = (findings: unknown[]): LlmClient => ({
-  generate: vi.fn().mockResolvedValue({ findings }),
-});
-
-const emailFinding = (text: string) => ({
-  type: 'email_address',
-  confidence: 0.95,
-  reasoning: 'Email detected',
-  text,
-});
-
-const phoneFinding = (text: string) => ({
-  type: 'phone_number',
-  confidence: 0.9,
-  reasoning: 'Phone detected',
-  text,
-});
 
 const expectSuccess = (
   result: SecureAndRedactResult,
@@ -63,14 +44,12 @@ describe('KEK lifecycle e2e', () => {
   it('generates KEK on first encrypt and round-trips through reveal', async () => {
     clearResolvedStringRegistry();
     const userId = 'kek-e2e-1';
-    const mockClient = createMockClient([
-      emailFinding('eve@example.com'),
-      phoneFinding('555-000-1234'),
-    ]);
+    const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+    const privateKey =
+      'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
     const { redactedText, placeholderIds } = expectSuccess(
-      await secureAndRedact('Reach eve@example.com or 555-000-1234', {
-        client: mockClient,
+      await secureAndRedact(`Use ${apiKey} or ${privateKey}`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -78,8 +57,8 @@ describe('KEK lifecycle e2e', () => {
       }),
     );
 
-    expect(redactedText).not.toContain('eve@example.com');
-    expect(redactedText).not.toContain('555-000-1234');
+    expect(redactedText).not.toContain(apiKey);
+    expect(redactedText).not.toContain(privateKey);
     expect(placeholderIds).toHaveLength(2);
 
     // KEK row created in DB
@@ -103,19 +82,18 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealed.text).toContain('eve@example.com');
-    expect(revealed.text).toContain('555-000-1234');
+    expect(revealed.text).toContain(apiKey);
+    expect(revealed.text).toContain(privateKey);
     expect(revealed.text).not.toContain('[SENSITIVE:');
   });
 
   it('key rotation preserves access to pre-rotation data', async () => {
     clearResolvedStringRegistry();
     const userId = 'kek-e2e-2';
-    const mockClient = createMockClient([emailFinding('pre@rot.com')]);
+    const apiKey = 'sk-ant-api03-preabcdefghijklmnopqrstuvwxyz123456';
 
     const { redactedText } = expectSuccess(
-      await secureAndRedact('Email pre@rot.com', {
-        client: mockClient,
+      await secureAndRedact(`API key ${apiKey}`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -146,18 +124,18 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealed.text).toContain('pre@rot.com');
+    expect(revealed.text).toContain(apiKey);
   }, 15000);
 
   it('encrypts and decrypts new data after rotation', async () => {
     clearResolvedStringRegistry();
     const userId = 'kek-e2e-3';
+    const beforeKey = 'sk-ant-api03-beforeabcdefghijklmnopqrstuvwxyz123456';
+    const afterKey = 'sk-ant-api03-afterabcdefghijklmnopqrstuvwxyz1234567';
 
     // Encrypt before rotation
-    const mockPre = createMockClient([emailFinding('before@rot.com')]);
     const pre = expectSuccess(
-      await secureAndRedact('Email before@rot.com', {
-        client: mockPre,
+      await secureAndRedact(`API key ${beforeKey}`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -169,10 +147,8 @@ describe('KEK lifecycle e2e', () => {
 
     // Encrypt after rotation
     clearResolvedStringRegistry();
-    const mockPost = createMockClient([phoneFinding('555-999-0000')]);
     const post = expectSuccess(
-      await secureAndRedact('Call 555-999-0000', {
-        client: mockPost,
+      await secureAndRedact(`API key ${afterKey}`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -187,7 +163,7 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealedPre.text).toContain('before@rot.com');
+    expect(revealedPre.text).toContain(beforeKey);
 
     const revealedPost = await reveal(post.redactedText, {
       vaultStore,
@@ -195,7 +171,7 @@ describe('KEK lifecycle e2e', () => {
       kekManager,
       userId,
     });
-    expect(revealedPost.text).toContain('555-999-0000');
+    expect(revealedPost.text).toContain(afterKey);
   }, 15000);
 
   it('survives multiple sequential rotations', async () => {
@@ -204,13 +180,15 @@ describe('KEK lifecycle e2e', () => {
     const redactedTexts: string[] = [];
 
     // Encrypt, rotate, encrypt, rotate, encrypt, rotate
-    const piiValues = ['a@test.com', 'b@test.com', 'c@test.com'];
-    for (const pii of piiValues) {
+    const secretValues = [
+      'sk-ant-api03-alphaabcdefghijklmnopqrstuvwxyz123456',
+      'sk-ant-api03-bravoabcdefghijklmnopqrstuvwxyz123456',
+      'sk-ant-api03-charlieabcdefghijklmnopqrstuvwxyz123456',
+    ];
+    for (const secret of secretValues) {
       clearResolvedStringRegistry();
-      const mock = createMockClient([emailFinding(pii)]);
       const { redactedText } = expectSuccess(
-        await secureAndRedact(`Contact ${pii}`, {
-          client: mock,
+        await secureAndRedact(`Use ${secret}`, {
           vaultStore,
           keyManager,
           kekManager,
@@ -222,14 +200,14 @@ describe('KEK lifecycle e2e', () => {
     }
 
     // All three values decrypt after three rotations
-    for (let i = 0; i < piiValues.length; i++) {
+    for (let i = 0; i < secretValues.length; i++) {
       const revealed = await reveal(redactedTexts[i]!, {
         vaultStore,
         keyManager,
         kekManager,
         userId,
       });
-      expect(revealed.text).toContain(piiValues[i]);
+      expect(revealed.text).toContain(secretValues[i]);
     }
   }, 15000);
 

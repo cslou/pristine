@@ -377,6 +377,8 @@ const SECRET_PATTERN_RULES = [
 ];
 ```
 
+**Copy/paste rule:** Treat the code block above as the implementation source of truth. Markdown tables or prose examples must not add escape characters for display. In JSON config, escape only for JSON string syntax, for example `"\\bacme_tk_[A-Za-z0-9]{8}\\b"` becomes the runtime regex source `\bacme_tk_[A-Za-z0-9]{8}\b`. Do not double-escape word boundaries as `"\\\\bacme..."`; that matches a literal backslash and `b`, not a word boundary.
+
 #### Patterns to Remove
 
 | Name | Type | Reason |
@@ -467,6 +469,7 @@ Toggle off the LLM classifier so the privacy pipeline uses deterministic-only cl
 - **Acceptance criteria:**
   - [ ] New privacy-only API can be imported by hook scripts/extensions without constructing `PristineLocal`
   - [ ] Config accepts `baseDir`, `dbPath` or injected `db`, `keysDir`, `userId`, and `customPatternsPath`
+  - [ ] Config accepts injected privacy dependencies (`vaultStore`, `keyManager`, `kekManager`) for hook tests and host-managed lifecycles
   - [ ] `secureAndRedact(text)` works without `LlmClient`, embedder, or memory store
   - [ ] `reveal(text)` decrypts placeholders from the same vault/key material
   - [ ] Factory owns and disposes its SQLite connection when it created it

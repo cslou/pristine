@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { secureAndRedact, reveal, scrubOutput } from '../../src/privacy/index.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
-import type { KeyManager, LlmClient, PrivacyPipeline } from '../../src/core/interfaces.js';
+import type { KeyManager, PrivacyPipeline } from '../../src/core/interfaces.js';
 import type { ClassificationPipelineResult, SecureAndRedactResult } from '../../src/core/types.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
@@ -24,10 +24,6 @@ afterAll(() => {
   db.close();
 });
 
-const createMockLlmClient = (findings: unknown[]): LlmClient => ({
-  generate: vi.fn().mockResolvedValue({ findings }),
-});
-
 const expectSuccess = (
   result: SecureAndRedactResult,
 ): Extract<SecureAndRedactResult, { ok: true }> => {
@@ -39,29 +35,16 @@ const expectSuccess = (
 };
 
 describe('privacy pipeline end-to-end', () => {
-  it('secureAndRedact -> reveal -> scrubOutput round-trip recovers then scrubs PII', async () => {
+  it('secureAndRedact -> reveal -> scrubOutput round-trip recovers then scrubs secrets', async () => {
     clearResolvedStringRegistry();
 
-    const text = 'Contact alice@example.com or call 555-867-5309 for details.';
-
-    const mockClient = createMockLlmClient([
-      {
-        type: 'email_address',
-        confidence: 0.95,
-        reasoning: 'Email address detected',
-        text: 'alice@example.com',
-      },
-      {
-        type: 'phone_number',
-        confidence: 0.9,
-        reasoning: 'Phone number detected',
-        text: '555-867-5309',
-      },
-    ]);
+    const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+    const privateKey =
+      'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    const text = `Use ${apiKey} and ${privateKey} for deployment.`;
 
     const result = expectSuccess(
       await secureAndRedact(text, {
-        client: mockClient,
         vaultStore,
         keyManager,
         kekManager,
@@ -69,10 +52,10 @@ describe('privacy pipeline end-to-end', () => {
       }),
     );
 
-    expect(result.redactedText).not.toContain('alice@example.com');
-    expect(result.redactedText).not.toContain('555-867-5309');
-    expect(result.redactedText).toMatch(/\[SENSITIVE:email_address:[0-9a-f-]+\]/);
-    expect(result.redactedText).toMatch(/\[SENSITIVE:phone_number:[0-9a-f-]+\]/);
+    expect(result.redactedText).not.toContain(apiKey);
+    expect(result.redactedText).not.toContain(privateKey);
+    expect(result.redactedText).toMatch(/\[SENSITIVE:api_key:[0-9a-f-]+\]/);
+    expect(result.redactedText).toMatch(/\[SENSITIVE:private_key:[0-9a-f-]+\]/);
     expect(result.placeholderIds).toHaveLength(2);
 
     const revealed = await reveal(result.redactedText, {
@@ -82,29 +65,26 @@ describe('privacy pipeline end-to-end', () => {
       userId: 'user-e2e-1',
     });
 
-    expect(revealed.text).toContain('alice@example.com');
-    expect(revealed.text).toContain('555-867-5309');
+    expect(revealed.text).toContain(apiKey);
+    expect(revealed.text).toContain(privateKey);
     expect(revealed.text).not.toContain('[SENSITIVE:');
-    expect(revealed.revealedValues).toEqual(['alice@example.com', '555-867-5309']);
+    expect(revealed.revealedValues).toEqual([apiKey, privateKey]);
 
     const scrubbed = scrubOutput(
       `Echoed: ${revealed.text} and ${result.redactedText}`,
       revealed.revealedValues,
     );
 
-    expect(scrubbed).not.toContain('alice@example.com');
-    expect(scrubbed).not.toContain('555-867-5309');
+    expect(scrubbed).not.toContain(apiKey);
+    expect(scrubbed).not.toContain(privateKey);
     expect(scrubbed).not.toContain('[SENSITIVE:');
   });
 
-  it('secureAndRedact returns text unchanged when no PII detected', async () => {
+  it('secureAndRedact returns text unchanged when no secret is detected', async () => {
     const text = 'The weather is beautiful today and I enjoy coding.';
-
-    const mockClient = createMockLlmClient([]);
 
     const result = expectSuccess(
       await secureAndRedact(text, {
-        client: mockClient,
         vaultStore,
         keyManager,
         kekManager,
@@ -119,20 +99,10 @@ describe('privacy pipeline end-to-end', () => {
   it('secureAndRedact stores encrypted entries in vault', async () => {
     clearResolvedStringRegistry();
 
-    const text = 'My SSN is 123-45-6789';
-
-    const mockClient = createMockLlmClient([
-      {
-        type: 'identity_number',
-        confidence: 0.95,
-        reasoning: 'SSN detected',
-        text: '123-45-6789',
-      },
-    ]);
+    const text = 'API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
 
     const result = expectSuccess(
       await secureAndRedact(text, {
-        client: mockClient,
         vaultStore,
         keyManager,
         kekManager,
@@ -148,7 +118,7 @@ describe('privacy pipeline end-to-end', () => {
     );
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.sensitiveType).toBe('identity_number');
+    expect(entries[0]!.sensitiveType).toBe('api_key');
     expect(entries[0]!.encryptionMode).toBe('client_v2');
   });
 
@@ -180,27 +150,23 @@ describe('privacy pipeline end-to-end', () => {
     clearResolvedStringRegistry();
 
     const text = 'Use acme_tk_ABC12345 for the sandbox.';
-    const mockClient = createMockLlmClient([]);
 
     const result = expectSuccess(
       await secureAndRedact(text, {
-        client: mockClient,
         vaultStore,
         keyManager,
         kekManager,
         userId: 'user-custom-regex',
         classifier: {
-          deterministic: {
-            customPatternsPath: '/tmp/pristine-missing-redaction.json',
-            customPatterns: [
-              {
-                id: 'acme',
-                type: 'api_key',
-                pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
-                confidence: 0.95,
-              },
-            ],
-          },
+          customPatternsPath: '/tmp/pristine-missing-redaction.json',
+          customPatterns: [
+            {
+              id: 'acme',
+              type: 'api_key',
+              pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
+              confidence: 0.95,
+            },
+          ],
         },
       }),
     );
@@ -260,29 +226,14 @@ describe('privacy pipeline end-to-end', () => {
     expect(result.safetyViolations[0]!.type).toBe('email_address');
   });
 
-  it('handles unicode PII in round-trip', async () => {
+  it('handles unicode context around a secret in round-trip', async () => {
     clearResolvedStringRegistry();
 
-    const text = 'Name is 山田太郎 and email taro@example.jp';
-
-    const mockClient = createMockLlmClient([
-      {
-        type: 'identity_number',
-        confidence: 0.9,
-        reasoning: 'Japanese name detected',
-        text: '山田太郎',
-      },
-      {
-        type: 'email_address',
-        confidence: 0.95,
-        reasoning: 'Email detected',
-        text: 'taro@example.jp',
-      },
-    ]);
+    const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+    const text = `Name is 山田太郎 and token ${apiKey}`;
 
     const result = expectSuccess(
       await secureAndRedact(text, {
-        client: mockClient,
         vaultStore,
         keyManager,
         kekManager,
@@ -290,8 +241,8 @@ describe('privacy pipeline end-to-end', () => {
       }),
     );
 
-    expect(result.redactedText).not.toContain('山田太郎');
-    expect(result.redactedText).not.toContain('taro@example.jp');
+    expect(result.redactedText).toContain('山田太郎');
+    expect(result.redactedText).not.toContain(apiKey);
 
     const revealed = await reveal(result.redactedText, {
       vaultStore,
@@ -301,7 +252,7 @@ describe('privacy pipeline end-to-end', () => {
     });
 
     expect(revealed.text).toContain('山田太郎');
-    expect(revealed.text).toContain('taro@example.jp');
-    expect(revealed.revealedValues).toEqual(['山田太郎', 'taro@example.jp']);
+    expect(revealed.text).toContain(apiKey);
+    expect(revealed.revealedValues).toEqual([apiKey]);
   });
 });

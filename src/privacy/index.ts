@@ -6,20 +6,20 @@ import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url } from './vault/base64url.js';
 import { toApprovedValue } from './vault/sqlite/index.js';
 import { createPrivacyPipeline } from './pipeline.js';
-import type { CombinedClassifierConfig } from './classifier/combined/index.js';
+import type { DeterministicClassifierConfig } from './classifier/deterministic/index.js';
 import type { KekManager } from './kek/kek-manager.js';
 import { unwrapDekWithKek } from './kek/kek-manager.js';
-import { PrivacyPipelineError } from '../core/errors.js';
 import type { RevealResult, SecureAndRedactResult } from '../core/types.js';
 import { scrubStructuredSensitivePatterns } from './safety-scan.js';
 
 export interface SecureAndRedactConfig {
+  /** @deprecated Privacy classification is deterministic-only; this is ignored. */
   readonly client?: LlmClient;
   readonly vaultStore: VaultStore;
   readonly keyManager: KeyManager;
   readonly kekManager: KekManager;
   readonly userId: string;
-  readonly classifier?: CombinedClassifierConfig;
+  readonly classifier?: DeterministicClassifierConfig;
   readonly pipeline?: PrivacyPipeline;
 }
 
@@ -30,49 +30,12 @@ export interface RevealConfig {
   readonly userId: string;
 }
 
-const PIPELINE_CACHE = new WeakMap<LlmClient, Map<string, PrivacyPipeline>>();
-
-const classifierCacheKey = (config?: CombinedClassifierConfig): string => {
-  return JSON.stringify({
-    deterministic: config?.deterministic ?? null,
-    llm: config?.llm ?? null,
-    onLlmFailure: config?.onLlmFailure ?? null,
-  });
-};
-
-const getOrCreateCachedPipeline = (
-  client: LlmClient,
-  classifierConfig?: CombinedClassifierConfig,
-): PrivacyPipeline => {
-  const cacheKey = classifierCacheKey(classifierConfig);
-  const clientCache = PIPELINE_CACHE.get(client);
-
-  if (clientCache?.has(cacheKey)) {
-    return clientCache.get(cacheKey)!;
-  }
-
-  const pipeline = createPrivacyPipeline(client, { classifier: classifierConfig });
-  const nextClientCache = clientCache ?? new Map<string, PrivacyPipeline>();
-  nextClientCache.set(cacheKey, pipeline);
-  if (!clientCache) {
-    PIPELINE_CACHE.set(client, nextClientCache);
-  }
-
-  return pipeline;
-};
-
 const resolvePrivacyPipeline = (config: SecureAndRedactConfig): PrivacyPipeline => {
   if (config.pipeline) {
     return config.pipeline;
   }
 
-  if (!config.client) {
-    throw new PrivacyPipelineError(
-      'secureAndRedact requires either an injected privacy pipeline or an LLM client.',
-    );
-  }
-
-  return getOrCreateCachedPipeline(config.client, config.classifier);
+  return createPrivacyPipeline({ classifier: config.classifier });
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

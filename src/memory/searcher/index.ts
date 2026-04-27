@@ -155,7 +155,11 @@ const distanceToScore = (distance: number): number => 1 / (1 + distance);
 // practice, but the formula is undefined on them so we collapse to 0.
 const bm25ToScore = (bm25: number): number => {
   if (!Number.isFinite(bm25)) return 0;
-  const abs = -bm25;
+  // Math.abs avoids the -0 quirk: -bm25 of 0 produces -0; Math.abs(0)
+  // produces +0. Functionally identical for comparisons (-0 === 0)
+  // but JSON.stringify(-0) and Object.is(-0, 0) differ, so this
+  // keeps the score stable for any test or serialization that cares.
+  const abs = Math.abs(bm25);
   return abs / (1 + abs);
 };
 
@@ -477,8 +481,16 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       // (SQLITE_CORRUPT, SQLITE_BUSY) never reach the inner branch.
       const code = (error as { code?: string }).code;
       const msg = error instanceof Error ? error.message : '';
+      // Match TRUE FTS5 query-syntax error patterns only — never the
+      // bare "fts5" keyword. Infrastructure failures like "no such
+      // module: fts5" (extension not loaded) or "no such column:
+      // fts5_rank" (schema drift) ALSO contain "fts5", so matching that
+      // keyword would silently misclassify them as user-input errors.
+      // Real syntax errors always contain one of the structural-error
+      // keywords below or a "MATCH"-related token.
       const looksLikeFtsSyntax =
-        /fts5|syntax error|unterminated|malformed match/i.test(msg) || /MATCH/.test(msg);
+        /fts5: syntax error|syntax error near|unterminated|malformed (match|fts5)/i.test(msg) ||
+        /MATCH/.test(msg);
       const isFtsSyntax = code === 'SQLITE_ERROR' && looksLikeFtsSyntax;
       if (isFtsSyntax) {
         throw new InvalidArgumentError(`searcher.ftsSearch: invalid FTS5 query — ${msg}`);

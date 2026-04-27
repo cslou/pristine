@@ -266,6 +266,41 @@ describe('searcher.ftsSearch — end-to-end (FTS5 + filter scope)', () => {
     ).rejects.toBeInstanceOf(InvalidArgumentError);
   });
 
+  it('propagates infrastructure errors (e.g. "no such table") UNCHANGED — not wrapped as InvalidArgumentError', async () => {
+    // Build a fresh DB that has NO messages_fts table; the
+    // SQLITE_ERROR ("no such table: messages_fts") must propagate as a
+    // SqliteError, not get silently misclassified as a user-input
+    // error. Pins the iter-2 P1 fix that narrowed the catch regex.
+    const bareDb = createDatabase({
+      path: ':memory:',
+      loadSqliteVec: false,
+      runIntegrityCheck: false,
+    });
+    try {
+      // Create just enough schema for the SQL template to parse — the
+      // JOIN target tables must exist OR the error trips earlier (also
+      // SQLITE_ERROR, also infrastructure, also must propagate).
+      bareDb.exec(`
+        CREATE TABLE messages (id INTEGER PRIMARY KEY, conversation_id TEXT,
+          role TEXT, content TEXT, project_id TEXT);
+        CREATE TABLE conversations (id TEXT PRIMARY KEY, project_id TEXT,
+          created_at TEXT);
+        CREATE TABLE window_messages (conversation_id TEXT, window_index INTEGER,
+          message_id INTEGER, position INTEGER);
+      `);
+      bareDb
+        .prepare('INSERT INTO conversations (id, project_id, created_at) VALUES (?, ?, ?)')
+        .run('c1', 'p', new Date().toISOString());
+
+      const searcher = createSearcher({ db: bareDb, embedder: makeStubEmbedder() });
+      await expect(searcher.ftsSearch('hello', { projectId: 'p' }, 10)).rejects.not.toBeInstanceOf(
+        InvalidArgumentError,
+      );
+    } finally {
+      bareDb.close();
+    }
+  });
+
   it('respects role filter — only matches messages of the given role', async () => {
     // user/assistant alternation: contents at even indices are 'user' role.
     await seedConversation(p, 'alice', 'project-role', [

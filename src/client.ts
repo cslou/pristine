@@ -8,12 +8,16 @@ import type {
   SecureAndRedactResult,
 } from './core/types.js';
 import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
+import { IngestQueueError, InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createEmbedder } from './embedder/index.js';
 import { ConversationStore } from './conversations/store.js';
 import { IngestQueue } from './queue/ingest-queue.js';
+import { createIndexer, type Indexer } from './memory/indexer/index.js';
+import { createEmbedTaskHandler } from './memory/indexer/embed-worker.js';
+import { createWindowWriter } from './memory/indexer/windows.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
@@ -51,6 +55,7 @@ export class PristineLocal {
   public readonly ingestQueue: IngestQueue;
 
   private readonly conversationStore: ConversationStore;
+  private readonly indexer: Indexer | null;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
   private readonly llmClients: LlmClients;
@@ -65,6 +70,7 @@ export class PristineLocal {
     orchestrator: Orchestrator | null;
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
+    indexer: Indexer | null;
     db: Database.Database;
     embedder: Embedder;
     llmClients: LlmClients;
@@ -78,6 +84,7 @@ export class PristineLocal {
     this.orchestrator = deps.orchestrator;
     this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
+    this.indexer = deps.indexer;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.llmClients = deps.llmClients;
@@ -112,10 +119,29 @@ export class PristineLocal {
 
     const conversationStore = new ConversationStore(db);
 
+    // Indexer + embed-worker wiring (sprint-015 Phase 3 / sprint-016 Story 1).
+    // Mirrors scripts/embed-worker.ts: build a temp queue solely to read the
+    // indexer's resolved config, then construct the production queue with the
+    // embed-task handler bound. The temp queue shares the same pending_ingest_tasks
+    // table; nothing is written to it.
+    const windowWriter = createWindowWriter(db);
+    const tempQueue = new IngestQueue({ db, orchestrator: null, conversationStore });
+    const indexer = createIndexer({
+      db,
+      conversationStore,
+      ingestQueue: tempQueue,
+      embedder,
+    });
     const ingestQueue = new IngestQueue({
       db,
       orchestrator: null,
       conversationStore,
+      embedTaskHandler: createEmbedTaskHandler({
+        db,
+        embedder,
+        windowWriter,
+        config: indexer.config,
+      }),
     });
 
     const keysDir =
@@ -128,6 +154,7 @@ export class PristineLocal {
       orchestrator: null,
       ingestQueue,
       conversationStore,
+      indexer,
       db,
       embedder,
       llmClients,
@@ -142,8 +169,14 @@ export class PristineLocal {
 
   /**
    * Lightweight client with only DB, ConversationStore, and IngestQueue.
-   * No Ollama connection, no embedder, no LLM clients.
-   * Supports storeAsync(), searchConversations(), and getConversation().
+   * No embedder, no LLM clients, no indexer. Supports `searchConversations()`
+   * and `getConversation()` for read-only flows.
+   *
+   * `storeAsync()` is NOT available on lite clients — the indexer pipeline
+   * requires an embedder. Calling `createLite().storeAsync(...)` throws
+   * `InvalidArgumentError`. For ingest, use `Pristine.create({...})` instead;
+   * the embedder loads lazily so synchronous startup paths still pay only
+   * the construction cost.
    */
   public static createLite(config: PristineLiteConfig = {}): PristineLocal {
     const ownsDb = config.db === undefined;
@@ -161,6 +194,7 @@ export class PristineLocal {
       orchestrator: null,
       ingestQueue,
       conversationStore,
+      indexer: null,
       db,
       embedder: null as unknown as Embedder,
       llmClients: null as unknown as LlmClients,
@@ -178,12 +212,45 @@ export class PristineLocal {
   // -------------------------------------------------------------------------
 
   /**
-   * Fire-and-forget: enqueue a conversation for background processing.
-   * Returns the task ID, or empty string if the conversation is a duplicate
-   * (same userId + same content hash).
+   * Fire-and-forget: store a conversation and enqueue per-message embed
+   * tasks the embed-worker drains asynchronously. Returns the conversation
+   * id (NOT a task id — the conversation handle is the load-bearing
+   * identifier for downstream search).
+   *
+   * On duplicate (same userId + same content hash), returns the existing
+   * conversation id without re-enqueueing — the prior call's tasks remain
+   * the source of truth.
+   *
+   * Requires a fully-constructed `Pristine.create({...})`. `createLite()`
+   * has no embedder, so the indexer pipeline can't run; calling
+   * `createLite().storeAsync(...)` throws `InvalidArgumentError`.
    */
-  public storeAsync(conversation: readonly Message[], userId: string): string {
-    return this.ingestQueue.enqueue(conversation, userId);
+  public storeAsync(conversation: readonly Message[], userId: string, projectId?: string): string {
+    if (this.indexer === null) {
+      throw new InvalidArgumentError(
+        'storeAsync requires Pristine.create() — createLite has no embedder; use addConversation directly for write-only flows',
+      );
+    }
+    let conversationId: string;
+    try {
+      conversationId = this.conversationStore.addEmptyConversation(userId, conversation, projectId);
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        const existing = this.conversationStore.findByMessages(userId, conversation);
+        if (existing === null) {
+          throw new IngestQueueError(
+            'Duplicate detected but findByMessages returned null — content-hash drift?',
+          );
+        }
+        return existing.id;
+      }
+      throw error;
+    }
+    this.indexer.ingest(conversation, {
+      projectId: projectId ?? userId,
+      conversationId,
+    });
+    return conversationId;
   }
 
   // -------------------------------------------------------------------------

@@ -111,26 +111,41 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     expect(client.ingestQueue).toBeDefined();
   });
 
-  it('Phase-1 public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', () => {
+  it('Phase-1 public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
     const db = createDatabase(':memory:');
-    databases.push(db);
+    // sprint-016 Story 1: storeAsync now requires Pristine.create() (the
+    // indexer pipeline needs an embedder). Use stub LLM/embedder DI to keep
+    // the smoke fast and offline.
+    const llmClients: LlmClients = {
+      privacyClient: makeLlmStub(),
+      memoryClient: makeLlmStub(),
+    };
+    const client = await PristineLocal.create({
+      db,
+      llmClients,
+      embedder: makeEmbedderStub(),
+    });
 
-    const client = PristineLocal.createLite({ db });
+    try {
+      const messages = [
+        { role: 'user' as const, content: 'I love espresso with cardamom' },
+        { role: 'assistant' as const, content: 'Great choice — try a Turkish pull.' },
+      ];
+      const conversationId = client.storeAsync(messages, 'user-phase1');
+      expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
 
-    const messages = [
-      { role: 'user' as const, content: 'I love espresso with cardamom' },
-      { role: 'assistant' as const, content: 'Great choice — try a Turkish pull.' },
-    ];
-    const taskId = client.storeAsync(messages, 'user-phase1');
-    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+      const hits = client.searchConversations({ userId: 'user-phase1', keyword: 'cardamom' });
+      expect(hits).toHaveLength(1);
+      expect(hits[0].id).toBe(conversationId);
 
-    const hits = client.searchConversations({ userId: 'user-phase1', keyword: 'cardamom' });
-    expect(hits).toHaveLength(1);
-
-    const detail = client.getConversation(hits[0].id);
-    expect(detail).not.toBeNull();
-    expect(detail!.messages).toHaveLength(2);
-    expect(detail!.messages[0].content).toContain('cardamom');
+      const detail = client.getConversation(hits[0].id);
+      expect(detail).not.toBeNull();
+      expect(detail!.messages).toHaveLength(2);
+      expect(detail!.messages[0].content).toContain('cardamom');
+    } finally {
+      await client.dispose();
+      db.close();
+    }
   });
 
   it('privacy scrubOutput() works with no live LLM', () => {

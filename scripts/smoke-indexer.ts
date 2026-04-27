@@ -158,7 +158,12 @@ const main = async (): Promise<void> => {
   const stmt = db.prepare('SELECT project_id FROM conversations WHERE id = ?');
   let leaks = 0;
   for (const hit of hitsA) {
-    const row = stmt.get(hit.conversationId) as { project_id: string };
+    const row = stmt.get(hit.conversationId) as { project_id: string } | undefined;
+    if (row === undefined) {
+      log(`smoke: FAIL — hit conversationId ${hit.conversationId} not found in DB`);
+      leaks++;
+      continue;
+    }
     if (row.project_id !== projectId) leaks++;
   }
   const leakOk = leaks === 0;

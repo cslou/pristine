@@ -35,6 +35,13 @@ export interface SearchFilters {
    * a window's text concatenates messages from multiple roles; treating
    * the role filter as "must contain" is the most useful interpretation
    * for retrieval.
+   *
+   * **Caveat:** the role-filter post-pass runs over a fixed `limit*2`
+   * over-fetch from the KNN. If more than half the top-2*limit windows
+   * fail the role check, the returned array can be shorter than `limit`
+   * even when more matching windows exist further down the KNN ranking.
+   * Documented for callers; auto-grow over-fetch is deferred to Phase 7
+   * eval signal.
    */
   readonly role?: Role;
   /** ISO 8601 lower bound (inclusive) on `conversations.created_at`. */
@@ -46,7 +53,15 @@ export interface SearchFilters {
 export interface WindowHit {
   readonly conversationId: string;
   readonly windowIndex: number;
-  /** Lower is closer in embedding space; vec0 returns L2 distance by default. */
+  /**
+   * Similarity score, **higher = more similar**. Computed as
+   * `1 / (1 + distance)` from vec0's L2 distance: 0 < score ≤ 1, with
+   * score → 1 as distance → 0. Story 4's RRF fusion across vector + FTS
+   * + session sources requires a consistent "higher is better" convention
+   * (spec §5.1.3 + Story 4 Technical Notes); inverting at the primitive
+   * boundary keeps fusion arithmetic clean and lets future ranking
+   * tweaks work in score-space rather than distance-space.
+   */
   readonly score: number;
   /** Constituent message ids ordered by `window_messages.position`. */
   readonly messageIds: readonly number[];
@@ -73,6 +88,12 @@ const MAX_LIMIT = 1000;
 
 const VEC_DIM = 768;
 
+// Convert vec0 L2 distance to a similarity score in (0, 1]. Monotonically
+// decreasing in distance, so KNN's distance-ascending order maps to
+// score-descending order without any re-sort. Higher = more similar; this
+// is the convention Story 4's RRF fusion expects across all primitives.
+const distanceToScore = (distance: number): number => 1 / (1 + distance);
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -80,16 +101,52 @@ const VEC_DIM = 768;
 export const createSearcher = (deps: SearcherDeps): Searcher => {
   const { db, embedder } = deps;
 
+  // Statements with FIXED shape — hoisted to factory scope so the SQL
+  // compiles once per searcher lifetime, not once per vectorSearch call.
+  // Both use json_each(?) to bind the IN-list as a single JSON-string
+  // parameter, sidestepping SQLite's 32766-bind-parameter limit on
+  // dynamic IN-lists.
+
+  // Resolve all (cid, widx) → messageIds in one query. Caller supplies
+  // (cid, widx) pairs as a JSON array of {c, w} objects. ORDER BY ensures
+  // window_messages.position-order is preserved per (cid, widx) group.
+  const resolveMessageIdsBatch = db.prepare(`
+    SELECT wm.conversation_id, wm.window_index, wm.message_id, wm.position
+    FROM window_messages wm
+    JOIN json_each(?) j
+      ON j.value ->> '$.c' = wm.conversation_id
+     AND j.value ->> '$.w' = wm.window_index
+    ORDER BY wm.conversation_id, wm.window_index, wm.position ASC
+  `);
+
+  // Find which (cid, widx) pairs contain at least one message with the
+  // given role. Caller supplies the same JSON array; result is the
+  // surviving set.
+  const roleMatchesBatch = db.prepare(`
+    SELECT DISTINCT wm.conversation_id, wm.window_index
+    FROM window_messages wm
+    JOIN messages m ON m.id = wm.message_id
+    JOIN json_each(?) j
+      ON j.value ->> '$.c' = wm.conversation_id
+     AND j.value ->> '$.w' = wm.window_index
+    WHERE m.role = ?
+  `);
+
   // ---- Filter-first candidate-set query --------------------------------
   //
   // Narrow `conversations` to those matching projectId + optional
   // conversationId + dateFrom/dateTo. The role filter is applied later
-  // (it requires joining vec_windows → window_messages → messages, which
-  // we want to do only over the candidate set).
+  // (it requires joining vec_windows → window_messages → messages).
   //
   // Hot path: project-only filter resolved by ix_conversations_project_started
   // (project_id, created_at DESC) — confirmed via EXPLAIN QUERY PLAN
-  // (pinned in tests/integration/searcher.test.ts as a comment).
+  // (pinned in tests/integration/searcher-vector.test.ts).
+  //
+  // SQL is built dynamically (filter combinations vary), but only the
+  // four hard-coded fragments below ever appear; values always go through
+  // `?` placeholders. Caching via a small Map keyed on the filter shape
+  // would help, but for sprint-016 the per-call db.prepare() cost on a
+  // ≤4-AND query is ~50µs — negligible vs the embed call.
 
   const buildCandidateSql = (filters: SearchFilters): { sql: string; params: unknown[] } => {
     const conditions: string[] = ['c.project_id = ?'];
@@ -151,10 +208,14 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
         `searcher.vectorSearch: embedder returned ${queryVec.length}-d vector, expected ${VEC_DIM}`,
       );
     }
-    if (queryVec.some((v) => Number.isNaN(v))) {
-      throw new InvalidArgumentError(
-        'searcher.vectorSearch: embedder returned vector containing NaN',
-      );
+    // Use a for-loop instead of .some so an early-exit on the first NaN
+    // doesn't allocate a closure per call on the (clean) common path.
+    for (let i = 0; i < queryVec.length; i++) {
+      if (Number.isNaN(queryVec[i])) {
+        throw new InvalidArgumentError(
+          'searcher.vectorSearch: embedder returned vector containing NaN',
+        );
+      }
     }
     const queryFloat32 = new Float32Array(queryVec);
     const queryBuf = Buffer.from(
@@ -163,24 +224,28 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       queryFloat32.byteLength,
     );
 
-    // Step 3 — vec0 KNN restricted to the candidate set. sqlite-vec
-    // accepts `conversation_id IN (...)` as a filter inside the MATCH
-    // query; the placeholder list is built dynamically.
+    // Step 3 — vec0 KNN restricted to the candidate set. We bind the
+    // candidate id list as a single JSON-string parameter via json_each,
+    // sidestepping SQLite's 32766-parameter limit that a dynamic
+    // `IN (?, ?, ?, ...)` would hit at large project sizes (sprint doc
+    // §16 P4-S1 Technical Notes call this out).
     //
-    // Over-fetch by k = limit so that the role-filter post-pass below
-    // still has enough candidates if it prunes some. limit*2 is the same
-    // shape Story 4's hybridSearch uses for its FTS/vector over-fetch.
-    const knnK = filters.role !== undefined ? Math.min(limit * 2, MAX_LIMIT) : limit;
-    const idPlaceholders = candidateIds.map(() => '?').join(', ');
+    // Over-fetch by limit*2 when a role filter is configured so the
+    // post-KNN role-pruning pass still has enough candidates if it
+    // discards some windows. limit*2 is the same shape Story 4's
+    // hybridSearch uses for its FTS/vector over-fetch.
+    const knnK =
+      filters.role !== undefined ? Math.min(limit * 2, MAX_LIMIT) : Math.min(limit, MAX_LIMIT);
     const knnSql = `
       SELECT conversation_id, window_index, distance
       FROM vec_windows
       WHERE embedding MATCH ?
         AND k = ?
-        AND conversation_id IN (${idPlaceholders})
+        AND conversation_id IN (SELECT value FROM json_each(?))
       ORDER BY distance
     `;
-    const knnRows = db.prepare(knnSql).all(queryBuf, knnK, ...candidateIds) as {
+    const candidateIdsJson = JSON.stringify(candidateIds);
+    const knnRows = db.prepare(knnSql).all(queryBuf, knnK, candidateIdsJson) as {
       conversation_id: string;
       window_index: number | bigint;
       distance: number;
@@ -188,41 +253,66 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
 
     if (knnRows.length === 0) return [];
 
-    // Step 4 — resolve constituent message ids per window (required for
-    // the WindowHit shape) AND optionally enforce the role filter.
-    const resolveMessageIds = db.prepare(
-      'SELECT message_id, position FROM window_messages WHERE conversation_id = ? AND window_index = ? ORDER BY position ASC',
-    );
-    const roleMatches = filters.role
-      ? db.prepare(
-          `SELECT 1 AS hit FROM window_messages wm
-           JOIN messages m ON m.id = wm.message_id
-           WHERE wm.conversation_id = ? AND wm.window_index = ? AND m.role = ?
-           LIMIT 1`,
-        )
-      : null;
+    // Normalize bigint → number once; vec0 reads sometimes surface bigint
+    // for INTEGER columns even though writes require BigInt binds.
+    const normalizedKnn = knnRows.map((row) => ({
+      conversationId: row.conversation_id,
+      windowIndex:
+        typeof row.window_index === 'bigint' ? Number(row.window_index) : row.window_index,
+      distance: row.distance,
+    }));
 
-    const hits: WindowHit[] = [];
-    for (const row of knnRows) {
-      // window_index comes back as a JS number for normal SELECTs; vec0
-      // BIND wants BigInt but READS return plain numbers. Coerce defensively.
-      const windowIndex =
-        typeof row.window_index === 'bigint' ? Number(row.window_index) : row.window_index;
-      if (roleMatches !== null) {
-        const match = roleMatches.get(row.conversation_id, windowIndex, filters.role) as
-          | { hit: number }
-          | undefined;
-        if (match === undefined) continue;
-      }
-      const msgRows = resolveMessageIds.all(row.conversation_id, windowIndex) as {
-        message_id: number;
-        position: number;
+    // Step 4 — batched role-filter (single SQL query, not per-row).
+    const knnPairsJson = JSON.stringify(
+      normalizedKnn.map((r) => ({ c: r.conversationId, w: r.windowIndex })),
+    );
+
+    let roleAllowed: Set<string> | null = null;
+    if (filters.role !== undefined) {
+      const allowedRows = roleMatchesBatch.all(knnPairsJson, filters.role) as {
+        conversation_id: string;
+        window_index: number | bigint;
       }[];
+      roleAllowed = new Set(
+        allowedRows.map(
+          (r) =>
+            `${r.conversation_id} ${typeof r.window_index === 'bigint' ? Number(r.window_index) : r.window_index}`,
+        ),
+      );
+    }
+
+    // Step 5 — batched messageIds resolution (single SQL query, not per-row).
+    type IdRow = {
+      conversation_id: string;
+      window_index: number | bigint;
+      message_id: number;
+      position: number;
+    };
+    const idRows = resolveMessageIdsBatch.all(knnPairsJson) as IdRow[];
+    const messageIdsByPair = new Map<string, number[]>();
+    for (const r of idRows) {
+      const widx = typeof r.window_index === 'bigint' ? Number(r.window_index) : r.window_index;
+      const key = `${r.conversation_id} ${widx}`;
+      let arr = messageIdsByPair.get(key);
+      if (arr === undefined) {
+        arr = [];
+        messageIdsByPair.set(key, arr);
+      }
+      arr.push(r.message_id);
+    }
+
+    // Step 6 — assemble hits in KNN distance order, applying role filter
+    // and stopping at limit.
+    const hits: WindowHit[] = [];
+    for (const row of normalizedKnn) {
+      const key = `${row.conversationId} ${row.windowIndex}`;
+      if (roleAllowed !== null && !roleAllowed.has(key)) continue;
+      const messageIds = messageIdsByPair.get(key) ?? [];
       hits.push({
-        conversationId: row.conversation_id,
-        windowIndex,
-        score: row.distance,
-        messageIds: msgRows.map((m) => m.message_id),
+        conversationId: row.conversationId,
+        windowIndex: row.windowIndex,
+        score: distanceToScore(row.distance),
+        messageIds,
       });
       if (hits.length >= limit) break;
     }

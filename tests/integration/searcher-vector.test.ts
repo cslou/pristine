@@ -44,7 +44,7 @@ const makeStubEmbedder = (): Embedder => ({
     return out;
   },
   embedBatch: async () => {
-    throw new Error('embedBatch not used in this suite');
+    throw new InvalidArgumentError('embedBatch not used in this suite');
   },
 });
 
@@ -95,6 +95,64 @@ const seedConversation = async (
   return conversationId;
 };
 
+describe('searcher.vectorSearch — argument validation', () => {
+  // Validation guards trip before any DB call, but createSearcher now
+  // prepares statements at construction time, so the test still needs a
+  // real DB (just no seeded data). Keep it lightweight: in-memory DB,
+  // sqlite-vec NOT loaded (validation never reaches the KNN path).
+  let p: PipelineDeps;
+
+  beforeEach(() => {
+    p = buildPipeline(makeStubEmbedder());
+  });
+
+  afterEach(() => {
+    p.db.close();
+  });
+
+  it('rejects empty query string', async () => {
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    await expect(searcher.vectorSearch('', { projectId: 'p' }, 10)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+
+  it('rejects empty projectId', async () => {
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    await expect(searcher.vectorSearch('q', { projectId: '' }, 10)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+
+  it('rejects limit = 0', async () => {
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    await expect(searcher.vectorSearch('q', { projectId: 'p' }, 0)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+
+  it('rejects negative limit', async () => {
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    await expect(searcher.vectorSearch('q', { projectId: 'p' }, -1)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+
+  it('rejects non-integer limit', async () => {
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    await expect(searcher.vectorSearch('q', { projectId: 'p' }, 1.5)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+
+  it('rejects limit > 1000', async () => {
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    await expect(searcher.vectorSearch('q', { projectId: 'p' }, 1001)).rejects.toBeInstanceOf(
+      InvalidArgumentError,
+    );
+  });
+});
+
 describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
   let p: PipelineDeps;
 
@@ -136,8 +194,9 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
     // the conversation row to verify project_id.
     const stmt = p.db.prepare('SELECT project_id FROM conversations WHERE id = ?');
     for (const hit of hitsA) {
-      const row = stmt.get(hit.conversationId) as { project_id: string };
-      expect(row.project_id).toBe('project-a');
+      const row = stmt.get(hit.conversationId) as { project_id: string } | undefined;
+      expect(row).toBeDefined();
+      expect(row?.project_id).toBe('project-a');
     }
 
     // Reverse direction.
@@ -148,8 +207,9 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
     );
     expect(hitsB.length).toBeGreaterThan(0);
     for (const hit of hitsB) {
-      const row = stmt.get(hit.conversationId) as { project_id: string };
-      expect(row.project_id).toBe('project-b');
+      const row = stmt.get(hit.conversationId) as { project_id: string } | undefined;
+      expect(row).toBeDefined();
+      expect(row?.project_id).toBe('project-b');
     }
   });
 
@@ -201,7 +261,11 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
     expect(hits.length).toBeLessThanOrEqual(2);
   });
 
-  it('scoring monotonicity: hits returned in ascending distance order', async () => {
+  it('scoring monotonicity: hits returned in descending similarity order (higher = closer)', async () => {
+    // WindowHit.score is similarity (1/(1+distance)) — higher = more
+    // similar — to match Story 4's RRF fusion convention. Hits come back
+    // in KNN-distance-ascending order, which maps to score-descending
+    // order monotonically (the inversion is monotonic).
     await seedConversation(p, 'alice', 'project-a', [
       'cat dog bird',
       'apple banana',
@@ -212,7 +276,84 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
     const hits = await searcher.vectorSearch('cat dog bird', { projectId: 'project-a' }, 10);
     expect(hits.length).toBeGreaterThan(1);
     for (let i = 1; i < hits.length; i++) {
-      expect(hits[i].score).toBeGreaterThanOrEqual(hits[i - 1].score);
+      expect(hits[i].score).toBeLessThanOrEqual(hits[i - 1].score);
+    }
+    // Score lives in (0, 1] — verify the bounds.
+    for (const hit of hits) {
+      expect(hit.score).toBeGreaterThan(0);
+      expect(hit.score).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('dateFrom narrows candidates to conversations created on or after the bound', async () => {
+    // Seed two conversations with different created_at by inserting one,
+    // forcing a sleep, then inserting the second. better-sqlite3's
+    // datetime('now') is millisecond-resolution; a 50ms sleep is enough
+    // to produce distinct timestamps.
+    const idEarly = await seedConversation(p, 'alice', 'project-date', [
+      'early msg one',
+      'early msg two',
+      'early msg three',
+      'early msg four',
+    ]);
+    await new Promise((r) => setTimeout(r, 1100));
+    const idLate = await seedConversation(p, 'alice', 'project-date', [
+      'late msg one',
+      'late msg two',
+      'late msg three',
+      'late msg four',
+    ]);
+
+    const lateCreatedAt = (
+      p.db.prepare('SELECT created_at FROM conversations WHERE id = ?').get(idLate) as {
+        created_at: string;
+      }
+    ).created_at;
+
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    const hits = await searcher.vectorSearch(
+      'msg',
+      { projectId: 'project-date', dateFrom: lateCreatedAt },
+      10,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    for (const hit of hits) {
+      expect(hit.conversationId).toBe(idLate);
+      expect(hit.conversationId).not.toBe(idEarly);
+    }
+  });
+
+  it('dateTo narrows candidates to conversations created on or before the bound', async () => {
+    const idEarly = await seedConversation(p, 'alice', 'project-date2', [
+      'early msg one',
+      'early msg two',
+      'early msg three',
+      'early msg four',
+    ]);
+    await new Promise((r) => setTimeout(r, 1100));
+    const idLate = await seedConversation(p, 'alice', 'project-date2', [
+      'late msg one',
+      'late msg two',
+      'late msg three',
+      'late msg four',
+    ]);
+
+    const earlyCreatedAt = (
+      p.db.prepare('SELECT created_at FROM conversations WHERE id = ?').get(idEarly) as {
+        created_at: string;
+      }
+    ).created_at;
+
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    const hits = await searcher.vectorSearch(
+      'msg',
+      { projectId: 'project-date2', dateTo: earlyCreatedAt },
+      10,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    for (const hit of hits) {
+      expect(hit.conversationId).toBe(idEarly);
+      expect(hit.conversationId).not.toBe(idLate);
     }
   });
 
@@ -225,7 +366,7 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
         return out;
       },
       embedBatch: async () => {
-        throw new Error('not used');
+        throw new InvalidArgumentError('not used');
       },
     };
     const searcher = createSearcher({ db: p.db, embedder: nanEmbedder });
@@ -239,7 +380,7 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
     const wrongDimEmbedder: Embedder = {
       embed: async () => Array<number>(512).fill(0.01),
       embedBatch: async () => {
-        throw new Error('not used');
+        throw new InvalidArgumentError('not used');
       },
     };
     const searcher = createSearcher({ db: p.db, embedder: wrongDimEmbedder });

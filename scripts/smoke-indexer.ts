@@ -149,11 +149,7 @@ const main = async (): Promise<void> => {
     log('smoke: FAIL — pristine.searcher is null on full client; should be exposed');
     process.exit(1);
   }
-  const hitsA = await client.searcher.vectorSearch(
-    'sliding windows',
-    { projectId },
-    10,
-  );
+  const hitsA = await client.searcher.vectorSearch('sliding windows', { projectId }, 10);
   log(`smoke: vectorSearch in ${projectId} → ${hitsA.length} hits`);
   const stmt = db.prepare('SELECT project_id FROM conversations WHERE id = ?');
   let leaks = 0;
@@ -221,12 +217,48 @@ const main = async (): Promise<void> => {
   );
   log(`smoke: hybridSearch '"PRSTN-9001"' → ${hybridHits.length} hits`);
   for (const hit of hybridHits) {
-    const kind = hit.kind === 'window' ? `window(${hit.windowIndex})` : `message(${hit.messageId})`;
+    const kind =
+      hit.kind === 'window'
+        ? `window(${hit.windowIndex})`
+        : hit.kind === 'message'
+          ? `message(${hit.messageId})`
+          : `session(${hit.conversationId.slice(0, 8)})`;
     log(`        ${kind} score=${hit.score.toFixed(4)} source=${hit.source}`);
   }
   const hybridOk = hybridHits.length >= 1;
   log(`  ${hybridOk ? 'OK ' : 'FAIL'}  hybrid hits >= 1            ≥1 → ${hybridHits.length}`);
   if (!hybridOk) allOk = false;
+
+  // -------------------------------------------------------------------
+  // Sprint-016 Story 5 — 3-source hybrid fan-out round-trip.
+  // Build session vectors for all seeded conversations and re-run the
+  // hybrid query — the session leg now contributes alongside vector
+  // and FTS. Demonstrates cross-conversation reference recall (a
+  // conversation thematically related but without strong per-window
+  // matches still surfaces via its session vector).
+  // -------------------------------------------------------------------
+  log('');
+  log('smoke: 3-source hybrid (session vectors built) ...');
+  await buildSessionVector(db, embedder, conversationId);
+  await buildSessionVector(db, embedder, ftsConversationId);
+  log('smoke: built session vectors for both seeded conversations');
+
+  const triHits = await client.searcher.hybridSearch('sliding windows', { projectId }, 10);
+  log(`smoke: 3-source hybridSearch in ${projectId} → ${triHits.length} hits`);
+  let sessionCount = 0;
+  for (const hit of triHits) {
+    const kind =
+      hit.kind === 'window'
+        ? `window(${hit.windowIndex})`
+        : hit.kind === 'message'
+          ? `message(${hit.messageId})`
+          : `session(${hit.conversationId.slice(0, 8)})`;
+    log(`        ${kind} score=${hit.score.toFixed(4)} source=${hit.source}`);
+    if (hit.kind === 'session') sessionCount++;
+  }
+  const triOk = sessionCount >= 1;
+  log(`  ${triOk ? 'OK ' : 'FAIL'}  session hits >= 1           ≥1 → ${sessionCount}`);
+  if (!triOk) allOk = false;
 
   await client.dispose();
 

@@ -42,12 +42,18 @@ export interface SearchFilters {
    * - `ftsSearch`: a message matches if its OWN role equals the
    *   filter (strict, message-level). FTS5 operates at message
    *   granularity, so message-level matching is the natural fit.
+   * - `sessionVectorSearch`: **silently ignored**. A session vector
+   *   aggregates messages of every role; a role-scoped session query
+   *   is a category error rather than a useful filter. Documented
+   *   here at the field definition so callers see the gap without
+   *   navigating to the method JSDoc.
    *
-   * Story 4's `hybridSearch` will pass the same `filters` object to
-   * both methods; callers who pass `role: 'user'` should expect
-   * vectorSearch to surface windows where any message is from the user
-   * AND ftsSearch to surface only user-authored messages. The asymmetry
-   * is intentional given each engine's natural granularity.
+   * `hybridSearch` passes the same `filters` object to all three
+   * methods; callers who pass `role: 'user'` should expect
+   * vectorSearch to surface windows where any message is from the
+   * user, ftsSearch to surface only user-authored messages, and
+   * sessionVectorSearch to ignore the constraint. The asymmetry is
+   * intentional given each engine's natural granularity.
    *
    * **Caveat (vectorSearch only):** the role-filter post-pass runs
    * over a fixed `limit*2` over-fetch from the KNN. If more than half
@@ -84,21 +90,17 @@ export interface WindowHit {
  * Source-provenance tag on `HybridHit`. Indicates which underlying
  * primitive(s) surfaced this hit:
  *
- * - `'vector'` — only the vectorSearch leg matched
- * - `'fts'` — only the ftsSearch leg matched
- * - `'both'` — both legs matched
- *
- * **Sprint-016 reachability note.** In Story 4's bi-source design
- * (vector + FTS), the id spaces are structurally disjoint —
- * `window:{cid}:{idx}` from vectorSearch never collides with
- * `message:{messageId}` from ftsSearch — so `'both'` cannot appear in
- * Story 4 output. The variant is reserved for Story 5's
- * `sessionVectorSearch`, where `session:{cid}` ids CAN appear in
- * multiple fan-out legs (a session vector and a window vector both
- * scoped to the same conversation). Pre-existing on the type so
- * downstream consumers don't need a breaking change in Story 5.
+ * - `'vector'` — only the `vectorSearch` leg matched (window hit)
+ * - `'fts'` — only the `ftsSearch` leg matched (message hit)
+ * - `'session'` — only the `sessionVectorSearch` leg matched (session
+ *   hit, sprint-016 Story 5)
+ * - `'both'` — multiple legs matched the same id. With sprint-016's
+ *   disjoint id-space (`window:` / `message:` / `session:`), this
+ *   today only appears when a future id-derivation change introduces
+ *   shared ids across legs. Pre-existing on the type for forward
+ *   compatibility.
  */
-export type HybridSource = 'vector' | 'fts' | 'both';
+export type HybridSource = 'vector' | 'fts' | 'session' | 'both';
 
 /**
  * Unified hit shape returned by `hybridSearch`. Discriminated union over
@@ -116,8 +118,9 @@ export type HybridHit =
        * Fused RRF score (sum of `1/(k+rank)` contributions across the
        * primitives this hit appeared in). Higher = more relevant. Not
        * directly comparable to the underlying `WindowHit.score` /
-       * `MessageHit.score` — those are per-primitive similarities, this
-       * is a fusion-level rank-derived score.
+       * `MessageHit.score` / `SessionHit.score` — those are
+       * per-primitive similarities, this is a fusion-level rank-derived
+       * score.
        */
       readonly score: number;
       readonly source: HybridSource;
@@ -129,7 +132,25 @@ export type HybridHit =
       readonly score: number;
       readonly source: HybridSource;
       readonly snippet?: string;
+    }
+  | {
+      readonly kind: 'session';
+      readonly conversationId: string;
+      readonly score: number;
+      readonly source: HybridSource;
     };
+
+export interface SessionHit {
+  readonly conversationId: string;
+  /**
+   * Similarity score, **higher = more similar**. Computed as
+   * `1 / (1 + distance)` from vec0's L2 distance over the
+   * conversation's whole-session embedding (sprint-015 Story 5).
+   * Same convention as `WindowHit.score` so Story 4's RRF fusion sees
+   * consistent ordering across vector + FTS + session sources.
+   */
+  readonly score: number;
+}
 
 export interface MessageHit {
   readonly messageId: number;
@@ -195,6 +216,31 @@ export interface Searcher {
    * one.
    */
   hybridSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly HybridHit[]>;
+  /**
+   * Filter-first KNN over `vec_sessions` — coarse-grained
+   * per-conversation vectors built by `indexer.buildSessionVector`.
+   * Returns up to `limit` conversations whose session vector is
+   * closest to the query, in descending similarity order.
+   *
+   * **Empty result when `vec_sessions` is unpopulated.** Sprint-015
+   * shipped `buildSessionVector` as an explicit consumer-demand call
+   * — `storeAsync` does NOT auto-build session vectors. A corpus
+   * that has only run `storeAsync` (no separate `buildSessionVector`
+   * invocations) will have an empty `vec_sessions` table and return
+   * `[]` from this method. `hybridSearch`'s 3-source fan-out
+   * degrades gracefully in that case.
+   *
+   * **Filter shape note.** The `role` filter does NOT apply at
+   * session granularity — a session aggregates messages of every
+   * role. The implementation silently ignores `filters.role`;
+   * documented here so callers don't expect role-narrowed session
+   * results.
+   */
+  sessionVectorSearch(
+    query: string,
+    filters: SearchFilters,
+    limit: number,
+  ): Promise<readonly SessionHit[]>;
 }
 
 export interface SearcherDeps {
@@ -590,20 +636,119 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     });
   };
 
-  // ---- hybridSearch (sprint-016 Story 4 / spec-005 §16 P4-S3) ------------
+  // ---- sessionVectorSearch (sprint-016 Story 5 / spec-005 §16 P4-S4) -----
   //
-  // Fans out vectorSearch + ftsSearch in parallel via Promise.allSettled
-  // so a failure on one side doesn't poison the other. Maps each leg's
-  // hits into the unified HybridHit shape with a stable id, then fuses
-  // via RRF (k=60). The id space is heterogeneous on purpose:
+  // KNN over vec_sessions (whole-conversation embeddings). Filter shape
+  // is a subset of SearchFilters: projectId + conversationId? + dateFrom?
+  // + dateTo?. Role does NOT apply (a session aggregates roles). The
+  // candidate-set query reuses the same `ix_conversations_project_started`
+  // index as vectorSearch's hot path.
+
+  const sessionVectorSearch = async (
+    query: string,
+    filters: SearchFilters,
+    limit: number,
+  ): Promise<readonly SessionHit[]> => {
+    if (typeof query !== 'string' || query.length === 0) {
+      throw new InvalidArgumentError(
+        'searcher.sessionVectorSearch: query must be a non-empty string',
+      );
+    }
+    if (filters.projectId === '') {
+      throw new InvalidArgumentError(
+        'searcher.sessionVectorSearch: filters.projectId must be non-empty',
+      );
+    }
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new InvalidArgumentError(
+        `searcher.sessionVectorSearch: limit must be a positive integer, got ${String(limit)}`,
+      );
+    }
+    if (limit > MAX_LIMIT) {
+      throw new InvalidArgumentError(
+        `searcher.sessionVectorSearch: limit must be <= ${MAX_LIMIT}, got ${limit}`,
+      );
+    }
+
+    // Step 1 — narrow conversation candidates. Same shape as vectorSearch
+    // but role filter is intentionally ignored (session-level granularity
+    // doesn't decompose by role; documented on the Searcher interface).
+    const { sql: candSql, params: candParams } = buildCandidateSql(filters);
+    const candidateRows = db.prepare(candSql).all(...candParams) as { conversation_id: string }[];
+    if (candidateRows.length === 0) return [];
+    const candidateIds = candidateRows.map((r) => r.conversation_id);
+
+    // Step 2 — embed the query (same lazy ordering as vectorSearch:
+    // cheap candidate check first, expensive embed second).
+    const queryVec = await embedder.embed(query);
+    if (queryVec.length !== VEC_DIM) {
+      throw new InvalidArgumentError(
+        `searcher.sessionVectorSearch: embedder returned ${queryVec.length}-d vector, expected ${VEC_DIM}`,
+      );
+    }
+    for (let i = 0; i < queryVec.length; i++) {
+      if (Number.isNaN(queryVec[i])) {
+        throw new InvalidArgumentError(
+          'searcher.sessionVectorSearch: embedder returned vector containing NaN',
+        );
+      }
+    }
+    const queryFloat32 = new Float32Array(queryVec);
+    const queryBuf = Buffer.from(
+      queryFloat32.buffer,
+      queryFloat32.byteOffset,
+      queryFloat32.byteLength,
+    );
+
+    // Step 3 — vec0 KNN over vec_sessions. Same JSON-IN-list pattern as
+    // vectorSearch to sidestep SQLite's 32766-bind-param limit.
+    const candidateIdsJson = JSON.stringify(candidateIds);
+    const knnRows = db
+      .prepare(
+        `
+      SELECT conversation_id, distance
+      FROM vec_sessions
+      WHERE embedding MATCH ?
+        AND k = ?
+        AND conversation_id IN (SELECT value FROM json_each(?))
+      ORDER BY distance
+    `,
+      )
+      .all(queryBuf, limit, candidateIdsJson) as {
+      conversation_id: string;
+      distance: number;
+    }[];
+
+    return knnRows.map((row) => ({
+      conversationId: row.conversation_id,
+      score: distanceToScore(row.distance),
+    }));
+  };
+
+  // ---- hybridSearch (sprint-016 Story 4 / spec-005 §16 P4-S3, extended
+  // sprint-016 Story 5 / §16 P4-S4 to 3-source fan-out) --------------------
+  //
+  // Fans out vectorSearch + ftsSearch + sessionVectorSearch in parallel
+  // via Promise.allSettled so a failure on one leg doesn't poison the
+  // others. Maps each leg's hits into the unified HybridHit shape with
+  // a stable id, then fuses via RRF (k=60). The id space is
+  // heterogeneous on purpose:
   //   window:{conversationId}:{windowIndex}  — vectorSearch hits
   //   message:{messageId}                     — ftsSearch hits
-  // Story 5 extends with `session:{conversationId}` for sessionVectorSearch.
+  //   session:{conversationId}                — sessionVectorSearch hits
+  // Disjoint prefixes guarantee no cross-kind collisions; a single
+  // conversation can surface as a window AND a session simultaneously,
+  // and RRF score-summing naturally promotes that consensus.
 
-  const hybridIdOf = (hit: HybridHit): string =>
-    hit.kind === 'window'
-      ? `window:${hit.conversationId}:${hit.windowIndex}`
-      : `message:${hit.messageId}`;
+  const hybridIdOf = (hit: HybridHit): string => {
+    if (hit.kind === 'window') {
+      return `window:${hit.conversationId}:${hit.windowIndex}`;
+    }
+    if (hit.kind === 'message') {
+      return `message:${hit.messageId}`;
+    }
+    return `session:${hit.conversationId}`;
+  };
 
   const hybridSearch = async (
     query: string,
@@ -629,15 +774,21 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
 
     const overFetch = Math.min(limit * 2, MAX_LIMIT);
 
-    // allSettled rather than all so a syntax error on one side doesn't
-    // preempt the other side's results.
-    const [vectorResult, ftsResult] = await Promise.allSettled([
+    // allSettled rather than all so a syntax error / outage on one leg
+    // doesn't preempt the others. Three-source fan-out (sprint-016
+    // Story 5): vector + FTS + session.
+    const [vectorResult, ftsResult, sessionResult] = await Promise.allSettled([
       vectorSearch(query, filters, overFetch),
       ftsSearch(query, filters, overFetch),
+      sessionVectorSearch(query, filters, overFetch),
     ]);
 
-    if (vectorResult.status === 'rejected' && ftsResult.status === 'rejected') {
-      // Both failed: rethrow the vector error per the documented
+    if (
+      vectorResult.status === 'rejected' &&
+      ftsResult.status === 'rejected' &&
+      sessionResult.status === 'rejected'
+    ) {
+      // All three failed: rethrow the vector error per the documented
       // contract (embedder failure is the higher-impact one for
       // operators). Promise.allSettled types `reason` as unknown —
       // normalize before rethrow so a non-Error rejection (e.g., a
@@ -655,10 +806,15 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     const vectorHits: readonly WindowHit[] =
       vectorResult.status === 'fulfilled' ? vectorResult.value : [];
     const ftsHits: readonly MessageHit[] = ftsResult.status === 'fulfilled' ? ftsResult.value : [];
+    const sessionHits: readonly SessionHit[] =
+      sessionResult.status === 'fulfilled' ? sessionResult.value : [];
 
     // Lift each leg's hits into the HybridHit union with a tentative
-    // 'vector' or 'fts' source tag. RRF will mutate `source` to 'both'
-    // for ids that appear in both legs.
+    // per-leg source tag. The post-fusion pass below replaces it with
+    // 'both' on the rare case where the same id surfaces from multiple
+    // legs (with disjoint id-space prefixes today, that requires a
+    // future change to id derivation — kept on the type for
+    // forward-compat).
     const vectorAsHybrid: HybridHit[] = vectorHits.map((h) => ({
       kind: 'window' as const,
       conversationId: h.conversationId,
@@ -685,22 +841,36 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       if (h.snippet !== undefined) base.snippet = h.snippet;
       return base;
     });
+    const sessionAsHybrid: HybridHit[] = sessionHits.map((h) => ({
+      kind: 'session' as const,
+      conversationId: h.conversationId,
+      score: h.score,
+      source: 'session' as const,
+    }));
+    // Initial source tag matches the leg of origin so the intermediate
+    // state is accurate (debuggers / logs reading sessionAsHybrid before
+    // the post-fusion pass see the right value). The post-fusion pass
+    // below replaces it with 'both' on the rare case where the same id
+    // surfaces from multiple legs (with disjoint id-space prefixes
+    // today, that requires a future change to id derivation — kept on
+    // the type for forward-compat).
 
-    // Build a quick lookup of which ids appeared in each leg so we can
-    // tag the post-fusion `source` field accurately.
+    // Build per-leg id sets so we can tag the post-fusion `source`
+    // field accurately.
     const vectorIds = new Set(vectorAsHybrid.map(hybridIdOf));
     const ftsIds = new Set(ftsAsHybrid.map(hybridIdOf));
+    const sessionIds = new Set(sessionAsHybrid.map(hybridIdOf));
 
-    const fused = reciprocalRankFusion<HybridHit>([vectorAsHybrid, ftsAsHybrid], hybridIdOf);
+    const fused = reciprocalRankFusion<HybridHit>(
+      [vectorAsHybrid, ftsAsHybrid, sessionAsHybrid],
+      hybridIdOf,
+    );
 
-    // Compute the fused-rank score per id. The RRF helper returns items
-    // in fused-score-descending order but doesn't surface scores; we
-    // recompute locally to expose them on HybridHit.score (consumer
-    // contract for the unified hit type). Reuse the helper's exported
-    // RRF_DEFAULT_K so a future tune of the constant in ranking.ts
-    // automatically applies here too.
+    // Compute the fused-rank score per id. Same RRF formula the helper
+    // uses internally; reuse RRF_DEFAULT_K so any future tune in
+    // ranking.ts applies here too.
     const fusedScores = new Map<string, number>();
-    for (const list of [vectorAsHybrid, ftsAsHybrid]) {
+    for (const list of [vectorAsHybrid, ftsAsHybrid, sessionAsHybrid]) {
       for (let rank = 0; rank < list.length; rank++) {
         const id = hybridIdOf(list[rank]);
         fusedScores.set(id, (fusedScores.get(id) ?? 0) + 1 / (RRF_DEFAULT_K + rank + 1));
@@ -711,7 +881,10 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       const id = hybridIdOf(hit);
       const inVector = vectorIds.has(id);
       const inFts = ftsIds.has(id);
-      const source: HybridSource = inVector && inFts ? 'both' : inVector ? 'vector' : 'fts';
+      const inSession = sessionIds.has(id);
+      const sourceCount = (inVector ? 1 : 0) + (inFts ? 1 : 0) + (inSession ? 1 : 0);
+      const source: HybridSource =
+        sourceCount > 1 ? 'both' : inVector ? 'vector' : inSession ? 'session' : 'fts';
       const score = fusedScores.get(id) ?? 0;
       // Rebuild the hit with the post-fusion source + score. The
       // discriminator (`kind`) preserves the underlying payload shape.
@@ -721,6 +894,14 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
           conversationId: hit.conversationId,
           windowIndex: hit.windowIndex,
           messageIds: hit.messageIds,
+          score,
+          source,
+        };
+      }
+      if (hit.kind === 'session') {
+        return {
+          kind: 'session',
+          conversationId: hit.conversationId,
           score,
           source,
         };
@@ -737,5 +918,5 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     });
   };
 
-  return { vectorSearch, ftsSearch, hybridSearch };
+  return { vectorSearch, ftsSearch, hybridSearch, sessionVectorSearch };
 };

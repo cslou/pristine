@@ -7,7 +7,7 @@ import type {
   RevealResult,
   SecureAndRedactResult,
 } from './core/types.js';
-import type { Embedder, KeyManager, Orchestrator, VaultStore } from './core/interfaces.js';
+import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
 import { IngestQueueError, InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
@@ -51,7 +51,6 @@ export interface PristineLiteConfig {
 // ---------------------------------------------------------------------------
 
 export class PristineLocal {
-  public readonly orchestrator: Orchestrator | null;
   public readonly ingestQueue: IngestQueue;
 
   private readonly conversationStore: ConversationStore;
@@ -67,7 +66,6 @@ export class PristineLocal {
   private readonly ownsLlmClients: boolean;
 
   private constructor(deps: {
-    orchestrator: Orchestrator | null;
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
     indexer: Indexer | null;
@@ -81,7 +79,6 @@ export class PristineLocal {
     ownsEmbedder: boolean;
     ownsLlmClients: boolean;
   }) {
-    this.orchestrator = deps.orchestrator;
     this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
     this.indexer = deps.indexer;
@@ -125,7 +122,7 @@ export class PristineLocal {
     // embed-task handler bound. The temp queue shares the same pending_ingest_tasks
     // table; nothing is written to it.
     const windowWriter = createWindowWriter(db);
-    const tempQueue = new IngestQueue({ db, orchestrator: null, conversationStore });
+    const tempQueue = new IngestQueue({ db });
     const indexer = createIndexer({
       db,
       conversationStore,
@@ -134,8 +131,6 @@ export class PristineLocal {
     });
     const ingestQueue = new IngestQueue({
       db,
-      orchestrator: null,
-      conversationStore,
       embedTaskHandler: createEmbedTaskHandler({
         db,
         embedder,
@@ -151,7 +146,6 @@ export class PristineLocal {
     const vaultStore = createSqliteVaultStore(db);
 
     return new PristineLocal({
-      orchestrator: null,
       ingestQueue,
       conversationStore,
       indexer,
@@ -184,14 +178,9 @@ export class PristineLocal {
       config.db ?? createDefaultDatabase(config.baseDir ? `${config.baseDir}/data` : undefined);
 
     const conversationStore = new ConversationStore(db);
-    const ingestQueue = new IngestQueue({
-      db,
-      orchestrator: null,
-      conversationStore,
-    });
+    const ingestQueue = new IngestQueue({ db });
 
     return new PristineLocal({
-      orchestrator: null,
       ingestQueue,
       conversationStore,
       indexer: null,

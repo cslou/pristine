@@ -52,7 +52,7 @@ const main = async (): Promise<void> => {
 
   // Indexer's resolved config (defaults: windowSize=3, windowOverlap=1).
   // Constructed solely to read the resolved config — we don't ingest here.
-  const tempQueue = new IngestQueue({ db, orchestrator: null, conversationStore });
+  const tempQueue = new IngestQueue({ db });
   const indexer = createIndexer({
     db,
     conversationStore,
@@ -62,8 +62,6 @@ const main = async (): Promise<void> => {
 
   const queue = new IngestQueue({
     db,
-    orchestrator: null,
-    conversationStore,
     embedTaskHandler: createEmbedTaskHandler({
       db,
       embedder,

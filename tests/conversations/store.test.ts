@@ -26,7 +26,7 @@ beforeAll(() => {
   // exists for deleteById's cascade DELETE. Production always wires both
   // (client.ts constructs IngestQueue when ConversationStore is created),
   // so the test setup mirrors that contract.
-  new IngestQueue({ db, orchestrator: null, conversationStore: store });
+  new IngestQueue({ db });
 });
 
 beforeEach(() => {
@@ -544,7 +544,7 @@ describe('ConversationStore', () => {
       const s = new ConversationStore(d);
       // deleteById cascades to pending_ingest_tasks (sprint-015 schema);
       // construct an IngestQueue so the table exists.
-      new IngestQueue({ db: d, orchestrator: null, conversationStore: s });
+      new IngestQueue({ db: d });
 
       const id = s.addConversation(makeMessages(['Hi', 'Hello']), 'user-cascade');
       const messageRows = d
@@ -604,7 +604,7 @@ describe('ConversationStore', () => {
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
       const s = new ConversationStore(d);
       // IngestQueue's constructor creates the pending_ingest_tasks table.
-      new IngestQueue({ db: d, orchestrator: null, conversationStore: s });
+      new IngestQueue({ db: d });
 
       const id = s.addConversation(makeMessages(['hi']), 'user-fk');
       d.prepare(
@@ -631,7 +631,7 @@ describe('ConversationStore', () => {
       // cleanly — the four extra DELETEs are no-ops in that case.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
       const s = new ConversationStore(d);
-      new IngestQueue({ db: d, orchestrator: null, conversationStore: s });
+      new IngestQueue({ db: d });
 
       const id = s.addConversation(makeMessages(['Solo turn']), 'user-noindex');
       expect(() => s.deleteById(id)).not.toThrow();

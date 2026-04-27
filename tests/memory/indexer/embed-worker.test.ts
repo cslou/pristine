@@ -22,7 +22,7 @@ beforeAll(() => {
   // One IngestQueue instance constructed up-front so the
   // pending_ingest_tasks table exists for the beforeEach DELETE pass.
   // Tests construct their own queue with embedTaskHandler injected.
-  new IngestQueue({ db, orchestrator: null, conversationStore: store });
+  new IngestQueue({ db });
 });
 
 beforeEach(() => {
@@ -224,7 +224,12 @@ describe('processEmbedTask', () => {
     const windowWriter = createWindowWriter(db);
     const config = { windowSize: 3, windowOverlap: 1 };
 
-    const task: IngestTask = {
+    // taskType narrowed to 'embed-message' at the type level (sprint-016
+    // Story 1 deleted extract-conversation), but the runtime guard remains
+    // for defense against legacy DB rows whose stored task_type predates
+    // the CHECK collapse. Cast through `unknown` to construct a malformed
+    // task that exercises the guard.
+    const task = {
       id: 'task-wrong',
       conversationId: 'c',
       userId: 'u',
@@ -237,7 +242,7 @@ describe('processEmbedTask', () => {
       createdAt: 'now',
       startedAt: 'now',
       completedAt: null,
-    };
+    } as unknown as IngestTask;
 
     await expect(
       processEmbedTask({ db, embedder, windowWriter, config }, task),
@@ -283,8 +288,6 @@ describe('runEmbedWorker (end-to-end via IngestQueue.processNext)', () => {
 
     const queue = new IngestQueue({
       db,
-      orchestrator: null,
-      conversationStore: store,
       embedTaskHandler: createEmbedTaskHandler({ db, embedder, windowWriter, config }),
     });
 
@@ -335,8 +338,6 @@ describe('runEmbedWorker (end-to-end via IngestQueue.processNext)', () => {
 
     const queue = new IngestQueue({
       db,
-      orchestrator: null,
-      conversationStore: store,
       embedTaskHandler: createEmbedTaskHandler({ db, embedder, windowWriter, config }),
     });
 
@@ -363,8 +364,6 @@ describe('crash-recovery via stale-claim reset (sprint-015 Story 6)', () => {
 
     const queue = new IngestQueue({
       db,
-      orchestrator: null,
-      conversationStore: store,
       embedTaskHandler: createEmbedTaskHandler({ db, embedder, windowWriter, config }),
     });
 

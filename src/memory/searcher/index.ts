@@ -12,6 +12,7 @@
 import type Database from 'better-sqlite3';
 import type { Embedder } from '../../core/interfaces.js';
 import { InvalidArgumentError } from '../../core/errors.js';
+import { reciprocalRankFusion, RRF_DEFAULT_K } from '../retriever/ranking.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -79,6 +80,57 @@ export interface WindowHit {
   readonly messageIds: readonly number[];
 }
 
+/**
+ * Source-provenance tag on `HybridHit`. Indicates which underlying
+ * primitive(s) surfaced this hit:
+ *
+ * - `'vector'` — only the vectorSearch leg matched
+ * - `'fts'` — only the ftsSearch leg matched
+ * - `'both'` — both legs matched
+ *
+ * **Sprint-016 reachability note.** In Story 4's bi-source design
+ * (vector + FTS), the id spaces are structurally disjoint —
+ * `window:{cid}:{idx}` from vectorSearch never collides with
+ * `message:{messageId}` from ftsSearch — so `'both'` cannot appear in
+ * Story 4 output. The variant is reserved for Story 5's
+ * `sessionVectorSearch`, where `session:{cid}` ids CAN appear in
+ * multiple fan-out legs (a session vector and a window vector both
+ * scoped to the same conversation). Pre-existing on the type so
+ * downstream consumers don't need a breaking change in Story 5.
+ */
+export type HybridSource = 'vector' | 'fts' | 'both';
+
+/**
+ * Unified hit shape returned by `hybridSearch`. Discriminated union over
+ * the underlying primitive's payload (window from vectorSearch, message
+ * from ftsSearch); future Story 5 extends with `kind: 'session'` from
+ * `sessionVectorSearch`.
+ */
+export type HybridHit =
+  | {
+      readonly kind: 'window';
+      readonly conversationId: string;
+      readonly windowIndex: number;
+      readonly messageIds: readonly number[];
+      /**
+       * Fused RRF score (sum of `1/(k+rank)` contributions across the
+       * primitives this hit appeared in). Higher = more relevant. Not
+       * directly comparable to the underlying `WindowHit.score` /
+       * `MessageHit.score` — those are per-primitive similarities, this
+       * is a fusion-level rank-derived score.
+       */
+      readonly score: number;
+      readonly source: HybridSource;
+    }
+  | {
+      readonly kind: 'message';
+      readonly messageId: number;
+      readonly conversationId: string;
+      readonly score: number;
+      readonly source: HybridSource;
+      readonly snippet?: string;
+    };
+
 export interface MessageHit {
   readonly messageId: number;
   readonly conversationId: string;
@@ -122,6 +174,27 @@ export interface Searcher {
    * errors leak to callers.
    */
   ftsSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly MessageHit[]>;
+  /**
+   * Hybrid search: runs `vectorSearch` and `ftsSearch` in parallel and
+   * fuses the two ranked lists via reciprocal rank fusion (k=60).
+   * Returns up to `limit` `HybridHit`s in fused score order, each
+   * tagged with which primitive(s) surfaced it.
+   *
+   * **Over-fetch.** Both legs over-fetch `limit*2` so RRF has enough
+   * candidates to fuse meaningfully — a query that ranks 5 vector hits
+   * and 5 FTS hits with overlap should produce up to 10 fused hits, not
+   * just the top-5 of one side.
+   *
+   * **Partial-empty resilience.** Either side returning empty does NOT
+   * short-circuit the other; `hybridSearch` returns the non-empty
+   * side's results unchanged.
+   *
+   * **Dual error.** If both legs reject simultaneously (e.g., embedder
+   * outage + FTS5 syntax error), `hybridSearch` rethrows the
+   * vectorSearch error — the embedder failure is the higher-impact
+   * one.
+   */
+  hybridSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly HybridHit[]>;
 }
 
 export interface SearcherDeps {
@@ -517,5 +590,152 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     });
   };
 
-  return { vectorSearch, ftsSearch };
+  // ---- hybridSearch (sprint-016 Story 4 / spec-005 §16 P4-S3) ------------
+  //
+  // Fans out vectorSearch + ftsSearch in parallel via Promise.allSettled
+  // so a failure on one side doesn't poison the other. Maps each leg's
+  // hits into the unified HybridHit shape with a stable id, then fuses
+  // via RRF (k=60). The id space is heterogeneous on purpose:
+  //   window:{conversationId}:{windowIndex}  — vectorSearch hits
+  //   message:{messageId}                     — ftsSearch hits
+  // Story 5 extends with `session:{conversationId}` for sessionVectorSearch.
+
+  const hybridIdOf = (hit: HybridHit): string =>
+    hit.kind === 'window'
+      ? `window:${hit.conversationId}:${hit.windowIndex}`
+      : `message:${hit.messageId}`;
+
+  const hybridSearch = async (
+    query: string,
+    filters: SearchFilters,
+    limit: number,
+  ): Promise<readonly HybridHit[]> => {
+    if (typeof query !== 'string' || query.length === 0) {
+      throw new InvalidArgumentError('searcher.hybridSearch: query must be a non-empty string');
+    }
+    if (filters.projectId === '') {
+      throw new InvalidArgumentError('searcher.hybridSearch: filters.projectId must be non-empty');
+    }
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new InvalidArgumentError(
+        `searcher.hybridSearch: limit must be a positive integer, got ${String(limit)}`,
+      );
+    }
+    if (limit > MAX_LIMIT) {
+      throw new InvalidArgumentError(
+        `searcher.hybridSearch: limit must be <= ${MAX_LIMIT}, got ${limit}`,
+      );
+    }
+
+    const overFetch = Math.min(limit * 2, MAX_LIMIT);
+
+    // allSettled rather than all so a syntax error on one side doesn't
+    // preempt the other side's results.
+    const [vectorResult, ftsResult] = await Promise.allSettled([
+      vectorSearch(query, filters, overFetch),
+      ftsSearch(query, filters, overFetch),
+    ]);
+
+    if (vectorResult.status === 'rejected' && ftsResult.status === 'rejected') {
+      // Both failed: rethrow the vector error per the documented
+      // contract (embedder failure is the higher-impact one for
+      // operators). Promise.allSettled types `reason` as unknown —
+      // normalize before rethrow so a non-Error rejection (e.g., a
+      // string thrown by a buggy dependency) doesn't crash a downstream
+      // `catch (e) { e.message }` consumer with "cannot read properties
+      // of undefined". Wrapping non-Errors in InvalidArgumentError
+      // preserves the contract (a downstream typed catch still works).
+      const reason = vectorResult.reason;
+      if (reason instanceof Error) throw reason;
+      throw new InvalidArgumentError(
+        `searcher.hybridSearch: vector leg rejected with non-Error value: ${String(reason)}`,
+      );
+    }
+
+    const vectorHits: readonly WindowHit[] =
+      vectorResult.status === 'fulfilled' ? vectorResult.value : [];
+    const ftsHits: readonly MessageHit[] = ftsResult.status === 'fulfilled' ? ftsResult.value : [];
+
+    // Lift each leg's hits into the HybridHit union with a tentative
+    // 'vector' or 'fts' source tag. RRF will mutate `source` to 'both'
+    // for ids that appear in both legs.
+    const vectorAsHybrid: HybridHit[] = vectorHits.map((h) => ({
+      kind: 'window' as const,
+      conversationId: h.conversationId,
+      windowIndex: h.windowIndex,
+      messageIds: h.messageIds,
+      score: h.score,
+      source: 'vector' as const,
+    }));
+    const ftsAsHybrid: HybridHit[] = ftsHits.map((h) => {
+      const base: {
+        readonly kind: 'message';
+        readonly messageId: number;
+        readonly conversationId: string;
+        readonly score: number;
+        readonly source: HybridSource;
+        snippet?: string;
+      } = {
+        kind: 'message',
+        messageId: h.messageId,
+        conversationId: h.conversationId,
+        score: h.score,
+        source: 'fts',
+      };
+      if (h.snippet !== undefined) base.snippet = h.snippet;
+      return base;
+    });
+
+    // Build a quick lookup of which ids appeared in each leg so we can
+    // tag the post-fusion `source` field accurately.
+    const vectorIds = new Set(vectorAsHybrid.map(hybridIdOf));
+    const ftsIds = new Set(ftsAsHybrid.map(hybridIdOf));
+
+    const fused = reciprocalRankFusion<HybridHit>([vectorAsHybrid, ftsAsHybrid], hybridIdOf);
+
+    // Compute the fused-rank score per id. The RRF helper returns items
+    // in fused-score-descending order but doesn't surface scores; we
+    // recompute locally to expose them on HybridHit.score (consumer
+    // contract for the unified hit type). Reuse the helper's exported
+    // RRF_DEFAULT_K so a future tune of the constant in ranking.ts
+    // automatically applies here too.
+    const fusedScores = new Map<string, number>();
+    for (const list of [vectorAsHybrid, ftsAsHybrid]) {
+      for (let rank = 0; rank < list.length; rank++) {
+        const id = hybridIdOf(list[rank]);
+        fusedScores.set(id, (fusedScores.get(id) ?? 0) + 1 / (RRF_DEFAULT_K + rank + 1));
+      }
+    }
+
+    return fused.slice(0, limit).map((hit) => {
+      const id = hybridIdOf(hit);
+      const inVector = vectorIds.has(id);
+      const inFts = ftsIds.has(id);
+      const source: HybridSource = inVector && inFts ? 'both' : inVector ? 'vector' : 'fts';
+      const score = fusedScores.get(id) ?? 0;
+      // Rebuild the hit with the post-fusion source + score. The
+      // discriminator (`kind`) preserves the underlying payload shape.
+      if (hit.kind === 'window') {
+        return {
+          kind: 'window',
+          conversationId: hit.conversationId,
+          windowIndex: hit.windowIndex,
+          messageIds: hit.messageIds,
+          score,
+          source,
+        };
+      }
+      const out: HybridHit = {
+        kind: 'message',
+        messageId: hit.messageId,
+        conversationId: hit.conversationId,
+        score,
+        source,
+        ...(hit.snippet !== undefined ? { snippet: hit.snippet } : {}),
+      };
+      return out;
+    });
+  };
+
+  return { vectorSearch, ftsSearch, hybridSearch };
 };

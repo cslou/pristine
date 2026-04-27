@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
 import { ConversationStore } from '../../src/conversations/store.js';
 import { ConversationNotFoundError, InvalidArgumentError } from '../../src/core/errors.js';
+import { IngestQueue } from '../../src/queue/ingest-queue.js';
 
 let db: ReturnType<typeof createDatabase>;
 let store: ConversationStore;
@@ -21,6 +22,11 @@ const contentHash = (messages: { role: string; content: string }[]): string =>
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
   store = new ConversationStore(db);
+  // Construct an IngestQueue alongside the store so pending_ingest_tasks
+  // exists for deleteById's cascade DELETE. Production always wires both
+  // (client.ts constructs IngestQueue when ConversationStore is created),
+  // so the test setup mirrors that contract.
+  new IngestQueue({ db, orchestrator: null, conversationStore: store });
 });
 
 beforeEach(() => {
@@ -487,6 +493,17 @@ describe('ConversationStore', () => {
     });
   });
 
+  describe('getConversationUserId', () => {
+    it('returns the user_id for an existing conversation', () => {
+      const id = store.addConversation(makeMessages(['hi']), 'user-resolve');
+      expect(store.getConversationUserId(id)).toBe('user-resolve');
+    });
+
+    it('returns null when the conversation does not exist', () => {
+      expect(store.getConversationUserId('does-not-exist')).toBeNull();
+    });
+  });
+
   describe('deleteById', () => {
     it('removes the conversation row and its messages', () => {
       const messages = makeMessages(['Hi', 'Hello', 'Bye']);
@@ -516,6 +533,116 @@ describe('ConversationStore', () => {
       const secondId = store.addConversation(messages, 'user-1');
       expect(secondId).not.toBe(firstId);
       expect(store.getConversation(secondId)).not.toBeNull();
+    });
+
+    it('cascades to window_messages + vec_windows + vec_sessions for indexed conversations (GH #113)', () => {
+      // Sprint-015 Story 1 — once Phase-3 starts writing window_messages rows,
+      // the existing partial-ingest recovery path (deleteById) hits a FK
+      // violation on messages.id without this cascade. Pinned with a fresh
+      // DB so leftover vec rows from other tests don't pollute the assertion.
+      const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+      const s = new ConversationStore(d);
+      // deleteById cascades to pending_ingest_tasks (sprint-015 schema);
+      // construct an IngestQueue so the table exists.
+      new IngestQueue({ db: d, orchestrator: null, conversationStore: s });
+
+      const id = s.addConversation(makeMessages(['Hi', 'Hello']), 'user-cascade');
+      const messageRows = d
+        .prepare('SELECT id FROM messages WHERE conversation_id = ? ORDER BY sort_order ASC')
+        .all(id) as { id: number }[];
+      expect(messageRows.length).toBe(2);
+
+      // Seed an indexed-corpus shape: window_messages rows referencing real
+      // message ids (FK), one vec_windows row, one vec_sessions row. All three
+      // tables must be empty for this conversation_id after deleteById.
+      d.prepare(
+        'INSERT INTO window_messages(conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+      ).run(id, 0n, messageRows[0].id, 0n);
+      d.prepare(
+        'INSERT INTO window_messages(conversation_id, window_index, message_id, position) VALUES (?, ?, ?, ?)',
+      ).run(id, 0n, messageRows[1].id, 1n);
+      d.prepare(
+        'INSERT INTO vec_windows(conversation_id, window_index, embedding) VALUES (?, ?, ?)',
+      ).run(id, 0n, makeEmbedding(0.5));
+      d.prepare(
+        'INSERT INTO vec_sessions(conversation_id, embedding, updated_at) VALUES (?, ?, ?)',
+      ).run(id, makeEmbedding(0.6), BigInt(Date.now()));
+
+      expect(() => s.deleteById(id)).not.toThrow();
+
+      // Assert the most fundamental invariants first so a partial-delete
+      // failure surfaces on the right line rather than after three passing
+      // count assertions.
+      expect(s.getConversation(id)).toBeNull();
+      const msgCount = d
+        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(msgCount.c).toBe(0);
+
+      const wmCount = d
+        .prepare('SELECT COUNT(*) AS c FROM window_messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      const vwCount = d
+        .prepare('SELECT COUNT(*) AS c FROM vec_windows WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      const vsCount = d
+        .prepare('SELECT COUNT(*) AS c FROM vec_sessions WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(wmCount.c).toBe(0);
+      expect(vwCount.c).toBe(0);
+      expect(vsCount.c).toBe(0);
+
+      d.close();
+    });
+
+    it('cascades to pending_ingest_tasks so partial-ingest recovery never FK-fails (cross-story P1)', () => {
+      // Sprint-015 cumulative-review caught this gap: pending_ingest_tasks
+      // has a FK to conversations(id). Without this DELETE step, calling
+      // deleteById while any embed task is still pending throws FK
+      // violation on the conversations DELETE — exactly the partial-ingest
+      // recovery scenario deleteById exists for.
+      const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+      const s = new ConversationStore(d);
+      // IngestQueue's constructor creates the pending_ingest_tasks table.
+      new IngestQueue({ db: d, orchestrator: null, conversationStore: s });
+
+      const id = s.addConversation(makeMessages(['hi']), 'user-fk');
+      d.prepare(
+        "INSERT INTO pending_ingest_tasks (id, conversation_id, user_id, task_type, message_id) VALUES (?, ?, ?, 'embed-message', ?)",
+      ).run('task-pending', id, 'user-fk', 1);
+
+      // Without the cascade fix, this throws FK violation. With the fix,
+      // it cleanly cascades.
+      expect(() => s.deleteById(id)).not.toThrow();
+
+      const remainingTasks = (
+        d
+          .prepare('SELECT COUNT(*) AS c FROM pending_ingest_tasks WHERE conversation_id = ?')
+          .get(id) as { c: number }
+      ).c;
+      expect(remainingTasks).toBe(0);
+      expect(s.getConversation(id)).toBeNull();
+      d.close();
+    });
+
+    it('preserves the no-window_messages-rows path (Sprint-009 contract)', () => {
+      // Regression: a conversation that has never been indexed (no
+      // window_messages / vec_windows / vec_sessions rows) must still delete
+      // cleanly — the four extra DELETEs are no-ops in that case.
+      const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+      const s = new ConversationStore(d);
+      new IngestQueue({ db: d, orchestrator: null, conversationStore: s });
+
+      const id = s.addConversation(makeMessages(['Solo turn']), 'user-noindex');
+      expect(() => s.deleteById(id)).not.toThrow();
+
+      expect(s.getConversation(id)).toBeNull();
+      const msgCount = d
+        .prepare('SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?')
+        .get(id) as { c: number };
+      expect(msgCount.c).toBe(0);
+
+      d.close();
     });
   });
 });
@@ -908,9 +1035,11 @@ describe('sprint-014 Story 4 — addMessage', () => {
     expect(beforeCount.c).toBe(2);
 
     const result = store.addMessage(convId, { role: 'user', content: 'appended-after' });
-    // Spec §5.1.1 primitive: addMessage returns void — callers that need the
-    // inserted id query by (conversationId, sort_order).
-    expect(result).toBeUndefined();
+    // Sprint-015 Story 2: addMessage returns the inserted messages.id so the
+    // indexer can enqueue a per-message task atomically. The id is a positive
+    // integer pulled from the same transaction's lastInsertRowid.
+    expect(typeof result).toBe('number');
+    expect(result).toBeGreaterThan(0);
 
     const rows = db
       .prepare(

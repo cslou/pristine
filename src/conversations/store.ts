@@ -444,8 +444,12 @@ export class ConversationStore {
    * `sort_order` is ordinal, not contiguous — deleting a message and later
    * appending yields `MAX(sort_order) + 1`, so gaps are allowed.
    *
-   * Returns void to match the spec §5.1.1 primitive contract; callers that
-   * need the inserted id should query by (conversationId, sort_order).
+   * Returns the inserted `messages.id` (INTEGER PRIMARY KEY) so callers like
+   * the sprint-015 indexer can enqueue per-message tasks without re-querying
+   * by (conversationId, sort_order). Spec §5.1.1 sketches a void primitive,
+   * but the shipped schema uses INTEGER ids (not UUIDs per spec §13) and the
+   * indexer needs the id atomically — surfacing it from the same transaction
+   * is the natural reconciliation. Tracked alongside #106.
    */
   public addMessage(
     conversationId: string,
@@ -455,7 +459,7 @@ export class ConversationStore {
       readonly timestamp?: string;
       readonly parentMessageId?: number;
     },
-  ): void {
+  ): number {
     const selectParent = this.db.prepare('SELECT project_id FROM conversations WHERE id = ?');
     const selectMaxSort = this.db.prepare(
       'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM messages WHERE conversation_id = ?',
@@ -469,13 +473,13 @@ export class ConversationStore {
       'UPDATE conversations SET message_count = message_count + 1 WHERE id = ?',
     );
 
-    const runTransaction = this.db.transaction(() => {
+    const runTransaction = this.db.transaction((): number => {
       const parent = selectParent.get(conversationId) as { project_id: string } | undefined;
       if (!parent) {
         throw new ConversationNotFoundError(`Conversation not found: ${conversationId}`);
       }
       const { next } = selectMaxSort.get(conversationId) as { next: number };
-      insertMessage.run(
+      const result = insertMessage.run(
         conversationId,
         message.role,
         message.content,
@@ -485,9 +489,10 @@ export class ConversationStore {
         message.parentMessageId ?? null,
       );
       bumpMessageCount.run(conversationId);
+      return Number(result.lastInsertRowid);
     });
 
-    runTransaction();
+    return runTransaction();
   }
 
   /**
@@ -600,13 +605,55 @@ export class ConversationStore {
   }
 
   /**
-   * Delete a conversation and all its associated messages. FTS index entries
+   * Resolve the `user_id` for an existing conversation, or `null` if the
+   * conversation does not exist. Used by `createIndexer().ingest()` to pin
+   * the embed-task `user_id` to the conversation's row (single source of
+   * truth — caller doesn't repeat what's already on the conversation).
+   *
+   * Lives on `ConversationStore` so the indexer doesn't reach into the
+   * `conversations` table directly — keeps the single-store-per-table
+   * boundary.
+   */
+  public getConversationUserId(conversationId: string): string | null {
+    const row = this.db
+      .prepare('SELECT user_id FROM conversations WHERE id = ?')
+      .get(conversationId) as { user_id: string } | undefined;
+    return row?.user_id ?? null;
+  }
+
+  /**
+   * Delete a conversation and all its associated messages, plus any indexer
+   * artefacts (window_messages, vec_windows, vec_sessions) AND any pending
+   * ingest queue rows that reference the conversation. FTS index entries
    * are removed automatically via the AFTER DELETE trigger on messages.
    * No-op if the conversation does not exist. Intended for partial-ingest
    * recovery — not a general delete-a-user-conversation API.
+   *
+   * Order matters:
+   *   - `window_messages.message_id` has FK to `messages.id`, so its rows
+   *     MUST be removed before the messages rows.
+   *   - `pending_ingest_tasks.conversation_id` has FK to `conversations.id`
+   *     (sprint-015 schema), so its rows MUST be removed before the
+   *     conversations row. Without this DELETE, the partial-ingest recovery
+   *     scenario this method exists for (calling `deleteById` while embed
+   *     tasks are still pending) FK-fails on the conversations DELETE — the
+   *     transaction rolls back and the conversation stays in a half-indexed
+   *     state.
+   *   - `vec_windows` / `vec_sessions` have no FK (vec0 does not enforce
+   *     them), but we DELETE those vector rows in the same transaction so
+   *     orphans never accumulate after a recovery.
+   *   - `window_messages` targets its own `conversation_id` column (the PK
+   *     leading column) rather than joining through `messages.id`, so this
+   *     step does not depend on messages rows still existing.
    */
   public deleteById(conversationId: string): void {
     const runTransaction = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM window_messages WHERE conversation_id = ?').run(conversationId);
+      this.db.prepare('DELETE FROM vec_windows WHERE conversation_id = ?').run(conversationId);
+      this.db.prepare('DELETE FROM vec_sessions WHERE conversation_id = ?').run(conversationId);
+      this.db
+        .prepare('DELETE FROM pending_ingest_tasks WHERE conversation_id = ?')
+        .run(conversationId);
       this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId);
       this.db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
     });

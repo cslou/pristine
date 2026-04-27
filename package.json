@@ -40,6 +40,7 @@
     "vitest": "3.2.4"
   },
   "dependencies": {
+    "@babel/parser": "7.29.2",
     "@huggingface/transformers": "4.0.1",
     "better-sqlite3": "12.8.0",
     "node-llama-cpp": "3.18.1",

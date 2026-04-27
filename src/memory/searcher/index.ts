@@ -30,18 +30,30 @@ export interface SearchFilters {
   readonly projectId: string;
   readonly conversationId?: string;
   /**
-   * Role filter. A window matches if AT LEAST ONE of its constituent
-   * messages has the role. Window-level filtering is permissive because
-   * a window's text concatenates messages from multiple roles; treating
-   * the role filter as "must contain" is the most useful interpretation
-   * for retrieval.
+   * Role filter. **Semantics differ by method**:
    *
-   * **Caveat:** the role-filter post-pass runs over a fixed `limit*2`
-   * over-fetch from the KNN. If more than half the top-2*limit windows
-   * fail the role check, the returned array can be shorter than `limit`
-   * even when more matching windows exist further down the KNN ranking.
-   * Documented for callers; auto-grow over-fetch is deferred to Phase 7
-   * eval signal.
+   * - `vectorSearch`: a window matches if AT LEAST ONE of its
+   *   constituent messages has the role (permissive, window-level).
+   *   Window-level filtering is permissive because a window's text
+   *   concatenates messages from multiple roles; treating the role
+   *   filter as "must contain" is the most useful interpretation for
+   *   retrieval.
+   * - `ftsSearch`: a message matches if its OWN role equals the
+   *   filter (strict, message-level). FTS5 operates at message
+   *   granularity, so message-level matching is the natural fit.
+   *
+   * Story 4's `hybridSearch` will pass the same `filters` object to
+   * both methods; callers who pass `role: 'user'` should expect
+   * vectorSearch to surface windows where any message is from the user
+   * AND ftsSearch to surface only user-authored messages. The asymmetry
+   * is intentional given each engine's natural granularity.
+   *
+   * **Caveat (vectorSearch only):** the role-filter post-pass runs
+   * over a fixed `limit*2` over-fetch from the KNN. If more than half
+   * the top-2*limit windows fail the role check, the returned array
+   * can be shorter than `limit` even when more matching windows exist
+   * further down the KNN ranking. Documented for callers; auto-grow
+   * over-fetch is deferred to Phase 7 eval signal.
    */
   readonly role?: Role;
   /** ISO 8601 lower bound (inclusive) on `conversations.created_at`. */
@@ -139,7 +151,10 @@ const distanceToScore = (distance: number): number => 1 / (1 + distance);
 // non-positive (more negative = more relevant per the SQLite
 // implementation): use |bm25| / (1 + |bm25|), monotonically increasing
 // in -bm25. bm25 = 0 → score = 0 (no relevance); bm25 → -∞ → score → 1.
+// NaN / +Infinity are guarded — they shouldn't occur from FTS5 in
+// practice, but the formula is undefined on them so we collapse to 0.
 const bm25ToScore = (bm25: number): number => {
+  if (!Number.isFinite(bm25)) return 0;
   const abs = -bm25;
   return abs / (1 + abs);
 };
@@ -442,24 +457,29 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     `;
     params.push(limit);
 
-    let rows: { message_id: number; conversation_id: string; bm25: number; snippet: string }[];
+    let rows: {
+      message_id: number;
+      conversation_id: string;
+      bm25: number;
+      snippet: string | null;
+    }[];
     try {
       rows = db.prepare(sql).all(...params) as typeof rows;
     } catch (error: unknown) {
       // FTS5 query-syntax errors surface as better-sqlite3 SqliteError
-      // with code === 'SQLITE_ERROR' (generic). Our SQL template is
-      // controlled by us; the only user-controlled input that can
-      // trigger SQLITE_ERROR is the MATCH parameter (unterminated
-      // quotes, malformed operators, unknown column refs). Catastrophic
-      // DB errors (corruption, lock) surface with distinct codes
-      // (SQLITE_CORRUPT, SQLITE_BUSY, etc.) and are re-thrown unchanged.
-      // The message-text fallback regex is a safety net for builds where
-      // `code` is absent — it covers the common FTS5 error keywords.
+      // with code === 'SQLITE_ERROR' (the generic SQLite error code).
+      // BUT SQLITE_ERROR also fires on infrastructure failures we
+      // explicitly want to propagate — "no such table: messages_fts"
+      // (FTS5 not loaded), "no such column" (schema migration drift),
+      // etc. Use the AND of code + message-keyword regex so we wrap
+      // ONLY query-syntax patterns and propagate everything else with
+      // its original error class + code intact. Catastrophic codes
+      // (SQLITE_CORRUPT, SQLITE_BUSY) never reach the inner branch.
       const code = (error as { code?: string }).code;
       const msg = error instanceof Error ? error.message : '';
-      const isFtsSyntax =
-        code === 'SQLITE_ERROR' ||
-        /fts5|syntax error|MATCH|unterminated|no such (cursor|column)/i.test(msg);
+      const looksLikeFtsSyntax =
+        /fts5|syntax error|unterminated|malformed match/i.test(msg) || /MATCH/.test(msg);
+      const isFtsSyntax = code === 'SQLITE_ERROR' && looksLikeFtsSyntax;
       if (isFtsSyntax) {
         throw new InvalidArgumentError(`searcher.ftsSearch: invalid FTS5 query — ${msg}`);
       }
@@ -472,11 +492,14 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
         conversationId: row.conversation_id,
         score: bm25ToScore(row.bm25),
       };
-      // FTS5's snippet() returns an empty string for very short matches;
-      // omit the field rather than surface "" so callers can rely on
-      // `hit.snippet ? renderSnippet(hit.snippet) : ...`.
-      if (row.snippet !== '') {
-        hit.snippet = row.snippet;
+      // FTS5's snippet() can return either '' (matched content too
+      // short to span a snippet window) OR null (content-table shadow
+      // desync — base-row content was deleted before snippet ran).
+      // Treat both as "no snippet"; omit the field so callers can
+      // rely on `hit.snippet ? renderSnippet(hit.snippet) : ...`.
+      const rawSnippet: unknown = row.snippet;
+      if (typeof rawSnippet === 'string' && rawSnippet !== '') {
+        hit.snippet = rawSnippet;
       }
       return hit;
     });

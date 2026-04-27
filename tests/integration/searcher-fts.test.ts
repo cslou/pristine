@@ -319,6 +319,36 @@ describe('searcher.ftsSearch — end-to-end (FTS5 + filter scope)', () => {
     }
   });
 
+  it('respects dateTo — narrows to conversations created on or before the bound', async () => {
+    const idEarly = await seedConversation(p, 'alice', 'project-dt2', [
+      'shared-keyword early one',
+      'shared-keyword early two',
+    ]);
+    await new Promise((r) => setTimeout(r, 1100));
+    const idLate = await seedConversation(p, 'alice', 'project-dt2', [
+      'shared-keyword late one',
+      'shared-keyword late two',
+    ]);
+
+    const earlyCreatedAt = (
+      p.db.prepare('SELECT created_at FROM conversations WHERE id = ?').get(idEarly) as {
+        created_at: string;
+      }
+    ).created_at;
+
+    const searcher = createSearcher({ db: p.db, embedder: makeStubEmbedder() });
+    const hits = await searcher.ftsSearch(
+      '"shared-keyword"',
+      { projectId: 'project-dt2', dateTo: earlyCreatedAt },
+      10,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    for (const hit of hits) {
+      expect(hit.conversationId).toBe(idEarly);
+      expect(hit.conversationId).not.toBe(idLate);
+    }
+  });
+
   it('respects dateFrom — narrows to conversations created on or after the bound', async () => {
     const idEarly = await seedConversation(p, 'alice', 'project-dt', [
       'shared-keyword early one',

@@ -173,9 +173,9 @@ const main = async (): Promise<void> => {
   // -------------------------------------------------------------------
   // Sprint-016 Story 3 — searcher.ftsSearch error-code lookup round-trip.
   // Seed a conversation containing a unique error-code-shaped string,
-  // search for it via FTS5 phrase query, assert exactly one hit with
-  // the right messageId. Demonstrates literal-keyword recall that
-  // would defeat semantic vector search.
+  // search for it via FTS5 phrase query, assert exactly one hit
+  // belonging to the seeded conversation. Demonstrates literal-keyword
+  // recall that would defeat semantic vector search.
   // -------------------------------------------------------------------
   log('');
   log('smoke: ftsSearch error-code lookup round-trip ...');

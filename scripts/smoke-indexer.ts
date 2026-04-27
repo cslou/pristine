@@ -19,6 +19,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
+import { AppError } from '../src/core/errors.js';
 import type { LlmClient } from '../src/core/interfaces.js';
 import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
@@ -35,7 +36,7 @@ const log = (msg: string): void => {
 // gets called.
 const stubLlmClient: LlmClient = {
   generate: (async () => {
-    throw new Error('smoke: LlmClient.generate not exercised by storeAsync');
+    throw new AppError('smoke: LlmClient.generate not exercised by storeAsync');
   }) as LlmClient['generate'],
 };
 

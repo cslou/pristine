@@ -215,31 +215,55 @@ export class PristineLocal {
    * `createLite().storeAsync(...)` throws `InvalidArgumentError`.
    */
   public storeAsync(conversation: readonly Message[], userId: string, projectId?: string): string {
-    if (this.indexer === null) {
+    const indexer = this.indexer;
+    if (indexer === null) {
       throw new InvalidArgumentError(
-        'storeAsync requires Pristine.create() — createLite has no embedder; use addConversation directly for write-only flows',
+        'storeAsync requires Pristine.create() — createLite has no embedder; for ingest, use Pristine.create() (the embedder loads lazily, so synchronous startup paths still pay only construction cost)',
       );
     }
-    let conversationId: string;
-    try {
-      conversationId = this.conversationStore.addEmptyConversation(userId, conversation, projectId);
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
-        const existing = this.conversationStore.findByMessages(userId, conversation);
-        if (existing === null) {
-          throw new IngestQueueError(
-            'Duplicate detected but findByMessages returned null — content-hash drift?',
-          );
+    // Normalize projectId once so the conversation row and the embed
+    // tasks land with the same project_id. Empty string is treated as
+    // "unset" to mirror addEmptyConversation's resolution logic; without
+    // this, passing projectId: '' would write the conversation row but
+    // make indexer.ingest throw on opts.projectId === '' — leaving an
+    // orphaned conversation row.
+    const resolvedProjectId =
+      projectId !== undefined && projectId !== '' ? projectId : userId !== '' ? userId : 'default';
+
+    // Atomic envelope: addEmptyConversation + indexer.ingest commit or
+    // roll back together. better-sqlite3 nests inner db.transaction()
+    // calls (indexer.ingest has its own) as SAVEPOINTs, so the outer
+    // transaction is sufficient. A crash between the two steps would
+    // otherwise leave a content_hash-locked conversation row with
+    // message_count=0 and no embed tasks — permanently unrecoverable
+    // because the duplicate guard returns the orphan id on retry.
+    const runStore = this.db.transaction((): string => {
+      let id: string;
+      try {
+        id = this.conversationStore.addEmptyConversation(userId, conversation, resolvedProjectId);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+          const existing = this.conversationStore.findByMessages(userId, conversation);
+          if (existing === null) {
+            // The conversation matched on UNIQUE(user_id, content_hash)
+            // but findByMessages returned null — most likely cause is a
+            // concurrent delete that ran between the failed INSERT and
+            // the SELECT. Less likely: content-hash drift (a bug in
+            // computeConversationContentHash, which is deterministic).
+            // Either way, retry will re-ingest cleanly.
+            throw new IngestQueueError(
+              'Duplicate detected but conversation no longer exists — concurrent delete? Retry to re-ingest',
+            );
+          }
+          return existing.id;
         }
-        return existing.id;
+        throw error;
       }
-      throw error;
-    }
-    this.indexer.ingest(conversation, {
-      projectId: projectId ?? userId,
-      conversationId,
+      indexer.ingest(conversation, { projectId: resolvedProjectId, conversationId: id });
+      return id;
     });
-    return conversationId;
+
+    return runStore();
   }
 
   // -------------------------------------------------------------------------

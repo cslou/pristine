@@ -137,6 +137,28 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
     expect(detail!.userId).toBe('sprint-016-user');
   });
 
+  it('rolls back the conversation row when indexer.ingest fails (atomic transaction)', async () => {
+    // Empty messages array bypasses the addEmptyConversation step (which
+    // happily writes a row with a constant content_hash for `[]`) and then
+    // makes indexer.ingest throw `InvalidArgumentError: turns must be a
+    // non-empty array`. With the storeAsync atomic-transaction wrapper,
+    // the conversation row insert rolls back; without it, the row leaks
+    // (orphaned, content_hash-locked, unrecoverable).
+    expect(() => client.storeAsync([], 'rollback-user', 'rollback-project')).toThrow(
+      /non-empty array/,
+    );
+
+    const conversations = (
+      db.prepare('SELECT COUNT(*) AS n FROM conversations').get() as { n: number }
+    ).n;
+    expect(conversations).toBe(0);
+
+    const tasks = (
+      db.prepare('SELECT COUNT(*) AS n FROM pending_ingest_tasks').get() as { n: number }
+    ).n;
+    expect(tasks).toBe(0);
+  });
+
   it('returns existing conversationId on duplicate without re-enqueueing', async () => {
     const turns = [
       { role: 'user' as const, content: 'duplicate-test message' },

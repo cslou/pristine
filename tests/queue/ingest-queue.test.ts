@@ -253,7 +253,7 @@ describe('IngestQueue', () => {
 
     it('marks failed on terminal handler error', async () => {
       const failingHandler = vi.fn(async () => {
-        throw new Error('malformed message data');
+        throw new AppError('malformed message data');
       });
       const failQueue = new IngestQueue({ db, embedTaskHandler: failingHandler });
       const { conversationId, messageIds } = seedConversation(db, conversationStore);

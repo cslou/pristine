@@ -153,7 +153,7 @@ export interface ConsolidationRequest {
 // Classification & Sensitivity
 // ---------------------------------------------------------------------------
 
-export type SensitivitySource = 'llm' | 'deterministic';
+export type SensitivitySource = 'deterministic';
 
 export type SensitivityType = string;
 
@@ -172,21 +172,6 @@ export interface SensitivityReport {
   readonly warnings?: readonly string[];
 }
 
-export interface LlmSensitivityFinding {
-  readonly type: string;
-  readonly confidence: number;
-  readonly reasoning: string;
-  readonly text: string;
-}
-
-export interface LlmClassifierConfig {
-  readonly model?: string;
-  readonly maxTokens?: number;
-  readonly confidenceThreshold?: number;
-  readonly systemPrompt?: string;
-}
-
-export type LlmFailureMode = 'block' | 'degrade';
 export type PrivacyBlockReason = 'safety_scan';
 
 export interface RedactionPlaceholder {

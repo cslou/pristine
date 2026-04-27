@@ -1,8 +1,6 @@
 export type { SensitivityClassifier } from '../../core/interfaces.js';
 export type {
   DetectedEntity,
-  LlmClassifierConfig,
-  LlmSensitivityFinding,
   SensitivityReport,
   SensitivitySource,
   SensitivityType,

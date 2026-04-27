@@ -336,7 +336,6 @@ export class PristineLocal {
 
   public async secureAndRedact(text: string, userId: string): Promise<SecureAndRedactResult> {
     return privacySecureAndRedact(text, {
-      client: this.llmClients.privacyClient,
       vaultStore: this.vaultStore,
       keyManager: this.keyManager,
       kekManager: this.kekManager,

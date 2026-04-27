@@ -223,20 +223,31 @@ export class PristineLocal {
     }
     // Normalize projectId once so the conversation row and the embed
     // tasks land with the same project_id. Empty string is treated as
-    // "unset" to mirror addEmptyConversation's resolution logic; without
-    // this, passing projectId: '' would write the conversation row but
-    // make indexer.ingest throw on opts.projectId === '' — leaving an
-    // orphaned conversation row.
+    // "unset" to mirror addEmptyConversation's resolution logic (see
+    // src/conversations/store.ts:613); without this, passing
+    // projectId: '' would write the conversation row but make
+    // indexer.ingest throw on opts.projectId === '' — leaving an
+    // orphaned conversation row. Empty userId falls back to 'default'
+    // to match the pre-existing addConversation/addEmptyConversation
+    // contract (single-device local-first SDK; cross-user commingling
+    // is not a threat model concern here — see CLAUDE.md project
+    // intro). A project-wide refactor to reject empty userIds belongs
+    // in a separate hardening sprint.
     const resolvedProjectId =
       projectId !== undefined && projectId !== '' ? projectId : userId !== '' ? userId : 'default';
 
-    // Atomic envelope: addEmptyConversation + indexer.ingest commit or
-    // roll back together. better-sqlite3 nests inner db.transaction()
-    // calls (indexer.ingest has its own) as SAVEPOINTs, so the outer
-    // transaction is sufficient. A crash between the two steps would
-    // otherwise leave a content_hash-locked conversation row with
-    // message_count=0 and no embed tasks — permanently unrecoverable
-    // because the duplicate guard returns the orphan id on retry.
+    // Atomic envelope: when both addEmptyConversation AND indexer.ingest
+    // run, they commit or roll back together. The duplicate-recovery
+    // early-return path (UNIQUE collision → findByMessages → return
+    // existing.id) writes nothing inside the transaction; the commit
+    // is a no-op against the existing already-committed conversation
+    // row. better-sqlite3 nests inner db.transaction() calls
+    // (indexer.ingest has its own) as SAVEPOINTs, so the outer
+    // transaction is sufficient. Without this envelope, a crash between
+    // the two steps would leave a content_hash-locked conversation row
+    // with message_count=0 and no embed tasks — permanently
+    // unrecoverable because the duplicate guard returns the orphan id
+    // on retry.
     const runStore = this.db.transaction((): string => {
       let id: string;
       try {

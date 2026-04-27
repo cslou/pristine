@@ -138,12 +138,17 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
   });
 
   it('rolls back the conversation row when indexer.ingest fails (atomic transaction)', async () => {
-    // Empty messages array bypasses the addEmptyConversation step (which
-    // happily writes a row with a constant content_hash for `[]`) and then
-    // makes indexer.ingest throw `InvalidArgumentError: turns must be a
-    // non-empty array`. With the storeAsync atomic-transaction wrapper,
-    // the conversation row insert rolls back; without it, the row leaks
+    // Sequence: storeAsync calls addEmptyConversation (which succeeds for
+    // `[]` — writes a conversation row with the empty-array content_hash),
+    // then calls indexer.ingest which throws
+    // `InvalidArgumentError: turns must be a non-empty array`. With the
+    // storeAsync atomic-transaction wrapper, the conversation INSERT rolls
+    // back when indexer.ingest throws; without it, the row would leak
     // (orphaned, content_hash-locked, unrecoverable).
+    //
+    // The DB is fresh per test (beforeEach creates an in-memory DB), so a
+    // hardcoded baseline of 0 is safe — no prior-test rows to confound the
+    // count.
     expect(() => client.storeAsync([], 'rollback-user', 'rollback-project')).toThrow(
       /non-empty array/,
     );

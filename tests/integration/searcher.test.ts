@@ -260,6 +260,17 @@ const filterCases = (): readonly FilterCase[] => [
     // Use the LATEST conversation's created_at as the bound — anything
     // before it gets excluded. Asserts the filter actually narrows
     // rather than tautologically passing every record.
+    //
+    // **Coverage note.** SQLite's `datetime('now')` has second
+    // resolution, so on fast CI all 6 seed conversations may share the
+    // same `created_at`. When that happens, the bound matches every
+    // record and the filter behaves as a no-op — the assertion still
+    // passes but doesn't stress the filter. The CONTRACT-LEVEL
+    // dateFrom/dateTo tests with explicit `setTimeout(1100)` time gaps
+    // live in tests/integration/searcher-vector.test.ts and
+    // tests/integration/searcher-fts.test.ts; this matrix entry is
+    // redundant tabular coverage of the filter dimension, not the
+    // contract pin.
     mutate: async (base, ids, p) => {
       const allIds = Array.from(ids.values()).flat();
       const stmt = p.db.prepare(

@@ -170,6 +170,41 @@ const main = async (): Promise<void> => {
   log(`  ${leakOk ? 'OK ' : 'FAIL'}  cross-project leak count   0 → ${leaks}`);
   if (!leakOk) allOk = false;
 
+  // -------------------------------------------------------------------
+  // Sprint-016 Story 3 — searcher.ftsSearch error-code lookup round-trip.
+  // Seed a conversation containing a unique error-code-shaped string,
+  // search for it via FTS5 phrase query, assert exactly one hit with
+  // the right messageId. Demonstrates literal-keyword recall that
+  // would defeat semantic vector search.
+  // -------------------------------------------------------------------
+  log('');
+  log('smoke: ftsSearch error-code lookup round-trip ...');
+  const ftsConversationId = client.storeAsync(
+    [
+      { role: 'user', content: 'I hit error PRSTN-9001 on startup' },
+      { role: 'assistant', content: 'That looks like a vault initialization problem' },
+      { role: 'user', content: 'Should I delete my keystore?' },
+      { role: 'assistant', content: 'No — try restarting first' },
+    ],
+    'smoke-user-fts',
+    'smoke-project-fts',
+  );
+  await runEmbedWorker(client.ingestQueue);
+
+  const ftsHits = await client.searcher.ftsSearch(
+    '"PRSTN-9001"',
+    { projectId: 'smoke-project-fts' },
+    10,
+  );
+  log(`smoke: ftsSearch '"PRSTN-9001"' → ${ftsHits.length} hits`);
+  const ftsOk = ftsHits.length === 1 && ftsHits[0].conversationId === ftsConversationId;
+  log(`  ${ftsOk ? 'OK ' : 'FAIL'}  fts error-code recall      1 → ${ftsHits.length}`);
+  if (ftsHits.length === 1) {
+    log(`        score: ${ftsHits[0].score.toFixed(4)} (higher = more relevant)`);
+    log(`        snippet: ${ftsHits[0].snippet ?? '<empty>'}`);
+  }
+  if (!ftsOk) allOk = false;
+
   await client.dispose();
 
   if (!allOk) {

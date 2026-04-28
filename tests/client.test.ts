@@ -276,4 +276,56 @@ describe('PristineLocal', () => {
       expect(typeof client.searcher?.vectorSearch).toBe('function');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Sprint-018 Story 2 — drainEmbedQueue passthrough
+  // -------------------------------------------------------------------------
+
+  describe('drainEmbedQueue()', () => {
+    it('returns 0 when the queue is empty (idempotent)', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      // No storeAsync calls → no pending tasks. Drain should resolve to 0
+      // without side effects.
+      await expect(client.drainEmbedQueue()).resolves.toBe(0);
+    });
+
+    it('returns the count of tasks processed after storeAsync enqueues them', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const turns = [
+        { role: 'user' as const, content: 'turn one — drain me' },
+        { role: 'assistant' as const, content: 'turn two — drain me too' },
+        { role: 'user' as const, content: 'turn three — and me' },
+      ];
+      client.storeAsync(turns, 'drain-user', 'drain-project');
+
+      // 3 messages → 3 embed-message tasks per indexer's per-message
+      // enqueue policy. Drain returns the same count.
+      const drained = await client.drainEmbedQueue();
+      expect(drained).toBe(3);
+
+      // Idempotent: a second drain on an empty queue returns 0.
+      await expect(client.drainEmbedQueue()).resolves.toBe(0);
+    });
+
+    it('throws InvalidArgumentError on lite clients (no embedder)', async () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      // The error is thrown synchronously inside the async method's first
+      // tick, so the rejection arrives via the returned promise.
+      await expect(client.drainEmbedQueue()).rejects.toBeInstanceOf(InvalidArgumentError);
+
+      liteDb.close();
+    });
+  });
 });

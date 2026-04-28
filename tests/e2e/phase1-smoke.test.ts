@@ -19,7 +19,6 @@ import {
   AppError,
   ConfigError,
   EmbedderError,
-  IngestQueue,
   IngestQueueError,
   PristineLocal,
   createDatabase as createDatabaseFromBarrel,
@@ -78,7 +77,6 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     // silently drops one of these exports breaks downstream imports at
     // consume-site with no local signal; this test catches it at the barrel.
     expect(PristineLocal).toBeTypeOf('function');
-    expect(IngestQueue).toBeTypeOf('function');
     expect(createDatabaseFromBarrel).toBeTypeOf('function');
     expect(AppError).toBeTypeOf('function');
     expect(ConfigError).toBeTypeOf('function');
@@ -89,13 +87,18 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     // set. `toEqual` with an exact sorted list catches both missing exports
     // (regression) and accidental re-exports (sprawl) — `arrayContaining`
     // only enforces the subset, which would silently pass extras through.
+    // `IngestQueue` was removed in sprint-018 Story 4 (internal-only
+    // plumbing); `IngestQueueError` stays because consumers catch it.
+    // `InvalidArgumentError` was added to the barrel post-sprint-018
+    // /review (the two new Phase-4 methods narrow their error set to
+    // this single class — consumers need it for typed catches).
     const keys = Object.keys(PristineBarrel).sort();
     expect(keys).toEqual([
       'AppError',
       'ConfigError',
       'EmbedderError',
-      'IngestQueue',
       'IngestQueueError',
+      'InvalidArgumentError',
       'PristineLocal',
       'createDatabase',
     ]);

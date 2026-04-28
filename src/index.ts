@@ -43,8 +43,11 @@ export { createDatabase } from './core/database.js';
 // Queue
 // ---------------------------------------------------------------------------
 
-export { IngestQueue } from './queue/ingest-queue.js';
-export type { IngestTask, IngestQueueConfig } from './queue/ingest-queue.js';
+// IngestQueue (class), IngestTask (type), and IngestQueueConfig (type) were
+// previously re-exported here. Removed in sprint-018 Story 4 — they're
+// internal-only plumbing the consumer-facing surface (storeAsync,
+// drainEmbedQueue, buildSessionVector) encapsulates. IngestQueueError stays
+// exported from the errors block (consumers catch it on storeAsync).
 
 // ---------------------------------------------------------------------------
 // Searcher (spec-005 Phase 4 retrieval primitive)

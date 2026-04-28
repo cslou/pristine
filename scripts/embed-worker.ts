@@ -10,15 +10,7 @@
  * enqueues per inserted message.
  *
  * Usage:
- *   npx tsx scripts/embed-worker.ts [--db-path <path>] [--once]
- *
- * `--once` is a no-op alias today: the script ALREADY drains-and-exits
- * (idle = exit). The flag is accepted for explicitness — consumers
- * scripting `--once` get the documented one-shot semantics they'd
- * otherwise have to infer. Sprint-018 Story 2 added the alias as the
- * verification mechanism for `client.drainEmbedQueue` (the SDK
- * passthrough) and to leave room for a future `--watch` mode where
- * `--once` becomes the inverse.
+ *   npx tsx scripts/embed-worker.ts [--db-path <path>]
  */
 import { ConversationStore } from '../src/conversations/store.js';
 import { createDatabase } from '../src/core/database.js';
@@ -33,22 +25,17 @@ import { IngestQueue } from '../src/queue/ingest-queue.js';
 
 interface EmbedWorkerArgs {
   readonly dbPath?: string;
-  readonly once: boolean;
 }
 
 const parseArgs = (argv: string[]): EmbedWorkerArgs => {
   let dbPath: string | undefined;
-  let once = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--db-path' && i + 1 < argv.length) {
       dbPath = argv[i + 1];
       i += 1;
-    } else if (argv[i] === '--once') {
-      // No-op alias — script default IS one-shot. See file header.
-      once = true;
     }
   }
-  return { dbPath, once };
+  return { dbPath };
 };
 
 const main = async (): Promise<void> => {
@@ -85,9 +72,7 @@ const main = async (): Promise<void> => {
 
   const processed = await runEmbedWorker(queue);
   // eslint-disable-next-line no-console
-  console.log(
-    `embed-worker: processed ${processed} task(s); idle, exiting${args.once ? ' (--once)' : ''}.`,
-  );
+  console.log(`embed-worker: processed ${processed} task(s); idle, exiting.`);
   db.close();
 };
 

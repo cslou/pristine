@@ -334,9 +334,11 @@ export class PristineLocal {
    * real consumer demands it.
    *
    * **Lite clients.** `createLite()` has no embedder and so no
-   * embed-task handler wired into its `IngestQueue`; calling
-   * `drainEmbedQueue` would loop forever or fail when a task is
-   * encountered. Throws `InvalidArgumentError` early instead.
+   * embed-task handler wired into its `IngestQueue`; without the
+   * guard, calling `drainEmbedQueue` would silently mark every
+   * pending task as failed (the queue rejects un-handlable tasks
+   * without raising to the caller), losing the embed work without
+   * any error signal. Throws `InvalidArgumentError` early instead.
    *
    * @returns Number of tasks processed (success + failure both count).
    * @throws `InvalidArgumentError` when called on a `createLite()` client.

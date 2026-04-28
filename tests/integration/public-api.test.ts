@@ -115,4 +115,32 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
     const hits = await client.searcher!.hybridSearch('hello', { projectId }, 5);
     expect(hits.length).toBeGreaterThan(0);
   });
+
+  // -------------------------------------------------------------------------
+  // Story 3 outer-loop test — RED until sprint-018 Stories 2 AND 3 ship.
+  //
+  // The test exercises the full public-API session-leg lifecycle:
+  // storeAsync → drainEmbedQueue (Story 2) → buildSessionVector (Story 3)
+  // → hybridSearch returns ≥1 `kind: 'session'` hit. Story 1's ESLint rule
+  // forbids importing runEmbedWorker / indexer.buildSessionVector from
+  // their internal paths, so the test must use the public method even
+  // before it exists. Two `@ts-expect-error` directives — one per absent
+  // method — apply the same forcing function as commit 2: when each
+  // story ships, its directive becomes erroneous and TS forces removal.
+  //
+  // Until both stories land, the test fails at the first absent method
+  // (drainEmbedQueue, in commit 2's RED state). After Story 2 lands, it
+  // progresses to the buildSessionVector line and fails there. After
+  // Story 3 lands, it asserts the session hit and goes GREEN.
+  // -------------------------------------------------------------------------
+  it('session leg of hybridSearch populates after client.buildSessionVector @AC-Story3-1', async () => {
+    const { projectId, conversationIds } = await seedPublicApiCorpus(client);
+    // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
+    await client.drainEmbedQueue();
+    // @ts-expect-error — sprint-018 Story 3 ships PristineLocal.buildSessionVector
+    await client.buildSessionVector(conversationIds[0]);
+    const hits = await client.searcher!.hybridSearch('hello', { projectId }, 10);
+    const sessionHits = hits.filter((h) => h.kind === 'session');
+    expect(sessionHits.length).toBeGreaterThanOrEqual(1);
+  });
 });

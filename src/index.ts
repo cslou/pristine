@@ -16,8 +16,10 @@
  * - **`Pristine.createLite({...})`** — lightweight client. DB,
  *   `ConversationStore`, and `IngestQueue` only. No embedder, no LLM
  *   clients, no indexer. Supports `searchConversations()` and
- *   `getConversation()` for read-only flows; `storeAsync()` throws
- *   `InvalidArgumentError` on lite clients.
+ *   `getConversation()` for read-only flows. `storeAsync()`,
+ *   `drainEmbedQueue()`, and `buildSessionVector()` all throw
+ *   `InvalidArgumentError` on lite clients (no embedder wired); use
+ *   `Pristine.create({...})` if any of those are needed.
  *
  * ## Lifecycle (the load-bearing recipe)
  *
@@ -61,13 +63,14 @@
  *
  * - **`AppError`** — base class. All Pristine errors extend it; catch
  *   this for a coarse "Pristine failed" handler.
- * - **`ConfigError`** — bad config (invalid `models.json`, missing model
- *   files, malformed engine settings).
  * - **`EmbedderError`** — embedder-side failures (model load, network
  *   for remote embedders, retries exhausted).
  * - **`IngestQueueError`** — queue-side failures (corruption, contract
  *   violation in a custom `embedTaskHandler`). Catch on `storeAsync`
  *   if the consumer wants to react to ingest-queue trouble explicitly.
+ * - **`ConfigError`** — bad config (invalid `models.json`, missing model
+ *   files, malformed engine settings); typically surfaces during
+ *   `Pristine.create({...})`.
  *
  * Domain-specific subclasses (`InvalidArgumentError`,
  * `ConversationNotFoundError`, etc.) live in `src/core/errors.ts` and

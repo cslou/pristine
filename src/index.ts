@@ -150,8 +150,12 @@ export { createDatabase } from './core/database.js';
 // exported from the errors block (consumers catch it on storeAsync).
 
 // ---------------------------------------------------------------------------
-// Searcher (spec-005 Phase 4 retrieval primitive)
+// Searcher (spec-005 §5.1 retrieval primitive — shipped sprint-016)
 // ---------------------------------------------------------------------------
+//
+// Consumer recipe: see the top-of-file JSDoc "Lifecycle" section. Per-method
+// JSDoc on the Searcher interface methods (vectorSearch, ftsSearch,
+// hybridSearch, sessionVectorSearch) lives in src/memory/searcher/index.ts.
 
 export type {
   Searcher,

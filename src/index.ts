@@ -43,6 +43,7 @@ export type { LlmClients } from './engine/index.js';
 
 export { buildExtractionPrompt } from './memory/extractor/prompts.js';
 export type { ExtractorConfig } from './memory/extractor/index.js';
+export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
 // ---------------------------------------------------------------------------
 // Errors

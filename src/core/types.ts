@@ -204,6 +204,7 @@ export type SecureAndRedactResult =
       readonly ok: true;
       readonly redactedText: string;
       readonly placeholderIds: readonly string[];
+      readonly warnings?: readonly string[];
     }
   | {
       readonly ok: false;

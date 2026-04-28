@@ -5,7 +5,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
-import type { LlmClient, LlmClients } from '../../src/index.js';
+import type { Embedder, LlmClient, LlmClients } from '../../src/index.js';
 import { PristineLocal } from '../../src/index.js';
 
 const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
@@ -30,20 +30,6 @@ const createMockLlmClient = (): LlmClient => {
           action: 'ADD',
           factIndex: i,
         })),
-      };
-    }
-
-    // Privacy classifier (check before query analyzer — both contain "analyze")
-    if (systemPrompt.includes('privacy classifier')) {
-      return {
-        findings: [
-          {
-            type: 'person_name',
-            text: 'John Smith',
-            confidence: 0.95,
-            reasoning: 'Full name detected',
-          },
-        ],
       };
     }
 
@@ -75,6 +61,12 @@ const createMockLlmClient = (): LlmClient => {
   return { generate: generate as LlmClient['generate'] };
 };
 
+const createMockEmbedder = (): Embedder => ({
+  embed: async () => Array.from({ length: 768 }, () => 0),
+  embedBatch: async (texts: readonly string[]) =>
+    texts.map(() => Array.from({ length: 768 }, () => 0)),
+});
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -90,7 +82,19 @@ describe.skipIf(skipSlow)(
       client = await PristineLocal.create({
         db: createDatabase(':memory:'),
         llmClients,
+        embedder: createMockEmbedder(),
         keysDir: '/tmp/pristine-sdk-test-keys',
+        privacy: {
+          customPatternsPath: '/tmp/pristine-sdk-missing-redaction.json',
+          customPatterns: [
+            {
+              id: 'sdk-acme',
+              type: 'api_key',
+              pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
+              confidence: 0.95,
+            },
+          ],
+        },
       });
     });
 
@@ -116,8 +120,8 @@ describe.skipIf(skipSlow)(
       expect(texts.some((t) => t.includes('berlin'))).toBe(true);
     }, 120_000);
 
-    it('secureAndRedact() + reveal() round-trip recovers PII', async () => {
-      const original = 'My name is John Smith and I live at 123 Main St.';
+    it('secureAndRedact() + reveal() round-trip recovers secrets', async () => {
+      const original = 'Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and acme_tk_ABC12345.';
       const result = await client.secureAndRedact(original, 'sdk-user-2');
 
       expect(result.ok).toBe(true);
@@ -128,12 +132,14 @@ describe.skipIf(skipSlow)(
       const { redactedText, placeholderIds } = result;
 
       expect(redactedText).toContain('[SENSITIVE:');
-      expect(redactedText).not.toContain('John Smith');
-      expect(placeholderIds.length).toBeGreaterThan(0);
+      expect(redactedText).not.toContain('sk-ant-api03');
+      expect(redactedText).not.toContain('acme_tk_ABC12345');
+      expect(placeholderIds).toHaveLength(2);
 
       const revealed = await client.reveal(redactedText, 'sdk-user-2');
-      expect(revealed.text).toContain('John Smith');
-      expect(revealed.revealedValues).toContain('John Smith');
+      expect(revealed.text).toContain('sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456');
+      expect(revealed.text).toContain('acme_tk_ABC12345');
+      expect(revealed.revealedValues).toContain('acme_tk_ABC12345');
     }, 120_000);
 
     it('scrubOutput() removes placeholder tokens', () => {
@@ -143,15 +149,10 @@ describe.skipIf(skipSlow)(
     });
 
     it('dispose() completes without error', async () => {
-      const mockEmbedder = {
-        embed: async () => Array.from({ length: 768 }, () => 0),
-        embedBatch: async (texts: readonly string[]) =>
-          texts.map(() => Array.from({ length: 768 }, () => 0)),
-      };
       const disposableClient = await PristineLocal.create({
         db: createDatabase(':memory:'),
         llmClients,
-        embedder: mockEmbedder,
+        embedder: createMockEmbedder(),
       });
       await expect(disposableClient.dispose()).resolves.toBeUndefined();
     });

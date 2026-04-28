@@ -16,7 +16,7 @@ import { createEmbedder } from './embedder/index.js';
 import { ConversationStore } from './conversations/store.js';
 import { IngestQueue } from './queue/ingest-queue.js';
 import { createIndexer, type Indexer } from './memory/indexer/index.js';
-import { createEmbedTaskHandler } from './memory/indexer/embed-worker.js';
+import { createEmbedTaskHandler, runEmbedWorker } from './memory/indexer/embed-worker.js';
 import { createWindowWriter } from './memory/indexer/windows.js';
 import { createSearcher, type Searcher } from './memory/searcher/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
@@ -291,6 +291,43 @@ export class PristineLocal {
     });
 
     return runStore();
+  }
+
+  /**
+   * Drain the embed queue to completion: process every pending
+   * embed-message task `storeAsync` enqueued, then resolve. Returns the
+   * number of tasks processed (success + failure both count, matching
+   * `runEmbedWorker`'s return shape).
+   *
+   * **When to call.** After `storeAsync` if the consumer wants
+   * synchronous completion before retrieval — e.g., a CLI that calls
+   * `searcher.hybridSearch(...)` immediately after store and needs the
+   * vec_windows / messages_fts populated. Not needed if the consumer
+   * runs `scripts/embed-worker.ts` as a daemon (which loops the same
+   * `runEmbedWorker` continuously). One canonical surface, not two —
+   * see Sprint-018 Story 2 Tech Notes for why `runEmbedWorker` is NOT
+   * additionally re-exported from the package barrel.
+   *
+   * **Idempotent.** Safe to call repeatedly: when the queue is empty
+   * the call resolves to 0 without side effects.
+   *
+   * **Blocking.** Resolves only when the queue reaches idle. There is
+   * no streaming / per-batch progress reporting in this iteration; a
+   * future sprint may add `drainEmbedQueue({ onProgress })` once a
+   * real consumer demands it.
+   *
+   * **Lite clients.** `createLite()` has no embedder and so no
+   * embed-task handler wired into its `IngestQueue`; calling
+   * `drainEmbedQueue` would loop forever or fail when a task is
+   * encountered. Throws `InvalidArgumentError` early instead.
+   */
+  public async drainEmbedQueue(): Promise<number> {
+    if (this.indexer === null) {
+      throw new InvalidArgumentError(
+        'drainEmbedQueue requires Pristine.create() — createLite has no embedder; for ingest, use Pristine.create() (the embedder loads lazily, so synchronous startup paths still pay only construction cost)',
+      );
+    }
+    return runEmbedWorker(this.ingestQueue);
   }
 
   // -------------------------------------------------------------------------

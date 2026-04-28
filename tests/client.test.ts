@@ -328,4 +328,85 @@ describe('PristineLocal', () => {
       liteDb.close();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Sprint-018 Story 3 — buildSessionVector passthrough
+  // -------------------------------------------------------------------------
+
+  describe('buildSessionVector()', () => {
+    it('throws InvalidArgumentError on lite clients (no embedder)', async () => {
+      const liteDb = createDatabase(':memory:');
+      const client = PristineLocal.createLite({ db: liteDb });
+
+      await expect(client.buildSessionVector('any-id')).rejects.toBeInstanceOf(
+        InvalidArgumentError,
+      );
+
+      liteDb.close();
+    });
+
+    it('throws InvalidArgumentError when conversationId is empty', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const promise = client.buildSessionVector('');
+      await expect(promise).rejects.toBeInstanceOf(InvalidArgumentError);
+      await expect(promise).rejects.toThrow(/conversationId.*required|empty/i);
+    });
+
+    it('throws InvalidArgumentError (single class) when conversationId does not exist, with the literal id in the message', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const missingId = 'does-not-exist-12345';
+      // Underlying indexer raises ConversationNotFoundError; the shim
+      // narrows the public-surface contract to InvalidArgumentError so
+      // callers have one type to catch. The original message
+      // (containing the literal id) is preserved.
+      const promise = client.buildSessionVector(missingId);
+      await expect(promise).rejects.toBeInstanceOf(InvalidArgumentError);
+      await expect(promise).rejects.toThrow(/does-not-exist-12345/);
+    });
+
+    it('delegates to indexer.buildSessionVector — populates vec_sessions for an existing conversation', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+      });
+
+      const conversationId = client.storeAsync(
+        [
+          { role: 'user', content: 'session vector test — turn one' },
+          { role: 'assistant', content: 'session vector test — turn two' },
+        ],
+        'sv-user',
+        'sv-project',
+      );
+      // Drain so message rows exist (storeAsync inserts them via the
+      // indexer transaction; this is purely defensive — buildSessionVector
+      // reads `messages`, not `vec_windows`).
+      await client.drainEmbedQueue();
+
+      // Pre-call: no row in vec_sessions for this conversation.
+      const before = deps.db
+        .prepare('SELECT COUNT(*) AS n FROM vec_sessions WHERE conversation_id = ?')
+        .get(conversationId) as { n: number };
+      expect(before.n).toBe(0);
+
+      await client.buildSessionVector(conversationId);
+
+      // Post-call: exactly one row.
+      const after = deps.db
+        .prepare('SELECT COUNT(*) AS n FROM vec_sessions WHERE conversation_id = ?')
+        .get(conversationId) as { n: number };
+      expect(after.n).toBe(1);
+    });
+  });
 });

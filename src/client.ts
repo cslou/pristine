@@ -350,6 +350,77 @@ export class PristineLocal {
     return runEmbedWorker(this.ingestQueue);
   }
 
+  /**
+   * Build the session-level vector for a conversation: read every message
+   * row, format + concatenate them, embed the joined text, and upsert
+   * one row into `vec_sessions` keyed by `conversationId`. Populates the
+   * session leg of `searcher.hybridSearch` — without this call, the
+   * session leg returns no hits regardless of how the corpus is queried.
+   *
+   * Composes Flow 1 of `docs/specs/implementation-spec-005.md` §15:
+   * `storeAsync` writes message + window vectors via the embed-worker;
+   * building `vec_sessions` is a separate explicit call (spec §15
+   * Flow 1 Notes — sprint-015 Story 5 deferred auto-invocation until
+   * retrieval pressure is real).
+   *
+   * **When to call.** After a session-close signal — typically when a
+   * conversation finishes appending turns. `storeAsync` does NOT
+   * auto-build session vectors per spec §5.1.2 (separate explicit
+   * call). Pair with a prior `drainEmbedQueue()` if the consumer also
+   * wants the per-message embeddings flushed before the session
+   * vector is computed:
+   *
+   * ```ts
+   * const conversationId = client.storeAsync(messages, userId, projectId);
+   * await client.drainEmbedQueue();          // flush per-message embeds
+   * await client.buildSessionVector(conversationId); // populate vec_sessions
+   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * // hybridSearch's session leg now returns kind:'session' hits.
+   * ```
+   *
+   * **Lite clients.** Throws `InvalidArgumentError` (no embedder, no
+   * indexer wired).
+   *
+   * **Error contract.** Throws `InvalidArgumentError` for: empty
+   * conversationId, missing conversationId (no row in `conversations`),
+   * and any token-budget violation the underlying primitive raises.
+   * The public surface narrows the indexer's broader error set
+   * (`ConversationNotFoundError`, `InvalidArgumentError`) to a single
+   * class so callers have one type to catch; the original error
+   * message is preserved.
+   *
+   * **No-op for empty conversations.** If the conversation has no
+   * message rows, the call resolves cleanly without writing a row to
+   * `vec_sessions` — Phase-4 retrieval treats a missing
+   * `vec_sessions` row as "no session-level signal yet."
+   *
+   * @param conversationId The conversation id returned by `storeAsync`.
+   * @throws `InvalidArgumentError` for lite clients, empty/missing
+   *   conversationId, or token-budget violations.
+   */
+  public async buildSessionVector(conversationId: string): Promise<void> {
+    if (this.indexer === null) {
+      throw new InvalidArgumentError(
+        'buildSessionVector requires Pristine.create() — createLite has no embedder; use Pristine.create() to enable session-vector indexing',
+      );
+    }
+    if (conversationId === '') {
+      throw new InvalidArgumentError('buildSessionVector: conversationId is required (empty)');
+    }
+    try {
+      await this.indexer.buildSessionVector(conversationId);
+    } catch (error: unknown) {
+      // Narrow the public-surface error contract to a single class so
+      // callers have one type to catch (InvalidArgumentError). The
+      // underlying primitive may raise ConversationNotFoundError
+      // (missing id) or InvalidArgumentError (empty id, token-budget
+      // violation); both surface here as InvalidArgumentError with
+      // the original message preserved.
+      const message = error instanceof Error ? error.message : String(error);
+      throw new InvalidArgumentError(message);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Conversation API
   // -------------------------------------------------------------------------

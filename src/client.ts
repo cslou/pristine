@@ -299,14 +299,31 @@ export class PristineLocal {
    * number of tasks processed (success + failure both count, matching
    * `runEmbedWorker`'s return shape).
    *
+   * Composes Flow 1 of `docs/specs/implementation-spec-005.md` §15
+   * synchronously inside the calling process — the same pipeline
+   * `scripts/embed-worker.ts` runs as a detached daemon
+   * (sprint-015 Story 6).
+   *
    * **When to call.** After `storeAsync` if the consumer wants
    * synchronous completion before retrieval — e.g., a CLI that calls
    * `searcher.hybridSearch(...)` immediately after store and needs the
-   * vec_windows / messages_fts populated. Not needed if the consumer
-   * runs `scripts/embed-worker.ts` as a daemon (which loops the same
-   * `runEmbedWorker` continuously). One canonical surface, not two —
-   * see Sprint-018 Story 2 Tech Notes for why `runEmbedWorker` is NOT
-   * additionally re-exported from the package barrel.
+   * `vec_windows` / `messages_fts` rows populated:
+   *
+   * ```ts
+   * const conversationId = client.storeAsync(messages, userId, projectId);
+   * const drained = await client.drainEmbedQueue();
+   * console.log(`indexed ${drained} messages`);
+   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * ```
+   *
+   * Not needed if the consumer runs `scripts/embed-worker.ts` as a
+   * daemon — the daemon loops the same `runEmbedWorker` continuously,
+   * so `vec_windows` populates eventually without a synchronous drain.
+   * One canonical SDK surface, not two: `runEmbedWorker` is NOT
+   * additionally re-exported from the package barrel; this method is
+   * the only consumer-facing entry point. Future evolution (streaming
+   * progress, abort signal, per-batch limits) extends on this method
+   * rather than the free function.
    *
    * **Idempotent.** Safe to call repeatedly: when the queue is empty
    * the call resolves to 0 without side effects.
@@ -320,6 +337,9 @@ export class PristineLocal {
    * embed-task handler wired into its `IngestQueue`; calling
    * `drainEmbedQueue` would loop forever or fail when a task is
    * encountered. Throws `InvalidArgumentError` early instead.
+   *
+   * @returns Number of tasks processed (success + failure both count).
+   * @throws `InvalidArgumentError` when called on a `createLite()` client.
    */
   public async drainEmbedQueue(): Promise<number> {
     if (this.indexer === null) {

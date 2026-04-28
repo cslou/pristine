@@ -1,22 +1,17 @@
 import Database from 'better-sqlite3';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { secureAndRedact, reveal } from '../../src/privacy/index.js';
 import { rotateKey } from '../../src/privacy/rotation.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
-import type { LlmClient } from '../../src/core/interfaces.js';
 import type { SecureAndRedactResult } from '../../src/core/types.js';
 
 let db: Database.Database;
 let keyManager: InMemoryKeyManager;
 let kekManager: KekManager;
 let vaultStore: SqliteVaultStore;
-
-const createMockClient = (findings: unknown[]): LlmClient => ({
-  generate: vi.fn().mockResolvedValue({ findings }),
-});
 
 const expectSuccess = (
   result: SecureAndRedactResult,
@@ -46,13 +41,10 @@ describe('rotateKey', () => {
   it('rotated key still decrypts previously encrypted values', async () => {
     clearResolvedStringRegistry();
     const userId = 'user-rot-1';
-    const mockClient = createMockClient([
-      { type: 'email_address', confidence: 0.95, reasoning: 'Email', text: 'alice@test.com' },
-    ]);
+    const apiKey = 'sk-ant-api03-rotateabcdefghijklmnopqrstuvwxyz123456';
 
     const { redactedText } = expectSuccess(
-      await secureAndRedact('Contact alice@test.com please', {
-        client: mockClient,
+      await secureAndRedact(`Use ${apiKey} please`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -73,15 +65,13 @@ describe('rotateKey', () => {
 
     // Old value still decrypts with new key
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed.text).toContain('alice@test.com');
+    expect(revealed.text).toContain(apiKey);
   });
 
   it('encrypts new values after rotation and decrypts them', async () => {
     clearResolvedStringRegistry();
     const userId = 'user-rot-2';
-    const mockClient = createMockClient([
-      { type: 'phone_number', confidence: 0.9, reasoning: 'Phone', text: '555-111-2222' },
-    ]);
+    const apiKey = 'sk-ant-api03-afterrotateabcdefghijklmnopqrstuvwxyz123456';
 
     // Generate initial KEK
     await kekManager.getOrCreate(userId);
@@ -91,8 +81,7 @@ describe('rotateKey', () => {
 
     // Encrypt after rotation
     const { redactedText } = expectSuccess(
-      await secureAndRedact('Call 555-111-2222', {
-        client: mockClient,
+      await secureAndRedact(`Use ${apiKey}`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -101,19 +90,16 @@ describe('rotateKey', () => {
     );
 
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed.text).toContain('555-111-2222');
+    expect(revealed.text).toContain(apiKey);
   }, 15000);
 
   it('handles multiple rotations in sequence', async () => {
     clearResolvedStringRegistry();
     const userId = 'user-rot-3';
-    const mockClient = createMockClient([
-      { type: 'email_address', confidence: 0.95, reasoning: 'Email', text: 'bob@test.com' },
-    ]);
+    const apiKey = 'sk-ant-api03-multirotateabcdefghijklmnopqrstuvwxyz123456';
 
     const { redactedText } = expectSuccess(
-      await secureAndRedact('Reach bob@test.com', {
-        client: mockClient,
+      await secureAndRedact(`Use ${apiKey}`, {
         vaultStore,
         keyManager,
         kekManager,
@@ -128,7 +114,7 @@ describe('rotateKey', () => {
 
     // Still decrypts
     const revealed = await reveal(redactedText, { vaultStore, keyManager, kekManager, userId });
-    expect(revealed.text).toContain('bob@test.com');
+    expect(revealed.text).toContain(apiKey);
   }, 15000);
 
   it('updates user_keks row with new key_id after rotation', async () => {

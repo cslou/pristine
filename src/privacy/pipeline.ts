@@ -1,4 +1,4 @@
-import type { PrivacyPipeline, SensitivityClassifier } from '../core/interfaces.js';
+import type { PrivacyPipeline } from '../core/interfaces.js';
 import type { ClassificationPipelineResult } from '../core/types.js';
 import {
   createDeterministicClassifier,
@@ -12,7 +12,7 @@ interface PrivacyPipelineConfig {
 }
 
 class DefaultPrivacyPipeline implements PrivacyPipeline {
-  private readonly classifier: SensitivityClassifier;
+  private readonly classifier: ReturnType<typeof createDeterministicClassifier>;
 
   public constructor(config: PrivacyPipelineConfig = {}) {
     this.classifier = createDeterministicClassifier(config.classifier);
@@ -22,7 +22,7 @@ class DefaultPrivacyPipeline implements PrivacyPipeline {
     const report = await this.classifier.classify(text);
     const redaction = report.entities.length > 0 ? redactText(text, report) : null;
     const redactedText = redaction?.redactedText ?? text;
-    const safetyViolations = findSafetyViolations(redactedText);
+    const safetyViolations = findSafetyViolations(redactedText, this.classifier.getPatternRules());
 
     return {
       report,

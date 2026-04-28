@@ -185,6 +185,77 @@ describe('privacy pipeline end-to-end', () => {
     expect(revealed.revealedValues).toEqual(['acme_tk_ABC12345']);
   });
 
+  it('propagates custom config warnings through secureAndRedact', async () => {
+    const result = expectSuccess(
+      await secureAndRedact('No secrets here.', {
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-custom-warning',
+        classifier: {
+          customPatternsPath: '/tmp/pristine-missing-redaction.json',
+          customPatterns: [{ type: 'api_key', pattern: '[', name: 'Broken Pattern' }],
+        },
+      }),
+    );
+
+    expect(result.warnings?.join('\n')).toContain('Broken Pattern');
+  });
+
+  it('uses custom regexes for safety scan and scrub paths', async () => {
+    const classifier = {
+      customPatternsPath: '/tmp/pristine-missing-redaction.json',
+      customPatterns: [
+        {
+          id: 'acme',
+          type: 'api_key' as const,
+          pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
+          confidence: 0.95,
+        },
+      ],
+    };
+    const pipeline: PrivacyPipeline = {
+      classifyAndRedact: vi.fn<PrivacyPipeline['classifyAndRedact']>().mockResolvedValue({
+        report: {
+          entities: [],
+          hasSensitiveContent: false,
+        },
+        redaction: {
+          redactedText: 'Tool output leaked acme_tk_ABC12345',
+          placeholders: [],
+        },
+        safetyViolations: [
+          {
+            type: 'api_key',
+            source: 'deterministic',
+            confidence: 0.95,
+            start: 19,
+            end: 35,
+            text: 'acme_tk_ABC12345',
+          },
+        ],
+      } satisfies ClassificationPipelineResult),
+    };
+
+    const result = await secureAndRedact('input', {
+      vaultStore,
+      keyManager,
+      kekManager,
+      userId: 'user-custom-safety',
+      classifier,
+      pipeline,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('Expected custom safety scan violation');
+    }
+    expect(result.safetyViolations[0]!.text).toBe('acme_tk_ABC12345');
+
+    const scrubbed = scrubOutput('Tool output leaked acme_tk_ABC12345', [], classifier);
+    expect(scrubbed).not.toContain('acme_tk_ABC12345');
+  });
+
   it('scrubOutput returns text unchanged when there is nothing sensitive to remove', () => {
     const text = 'No sensitive content here.';
     expect(scrubOutput(text, [])).toBe(text);

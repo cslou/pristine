@@ -1,11 +1,8 @@
-import type { DetectedEntity, SensitivityReport } from '../../../core/types.js';
+import type { SensitivityReport } from '../../../core/types.js';
 import type { SensitivityClassifier } from '../../../core/interfaces.js';
-import {
-  BUILT_IN_SECRET_PATTERN_RULES,
-  buildCustomPatternRules,
-  type CustomPatternConfig,
-  type DeterministicPatternRule,
-} from './rules.js';
+import { BUILT_IN_SECRET_PATTERN_RULES, type DeterministicPatternRule } from './rules.js';
+import { buildCustomPatternRules, type CustomPatternConfig } from './custom-patterns.js';
+import { scanTextWithRules } from './scanner.js';
 
 export interface DeterministicClassifierConfig {
   readonly confidenceThreshold?: number;
@@ -15,26 +12,17 @@ export interface DeterministicClassifierConfig {
 
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.7;
 
-const sortAndDedupeEntities = (entities: readonly DetectedEntity[]): DetectedEntity[] => {
-  const sorted = [...entities].sort(
-    (a, b) =>
-      b.end - b.start - (a.end - a.start) ||
-      b.confidence - a.confidence ||
-      a.start - b.start ||
-      a.end - b.end,
-  );
-
-  const kept: DetectedEntity[] = [];
-  for (const entity of sorted) {
-    const overlaps = kept.some(
-      (existing) => entity.start < existing.end && entity.end > existing.start,
-    );
-    if (!overlaps) {
-      kept.push(entity);
-    }
-  }
-
-  return kept.sort((a, b) => a.start - b.start || a.end - b.end);
+export const createDeterministicPatternRuleSet = (
+  config: DeterministicClassifierConfig = {},
+): {
+  readonly rules: readonly DeterministicPatternRule[];
+  readonly warnings: readonly string[];
+} => {
+  const customPatterns = buildCustomPatternRules(config.customPatterns, config.customPatternsPath);
+  return {
+    rules: [...BUILT_IN_SECRET_PATTERN_RULES, ...customPatterns.rules],
+    warnings: customPatterns.warnings,
+  };
 };
 
 export class DeterministicClassifier implements SensitivityClassifier {
@@ -44,12 +32,13 @@ export class DeterministicClassifier implements SensitivityClassifier {
 
   public constructor(config: DeterministicClassifierConfig = {}) {
     this.confidenceThreshold = config.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
-    const customPatterns = buildCustomPatternRules(
-      config.customPatterns,
-      config.customPatternsPath,
-    );
-    this.patternRules = [...BUILT_IN_SECRET_PATTERN_RULES, ...customPatterns.rules];
-    this.warnings = customPatterns.warnings;
+    const ruleSet = createDeterministicPatternRuleSet(config);
+    this.patternRules = ruleSet.rules;
+    this.warnings = ruleSet.warnings;
+  }
+
+  public getPatternRules(): readonly DeterministicPatternRule[] {
+    return this.patternRules;
   }
 
   public async classify(text: string): Promise<SensitivityReport> {
@@ -61,39 +50,13 @@ export class DeterministicClassifier implements SensitivityClassifier {
       };
     }
 
-    const entities: DetectedEntity[] = [];
-
-    for (const rule of this.patternRules) {
-      const matcher = new RegExp(rule.pattern.source, rule.pattern.flags);
-
-      for (const match of text.matchAll(matcher)) {
-        const matchText = match[0];
-        const start = match.index;
-
-        if (rule.validate && !rule.validate(matchText)) {
-          continue;
-        }
-
-        if (rule.confidence < this.confidenceThreshold) {
-          continue;
-        }
-
-        entities.push({
-          type: rule.type,
-          source: 'deterministic',
-          confidence: rule.confidence,
-          start,
-          end: start + matchText.length,
-          text: matchText,
-        });
-      }
-    }
-
-    const deduped = sortAndDedupeEntities(entities);
+    const entities = scanTextWithRules(text, this.patternRules, {
+      confidenceThreshold: this.confidenceThreshold,
+    });
 
     return {
-      entities: deduped,
-      hasSensitiveContent: deduped.length > 0,
+      entities,
+      hasSensitiveContent: entities.length > 0,
       ...(this.warnings.length > 0 ? { warnings: this.warnings } : {}),
     };
   }

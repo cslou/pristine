@@ -5,8 +5,7 @@
  * relevant context (windows, messages, sessions) for LLM agents. No API
  * calls, no server, no data leaving the device. The corpus lives in a
  * single SQLite file (`better-sqlite3` + `sqlite-vec`); embeddings are
- * computed in-process via Nomic Embed v1.5 (768-d). Spec:
- * `docs/specs/implementation-spec-005.md`.
+ * computed in-process via Nomic Embed v1.5 (768-d).
  *
  * ## Primary entry points
  *
@@ -38,9 +37,9 @@
  * - `drainEmbedQueue()` runs the worker in-process until the queue is
  *   idle. Skip if the consumer runs `scripts/embed-worker.ts` as a
  *   detached daemon — same pipeline, just async.
- * - `buildSessionVector(conversationId)` is a separate explicit call per
- *   spec §5.1.2; `storeAsync` does NOT auto-build session vectors. Skip
- *   if the session leg of `hybridSearch` is not needed.
+ * - `buildSessionVector(conversationId)` is a separate explicit call;
+ *   `storeAsync` does NOT auto-build session vectors. Skip if the
+ *   session leg of `hybridSearch` is not needed.
  * - `searcher.hybridSearch(query, filters, k)` returns `HybridHit[]`
  *   spanning `kind: 'window' | 'message' | 'session'` via RRF fusion.
  *
@@ -48,8 +47,7 @@
  *
  * - **`Embedder`** — supply a custom embedder (e.g., remote API,
  *   alternate model) by implementing `embed(text)` + `embedBatch(texts)`.
- *   Sprint-017 covers the embedder-spike (alternate engines beyond
- *   Nomic). The default embedder is `LocalEmbedder` (Nomic v1.5).
+ *   The default embedder is `LocalEmbedder` (Nomic v1.5).
  * - **`LlmClient`** — implements `generate<T>()` (NOT the Anthropic SDK
  *   `messages.create()` shape). Used by the privacy classifier and the
  *   memory pipeline. Bundle two as `LlmClients = { privacyClient,
@@ -72,8 +70,9 @@
  *   accept (missing/empty conversationId on `buildSessionVector`,
  *   `storeAsync`/`drainEmbedQueue`/`buildSessionVector` called on a
  *   lite client, conversationId references a row that doesn't exist).
- *   The two new spec-005-Phase-4 methods narrow the indexer's broader
- *   error set to this single class so callers have one type to catch.
+ *   The two passthrough methods (`drainEmbedQueue`,
+ *   `buildSessionVector`) narrow the indexer's broader error set to
+ *   this single class so callers have one type to catch.
  * - **`ConfigError`** — bad config (invalid `models.json`, missing model
  *   files, malformed engine settings); typically surfaces during
  *   `Pristine.create({...})`.
@@ -84,20 +83,14 @@
  * if their flow demands a specific subclass not exported from the
  * barrel, import direct from `core/errors`.
  *
- * ## Spec + reference implementations
+ * ## Reference implementations
  *
- * Primitive contracts and rationale:
- * **`docs/specs/implementation-spec-005.md`** — §5.1 enumerates the
- * primitives (`store`, `indexer`, `searcher`, `embedder`); §15 describes
- * the user + data flows the SDK composes.
- *
- * Reference tool implementations (`search_memory`, `query_memory`) ship
- * separately as Phase 6 deliverables — when available, they will live
- * under `docs/examples/search-memory-tool/` and
+ * Reference tool implementations (`search_memory`, `query_memory`)
+ * ship separately as examples — when available they will live under
+ * `docs/examples/search-memory-tool/` and
  * `docs/examples/query-memory-tool/` and demonstrate the canonical
- * agent-tool wrappers around `searcher.hybridSearch` and the SQL
- * primitive (sprint-019). Until Phase 6 ships, the recipe above is the
- * canonical pattern.
+ * agent-tool wrappers around `searcher.hybridSearch`. Until those
+ * examples ship, the lifecycle recipe above is the canonical pattern.
  */
 
 // ---------------------------------------------------------------------------
@@ -111,14 +104,14 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 // Core types (consumer-facing)
 // ---------------------------------------------------------------------------
 
-// `Memory` (the pre-spec-005 fact-ledger shape) was previously re-exported
-// here. Removed in sprint-018 Story 4. The type itself stays in
-// `src/core/types.ts` for now — `SanitizedMemory` derives from it and
-// `src/memory/retriever/ranking.ts` still references it; those internal
-// consumers import direct from `core/types`. Full removal of the `Memory`
-// type belongs to the LLM-removal sprint (per sprint-016 retro), which
-// also drops the privacy LLM classifier and `LlmClient` / `LlmClients`
-// interfaces that anchor the legacy fact pipeline.
+// `Memory` (the legacy fact-ledger row shape) is no longer re-exported
+// here. The type itself stays in `src/core/types.ts` for now —
+// `SanitizedMemory` derives from it and `src/memory/retriever/ranking.ts`
+// still references it; both internal consumers import direct from
+// `core/types`. Full removal of the `Memory` type is staged for the
+// planned LLM-removal effort, alongside the privacy LLM classifier and
+// the `LlmClient` / `LlmClients` interfaces that anchor the legacy fact
+// pipeline.
 export type {
   ConversationDetail,
   ConversationSearchResult,
@@ -158,14 +151,14 @@ export { createDatabase } from './core/database.js';
 // Queue
 // ---------------------------------------------------------------------------
 
-// IngestQueue (class), IngestTask (type), and IngestQueueConfig (type) were
-// previously re-exported here. Removed in sprint-018 Story 4 — they're
-// internal-only plumbing the consumer-facing surface (storeAsync,
-// drainEmbedQueue, buildSessionVector) encapsulates. IngestQueueError stays
-// exported from the errors block (consumers catch it on storeAsync).
+// IngestQueue (class), IngestTask (type), and IngestQueueConfig (type)
+// are deliberately not re-exported — they're internal-only plumbing the
+// consumer-facing surface (storeAsync, drainEmbedQueue,
+// buildSessionVector) encapsulates. IngestQueueError stays exported
+// from the errors block (consumers catch it on storeAsync).
 
 // ---------------------------------------------------------------------------
-// Searcher (spec-005 §5.1 retrieval primitive — shipped sprint-016)
+// Searcher — the hybrid retrieval primitive
 // ---------------------------------------------------------------------------
 //
 // Consumer recipe: see the top-of-file JSDoc "Lifecycle" section. Per-method

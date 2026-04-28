@@ -54,12 +54,11 @@ export interface PristineLiteConfig {
 export class PristineLocal {
   public readonly ingestQueue: IngestQueue;
   /**
-   * Public retrieval primitive (sprint-016 Story 2 / spec-005 Phase 4).
-   * Defined on full clients (`Pristine.create({...})`) and `null` on
-   * lite clients — the vector path needs an embedder. Asymmetry vs
-   * `indexer` (private) is deliberate: `searcher` is the consumer-facing
-   * query surface, `indexer` is plumbing that `storeAsync` drives
-   * internally.
+   * Public retrieval primitive. Defined on full clients
+   * (`Pristine.create({...})`) and `null` on lite clients — the vector
+   * path needs an embedder. Asymmetry vs `indexer` (private) is
+   * deliberate: `searcher` is the consumer-facing query surface;
+   * `indexer` is plumbing that `storeAsync` drives internally.
    */
   public readonly searcher: Searcher | null;
 
@@ -128,11 +127,11 @@ export class PristineLocal {
 
     const conversationStore = new ConversationStore(db);
 
-    // Indexer + embed-worker wiring (sprint-015 Phase 3 / sprint-016 Story 1).
-    // Mirrors scripts/embed-worker.ts: build a temp queue solely to read the
-    // indexer's resolved config, then construct the production queue with the
-    // embed-task handler bound. The temp queue shares the same pending_ingest_tasks
-    // table; nothing is written to it.
+    // Indexer + embed-worker wiring. Mirrors scripts/embed-worker.ts:
+    // build a temp queue solely to read the indexer's resolved config,
+    // then construct the production queue with the embed-task handler
+    // bound. The temp queue shares the same pending_ingest_tasks table;
+    // nothing is written to it.
     const windowWriter = createWindowWriter(db);
     const tempQueue = new IngestQueue({ db });
     const indexer = createIndexer({
@@ -299,10 +298,9 @@ export class PristineLocal {
    * number of tasks processed (success + failure both count, matching
    * `runEmbedWorker`'s return shape).
    *
-   * Composes Flow 1 of `docs/specs/implementation-spec-005.md` §15
-   * synchronously inside the calling process — the same pipeline
-   * `scripts/embed-worker.ts` runs as a detached daemon
-   * (sprint-015 Story 6).
+   * Composes the ingestion pipeline synchronously inside the calling
+   * process — the same pipeline `scripts/embed-worker.ts` runs as a
+   * detached daemon.
    *
    * **When to call.** After `storeAsync` if the consumer wants
    * synchronous completion before retrieval — e.g., a CLI that calls
@@ -359,18 +357,16 @@ export class PristineLocal {
    * session leg of `searcher.hybridSearch` — without this call, the
    * session leg returns no hits regardless of how the corpus is queried.
    *
-   * Composes Flow 1 of `docs/specs/implementation-spec-005.md` §15:
-   * `storeAsync` writes message + window vectors via the embed-worker;
-   * building `vec_sessions` is a separate explicit call (spec §15
-   * Flow 1 Notes — sprint-015 Story 5 deferred auto-invocation until
-   * retrieval pressure is real).
+   * `storeAsync` writes message + window vectors via the embed-worker
+   * pipeline; building `vec_sessions` is a separate explicit call —
+   * auto-invocation was deferred until retrieval pressure justifies
+   * the cost.
    *
    * **When to call.** After a session-close signal — typically when a
    * conversation finishes appending turns. `storeAsync` does NOT
-   * auto-build session vectors per spec §5.1.2 (separate explicit
-   * call). Pair with a prior `drainEmbedQueue()` if the consumer also
-   * wants the per-message embeddings flushed before the session
-   * vector is computed:
+   * auto-build session vectors. Pair with a prior `drainEmbedQueue()`
+   * if the consumer also wants the per-message embeddings flushed
+   * before the session vector is computed:
    *
    * ```ts
    * const conversationId = client.storeAsync(messages, userId, projectId);
@@ -393,7 +389,7 @@ export class PristineLocal {
    *
    * **No-op for empty conversations.** If the conversation has no
    * message rows, the call resolves cleanly without writing a row to
-   * `vec_sessions` — Phase-4 retrieval treats a missing
+   * `vec_sessions` — the hybrid retriever treats a missing
    * `vec_sessions` row as "no session-level signal yet."
    *
    * **Sequence after `drainEmbedQueue`, do not race it.** Call this

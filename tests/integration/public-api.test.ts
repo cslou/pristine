@@ -128,7 +128,6 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
     'round-trip: storeAsync → drainEmbedQueue → hybridSearch returns hits @AC-Story2-1',
     async () => {
       const { projectId } = await seedPublicApiCorpus(client);
-      // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
       const drained = await client.drainEmbedQueue();
       expect(drained).toBeGreaterThanOrEqual(1);
       // searcher is non-null on Pristine.create() (vs createLite); the
@@ -160,7 +159,6 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
     'session leg of hybridSearch populates after client.buildSessionVector @AC-Story3-1',
     async () => {
       const { projectId, conversationIds } = await seedPublicApiCorpus(client);
-      // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
       await client.drainEmbedQueue();
       // @ts-expect-error — sprint-018 Story 3 ships PristineLocal.buildSessionVector
       await client.buildSessionVector(conversationIds[0]);

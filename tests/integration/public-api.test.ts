@@ -160,7 +160,6 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
     async () => {
       const { projectId, conversationIds } = await seedPublicApiCorpus(client);
       await client.drainEmbedQueue();
-      // @ts-expect-error — sprint-018 Story 3 ships PristineLocal.buildSessionVector
       await client.buildSessionVector(conversationIds[0]);
       const hits = await client.searcher!.hybridSearch('hello', { projectId }, 10);
       const sessionHits = hits.filter((h) => h.kind === 'session');

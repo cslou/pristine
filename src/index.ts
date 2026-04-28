@@ -9,10 +9,17 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 // Core types (consumer-facing)
 // ---------------------------------------------------------------------------
 
+// `Memory` (the pre-spec-005 fact-ledger shape) was previously re-exported
+// here. Removed in sprint-018 Story 4. The type itself stays in
+// `src/core/types.ts` for now — `SanitizedMemory` derives from it and
+// `src/memory/retriever/ranking.ts` still references it; those internal
+// consumers import direct from `core/types`. Full removal of the `Memory`
+// type belongs to the LLM-removal sprint (per sprint-016 retro), which
+// also drops the privacy LLM classifier and `LlmClient` / `LlmClients`
+// interfaces that anchor the legacy fact pipeline.
 export type {
   ConversationDetail,
   ConversationSearchResult,
-  Memory,
   Message,
   MessageRole,
   SecureAndRedactResult,

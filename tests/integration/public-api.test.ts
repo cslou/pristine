@@ -43,6 +43,25 @@ const makeLlmClients = (): LlmClients => ({
   memoryClient: makeStubLlmClient(),
 });
 
+// Tiny in-process corpus, written through the public surface. Each test
+// calls this to seed; isolation is provided by the per-test in-memory DB
+// the beforeEach reconstructs.
+async function seedPublicApiCorpus(
+  client: PristineLocal,
+): Promise<{ projectId: string; conversationIds: readonly string[] }> {
+  const projectId = 'pa-test-project';
+  const userId = 'pa-user';
+  const conv1 = client.storeAsync(
+    [
+      { role: 'user', content: 'hello world from the public-api harness' },
+      { role: 'assistant', content: 'hi there — replying for the harness corpus' },
+    ],
+    userId,
+    projectId,
+  );
+  return { projectId, conversationIds: [conv1] };
+}
+
 describe('public-API integration harness — sprint-018 Story 1', () => {
   let db: Database.Database;
   let client: PristineLocal;
@@ -68,5 +87,32 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
     // before any RED outer-loop test gets a chance to run.
     expect(client.searcher).not.toBeNull();
     expect(typeof client.storeAsync).toBe('function');
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 2 outer-loop test — RED until sprint-018 Story 2 ships
+  // PristineLocal.drainEmbedQueue.
+  //
+  // RED mechanism: `// @ts-expect-error` on the call site. The method does
+  // not exist on PristineLocal yet, so without the directive `tsc --noEmit`
+  // would error and pre-push would block the commit. With it, the file
+  // compiles but the runtime call throws `TypeError: client.drainEmbedQueue
+  // is not a function`, which is the test's RED state. When Story 2 ships
+  // the method, the line is no longer erroneous and the directive itself
+  // becomes a TS error (TS6133 "unused '@ts-expect-error' directive"),
+  // forcing Story 2 to remove the directive as part of "AC goes GREEN".
+  // The forcing function fires at type-level — that's the spirit of Story
+  // 1's AC-3 ("TypeScript-level failure"), reconciled with the pre-push
+  // typecheck gate.
+  // -------------------------------------------------------------------------
+  it('round-trip: storeAsync → drainEmbedQueue → hybridSearch returns hits @AC-Story2-1', async () => {
+    const { projectId } = await seedPublicApiCorpus(client);
+    // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
+    const drained = await client.drainEmbedQueue();
+    expect(drained).toBeGreaterThanOrEqual(1);
+    // searcher is non-null on Pristine.create() (vs createLite); the
+    // smoke test above pins this invariant.
+    const hits = await client.searcher!.hybridSearch('hello', { projectId }, 5);
+    expect(hits.length).toBeGreaterThan(0);
   });
 });

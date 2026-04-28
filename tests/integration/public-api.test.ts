@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import {
@@ -142,5 +143,42 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
     const hits = await client.searcher!.hybridSearch('hello', { projectId }, 10);
     const sessionHits = hits.filter((h) => h.kind === 'session');
     expect(sessionHits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 4 outer-loop test — RED until sprint-018 Story 4 prunes the barrel.
+  //
+  // Hybrid runtime + static-source assertion. Required because TypeScript
+  // erases `export type { … }` at runtime: `IngestTask`,
+  // `IngestQueueConfig`, and `Memory` are type-only re-exports, so a
+  // runtime `expect(barrel.IngestTask).toBeUndefined()` would
+  // false-negative pass green TODAY before Story 4 ships. Only
+  // `IngestQueue` is a value export (the class), so it gets the runtime
+  // check; the three type-only names get a source-text grep.
+  //
+  // The `readFile` + `import.meta.url` pattern is a filesystem read, not
+  // an `import` statement — the file-scoped ESLint
+  // `no-restricted-imports` override fires on imports only, so this does
+  // not violate the harness contract.
+  // -------------------------------------------------------------------------
+  it('barrel does not export IngestQueue / IngestTask / IngestQueueConfig / Memory @AC-Story4-1', async () => {
+    // Runtime: IngestQueue is a class (value) export. Currently exists;
+    // Story 4 removes it.
+    const barrelModule = await import('../../src/index.js');
+    const barrel = barrelModule as unknown as Record<string, unknown>;
+    expect(barrel.IngestQueue).toBeUndefined();
+
+    // Static-source check: the three type-only names. Story 4's removal
+    // commit deletes their re-export lines from src/index.ts; the
+    // negative regex matches go GREEN once those lines are gone. Note:
+    // if Story 4's implementer adds a code comment containing any of
+    // these literal tokens, the regex will re-fire — write removal-
+    // explanation prose without those tokens (the git history is the
+    // record).
+    const indexUrl = new URL('../../src/index.ts', import.meta.url);
+    const indexSrc = await readFile(indexUrl, 'utf8');
+    expect(indexSrc).not.toMatch(/\bIngestTask\b/);
+    expect(indexSrc).not.toMatch(/\bIngestQueueConfig\b/);
+    expect(indexSrc).not.toMatch(/\bMemory\b/);
   });
 });

@@ -68,15 +68,21 @@
  * - **`IngestQueueError`** — queue-side failures (corruption, contract
  *   violation in a custom `embedTaskHandler`). Catch on `storeAsync`
  *   if the consumer wants to react to ingest-queue trouble explicitly.
+ * - **`InvalidArgumentError`** — caller passed something the SDK won't
+ *   accept (missing/empty conversationId on `buildSessionVector`,
+ *   `storeAsync`/`drainEmbedQueue`/`buildSessionVector` called on a
+ *   lite client, conversationId references a row that doesn't exist).
+ *   The two new spec-005-Phase-4 methods narrow the indexer's broader
+ *   error set to this single class so callers have one type to catch.
  * - **`ConfigError`** — bad config (invalid `models.json`, missing model
  *   files, malformed engine settings); typically surfaces during
  *   `Pristine.create({...})`.
  *
- * Domain-specific subclasses (`InvalidArgumentError`,
- * `ConversationNotFoundError`, etc.) live in `src/core/errors.ts` and
- * extend `AppError`; they are NOT re-exported here. Consumers should
- * catch the public classes above; if their flow demands a specific
- * subclass, import direct from `core/errors`.
+ * Other domain-specific subclasses (e.g. `ConversationNotFoundError`)
+ * live in `src/core/errors.ts` and extend `AppError`; they are NOT
+ * re-exported here. Consumers should catch the public classes above;
+ * if their flow demands a specific subclass not exported from the
+ * barrel, import direct from `core/errors`.
  *
  * ## Spec + reference implementations
  *
@@ -134,7 +140,13 @@ export type { LlmClients } from './engine/index.js';
 // Errors
 // ---------------------------------------------------------------------------
 
-export { AppError, ConfigError, EmbedderError, IngestQueueError } from './core/errors.js';
+export {
+  AppError,
+  ConfigError,
+  EmbedderError,
+  IngestQueueError,
+  InvalidArgumentError,
+} from './core/errors.js';
 
 // ---------------------------------------------------------------------------
 // Database (for provider integrations that need file-backed DBs)

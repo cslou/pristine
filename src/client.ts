@@ -394,6 +394,16 @@ export class PristineLocal {
    * `vec_sessions` — Phase-4 retrieval treats a missing
    * `vec_sessions` row as "no session-level signal yet."
    *
+   * **Sequence after `drainEmbedQueue`, do not race it.** Call this
+   * method only after the prior `drainEmbedQueue()` promise has
+   * resolved. Running the two concurrently — e.g.,
+   * `await Promise.all([client.drainEmbedQueue(),
+   * client.buildSessionVector(id)])` — risks computing the session
+   * vector from a partially-populated `messages` table while the
+   * embed-worker is still writing rows. The result is a silently-stale
+   * `vec_sessions` row with no error raised. Sequential `await` is the
+   * intended pattern.
+   *
    * @param conversationId The conversation id returned by `storeAsync`.
    * @throws `InvalidArgumentError` for lite clients, empty/missing
    *   conversationId, or token-budget violations.

@@ -89,12 +89,16 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     // only enforces the subset, which would silently pass extras through.
     // `IngestQueue` was removed in sprint-018 Story 4 (internal-only
     // plumbing); `IngestQueueError` stays because consumers catch it.
+    // `InvalidArgumentError` was added to the barrel post-sprint-018
+    // /review (the two new Phase-4 methods narrow their error set to
+    // this single class — consumers need it for typed catches).
     const keys = Object.keys(PristineBarrel).sort();
     expect(keys).toEqual([
       'AppError',
       'ConfigError',
       'EmbedderError',
       'IngestQueueError',
+      'InvalidArgumentError',
       'PristineLocal',
       'createDatabase',
     ]);

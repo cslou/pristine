@@ -1,13 +1,13 @@
 /**
  * CLI script: drain pending embed-message tasks.
  *
- * Wires together the spec-005 Phase-3 dependencies (db, embedder, store,
- * indexer config, IngestQueue with embedTaskHandler) and runs
+ * Wires together the indexer dependencies (db, embedder, conversation
+ * store, indexer config, IngestQueue with embedTaskHandler) and runs
  * `runEmbedWorker` until the queue is empty. Self-terminates on idle.
  *
- * Replaces sprint-013's deleted `extract-worker.ts` (orchestrator-based);
- * the new shape consumes embed-message tasks the indexer (Story 2)
- * enqueues per inserted message.
+ * Consumes the embed-message tasks the indexer enqueues per inserted
+ * message; runs as a detached daemon, in parallel with consumers
+ * calling `client.storeAsync` synchronously.
  *
  * Usage:
  *   npx tsx scripts/embed-worker.ts [--db-path <path>]

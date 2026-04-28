@@ -21,7 +21,21 @@ import {
 // (pi.dev, Claude Code hooks, etc.) sees.
 //
 // Stories 2-4 fill this file with RED outer-loop tests; Story 1 ships the
-// scaffolding (this commit) + each subsequent commit adds one RED block.
+// scaffolding + each subsequent commit adds one RED block.
+//
+// Slow-test gating: per AC-5 the harness inherits searcher.test.ts's
+// `SKIP_SLOW_TESTS=1` opt-out + per-hook + per-it timeouts =
+// SLOW_TEST_TIMEOUT_MS = 120_000. The describe block is wrapped in
+// `describe.skipIf(skipSlow)` so CI (where `SKIP_SLOW_TESTS=1` is the
+// default) doesn't see the RED outer-loop tests fire on every unrelated
+// PR. Local dev with the gate unset runs the full harness — which is
+// where each story's "AC goes GREEN" verification happens. When future
+// commits switch the embedder from the deterministic stub to real Nomic
+// (sprint-018 follow-up or a later sprint), the timeout window already
+// covers a 30+ s model-load.
+
+const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
+const SLOW_TEST_TIMEOUT_MS = 120_000;
 
 const makeStubEmbedder = (): Embedder => ({
   embed: async (text: string): Promise<number[]> => {
@@ -63,7 +77,7 @@ async function seedPublicApiCorpus(
   return { projectId, conversationIds: [conv1] };
 }
 
-describe('public-API integration harness — sprint-018 Story 1', () => {
+describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1', () => {
   let db: Database.Database;
   let client: PristineLocal;
 
@@ -74,21 +88,25 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
       llmClients: makeLlmClients(),
       embedder: makeStubEmbedder(),
     });
-  });
+  }, SLOW_TEST_TIMEOUT_MS);
 
   afterEach(async () => {
     await client.dispose();
     db.close();
   });
 
-  it('harness boots — barrel imports resolve and PristineLocal.create wires searcher', () => {
-    // Smoke test: confirms the harness wiring is intact. If a future
-    // Story 4 removal accidentally drops a load-bearing barrel export
-    // (e.g. PristineLocal, createDatabase), this test breaks loudly
-    // before any RED outer-loop test gets a chance to run.
-    expect(client.searcher).not.toBeNull();
-    expect(typeof client.storeAsync).toBe('function');
-  });
+  it(
+    'harness boots — barrel imports resolve and PristineLocal.create wires searcher',
+    () => {
+      // Smoke test: confirms the harness wiring is intact. If a future
+      // Story 4 removal accidentally drops a load-bearing barrel export
+      // (e.g. PristineLocal, createDatabase), this test breaks loudly
+      // before any RED outer-loop test gets a chance to run.
+      expect(client.searcher).not.toBeNull();
+      expect(typeof client.storeAsync).toBe('function');
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 
   // -------------------------------------------------------------------------
   // Story 2 outer-loop test — RED until sprint-018 Story 2 ships
@@ -106,16 +124,20 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
   // 1's AC-3 ("TypeScript-level failure"), reconciled with the pre-push
   // typecheck gate.
   // -------------------------------------------------------------------------
-  it('round-trip: storeAsync → drainEmbedQueue → hybridSearch returns hits @AC-Story2-1', async () => {
-    const { projectId } = await seedPublicApiCorpus(client);
-    // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
-    const drained = await client.drainEmbedQueue();
-    expect(drained).toBeGreaterThanOrEqual(1);
-    // searcher is non-null on Pristine.create() (vs createLite); the
-    // smoke test above pins this invariant.
-    const hits = await client.searcher!.hybridSearch('hello', { projectId }, 5);
-    expect(hits.length).toBeGreaterThan(0);
-  });
+  it(
+    'round-trip: storeAsync → drainEmbedQueue → hybridSearch returns hits @AC-Story2-1',
+    async () => {
+      const { projectId } = await seedPublicApiCorpus(client);
+      // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
+      const drained = await client.drainEmbedQueue();
+      expect(drained).toBeGreaterThanOrEqual(1);
+      // searcher is non-null on Pristine.create() (vs createLite); the
+      // smoke test above pins this invariant.
+      const hits = await client.searcher!.hybridSearch('hello', { projectId }, 5);
+      expect(hits.length).toBeGreaterThan(0);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 
   // -------------------------------------------------------------------------
   // Story 3 outer-loop test — RED until sprint-018 Stories 2 AND 3 ship.
@@ -134,16 +156,20 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
   // progresses to the buildSessionVector line and fails there. After
   // Story 3 lands, it asserts the session hit and goes GREEN.
   // -------------------------------------------------------------------------
-  it('session leg of hybridSearch populates after client.buildSessionVector @AC-Story3-1', async () => {
-    const { projectId, conversationIds } = await seedPublicApiCorpus(client);
-    // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
-    await client.drainEmbedQueue();
-    // @ts-expect-error — sprint-018 Story 3 ships PristineLocal.buildSessionVector
-    await client.buildSessionVector(conversationIds[0]);
-    const hits = await client.searcher!.hybridSearch('hello', { projectId }, 10);
-    const sessionHits = hits.filter((h) => h.kind === 'session');
-    expect(sessionHits.length).toBeGreaterThanOrEqual(1);
-  });
+  it(
+    'session leg of hybridSearch populates after client.buildSessionVector @AC-Story3-1',
+    async () => {
+      const { projectId, conversationIds } = await seedPublicApiCorpus(client);
+      // @ts-expect-error — sprint-018 Story 2 ships PristineLocal.drainEmbedQueue
+      await client.drainEmbedQueue();
+      // @ts-expect-error — sprint-018 Story 3 ships PristineLocal.buildSessionVector
+      await client.buildSessionVector(conversationIds[0]);
+      const hits = await client.searcher!.hybridSearch('hello', { projectId }, 10);
+      const sessionHits = hits.filter((h) => h.kind === 'session');
+      expect(sessionHits.length).toBeGreaterThanOrEqual(1);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 
   // -------------------------------------------------------------------------
   // Story 4 outer-loop test — RED until sprint-018 Story 4 prunes the barrel.
@@ -161,24 +187,28 @@ describe('public-API integration harness — sprint-018 Story 1', () => {
   // `no-restricted-imports` override fires on imports only, so this does
   // not violate the harness contract.
   // -------------------------------------------------------------------------
-  it('barrel does not export IngestQueue / IngestTask / IngestQueueConfig / Memory @AC-Story4-1', async () => {
-    // Runtime: IngestQueue is a class (value) export. Currently exists;
-    // Story 4 removes it.
-    const barrelModule = await import('../../src/index.js');
-    const barrel = barrelModule as unknown as Record<string, unknown>;
-    expect(barrel.IngestQueue).toBeUndefined();
+  it(
+    'barrel does not export IngestQueue / IngestTask / IngestQueueConfig / Memory @AC-Story4-1',
+    async () => {
+      // Runtime: IngestQueue is a class (value) export. Currently exists;
+      // Story 4 removes it.
+      const barrelModule = await import('../../src/index.js');
+      const barrel = barrelModule as unknown as Record<string, unknown>;
+      expect(barrel.IngestQueue).toBeUndefined();
 
-    // Static-source check: the three type-only names. Story 4's removal
-    // commit deletes their re-export lines from src/index.ts; the
-    // negative regex matches go GREEN once those lines are gone. Note:
-    // if Story 4's implementer adds a code comment containing any of
-    // these literal tokens, the regex will re-fire — write removal-
-    // explanation prose without those tokens (the git history is the
-    // record).
-    const indexUrl = new URL('../../src/index.ts', import.meta.url);
-    const indexSrc = await readFile(indexUrl, 'utf8');
-    expect(indexSrc).not.toMatch(/\bIngestTask\b/);
-    expect(indexSrc).not.toMatch(/\bIngestQueueConfig\b/);
-    expect(indexSrc).not.toMatch(/\bMemory\b/);
-  });
+      // Static-source check: the three type-only names. Story 4's removal
+      // commit deletes their re-export lines from src/index.ts; the
+      // negative regex matches go GREEN once those lines are gone. Note:
+      // if Story 4's implementer adds a code comment containing any of
+      // these literal tokens, the regex will re-fire — write removal-
+      // explanation prose without those tokens (the git history is the
+      // record).
+      const indexUrl = new URL('../../src/index.ts', import.meta.url);
+      const indexSrc = await readFile(indexUrl, 'utf8');
+      expect(indexSrc).not.toMatch(/\bIngestTask\b/);
+      expect(indexSrc).not.toMatch(/\bIngestQueueConfig\b/);
+      expect(indexSrc).not.toMatch(/\bMemory\b/);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 });

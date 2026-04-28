@@ -196,18 +196,30 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
       const barrel = barrelModule as unknown as Record<string, unknown>;
       expect(barrel.IngestQueue).toBeUndefined();
 
-      // Static-source check: the three type-only names. Story 4's removal
-      // commit deletes their re-export lines from src/index.ts; the
-      // negative regex matches go GREEN once those lines are gone. Note:
-      // if Story 4's implementer adds a code comment containing any of
-      // these literal tokens, the regex will re-fire — write removal-
-      // explanation prose without those tokens (the git history is the
-      // record).
+      // Static-source check: the three type-only names. The barrel uses
+      // BOTH shapes — multi-line list (each ident on its own indented
+      // comma-terminated line) AND single-line `export { A, B } from '…';`.
+      // The regex is a disjunction of both shapes, anchored to either a
+      // standalone-ident line OR an export-list inside `{ … }`:
+      //
+      //   `^\s*<Name>\s*,?\s*$`          ← multi-line block (Memory)
+      //   `\{[^}]*\b<Name>\b[^}]*\}`     ← single-line block (IngestTask, …)
+      //
+      // The `[^}]*` is greedy but stops at the first closing brace, so
+      // the brace alternative does not span unrelated blocks. Bare
+      // mentions inside code comments, JSDoc, or string literals do
+      // NOT match: the multi-line alternative requires the name to be
+      // the only non-whitespace content on a line, and the brace
+      // alternative requires the name inside `{ … }`. Future prose
+      // mentioning the tokens (e.g. a removal-explanation comment)
+      // will NOT re-fire the regex.
       const indexUrl = new URL('../../src/index.ts', import.meta.url);
       const indexSrc = await readFile(indexUrl, 'utf8');
-      expect(indexSrc).not.toMatch(/\bIngestTask\b/);
-      expect(indexSrc).not.toMatch(/\bIngestQueueConfig\b/);
-      expect(indexSrc).not.toMatch(/\bMemory\b/);
+      const inExportList = (name: string): RegExp =>
+        new RegExp(`(?:^\\s*${name}\\s*,?\\s*$)|(?:\\{[^}]*\\b${name}\\b[^}]*\\})`, 'm');
+      expect(indexSrc).not.toMatch(inExportList('IngestTask'));
+      expect(indexSrc).not.toMatch(inExportList('IngestQueueConfig'));
+      expect(indexSrc).not.toMatch(inExportList('Memory'));
     },
     SLOW_TEST_TIMEOUT_MS,
   );

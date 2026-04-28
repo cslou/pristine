@@ -368,7 +368,15 @@ export class PristineLocal {
    * auto-build session vectors per spec §5.1.2 (separate explicit
    * call). Pair with a prior `drainEmbedQueue()` if the consumer also
    * wants the per-message embeddings flushed before the session
-   * vector is computed.
+   * vector is computed:
+   *
+   * ```ts
+   * const conversationId = client.storeAsync(messages, userId, projectId);
+   * await client.drainEmbedQueue();          // flush per-message embeds
+   * await client.buildSessionVector(conversationId); // populate vec_sessions
+   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * // hybridSearch's session leg now returns kind:'session' hits.
+   * ```
    *
    * **Lite clients.** Throws `InvalidArgumentError` (no embedder, no
    * indexer wired).

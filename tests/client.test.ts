@@ -54,6 +54,19 @@ describe('PristineLocal', () => {
 
       expect(client).toBeInstanceOf(PristineLocal);
     });
+
+    it('regression: llmClients is rejected by PristineLocalConfig', async () => {
+      // Forcing function: re-adding llmClients to PristineLocalConfig
+      // un-errors the line below, the @ts-expect-error directive becomes
+      // unused, and tsc raises TS2578 — failing the build before merge.
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+        // @ts-expect-error — llmClients removed from PristineLocalConfig
+        llmClients: {},
+      });
+      expect(client).toBeInstanceOf(PristineLocal);
+    });
   });
 
   describe('conversation API', () => {

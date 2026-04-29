@@ -19,8 +19,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { AppError } from '../src/core/errors.js';
-import type { LlmClient } from '../src/core/interfaces.js';
 import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
 
@@ -29,15 +27,6 @@ const DB_PATH = '/tmp/pristine-smoke.db';
 const log = (msg: string): void => {
   // eslint-disable-next-line no-console
   console.log(msg);
-};
-
-// Lazy-stub LlmClient — storeAsync does not exercise the LLM path, but
-// Pristine.create requires LlmClients in its DI shape. The stub never
-// gets called.
-const stubLlmClient: LlmClient = {
-  generate: (async () => {
-    throw new AppError('smoke: LlmClient.generate not exercised by storeAsync');
-  }) as LlmClient['generate'],
 };
 
 const main = async (): Promise<void> => {
@@ -52,7 +41,6 @@ const main = async (): Promise<void> => {
 
   const client = await PristineLocal.create({
     db,
-    llmClients: { privacyClient: stubLlmClient, memoryClient: stubLlmClient },
     embedder,
   });
 

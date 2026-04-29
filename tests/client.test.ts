@@ -56,9 +56,8 @@ describe('PristineLocal', () => {
     });
 
     it('regression: llmClients is rejected by PristineLocalConfig', async () => {
-      // Forcing function: re-adding llmClients to PristineLocalConfig
-      // un-errors the line below, the @ts-expect-error directive becomes
-      // unused, and tsc raises TS2578 — failing the build before merge.
+      // Locks the deletion: if llmClients is re-added to the config type,
+      // the @ts-expect-error below becomes unused and the build fails.
       const client = await PristineLocal.create({
         db: deps.db,
         embedder: deps.embedder,

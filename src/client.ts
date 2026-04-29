@@ -27,6 +27,7 @@ import {
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
 } from './privacy/index.js';
+import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
 const VALID_ROLES = new Set<string>(['system', 'user', 'assistant']);
 
@@ -40,6 +41,7 @@ export interface PristineLocalConfig {
   readonly db?: Database.Database;
   readonly llmClients?: LlmClients;
   readonly embedder?: Embedder;
+  readonly privacy?: DeterministicClassifierConfig;
 }
 
 export interface PristineLiteConfig {
@@ -73,6 +75,7 @@ export class PristineLocal {
   private readonly ownsDb: boolean;
   private readonly ownsEmbedder: boolean;
   private readonly ownsLlmClients: boolean;
+  private readonly privacyClassifierConfig: DeterministicClassifierConfig | undefined;
 
   private constructor(deps: {
     ingestQueue: IngestQueue;
@@ -88,6 +91,7 @@ export class PristineLocal {
     ownsDb: boolean;
     ownsEmbedder: boolean;
     ownsLlmClients: boolean;
+    privacyClassifierConfig?: DeterministicClassifierConfig;
   }) {
     this.ingestQueue = deps.ingestQueue;
     this.conversationStore = deps.conversationStore;
@@ -102,6 +106,7 @@ export class PristineLocal {
     this.ownsDb = deps.ownsDb;
     this.ownsEmbedder = deps.ownsEmbedder;
     this.ownsLlmClients = deps.ownsLlmClients;
+    this.privacyClassifierConfig = deps.privacyClassifierConfig;
   }
 
   // -------------------------------------------------------------------------
@@ -172,6 +177,7 @@ export class PristineLocal {
       ownsDb,
       ownsEmbedder,
       ownsLlmClients,
+      privacyClassifierConfig: config.privacy,
     });
   }
 
@@ -208,6 +214,7 @@ export class PristineLocal {
       ownsDb,
       ownsEmbedder: false,
       ownsLlmClients: false,
+      privacyClassifierConfig: undefined,
     });
   }
 
@@ -462,13 +469,17 @@ export class PristineLocal {
   // Privacy API
   // -------------------------------------------------------------------------
 
-  public async secureAndRedact(text: string, userId: string): Promise<SecureAndRedactResult> {
+  public async secureAndRedact(
+    text: string,
+    userId: string,
+    classifier?: DeterministicClassifierConfig,
+  ): Promise<SecureAndRedactResult> {
     return privacySecureAndRedact(text, {
-      client: this.llmClients.privacyClient,
       vaultStore: this.vaultStore,
       keyManager: this.keyManager,
       kekManager: this.kekManager,
       userId,
+      classifier: classifier ?? this.privacyClassifierConfig,
     });
   }
 
@@ -482,7 +493,7 @@ export class PristineLocal {
   }
 
   public scrubOutput(text: string, revealedValues: readonly string[]): string {
-    return privacyScrubOutput(text, revealedValues);
+    return privacyScrubOutput(text, revealedValues, this.privacyClassifierConfig);
   }
 
   // -------------------------------------------------------------------------

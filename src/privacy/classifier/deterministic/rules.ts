@@ -7,54 +7,72 @@ export interface DeterministicPatternRule {
   readonly validate?: (match: string) => boolean;
 }
 
-/**
- * Luhn algorithm for credit card validation.
- * Returns true if the digit string passes the Luhn checksum.
- */
-export const isLuhnValid = (digits: string): boolean => {
-  const nums = digits.replace(/\D/g, '');
-  if (nums.length < 13 || nums.length > 19) return false;
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
-  let sum = 0;
-  let alternate = false;
-  for (let i = nums.length - 1; i >= 0; i--) {
-    let n = parseInt(nums[i]!, 10);
-    if (alternate) {
-      n *= 2;
-      if (n > 9) n -= 9;
-    }
-    sum += n;
-    alternate = !alternate;
+const isJsonObjectBase64Url = (value: string): boolean => {
+  try {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    const parsed: unknown = JSON.parse(decoded);
+    return isObjectRecord(parsed);
+  } catch (error: unknown) {
+    void error;
+    return false;
   }
-  return sum % 10 === 0;
 };
 
-export const DETERMINISTIC_PATTERN_RULES: readonly DeterministicPatternRule[] = [
+const isJwt = (value: string): boolean => {
+  const parts = value.split('.');
+  return parts.length === 3 && isJsonObjectBase64Url(parts[0]!) && isJsonObjectBase64Url(parts[1]!);
+};
+
+export const BUILT_IN_SECRET_PATTERN_RULES: readonly DeterministicPatternRule[] = [
+  { type: 'api_key', pattern: /\bAKIA[0-9A-Z]{16}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bghp_[A-Za-z0-9]{36}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bgho_[A-Za-z0-9]{36}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bghs_[A-Za-z0-9]{36}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bsk-(?!ant-|proj-)[A-Za-z0-9]{29,}\b/g, confidence: 0.95 },
+  { type: 'api_key', pattern: /\bsk-proj-[A-Za-z0-9_-]{20,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bsk_(live|test)_[A-Za-z0-9]{24,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\brk_(live|test)_[A-Za-z0-9]{24,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bxoxb-[A-Za-z0-9-]{20,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bxoxp-[A-Za-z0-9-]{20,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bxapp-[A-Za-z0-9-]{20,}\b/g, confidence: 0.99 },
+  { type: 'api_key', pattern: /\bSK[0-9a-fA-F]{32}\b/g, confidence: 0.9 },
+  { type: 'api_key', pattern: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b/g, confidence: 0.99 },
   {
-    type: 'credit_card',
-    pattern: /\b(\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{1,7})\b/g,
-    confidence: 0.95,
-    validate: isLuhnValid,
+    type: 'private_key',
+    pattern:
+      /-----BEGIN (?:RSA |EC |ED25519 |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |ED25519 |OPENSSH |DSA )?PRIVATE KEY-----/g,
+    confidence: 0.99,
   },
   {
-    type: 'email_address',
-    pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
-    confidence: 0.95,
+    type: 'private_key',
+    pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----/g,
+    confidence: 0.99,
   },
   {
-    type: 'identity_number',
-    pattern: /\b\d{3}-\d{2}-\d{4}\b/g,
-    confidence: 0.95,
+    type: 'private_key',
+    pattern:
+      /\b(?:PRIVATE_KEY|WALLET_PRIVATE_KEY|EVM_PRIVATE_KEY|ETH_PRIVATE_KEY|DEPLOYER_PRIVATE_KEY)\s*[:=]\s*['"]?(?:0x)?[0-9a-fA-F]{64}['"]?/g,
+    confidence: 0.98,
   },
   {
-    type: 'phone_number',
-    pattern: /(?<!\d)(?:\+\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g,
-    confidence: 0.85,
+    type: 'auth_token',
+    pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_.+/=-]*\b/g,
+    confidence: 0.9,
+    validate: isJwt,
   },
   {
     type: 'secret',
     pattern:
-      /\b(?:api[_ -]?key|access[_ -]?token|auth[_ -]?token|secret|password)\b\s*[:=]\s*[^\s,;]+/gi,
-    confidence: 0.95,
+      /\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password)\b\s*[:=]\s*['"]?[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,}['"]?/gi,
+    confidence: 0.9,
   },
 ];
+
+export const DETERMINISTIC_PATTERN_RULES = BUILT_IN_SECRET_PATTERN_RULES;

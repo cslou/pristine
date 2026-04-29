@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PristineLocal } from '../src/client.js';
@@ -137,6 +140,48 @@ describe('PristineLocal', () => {
   });
 
   describe('privacy API', () => {
+    it('secureAndRedact() uses configured custom privacy patterns', async () => {
+      const keysDir = mkdtempSync(join(tmpdir(), 'pristine-client-keys-'));
+      try {
+        const client = await PristineLocal.create({
+          db: deps.db,
+          llmClients: deps.llmClients,
+          embedder: deps.embedder,
+          keysDir,
+          privacy: {
+            customPatternsPath: '/tmp/pristine-client-missing-redaction.json',
+            customPatterns: [
+              {
+                id: 'client-acme',
+                type: 'api_key',
+                pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
+                confidence: 0.95,
+              },
+            ],
+          },
+        });
+
+        const original = 'Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and acme_tk_ABC12345.';
+        const result = await client.secureAndRedact(original, 'client-user');
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+          throw new Error(`Expected privacy success, got ${result.reason}`);
+        }
+
+        expect(result.redactedText).toContain('[SENSITIVE:');
+        expect(result.redactedText).not.toContain('sk-ant-api03');
+        expect(result.redactedText).not.toContain('acme_tk_ABC12345');
+        expect(result.placeholderIds).toHaveLength(2);
+
+        const revealed = await client.reveal(result.redactedText, 'client-user');
+        expect(revealed.text).toContain('sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456');
+        expect(revealed.text).toContain('acme_tk_ABC12345');
+      } finally {
+        rmSync(keysDir, { recursive: true, force: true });
+      }
+    });
+
     it('scrubOutput() removes placeholder tokens', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
@@ -151,6 +196,29 @@ describe('PristineLocal', () => {
 
       expect(result).toBe('Hello , your card is ');
       expect(result).not.toContain('[SENSITIVE:');
+    });
+
+    it('scrubOutput() uses configured custom privacy patterns', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        llmClients: deps.llmClients,
+        embedder: deps.embedder,
+        privacy: {
+          customPatternsPath: '/tmp/pristine-client-missing-redaction.json',
+          customPatterns: [
+            {
+              id: 'client-acme',
+              type: 'api_key',
+              pattern: '\\bacme_tk_[A-Za-z0-9]{8}\\b',
+              confidence: 0.95,
+            },
+          ],
+        },
+      });
+
+      const result = client.scrubOutput('Tool output leaked acme_tk_ABC12345', []);
+
+      expect(result).not.toContain('acme_tk_ABC12345');
     });
   });
 

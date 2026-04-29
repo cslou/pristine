@@ -1,25 +1,26 @@
 import { createDecipheriv } from 'node:crypto';
-import type { KeyManager, LlmClient, PrivacyPipeline, VaultStore } from '../core/interfaces.js';
+import type { KeyManager, PrivacyPipeline, VaultStore } from '../core/interfaces.js';
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
 import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url } from './vault/base64url.js';
 import { toApprovedValue } from './vault/sqlite/index.js';
 import { createPrivacyPipeline } from './pipeline.js';
-import type { CombinedClassifierConfig } from './classifier/combined/index.js';
+import {
+  createDeterministicPatternRuleSet,
+  type DeterministicClassifierConfig,
+} from './classifier/deterministic/index.js';
 import type { KekManager } from './kek/kek-manager.js';
 import { unwrapDekWithKek } from './kek/kek-manager.js';
-import { PrivacyPipelineError } from '../core/errors.js';
 import type { RevealResult, SecureAndRedactResult } from '../core/types.js';
 import { scrubStructuredSensitivePatterns } from './safety-scan.js';
 
 export interface SecureAndRedactConfig {
-  readonly client?: LlmClient;
   readonly vaultStore: VaultStore;
   readonly keyManager: KeyManager;
   readonly kekManager: KekManager;
   readonly userId: string;
-  readonly classifier?: CombinedClassifierConfig;
+  readonly classifier?: DeterministicClassifierConfig;
   readonly pipeline?: PrivacyPipeline;
 }
 
@@ -30,49 +31,32 @@ export interface RevealConfig {
   readonly userId: string;
 }
 
-const PIPELINE_CACHE = new WeakMap<LlmClient, Map<string, PrivacyPipeline>>();
+const PIPELINE_CACHE = new Map<string, PrivacyPipeline>();
 
-const classifierCacheKey = (config?: CombinedClassifierConfig): string => {
-  return JSON.stringify({
-    deterministic: config?.deterministic ?? null,
-    llm: config?.llm ?? null,
-    onLlmFailure: config?.onLlmFailure ?? null,
-  });
-};
-
-const getOrCreateCachedPipeline = (
-  client: LlmClient,
-  classifierConfig?: CombinedClassifierConfig,
-): PrivacyPipeline => {
-  const cacheKey = classifierCacheKey(classifierConfig);
-  const clientCache = PIPELINE_CACHE.get(client);
-
-  if (clientCache?.has(cacheKey)) {
-    return clientCache.get(cacheKey)!;
-  }
-
-  const pipeline = createPrivacyPipeline(client, { classifier: classifierConfig });
-  const nextClientCache = clientCache ?? new Map<string, PrivacyPipeline>();
-  nextClientCache.set(cacheKey, pipeline);
-  if (!clientCache) {
-    PIPELINE_CACHE.set(client, nextClientCache);
-  }
-
-  return pipeline;
-};
+const classifierCacheKey = (config?: DeterministicClassifierConfig): string =>
+  JSON.stringify(config ?? {});
 
 const resolvePrivacyPipeline = (config: SecureAndRedactConfig): PrivacyPipeline => {
   if (config.pipeline) {
     return config.pipeline;
   }
 
-  if (!config.client) {
-    throw new PrivacyPipelineError(
-      'secureAndRedact requires either an injected privacy pipeline or an LLM client.',
-    );
+  const cacheKey = classifierCacheKey(config.classifier);
+  const cached = PIPELINE_CACHE.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  return getOrCreateCachedPipeline(config.client, config.classifier);
+  const pipeline = createPrivacyPipeline({ classifier: config.classifier });
+  PIPELINE_CACHE.set(cacheKey, pipeline);
+  return pipeline;
+};
+
+const includeWarnings = <T extends object>(value: T, warnings?: readonly string[]): T => {
+  if (!warnings || warnings.length === 0) {
+    return value;
+  }
+  return { ...value, warnings };
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -93,7 +77,7 @@ const uniqueStrings = (values: readonly string[]): readonly string[] => {
 };
 
 /**
- * Classify text for PII, redact detected entities with placeholders,
+ * Classify text for sensitive content, redact detected entities with placeholders,
  * encrypt original values, and store them in the vault.
  */
 export async function secureAndRedact(
@@ -101,22 +85,26 @@ export async function secureAndRedact(
   config: SecureAndRedactConfig,
 ): Promise<SecureAndRedactResult> {
   const pipeline = resolvePrivacyPipeline(config);
-  const { redaction, safetyViolations } = await pipeline.classifyAndRedact(text);
+  const { report, redaction, safetyViolations } = await pipeline.classifyAndRedact(text);
   const redactedText = redaction?.redactedText ?? text;
+  const warnings = report.warnings;
 
   if (safetyViolations.length > 0) {
-    return {
-      ok: false,
-      reason: 'safety_scan',
-      redactedText,
-      safetyViolations,
-    };
+    return includeWarnings(
+      {
+        ok: false,
+        reason: 'safety_scan',
+        redactedText,
+        safetyViolations,
+      },
+      warnings,
+    );
   }
 
   const placeholders = redaction?.placeholders ?? [];
 
   if (placeholders.length === 0) {
-    return { ok: true, redactedText, placeholderIds: [] };
+    return includeWarnings({ ok: true, redactedText, placeholderIds: [] }, warnings);
   }
 
   const { publicKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
@@ -138,11 +126,14 @@ export async function secureAndRedact(
 
   await config.vaultStore.addEntries(vaultEntries);
 
-  return {
-    ok: true,
-    redactedText,
-    placeholderIds: placeholders.map((placeholder) => placeholder.id),
-  };
+  return includeWarnings(
+    {
+      ok: true,
+      redactedText,
+      placeholderIds: placeholders.map((placeholder) => placeholder.id),
+    },
+    warnings,
+  );
 }
 
 /**
@@ -205,7 +196,11 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
 /**
  * Safety net: scrub revealed plaintext, leftover placeholders, and obvious structured patterns.
  */
-export function scrubOutput(text: string, revealedValues: readonly string[]): string {
+export function scrubOutput(
+  text: string,
+  revealedValues: readonly string[],
+  classifier?: DeterministicClassifierConfig,
+): string {
   const sortedRevealedValues = [...uniqueStrings(revealedValues)].sort(
     (a, b) => b.length - a.length,
   );
@@ -218,5 +213,6 @@ export function scrubOutput(text: string, revealedValues: readonly string[]): st
   const globalRegex = new RegExp(PLACEHOLDER_REGEX.source, 'g');
   scrubbed = scrubbed.replace(globalRegex, '');
 
-  return scrubStructuredSensitivePatterns(scrubbed);
+  const ruleSet = createDeterministicPatternRuleSet(classifier);
+  return scrubStructuredSensitivePatterns(scrubbed, ruleSet.rules);
 }

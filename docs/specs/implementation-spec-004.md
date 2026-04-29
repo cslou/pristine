@@ -4,7 +4,7 @@
 
 Pristine's privacy module currently detects general PII (credit cards, SSNs, emails, phone numbers) using a combined LLM + regex classifier. This spec refocuses the privacy pipeline on the highest-risk category for AI agent users: **secrets** (API keys, private keys, auth tokens). Developers using agent harnesses should have the comfort of pasting API keys or private keys into the agent interface knowing that secrets will never be stored in session memory or sent to the 3rd-party LLM — and that when the agent needs to use a redacted secret, it is automatically swapped to the real value (hidden from the agent).
 
-**Target harnesses:** Pi.dev (full transparent redaction — first priority), Claude Code (partial — blocked on `updatedPrompt` feature request). Codex is deprioritized due to its hooks system not supporting content modification.
+**Target harnesses:** Pi.dev (full transparent redaction — first priority), Claude Code (partial — blocked on `updatedPrompt` feature request). Codex is deferred until its hook mutation behavior is verified against a pinned Codex release/commit.
 
 ### Key References
 
@@ -25,13 +25,13 @@ Pristine's privacy module currently detects general PII (credit cards, SSNs, ema
 - Secret detection is deterministic (regex), fast (<1ms), and runs without an LLM
 - Secrets are automatically redacted before reaching the LLM and restored when the agent executes tool calls
 - Users can add custom regex patterns for secrets specific to their stack
-- Works across Claude Code, Pi.dev, and Codex agent harnesses via their respective hook/extension mechanisms
+- Works across Pi.dev and Claude Code via their respective extension/hook mechanisms, with Codex support deferred until its content-modification path is confirmed
 
 ## 3. Non-Goals (Deferred)
 
 - General PII detection (addresses, health info, financial records) — out of scope for this iteration
 - LLM-based contextual classification — being removed, not enhanced
-- **Codex support** — Codex hooks cannot modify content (`updatedInput` exists in schema but is not wired up in the engine). Block-only protection is not aligned with the transparent redaction goal. Revisit if Codex hooks mature.
+- **Codex support** — deferred for this spec. Public Codex hook schemas expose `PreToolUse.hookSpecificOutput.updatedInput`, but transparent redaction requires verifying that the running Codex engine applies hook mutations before tool execution and defining the remaining prompt/output limitations. Track a pinned Codex release/commit before adding support.
 - Browser or web-based agent support
 - Multi-user/team secret sharing
 - Secret rotation or expiration management
@@ -46,12 +46,12 @@ Pristine's privacy module currently detects general PII (credit cards, SSNs, ema
 - **Runtime:** Node.js (TypeScript, ESM)
 - **Storage:** SQLite (better-sqlite3) — existing vault tables for encrypted secret storage
 - **Crypto:** AES-256-GCM + AES-256-KW (KEK wrapping) — existing vault encryption pipeline
-- **Agent hooks:** Shell scripts (Claude Code), TypeScript extensions (Pi), TBD (Codex)
+- **Agent hooks:** Shell/Node.js scripts (Claude Code), TypeScript extensions (Pi), deferred verification (Codex)
 
 ### System Diagram
 
 ```
-Agent Harness (Claude Code / Pi / Codex)
+Agent Harness (Pi / Claude Code; Codex deferred)
     |
     v
 [Hook / Extension] ──intercept──> User input / tool output
@@ -77,6 +77,7 @@ Agent Harness (Claude Code / Pi / Codex)
 - **Secret Detector** (`src/privacy/classifier/deterministic/`) — Regex-based pattern matching for API keys, private keys, and auth tokens. Replaces existing PII patterns. Loads user-configurable custom patterns from `~/.pristine/redaction.json`.
 - **Privacy Pipeline** (`src/privacy/index.ts`) — Existing secureAndRedact / reveal / scrubOutput. No longer requires an LLM client for classification.
 - **Vault** (`src/privacy/vault/`) — Unchanged. Encrypts and persists secret values with AES-256-GCM + KEK wrapping.
+- **Privacy-only SDK** (`src/privacy/client.ts` or equivalent) — New lightweight factory for hooks/extensions. Initializes only SQLite, vault store, key manager, KEK manager, deterministic classifier, and custom pattern config; does not create LLM clients or embedders.
 - **Agent Hooks** (new, per-harness) — Intercept user input and tool output to trigger redaction/reveal automatically.
 
 ### Repo Structure (changes only)
@@ -93,6 +94,7 @@ src/privacy/
 │       ├── schema.ts
 │       └── prompts.ts
 ├── index.ts                   # MODIFY — use deterministic classifier directly
+├── client.ts                  # NEW — privacy-only SDK/factory for hooks
 ├── redaction.json.example     # NEW — example custom patterns config
 └── ...                        # vault, sanitizer, kek, keys — unchanged
 
@@ -101,7 +103,7 @@ hooks/                          # NEW — agent harness hooks (or in harness-con
 │   └── secret-redaction.sh    # Claude Code hook script
 ├── pi/
 │   └── secret-redaction.ts    # Pi extension
-└── codex/
+└── codex/                     # Deferred until hook mutation behavior is verified
     └── TBD
 ```
 
@@ -133,7 +135,8 @@ hooks/                          # NEW — agent harness hooks (or in harness-con
 | SensitivityType values | `api_key`, `private_key`, `auth_token` | Maps to the three categories of secrets we detect |
 | Custom patterns | JSON config file (`~/.pristine/redaction.json`) | Extensible without code changes; familiar pattern for dev tools |
 | Vault encryption | Keep existing AES-256-GCM + KEK | Already battle-tested; no reason to change crypto layer |
-| LLM classifier | Toggle off in Phase 2, remove in Phase 6 | Progressive removal reduces risk; cleanup happens after hook integration is proven |
+| LLM classifier | Toggle off in Phase 2, remove in Phase 5 | Progressive removal reduces risk; cleanup happens after hook integration is proven |
+| Hook SDK surface | Privacy-only factory | Hooks must not initialize LLM clients, embedders, or memory orchestration just to redact/reveal secrets |
 
 ---
 
@@ -169,9 +172,9 @@ hooks/                          # NEW — agent harness hooks (or in harness-con
 
 ### Codex (deferred)
 
-- **Status:** Not supported in this spec. Codex hooks cannot modify content — `updatedInput` is defined in the Rust schema (`codex-rs/hooks/src/schema.rs`) but the core engine never reads it. Only block-only protection is possible, which does not meet the transparent redaction goal.
+- **Status:** Not supported in this spec. Public Codex hook schemas expose `PreToolUse.hookSpecificOutput.updatedInput`, but this spec has not verified whether a pinned Codex engine version applies that mutation before tool execution. Prompt and tool-output mutation support also need to be mapped before promising transparent redaction.
 - **API docs:** https://developers.openai.com/codex/hooks
-- **Revisit when:** Codex wires up `updatedInput` in its core engine, or adds an extension/plugin system comparable to Pi's.
+- **Revisit when:** Codex mutation behavior is verified against a release/commit and the integration can be scoped as either full transparent redaction or partial protection comparable to Claude Code.
 
 ---
 
@@ -273,14 +276,14 @@ Agent harness hooks are installed per-harness:
 2. Next agent session loads custom patterns alongside built-in patterns
 3. `acme_tk_abc123...` is now detected and redacted automatically
 
-### Flow 3: Agent Uses Redacted Secret in Tool Call
+### Flow 3: Compatible Harness Uses Redacted Secret in Tool Call
 
-1. Claude generates: `Bash({ command: "curl -H 'Authorization: Bearer [SENSITIVE:api_key:uuid]' https://api.example.com" })`
-2. `PreToolUse` hook intercepts → calls `pristine reveal` with the tool input
+1. Pi or another compatible harness generates: `Bash({ command: "curl -H 'Authorization: Bearer [SENSITIVE:api_key:uuid]' https://api.example.com" })`
+2. Tool-call hook intercepts → calls `pristine reveal` with the tool input
 3. Placeholder replaced with real secret → `curl -H 'Authorization: Bearer sk-ant-abc123...'`
 4. Bash tool executes with the real secret
-5. `PostToolUse` hook intercepts the output → re-redacts if any secrets appear in response
-6. Claude sees sanitized output
+5. Tool-result hook intercepts the output → re-redacts if any secrets appear in response
+6. LLM sees sanitized output
 
 ---
 
@@ -292,7 +295,7 @@ Agent harness hooks are installed per-harness:
 - [ ] Round-trip works: redact → LLM sees placeholder → reveal → tool uses real secret
 - [ ] Custom patterns from `redaction.json` are loaded and applied alongside built-in patterns
 - [ ] Pi.dev extension provides full transparent redaction (input → tool_call → tool_result)
-- [ ] Claude Code hook provides PreToolUse redaction + prompt/output blocking (partial, pending `updatedPrompt`)
+- [ ] Claude Code hook reveals existing placeholders in PreToolUse and blocks raw secrets in prompt/tool input/output contexts (partial, pending `updatedPrompt`)
 - [ ] Existing vault encryption/decryption pipeline works with new secret types
 - [ ] All existing privacy tests pass or are updated (no regressions in vault, KEK, key management)
 
@@ -313,26 +316,68 @@ Replace PII-focused patterns in the deterministic classifier with secret-focused
 
 #### Patterns to Add
 
-| Name | Type | Pattern | Confidence | Validate? |
-|------|------|---------|------------|-----------|
-| AWS Access Key ID | `api_key` | `AKIA[0-9A-Z]{16}` | 0.99 | length check |
-| GitHub Personal Access Token | `api_key` | `ghp_[A-Za-z0-9]{36}` | 0.99 | |
-| GitHub OAuth Token | `api_key` | `gho_[A-Za-z0-9]{36}` | 0.99 | |
-| GitHub App Token | `api_key` | `ghs_[A-Za-z0-9]{36}` | 0.99 | |
-| GitHub Fine-grained PAT | `api_key` | `github_pat_[A-Za-z0-9_]{22,}` | 0.99 | |
-| OpenAI API Key (legacy) | `api_key` | `sk-(?!ant-\|proj-)[A-Za-z0-9]{20,}` | 0.95 | negative lookahead excludes `sk-ant-` and `sk-proj-` prefixes (handled by their own patterns); min length 32 to avoid collisions |
-| OpenAI Project Key | `api_key` | `sk-proj-[A-Za-z0-9\-_]{20,}` | 0.99 | |
-| Anthropic API Key | `api_key` | `sk-ant-[A-Za-z0-9\-_]{20,}` | 0.99 | |
-| Stripe Secret Key | `api_key` | `sk_(live\|test)_[A-Za-z0-9]{24,}` | 0.99 | |
-| Stripe Restricted Key | `api_key` | `rk_(live\|test)_[A-Za-z0-9]{24,}` | 0.99 | |
-| Slack Bot Token | `api_key` | `xoxb-[A-Za-z0-9\-]{20,}` | 0.99 | |
-| Slack User Token | `api_key` | `xoxp-[A-Za-z0-9\-]{20,}` | 0.99 | |
-| Slack App Token | `api_key` | `xapp-[A-Za-z0-9\-]{20,}` | 0.99 | |
-| Twilio API Key | `api_key` | `SK[0-9a-fA-F]{32}` | 0.90 | prefix + hex only |
-| SendGrid API Key | `api_key` | `SG\.[A-Za-z0-9\-_]{22}\.[A-Za-z0-9\-_]{43}` | 0.99 | |
-| PEM Private Key | `private_key` | `-----BEGIN (RSA \|EC \|ED25519 \|OPENSSH \|DSA )?PRIVATE KEY-----` | 0.99 | multi-line match to `-----END` |
-| PGP Private Key | `private_key` | `-----BEGIN PGP PRIVATE KEY BLOCK-----` | 0.99 | multi-line match to `-----END` |
-| JWT Token | `auth_token` | `eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_.+/=]*` | 0.90 | 3-part dot-separated, first two parts base64url-decode to valid JSON |
+Implementation regexes below are JavaScript `RegExp` literals suitable for `DETERMINISTIC_PATTERN_RULES`. For JSON custom patterns, store only the regex source string, without `/.../g` delimiters.
+
+```typescript
+const SECRET_PATTERN_RULES = [
+  {
+    name: 'AWS Access Key ID',
+    type: 'api_key',
+    pattern: /\bAKIA[0-9A-Z]{16}\b/g,
+    confidence: 0.99,
+    validate: 'length check',
+  },
+  { name: 'GitHub Personal Access Token', type: 'api_key', pattern: /\bghp_[A-Za-z0-9]{36}\b/g, confidence: 0.99 },
+  { name: 'GitHub OAuth Token', type: 'api_key', pattern: /\bgho_[A-Za-z0-9]{36}\b/g, confidence: 0.99 },
+  { name: 'GitHub App Token', type: 'api_key', pattern: /\bghs_[A-Za-z0-9]{36}\b/g, confidence: 0.99 },
+  { name: 'GitHub Fine-grained PAT', type: 'api_key', pattern: /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, confidence: 0.99 },
+  {
+    name: 'OpenAI API Key (legacy)',
+    type: 'api_key',
+    pattern: /\bsk-(?!ant-|proj-)[A-Za-z0-9]{29,}\b/g,
+    confidence: 0.95,
+    validate: '32+ chars total including sk-; excludes sk-ant- and sk-proj-',
+  },
+  { name: 'OpenAI Project Key', type: 'api_key', pattern: /\bsk-proj-[A-Za-z0-9_-]{20,}\b/g, confidence: 0.99 },
+  { name: 'Anthropic API Key', type: 'api_key', pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g, confidence: 0.99 },
+  { name: 'Stripe Secret Key', type: 'api_key', pattern: /\bsk_(live|test)_[A-Za-z0-9]{24,}\b/g, confidence: 0.99 },
+  { name: 'Stripe Restricted Key', type: 'api_key', pattern: /\brk_(live|test)_[A-Za-z0-9]{24,}\b/g, confidence: 0.99 },
+  { name: 'Slack Bot Token', type: 'api_key', pattern: /\bxoxb-[A-Za-z0-9-]{20,}\b/g, confidence: 0.99 },
+  { name: 'Slack User Token', type: 'api_key', pattern: /\bxoxp-[A-Za-z0-9-]{20,}\b/g, confidence: 0.99 },
+  { name: 'Slack App Token', type: 'api_key', pattern: /\bxapp-[A-Za-z0-9-]{20,}\b/g, confidence: 0.99 },
+  {
+    name: 'Twilio API Key',
+    type: 'api_key',
+    pattern: /\bSK[0-9a-fA-F]{32}\b/g,
+    confidence: 0.90,
+    validate: 'prefix + hex only',
+  },
+  { name: 'SendGrid API Key', type: 'api_key', pattern: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b/g, confidence: 0.99 },
+  {
+    name: 'PEM Private Key',
+    type: 'private_key',
+    pattern: /-----BEGIN (?:RSA |EC |ED25519 |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |ED25519 |OPENSSH |DSA )?PRIVATE KEY-----/g,
+    confidence: 0.99,
+    validate: 'capture full key block',
+  },
+  {
+    name: 'PGP Private Key',
+    type: 'private_key',
+    pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----/g,
+    confidence: 0.99,
+    validate: 'capture full key block',
+  },
+  {
+    name: 'JWT Token',
+    type: 'auth_token',
+    pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_.+/=-]*\b/g,
+    confidence: 0.90,
+    validate: '3 parts; first two parts base64url-decode to valid JSON',
+  },
+];
+```
+
+**Copy/paste rule:** Treat the code block above as the implementation source of truth. Markdown tables or prose examples must not add escape characters for display. In JSON config, escape only for JSON string syntax, for example `"\\bacme_tk_[A-Za-z0-9]{8}\\b"` becomes the runtime regex source `\bacme_tk_[A-Za-z0-9]{8}\b`. Do not double-escape word boundaries as `"\\\\bacme..."`; that matches a literal backslash and `b`, not a word boundary.
 
 #### Patterns to Remove
 
@@ -347,7 +392,7 @@ Replace PII-focused patterns in the deterministic classifier with secret-focused
 
 ##### P1-S1: Replace deterministic classifier patterns with secret patterns
 
-- **What:** Swap the PATTERNS array in `src/privacy/classifier/deterministic/index.ts`. Remove credit_card, email, SSN, phone patterns. Add all secret patterns from the table above. Update TYPE_DESCRIPTIONS in sanitizer and buildPlaceholderLabel in redaction.ts.
+- **What:** Swap the PATTERNS array in `src/privacy/classifier/deterministic/index.ts`. Remove credit_card, email, SSN, phone patterns. Add all secret patterns from the code block above. Update TYPE_DESCRIPTIONS in sanitizer and buildPlaceholderLabel in redaction.ts.
 - **Acceptance criteria:**
   - [ ] PATTERNS array contains only secret-detection rules
   - [ ] PII patterns (credit_card, email_address, identity_number, phone_number) removed
@@ -375,7 +420,7 @@ Replace PII-focused patterns in the deterministic classifier with secret-focused
 
 - Should the OpenAI legacy `sk-` pattern require a minimum length to avoid matching unrelated strings starting with `sk-`? (Proposed: min 32 chars total)
 - Should we detect AWS Secret Access Keys? They're 40-char base64 strings with no prefix — high false positive risk. Proposed: defer, rely on the AWS Access Key ID pattern to catch the pair.
-- Should PEM key detection capture the full key block (multi-line) or just flag the BEGIN marker? Multi-line capture is more thorough but requires multiline regex mode.
+- PEM/PGP key detection captures the full key block with `[\s\S]*?` so the vault stores the complete private key, not only the `BEGIN` marker.
 
 #### References
 
@@ -402,6 +447,7 @@ Toggle off the LLM classifier so the privacy pipeline uses deterministic-only cl
 - `src/privacy/index.ts` — use `DeterministicClassifier` directly instead of `CombinedClassifier`
 - `src/privacy/classifier/combined/index.ts` — bypass (not removed yet)
 - `src/client.ts` — `secureAndRedact` config no longer requires `LlmClient` for classification
+- `src/privacy/client.ts` — add privacy-only factory for hooks/extensions
 - `tests/` — update tests that assert LLM classifier behavior
 
 #### Stories
@@ -417,13 +463,27 @@ Toggle off the LLM classifier so the privacy pipeline uses deterministic-only cl
   - [ ] No performance regression (should be faster — no LLM call)
 - **Commits:** ≤3
 
+##### P2-S2: Add privacy-only SDK factory for hooks/extensions
+
+- **What:** Add a lightweight privacy client/factory that initializes only the dependencies required by `secureAndRedact()` and `reveal()`: SQLite database, vault store, file-system key manager, KEK manager, deterministic classifier/custom pattern config, and user ID resolution. This factory must not create LLM clients, embedders, retrievers, or memory orchestration.
+- **Acceptance criteria:**
+  - [ ] New privacy-only API can be imported by hook scripts/extensions without constructing `PristineLocal`
+  - [ ] Config accepts `baseDir`, `dbPath` or injected `db`, `keysDir`, `userId`, and `customPatternsPath`
+  - [ ] Config accepts injected privacy dependencies (`vaultStore`, `keyManager`, `kekManager`) for hook tests and host-managed lifecycles
+  - [ ] `secureAndRedact(text)` works without `LlmClient`, embedder, or memory store
+  - [ ] `reveal(text)` decrypts placeholders from the same vault/key material
+  - [ ] Factory owns and disposes its SQLite connection when it created it
+  - [ ] Unit tests prove the factory does not call `createLlmClients()` or `createEmbedder()`
+- **Commits:** ≤3
+
 #### Open Questions
 
-- Should we add a config flag to re-enable LLM classification for users who want it? Proposed: no — keep it simple, remove the option entirely in Phase 6.
+- Should we add a config flag to re-enable LLM classification for users who want it? Proposed: no — keep it simple, remove the option entirely in Phase 5.
 
 #### Done When
 
 - [ ] secureAndRedact works without LLM client for classification
+- [ ] Privacy-only client/factory supports hook and extension use without LLM/embedder initialization
 - [ ] All privacy integration tests pass
 - [ ] E2E privacy pipeline tests updated
 
@@ -474,6 +534,7 @@ interface ToolResultEventResult { content?: (TextContent | ImageContent)[]; isEr
 - **What:** Create the extension file and implement the `input` event handler. On user input, call Pristine's `secureAndRedact()` to detect secrets, encrypt originals in the vault, and replace with placeholders. A session-local `Map<string, string>` caches placeholder→ID mappings for fast `reveal()` lookups in `tool_call`, but the vault is the source of truth for encrypted secrets (matching the threat model: "secrets encrypted at rest").
 - **Acceptance criteria:**
   - [ ] Extension file at `~/projects/harness-config/extensions/secret-redactor.ts`
+  - [ ] Extension initializes Pristine through the privacy-only SDK factory (no LLM clients, embedders, or memory orchestration)
   - [ ] `input` handler calls `secureAndRedact()` — secrets encrypted in vault, text returned with placeholders
   - [ ] Session-local Map caches placeholderId→secretType for fast lookup in `tool_call` handler
   - [ ] `tool_call` handler calls `reveal()` to swap placeholders back to real secrets from vault
@@ -498,6 +559,8 @@ interface ToolResultEventResult { content?: (TextContent | ImageContent)[]; isEr
 {
   "secret-redactor": {
     "enabled": true,
+    "userId": "local-user",
+    "baseDir": "~/.pristine",
     "customPatternsPath": "~/.pristine/redaction.json"
   }
 }
@@ -535,24 +598,26 @@ Integrate Pristine secret redaction into Claude Code via the hooks system. Claud
 | Event | Can Detect? | Can Modify? | Mechanism |
 |-------|-------------|-------------|-----------|
 | `UserPromptSubmit` | Yes (`prompt` field) | **No** — can only block (exit 2) or add `additionalContext` | `updatedPrompt` does not exist |
-| `PreToolUse` | Yes (`tool_input`) | **Yes** — via `updatedInput` in response JSON | Full replacement (must spread all original fields) |
+| `PreToolUse` | Yes (`tool_input`) | **Yes** — via `updatedInput` in response JSON | Reveal existing placeholders only; block newly detected raw secrets |
 | `PostToolUse` | Yes (`tool_response`) | **No** for built-in tools — can only block or add `additionalContext` | `updatedBuiltinToolOutput` not implemented |
 
 #### Modules
 
 - New: hook script(s) in `hooks/claude-code/` (Node.js recommended — avoids cold-start overhead of spawning a new process)
-- Integration with existing `secureAndRedact` / `reveal` pipeline
+- Integration with existing `secureAndRedact` / `reveal` pipeline through the privacy-only SDK factory
 
 #### Stories
 
 ##### P4-S1: Implement Claude Code PreToolUse redaction hook
 
-- **What:** Create a hook that intercepts `PreToolUse` events. For tool calls containing placeholders (from a prior redaction), reveal them back to real secrets via `updatedInput`. For tool calls containing raw secrets (user typed directly into a tool argument), redact them and store in vault, then pass the redacted version via `updatedInput`. This is the primary integration point since it's the only one supporting modification.
+- **What:** Create a hook that intercepts `PreToolUse` events. For tool calls containing placeholders (from a prior redaction), reveal them back to real secrets via `updatedInput`. For tool calls containing raw secrets (user typed directly into a tool argument), block execution with guidance to use an environment variable instead. Do not redact raw tool-input secrets into placeholders for Claude Code: without prompt/output rewrite support, allowing placeholder-bearing commands through would break execution or create confusing state.
 - **Acceptance criteria:**
   - [ ] `PreToolUse` hook receives JSON on stdin, parses `tool_name` and `tool_input`
   - [ ] Detects secrets in tool input fields (`command` for Bash, `content`/`new_string` for Write/Edit)
-  - [ ] Returns `updatedInput` with secrets replaced by placeholders (or placeholders replaced by real values for reveal)
+  - [ ] Returns `updatedInput` only when replacing existing placeholders with real values for execution
+  - [ ] Blocks tool inputs containing newly detected raw secrets (exit code 2, stderr guidance)
   - [ ] `updatedInput` includes ALL original fields (full replacement, not merge)
+  - [ ] Hook initializes Pristine through the privacy-only SDK factory (no LLM clients, embedders, or memory orchestration)
   - [ ] Hook script works for Bash, Write, Edit, and MultiEdit tools
   - [ ] Overhead <50ms per hook invocation
   - [ ] Unit tests for hook logic (mock stdin/stdout)
@@ -640,7 +705,7 @@ Integrate Pristine secret redaction into Claude Code via the hooks system. Claud
 
 #### Done When
 
-- [ ] PreToolUse hook redacts/reveals secrets in tool input via `updatedInput`
+- [ ] PreToolUse hook reveals existing placeholders via `updatedInput` and blocks newly detected raw secrets
 - [ ] UserPromptSubmit hook blocks prompts containing raw secrets
 - [ ] PostToolUse hook warns about secrets in output via `additionalContext`
 - [ ] Hook installable with one command

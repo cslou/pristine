@@ -1,7 +1,3 @@
-## Coding Session
-<!-- Replace SESSION_ID below. Run: ls -t /tmp/claude-$(id -u)/$(echo $PWD | tr '/' '-')/ | head -1 -->
-coding-session: SESSION_ID
-
 ## Story
 <!-- Story title from sprint -->
 

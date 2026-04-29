@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { PristineLocal } from '../../src/client.js';
 import { createDatabase } from '../../src/core/database.js';
-import type { Embedder, LlmClient } from '../../src/core/interfaces.js';
-import type { LlmClients } from '../../src/engine/index.js';
+import type { Embedder } from '../../src/core/interfaces.js';
 import { runEmbedWorker } from '../../src/memory/indexer/embed-worker.js';
 
 // ---------------------------------------------------------------------------
@@ -16,10 +15,6 @@ import { runEmbedWorker } from '../../src/memory/indexer/embed-worker.js';
 // worker drains them, vec_windows / window_messages / messages_fts
 // populated. This is the integration-shaped contract the searcher
 // primitive (Stories 2-6) will read from.
-
-const makeStubLlmClient = (): LlmClient => ({
-  generate: (async () => ({})) as LlmClient['generate'],
-});
 
 // Deterministic 768-d stub: same seed-by-length shape as
 // tests/integration/indexer.test.ts so output stays stable across runs
@@ -36,11 +31,6 @@ const makeStubEmbedder = (): Embedder => ({
     }),
 });
 
-const makeLlmClients = (): LlmClients => ({
-  privacyClient: makeStubLlmClient(),
-  memoryClient: makeStubLlmClient(),
-});
-
 describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () => {
   let db: Database.Database;
   let client: PristineLocal;
@@ -49,7 +39,6 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
     db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     client = await PristineLocal.create({
       db,
-      llmClients: makeLlmClients(),
       embedder: makeStubEmbedder(),
     });
   });

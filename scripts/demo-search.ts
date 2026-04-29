@@ -21,8 +21,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { AppError } from '../src/core/errors.js';
-import type { LlmClient } from '../src/core/interfaces.js';
 import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
 
@@ -31,12 +29,6 @@ const DB_PATH = '/tmp/pristine-demo.db';
 const log = (msg: string): void => {
   // eslint-disable-next-line no-console
   console.log(msg);
-};
-
-const stubLlmClient: LlmClient = {
-  generate: (async () => {
-    throw new AppError('demo: LlmClient.generate not exercised');
-  }) as LlmClient['generate'],
 };
 
 // ---------------------------------------------------------------------------
@@ -268,7 +260,6 @@ const main = async (): Promise<void> => {
   const embedder = new LocalEmbedder();
   const client = await PristineLocal.create({
     db,
-    llmClients: { privacyClient: stubLlmClient, memoryClient: stubLlmClient },
     embedder,
   });
 

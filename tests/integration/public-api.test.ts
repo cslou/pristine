@@ -1,13 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
-import {
-  PristineLocal,
-  createDatabase,
-  type Embedder,
-  type LlmClient,
-  type LlmClients,
-} from '../../src/index.js';
+import { PristineLocal, createDatabase, type Embedder } from '../../src/index.js';
 
 // ---------------------------------------------------------------------------
 // Sprint-018 Story 1 — public-API integration harness
@@ -49,15 +43,6 @@ const makeStubEmbedder = (): Embedder => ({
     }),
 });
 
-const makeStubLlmClient = (): LlmClient => ({
-  generate: (async () => ({})) as LlmClient['generate'],
-});
-
-const makeLlmClients = (): LlmClients => ({
-  privacyClient: makeStubLlmClient(),
-  memoryClient: makeStubLlmClient(),
-});
-
 // Tiny in-process corpus, written through the public surface. Each test
 // calls this to seed; isolation is provided by the per-test in-memory DB
 // the beforeEach reconstructs.
@@ -85,7 +70,6 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
     db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     client = await PristineLocal.create({
       db,
-      llmClients: makeLlmClients(),
       embedder: makeStubEmbedder(),
     });
   }, SLOW_TEST_TIMEOUT_MS);

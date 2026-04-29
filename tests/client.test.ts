@@ -6,17 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { InvalidArgumentError } from '../src/core/errors.js';
-import type { LlmClient, Embedder } from '../src/core/interfaces.js';
-import type { LlmClients } from '../src/engine/index.js';
+import type { Embedder } from '../src/core/interfaces.js';
 
 // ---------------------------------------------------------------------------
 // Mock factories
 // ---------------------------------------------------------------------------
-
-const createMockLlmClient = (): LlmClient => {
-  const generate = async (): Promise<unknown> => ({});
-  return { generate: generate as LlmClient['generate'] };
-};
 
 const createMockEmbedder = (): Embedder & { dispose: ReturnType<typeof vi.fn> } => ({
   embed: vi.fn(async () => Array.from({ length: 768 }, () => Math.random())),
@@ -28,13 +22,10 @@ const createMockEmbedder = (): Embedder & { dispose: ReturnType<typeof vi.fn> } 
 
 const createTestDeps = (): {
   db: Database.Database;
-  llmClients: LlmClients;
   embedder: Embedder & { dispose: ReturnType<typeof vi.fn> };
 } => {
-  const mockClient = createMockLlmClient();
   return {
     db: createDatabase(':memory:'),
-    llmClients: { privacyClient: mockClient, memoryClient: mockClient },
     embedder: createMockEmbedder(),
   };
 };
@@ -58,7 +49,6 @@ describe('PristineLocal', () => {
     it('creates a client with DI overrides (no filesystem access)', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -70,7 +60,6 @@ describe('PristineLocal', () => {
     it('searchConversations() returns matching conversations after storeAsync', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -89,7 +78,6 @@ describe('PristineLocal', () => {
     it('searchConversations() returns empty for no matches', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -104,7 +92,6 @@ describe('PristineLocal', () => {
     it('getConversation() returns full conversation with messages', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -130,7 +117,6 @@ describe('PristineLocal', () => {
     it('getConversation() returns null for nonexistent ID', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -145,7 +131,6 @@ describe('PristineLocal', () => {
       try {
         const client = await PristineLocal.create({
           db: deps.db,
-          llmClients: deps.llmClients,
           embedder: deps.embedder,
           keysDir,
           privacy: {
@@ -185,7 +170,6 @@ describe('PristineLocal', () => {
     it('scrubOutput() removes placeholder tokens', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -201,7 +185,6 @@ describe('PristineLocal', () => {
     it('scrubOutput() uses configured custom privacy patterns', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
         privacy: {
           customPatternsPath: '/tmp/pristine-client-missing-redaction.json',
@@ -226,7 +209,6 @@ describe('PristineLocal', () => {
     it('does not dispose DI-provided embedder', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -239,7 +221,6 @@ describe('PristineLocal', () => {
 
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -252,7 +233,6 @@ describe('PristineLocal', () => {
     it('exposes ingestQueue on full client', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -266,7 +246,6 @@ describe('PristineLocal', () => {
     it('stores conversation, returns conversationId, and enqueues one embed task per message', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -286,7 +265,6 @@ describe('PristineLocal', () => {
     it('returns existing conversationId for duplicate conversation without re-enqueueing', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -336,7 +314,6 @@ describe('PristineLocal', () => {
     it('full client exposes pristine.searcher with vectorSearch method', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -353,7 +330,6 @@ describe('PristineLocal', () => {
     it('returns 0 when the queue is empty (idempotent)', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -365,7 +341,6 @@ describe('PristineLocal', () => {
     it('returns the count of tasks processed after storeAsync enqueues them', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -416,7 +391,6 @@ describe('PristineLocal', () => {
     it('throws InvalidArgumentError when conversationId is empty', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -428,7 +402,6 @@ describe('PristineLocal', () => {
     it('throws InvalidArgumentError (single class) when conversationId does not exist, with the literal id in the message', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 
@@ -445,7 +418,6 @@ describe('PristineLocal', () => {
     it('delegates to indexer.buildSessionVector — populates vec_sessions for an existing conversation', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
-        llmClients: deps.llmClients,
         embedder: deps.embedder,
       });
 

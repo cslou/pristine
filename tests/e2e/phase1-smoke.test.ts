@@ -1,11 +1,6 @@
 /**
  * Phase-1 smoke test — verifies PristineLocal.create() and createLite() boot
- * cleanly with no live LLM connection (neither llamacpp nor ollama).
- *
- * Satisfies sprint-013 Story 4 AC: "A minimal integration smoke test
- * demonstrates PristineLocal.create() succeeding with neither llamacpp nor
- * ollama configured." The test injects stub LlmClient factories so
- * construction exercises no network / filesystem / model-config path.
+ * cleanly without contacting any live model or filesystem path.
  *
  * The Phase-1 public API is also exercised end-to-end within a single
  * process: storeAsync enqueues; searchConversations + getConversation
@@ -23,12 +18,7 @@ import {
   PristineLocal,
   createDatabase as createDatabaseFromBarrel,
 } from '../../src/index.js';
-import type { LlmClient, Embedder } from '../../src/core/interfaces.js';
-import type { LlmClients } from '../../src/engine/index.js';
-
-const makeLlmStub = (): LlmClient => ({
-  generate: (async () => ({})) as LlmClient['generate'],
-});
+import type { Embedder } from '../../src/core/interfaces.js';
 
 const makeEmbedderStub = (): Embedder => ({
   embed: vi.fn(async () => Array.from({ length: 768 }, () => 0)),
@@ -44,20 +34,14 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     for (const db of databases.splice(0)) db.close();
   });
 
-  it('create() succeeds with DI overrides (no llamacpp / ollama contact)', async () => {
+  it('create() succeeds with DI overrides (no model contact)', async () => {
     const db = createDatabase(':memory:');
     // NB: don't push to `databases` — client.dispose() with DI-provided deps
     // leaves the DB to the caller (ownsDb=false). We close it in finally so
     // a dispose rejection still releases the handle.
 
-    const llmClients: LlmClients = {
-      privacyClient: makeLlmStub(),
-      memoryClient: makeLlmStub(),
-    };
-
     const client = await PristineLocal.create({
       db,
-      llmClients,
       embedder: makeEmbedderStub(),
     });
 
@@ -104,7 +88,7 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     ]);
   });
 
-  it('createLite() succeeds with no LlmClient or Embedder at all', () => {
+  it('createLite() succeeds with no Embedder at all', () => {
     const db = createDatabase(':memory:');
     databases.push(db);
 
@@ -116,16 +100,10 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
 
   it('Phase-1 public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
     const db = createDatabase(':memory:');
-    // sprint-016 Story 1: storeAsync now requires Pristine.create() (the
-    // indexer pipeline needs an embedder). Use stub LLM/embedder DI to keep
-    // the smoke fast and offline.
-    const llmClients: LlmClients = {
-      privacyClient: makeLlmStub(),
-      memoryClient: makeLlmStub(),
-    };
+    // storeAsync requires Pristine.create() (the indexer pipeline needs an
+    // embedder). Use the stub embedder to keep the smoke fast and offline.
     const client = await PristineLocal.create({
       db,
-      llmClients,
       embedder: makeEmbedderStub(),
     });
 

@@ -11,7 +11,6 @@ import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
 import { IngestQueueError, InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
-import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createEmbedder } from './embedder/index.js';
 import { ConversationStore } from './conversations/store.js';
 import { IngestQueue } from './queue/ingest-queue.js';
@@ -39,7 +38,6 @@ export interface PristineLocalConfig {
   readonly baseDir?: string;
   readonly keysDir?: string;
   readonly db?: Database.Database;
-  readonly llmClients?: LlmClients;
   readonly embedder?: Embedder;
   readonly privacy?: DeterministicClassifierConfig;
 }
@@ -68,13 +66,11 @@ export class PristineLocal {
   private readonly indexer: Indexer | null;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
-  private readonly llmClients: LlmClients;
   private readonly keyManager: KeyManager;
   private readonly kekManager: KekManager;
   private readonly vaultStore: VaultStore;
   private readonly ownsDb: boolean;
   private readonly ownsEmbedder: boolean;
-  private readonly ownsLlmClients: boolean;
   private readonly privacyClassifierConfig: DeterministicClassifierConfig | undefined;
 
   private constructor(deps: {
@@ -84,13 +80,11 @@ export class PristineLocal {
     searcher: Searcher | null;
     db: Database.Database;
     embedder: Embedder;
-    llmClients: LlmClients;
     keyManager: KeyManager;
     kekManager: KekManager;
     vaultStore: VaultStore;
     ownsDb: boolean;
     ownsEmbedder: boolean;
-    ownsLlmClients: boolean;
     privacyClassifierConfig?: DeterministicClassifierConfig;
   }) {
     this.ingestQueue = deps.ingestQueue;
@@ -99,13 +93,11 @@ export class PristineLocal {
     this.searcher = deps.searcher;
     this.db = deps.db;
     this.embedder = deps.embedder;
-    this.llmClients = deps.llmClients;
     this.keyManager = deps.keyManager;
     this.kekManager = deps.kekManager;
     this.vaultStore = deps.vaultStore;
     this.ownsDb = deps.ownsDb;
     this.ownsEmbedder = deps.ownsEmbedder;
-    this.ownsLlmClients = deps.ownsLlmClients;
     this.privacyClassifierConfig = deps.privacyClassifierConfig;
   }
 
@@ -114,17 +106,13 @@ export class PristineLocal {
   // -------------------------------------------------------------------------
 
   public static async create(config: PristineLocalConfig = {}): Promise<PristineLocal> {
-    const fullyInjected =
-      config.db !== undefined && config.llmClients !== undefined && config.embedder !== undefined;
+    const fullyInjected = config.db !== undefined && config.embedder !== undefined;
 
     const init = fullyInjected ? null : initPristine(config.baseDir);
 
     const ownsDb = config.db === undefined;
     const db =
       config.db ?? createDefaultDatabase(init?.baseDir ? `${init.baseDir}/data` : undefined);
-
-    const ownsLlmClients = config.llmClients === undefined;
-    const llmClients = config.llmClients ?? createLlmClients(init?.baseDir);
 
     const ownsEmbedder = config.embedder === undefined;
     const embedder =
@@ -170,13 +158,11 @@ export class PristineLocal {
       searcher,
       db,
       embedder,
-      llmClients,
       keyManager,
       kekManager,
       vaultStore,
       ownsDb,
       ownsEmbedder,
-      ownsLlmClients,
       privacyClassifierConfig: config.privacy,
     });
   }
@@ -207,13 +193,11 @@ export class PristineLocal {
       searcher: null,
       db,
       embedder: null as unknown as Embedder,
-      llmClients: null as unknown as LlmClients,
       keyManager: null as unknown as KeyManager,
       kekManager: null as unknown as KekManager,
       vaultStore: null as unknown as VaultStore,
       ownsDb,
       ownsEmbedder: false,
-      ownsLlmClients: false,
       privacyClassifierConfig: undefined,
     });
   }
@@ -503,15 +487,6 @@ export class PristineLocal {
   public async dispose(): Promise<void> {
     if (this.ownsEmbedder && 'dispose' in this.embedder) {
       await (this.embedder as { dispose: () => Promise<void> }).dispose();
-    }
-
-    if (this.ownsLlmClients) {
-      const clients = new Set([this.llmClients.privacyClient, this.llmClients.memoryClient]);
-      for (const client of clients) {
-        if ('dispose' in client) {
-          await (client as { dispose: () => Promise<void> }).dispose();
-        }
-      }
     }
 
     if (this.ownsDb) {

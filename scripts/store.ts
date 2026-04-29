@@ -16,7 +16,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { createLlmClients } from '../src/engine/index.js';
 import { PristineLocal } from '../src/index.js';
 import type { Message } from '../src/core/types.js';
 
@@ -110,14 +109,11 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   // Pass-through DI keeps the synchronous-startup contract: LocalEmbedder
-  // and LlamaCppClient/OllamaClient lazy-load on first call (embed/generate),
-  // not on construction. createLlmClients() reads ~/.pristine/models.json
-  // synchronously but does no model I/O until generate() runs.
+  // lazy-loads on first call (embed), not on construction.
   const db = args.dbPath ? createDatabase(args.dbPath) : undefined;
   const client = await PristineLocal.create({
     ...(db !== undefined ? { db } : {}),
     embedder: new LocalEmbedder(),
-    llmClients: createLlmClients(),
   });
 
   const messages: Message[] = parsed.messages.map((m) => ({

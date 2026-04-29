@@ -71,14 +71,19 @@
 - **Acceptance criteria:**
   - [ ] `PristineLocalConfig.llmClients` removed.
   - [ ] `Pristine.create({...})` factory no longer calls `createLlmClients`. Internal `llmClients` field on `PristineLocal` removed.
-  - [ ] Privacy methods (`secureAndRedact` / `reveal` / `scrubOutput`) still work — they consume the post-privacy-track deterministic scanner directly, not through `this.llmClients`.
+  - [ ] Privacy methods (`secureAndRedact` / `reveal` / `scrubOutput`) continue to behave the same. Verified by `tests/privacy/*.test.ts` and `tests/sanitizer/*.test.ts` all green at exact pre-Story-1 counts; no privacy method body now reads `this.llmClients`.
   - [ ] Existing `Pristine.create` tests in `tests/client.test.ts` updated to drop the `llmClients` arg they currently pass.
   - [ ] Inline regression sentinel added to `tests/client.test.ts`: an `it()` that calls `Pristine.create({ db, embedder, /* @ts-expect-error — llmClients removed in sprint-020 */ llmClients: { ... } })` and verifies the call still constructs (the directive sticks the deletion — re-adding `llmClients` would un-error the line, fire TS6133, break the build).
   - [ ] No regression in unit / integration suites; typecheck + lint clean.
-  - [ ] Migration note in PR body — what consumers passing `llmClients` need to change.
+  - [ ] PR body contains a `### Migration` section with a single before/after block: before = `Pristine.create({ db, embedder, llmClients })`, after = `Pristine.create({ db, embedder })`. Sentence notes consumers can drop the arg without other code changes.
 - **Testing approach:** Update `tests/client.test.ts`'s `Pristine.create` tests to drop `llmClients`. Add the regression sentinel as a single `it()` in the same file. Verify the privacy pipeline tests still pass.
-- **Planned commits:** TBD — sized at sprint-start.
-- **Technical notes:** Coordination point — the privacy classifier interface change is verified in place pre-sprint-020.
+- **QA:**
+  - Manual: N/A (backend SDK refactor).
+  - Automated: `npm run test:unit` (`tests/client.test.ts` + `tests/privacy/*.test.ts` exact-match pre-Story-1 counts) + `npm run test:integration` clean.
+- **Planned commits:**
+  1. `refactor(client): drop llmClients from PristineLocalConfig + factory wiring`
+  2. `chore(test): drop llmClients arg from tests/client.test.ts + add regression sentinel`
+- **Technical notes:** Coordination point — the privacy classifier interface change is verified in place pre-sprint-020 (PR #125 merged 2026-04-29; `grep -r 'LlmClient' src/privacy/` returns zero hits).
 - **Priority:** Must-have
 
 #### Story 2: Drop `LlmClient` / `LlmClients` from the barrel + interfaces
@@ -96,9 +101,16 @@
   - [ ] `LlmClient` removed from `src/core/interfaces.ts`.
   - [ ] `LlmClients` removed from `src/engine/index.ts`.
   - [ ] Both removed from `src/index.ts` barrel.
-  - [ ] Top-of-file JSDoc on `src/index.ts` (the orientation block) updated — drop the DI section's `LlmClient` reference.
   - [ ] No internal consumer reaches the types through the barrel — verify via grep audit at story start.
   - [ ] No regression in unit / integration / e2e suites; typecheck + lint clean.
+- **Testing approach:** Typecheck + grep audit. No new behavioral tests; no test deletions (no inner-loop tests target the interface declarations directly).
+- **QA:**
+  - Manual: N/A (backend type/barrel edit).
+  - Automated: `npm run typecheck` + `npm run lint` clean; `npm run test:unit` + `npm run test:integration` + `npm run test:e2e` exact-match the post-Story-1 baseline.
+- **Planned commits:**
+  1. `refactor(api): remove LlmClient from src/core/interfaces.ts + LlmClients from src/engine/index.ts + the src/index.ts barrel re-exports`
+- **Technical notes:**
+  - **JSDoc DI section ownership.** The top-of-file JSDoc on `src/index.ts` mentions `LlmClient` in its DI section. Story 2 does NOT edit the JSDoc — Story 6 (the consolidated post-sprint-shape doc cleanup story) owns all JSDoc edits in one pass to avoid two stories rewriting the same prose.
 - **Priority:** Must-have
 
 #### Story 3: Delete `src/engine/` and `src/models/` directories
@@ -119,6 +131,15 @@
   - [ ] `models.json` config file deleted (no consumer remains).
   - [ ] No surviving import of `./engine/` or `./models/` anywhere in `src/` or `scripts/` — verified by grep at story start AND post-removal.
   - [ ] No regression in remaining unit / integration / e2e suites; typecheck + lint clean.
+- **Testing approach:** No new tests; this story DELETES `tests/engine/` and `tests/models/` entirely (per the user-locked exception: tests for deleted code). The remaining test suites validate that nothing else consumed the engine/models modules.
+- **QA:**
+  - Manual: N/A.
+  - Automated: `npm run test:unit` + `npm run test:integration` exact-match the post-Story-2 baseline minus the deleted tests' counts.
+- **Planned commits:**
+  1. `refactor(engine): delete src/engine/ + src/models/ + their tests + models.json`
+- **Technical notes:**
+  - **Filesystem-as-test.** TypeScript catches surviving imports of `./engine/` / `./models/`; no runtime regression test needed beyond the existing suites.
+  - **Dependencies on engine modules.** Verified at sprint planning that no `src/` or `scripts/` file outside `src/engine/` / `src/models/` imports from those paths. Re-verify at story start with `grep -rn "from '\.[./]*engine\|from '\.[./]*models" src/ scripts/`.
 - **Priority:** Must-have
 
 #### Story 4: Delete legacy `Memory` / `SanitizedMemory` types + retire dead helpers
@@ -178,13 +199,13 @@
   - [ ] `PristineLiteConfig` interface removed from `src/client.ts` and the `src/index.ts` barrel.
   - [ ] All 3 lite-throw guards removed: `storeAsync`, `drainEmbedQueue`, `buildSessionVector` no longer carry `if (this.indexer === null) throw new InvalidArgumentError(...)` early returns. These methods now assume a fully-constructed client; the type system is the contract. Decision rationale (locked at planning): the guards test impossible state once createLite is gone (every properly-constructed `PristineLocal` has a non-null indexer), and removing dead branches that test impossible state is exactly what sprint-020 is doing for everything else — don't make an exception. If a consumer hacks around the private constructor, they're past the point where defensive runtime guards help.
   - [ ] `PristineLocal` private fields shed their `null as unknown as ...` punning. `embedder`, `llmClients` (already gone after Story 1), `keyManager`, `kekManager`, `vaultStore`, `indexer`, and `searcher` become non-nullable on the type level. Resolves the post-sprint-018 P2 modularity finding about `createLite`'s null-punning.
-  - [ ] `client.searcher` and `client.indexer` field types narrow from `Searcher | null` / `Indexer | null` to `Searcher` / `Indexer`. The `client.searcher!` non-null assertion in JSDoc lifecycle examples + the existing `tests/integration/public-api.test.ts` harness becomes plain `client.searcher`. (The harness change is mechanical doc/test follow-up; the type narrowing is the load-bearing change.)
+  - [ ] `client.searcher` and `client.indexer` field types narrow from `Searcher | null` / `Indexer | null` to `Searcher` / `Indexer`. Verified by `grep -rn 'client\.searcher!' src/ tests/` returning zero matches post-edit. The harness + JSDoc-example changes are mechanical doc/test follow-up; the type narrowing is the load-bearing change.
   - [ ] **`client.ingestQueue` field made private + replaced with `client.pendingEmbedTasks: number` public getter.** The field's `IngestQueue` type was already barrel-hidden in sprint-018, but the field itself stayed public for queue-depth introspection. Recon at planning confirmed only internal code (scripts, tests) reaches `client.ingestQueue.pending`; no external SDK consumer needs the full `IngestQueue` instance. The new `pendingEmbedTasks: number` getter delegates to `this.ingestQueue.pending` and exposes the only legitimate consumer-facing capability. Internal `runEmbedWorker(this.ingestQueue)` calls (in `client.ts`'s own `drainEmbedQueue` impl, `scripts/smoke-indexer.ts`, `scripts/demo-search.ts`) are unaffected — scripts are allowed internal-path access. Tests using `client.ingestQueue.pending` switch to `client.pendingEmbedTasks`; this is allowed under the test-cleanup exception because the public surface is changing (not the test's underlying invariant).
   - [ ] `tests/client.test.ts` `describe('createLite()')` block removed entirely (3 tests). Per the user-locked "tests don't change" constraint, the explicit allowed exception is "tests for a redundant function that no longer exists" — these 3 tests qualify.
   - [ ] `tests/client.test.ts` and `tests/integration/storeasync.test.ts` updated where they read `client.ingestQueue.pending` — switch to `client.pendingEmbedTasks`. ~5 occurrences total. Same exception-class as the createLite test removal.
   - [ ] Test-file deeper queue-mechanics asserts dropped: `tests/client.test.ts` lines 260-261's `expect(client.ingestQueue.claimNext).toBeTypeOf('function')` + `expect(client.ingestQueue.processNext).toBeTypeOf('function')` are deleted. They tested internal queue mechanics through what's now a private field — those concerns belong to `tests/queue/ingest-queue.test.ts`, not `tests/client.test.ts`.
   - [ ] `tests/e2e/phase1-smoke.test.ts` `expect(client.ingestQueue).toBeDefined()` lines (66, 114) replaced with `expect(typeof client.pendingEmbedTasks).toBe('number')` — the surviving public surface check.
-  - [ ] Inline regression sentinel added to `tests/client.test.ts`: an `it()` that does `// @ts-expect-error — createLite removed in sprint-020` + `PristineLocal.createLite({ db });` and asserts the call... wait, this needs the call to still work at runtime (createLite is gone, so the call would throw). Use a type-only check instead: `expect((PristineLocal as Record<string, unknown>).createLite).toBeUndefined()` — single-line runtime check that catches the field's reintroduction without needing `@ts-expect-error`.
+  - [ ] Inline regression sentinel added to `tests/client.test.ts`: a single `it()` asserting `expect((PristineLocal as Record<string, unknown>).createLite).toBeUndefined()`. This is a runtime check — calling `createLite()` would throw at runtime once the static method is gone, so an `@ts-expect-error`-style sentinel is unsuitable here. The runtime check catches re-introduction of the field on `PristineLocal` without forcing a call site.
   - [ ] No regression in remaining unit / integration / e2e suites; typecheck + lint clean.
 - **Testing approach:** The build itself verifies the public-API removal — TypeScript catches `PristineLocal.createLite` no longer existing. The 3 `createLite`-specific unit tests in `tests/client.test.ts` are removed — they tested a redundant capability that no longer exists. Existing `Pristine.create()` tests cover the surviving entry point. The runtime regression sentinel (`expect((PristineLocal as Record<string, unknown>).createLite).toBeUndefined()`) added inline catches a future re-introduction.
 - **QA:**
@@ -195,6 +216,7 @@
   2. `refactor(client): make ingestQueue field private + expose pendingEmbedTasks getter`
   3. `chore(test): remove createLite test block + switch ingestQueue.pending references to pendingEmbedTasks`
 - **Technical notes:**
+  - **Why three commits, not five.** Each commit pairs an atomic surface-change with its directly entangled cleanup: commit 1 ships createLite removal + lite-throw guards + null-punning shed (one logical "lite-mode is gone" change set); commit 2 ships ingestQueue privatization + the new getter (a single API contract swap); commit 3 ships the corresponding test edits. Splitting commit 1 further (e.g. createLite vs lite-throws vs null-punning) creates artificial granularity since the type-level changes are interdependent (you can't shed null-punning without dropping the lite-throw path it defended). The standing commit-floor exemption applies but the count is also independently justified.
   - **Why not just demote createLite in JSDoc.** Considered as alternative ("keep, mark advanced"), rejected: maintaining an entry point with no real consumers carries permanent cost (test surface, null-punning footgun, lite-throw guards on every new write method). Removal is cleaner now than half-measure.
   - **If consumer signal surfaces post-merge.** If someone files a "I want a lighter boot path that skips RSA keygen" issue post-sprint-020, the right response is a properly-designed `createReadOnly()` factory aimed at the actual use case — not the speculative one this story removes. Out of scope for now.
   - **Sequencing relative to Stories 1-4.** Independent of the LLM-removal track. Slotted here (after Story 4, before Story 6's JSDoc cleanup) so Story 6 captures the post-createLite state in one final pass.
@@ -217,11 +239,20 @@
   - [ ] `client.searcher!` non-null assertions in the lifecycle code example become plain `client.searcher` (post-Story-5, the field is non-nullable).
   - [ ] `AGENTS.md` (repo root, added by the privacy track in PR #125) cleaned of stale references: line 13's "LlmClient uses generate<T>() interface" deleted; line 15's "Two LLM engine backends: llamacpp / ollama" deleted; line 28's "Shared: src/core/, src/engine/, src/embedder/, src/models/" updated to drop `src/engine/` and `src/models/`. Line 7's "Implementation spec: docs/specs/implementation-spec-001.md" updated to point at `implementation-spec-005.md` (the actual current spec).
   - [ ] `docs/specs/implementation-spec-005.md` §15 prose updated — **minimal scope, factual fixes only.** Remove references to `LlmClients`, the privacy LLM classifier, and the legacy retriever path from Flow 1 + Flow 2. Do NOT undertake a sprint-018-style sprint-NNN/Story-N token strip on §15 (or the rest of the spec) — that's deferred to a future spec-hygiene sprint, likely after sprint-019 ships Flow 3 content.
-  - [ ] PR body migration note summarizes ALL THREE public-API breaking changes (no CHANGELOG.md created — the project doesn't have one and PR-body notes have been the migration-note pattern):
-    1. `Pristine.create({...})` no longer accepts `llmClients` (Story 1).
-    2. `Pristine.createLite({...})` is removed; consumers must switch to `Pristine.create({...})` (Story 5).
-    3. `client.ingestQueue` field is now private; consumers reading `client.ingestQueue.pending` must switch to `client.pendingEmbedTasks` (Story 5).
+  - [ ] PR body contains a `### Migration` section with three numbered before/after blocks (no CHANGELOG.md created — the project doesn't have one and PR-body notes have been the migration-note pattern):
+    1. `llmClients` arg dropped (Story 1) — before/after on `Pristine.create({...})` shape.
+    2. `Pristine.createLite()` removed (Story 5) — before/after showing the switch to `Pristine.create({...})` for read-only flows.
+    3. `client.ingestQueue` privatized (Story 5) — before/after showing `client.ingestQueue.pending` → `client.pendingEmbedTasks`.
   - [ ] `npm run typecheck` + `npm run lint` clean. (No test changes — pure docs.)
+- **Testing approach:** N/A — pure documentation diff. Lint + typecheck cover regressions; tests are unchanged.
+- **QA:**
+  - Manual: cold-read pass on the post-edit JSDoc + spec §15 to confirm an outside developer can answer "where do I write?", "where do I read?", "what do I catch?" from the orientation block alone.
+  - Automated: `npm run typecheck` + `npm run lint` clean.
+- **Planned commits:**
+  1. `docs(api): post-sprint-020 cleanup of src/index.ts JSDoc + AGENTS.md + implementation-spec-005.md §15`
+- **Technical notes:**
+  - **§15 scope locked at planning.** Factual fixes only — drop `LlmClients` references in Flow 1 + Flow 2 prose. NOT a sprint-018-style internal-process token strip on §15 or the rest of the spec; that broader spec-hygiene pass is deferred to a future sprint, likely after sprint-019 ships Flow 3 content.
+  - **AGENTS.md ownership.** The repo-root AGENTS.md was added by the privacy track in PR #125. Sprint-020 invalidates 4 lines (LlmClient mention, llamacpp/ollama backends, src/engine/+src/models/ in shared-modules list, outdated spec pointer) — Story 6 owns those edits because they directly track sprint-020's deletions.
 - **Priority:** Must-have
 
 #### Story 7: Comment cleanup of sprint-020-modified files

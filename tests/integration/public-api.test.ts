@@ -141,7 +141,6 @@ describe.skipIf(skipSlow)('public-API integration harness', () => {
       // The regex is a disjunction of both shapes, anchored to either a
       // standalone-ident line OR an export-list inside `{ … }`:
       //
-      //
       //   `^\s*<Name>\s*,?\s*$`          ← multi-line block (Memory)
       //   `\{[^}]*\b<Name>\b[^}]*\}`     ← single-line block (IngestTask, …)
       //

@@ -259,7 +259,7 @@ export class PristineLocal {
    * const conversationId = client.storeAsync(messages, userId, projectId);
    * const drained = await client.drainEmbedQueue();
    * console.log(`indexed ${drained} messages`);
-   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * const hits = await client.searcher.hybridSearch(query, { projectId }, 10);
    * ```
    *
    * Not needed if the consumer runs `scripts/embed-worker.ts` as a
@@ -307,7 +307,7 @@ export class PristineLocal {
    * const conversationId = client.storeAsync(messages, userId, projectId);
    * await client.drainEmbedQueue();          // flush per-message embeds
    * await client.buildSessionVector(conversationId); // populate vec_sessions
-   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * const hits = await client.searcher.hybridSearch(query, { projectId }, 10);
    * // hybridSearch's session leg now returns kind:'session' hits.
    * ```
    *

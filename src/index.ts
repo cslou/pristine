@@ -7,18 +7,13 @@
  * single SQLite file (`better-sqlite3` + `sqlite-vec`); embeddings are
  * computed in-process via Nomic Embed v1.5 (768-d).
  *
- * ## Primary entry points
+ * ## Primary entry point
  *
- * - **`Pristine.create({...})`** — full client. Includes the embedder, LLM
- *   clients (privacy + memory pipelines), indexer, and searcher. Use when
- *   the consumer wants ingestion + retrieval.
- * - **`Pristine.createLite({...})`** — lightweight client. DB,
- *   `ConversationStore`, and `IngestQueue` only. No embedder, no LLM
- *   clients, no indexer. Supports `searchConversations()` and
- *   `getConversation()` for read-only flows. `storeAsync()`,
- *   `drainEmbedQueue()`, and `buildSessionVector()` all throw
- *   `InvalidArgumentError` on lite clients (no embedder wired); use
- *   `Pristine.create({...})` if any of those are needed.
+ * **`Pristine.create({...})`** is the single canonical factory — it wires
+ * the embedder, indexer, and searcher together for the full ingest +
+ * retrieval surface. The embedder loads lazily (Nomic v1.5 on first
+ * `embed()` call), so synchronous startup paths still pay only the
+ * construction cost.
  *
  * ## Lifecycle (the load-bearing recipe)
  *
@@ -29,7 +24,7 @@
  * const conversationId = client.storeAsync(messages, userId, projectId);
  * await client.drainEmbedQueue();          // flush per-message embeds
  * await client.buildSessionVector(conversationId); // populate vec_sessions
- * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+ * const hits = await client.searcher.hybridSearch(query, { projectId }, 10);
  * ```
  *
  * - `storeAsync` is fire-and-forget at the SDK level — message rows land
@@ -63,14 +58,12 @@
  *   if the consumer wants to react to ingest-queue trouble explicitly.
  * - **`InvalidArgumentError`** — caller passed something the SDK won't
  *   accept (missing/empty conversationId on `buildSessionVector`,
- *   `storeAsync`/`drainEmbedQueue`/`buildSessionVector` called on a
- *   lite client, conversationId references a row that doesn't exist).
- *   The two passthrough methods (`drainEmbedQueue`,
- *   `buildSessionVector`) narrow the indexer's broader error set to
- *   this single class so callers have one type to catch.
- * - **`ConfigError`** — bad config (invalid `models.json`, missing model
- *   files, malformed engine settings); typically surfaces during
- *   `Pristine.create({...})`.
+ *   conversationId references a row that doesn't exist). The two
+ *   passthrough methods (`drainEmbedQueue`, `buildSessionVector`)
+ *   narrow the indexer's broader error set to this single class so
+ *   callers have one type to catch.
+ * - **`ConfigError`** — bad config (invalid embedder settings, missing
+ *   model files); typically surfaces during `Pristine.create({...})`.
  *
  * Other domain-specific subclasses (e.g. `ConversationNotFoundError`)
  * live in `src/core/errors.ts` and extend `AppError`; they are NOT

@@ -272,9 +272,3 @@ export interface LocalConfig {
   readonly dataDir?: string;
   readonly prompts?: PromptConfig;
 }
-
-// ---------------------------------------------------------------------------
-// JSON Schema (for LlmClient.generate<T>())
-// ---------------------------------------------------------------------------
-
-export type JsonSchema = Record<string, unknown>;

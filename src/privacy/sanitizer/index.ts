@@ -3,8 +3,6 @@ import type {
   ResolveInput,
   ApprovalDecisionPayload,
   ApprovalRequestPayload,
-  SensitiveField,
-  SanitizedMemory,
 } from './types.js';
 import { ResolveApprovalError, ResolveApprovalTimeoutError } from '../../core/errors.js';
 
@@ -309,79 +307,7 @@ export const resolve = <TInput>(
   })();
 };
 
-// --- Sanitizer ---
-
-const TYPE_DESCRIPTIONS: Record<string, string> = {
-  api_key: 'API key',
-  auth_token: 'Authentication token',
-  private_key: 'Private key',
-  secret: 'Secret',
-  identity_number: 'Identity number',
-  bank_account: 'Bank account number',
-  credit_card: 'Credit card number',
-  phone_number: 'Phone number',
-  email_address: 'Email address',
-  address: 'Address',
-  physical_address: 'Address',
-  health: 'Health information',
-  financial: 'Financial information',
-  relationship: 'Relationship information',
-  legal: 'Legal information',
-  other: 'Sensitive information',
-};
-
-const descriptionForType = (type: string): string => {
-  return TYPE_DESCRIPTIONS[type] ?? 'Sensitive information';
-};
-
-const naturalTextForType = (type: string): string => {
-  const description = descriptionForType(type);
-  return `[${description}]`;
-};
-
-const createUniqueSensitiveFieldId = (id: string, index: number): string => {
-  return index === 0 ? id : `${id}-${index + 1}`;
-};
-
-const normalizeAndOrderSensitiveFields = (fields: SensitiveField[]): SensitiveField[] => {
-  const seen = new Map<string, number>();
-
-  const normalized = fields.map((field) => {
-    const seenIndex = seen.get(field.id) ?? 0;
-    seen.set(field.id, seenIndex + 1);
-
-    return {
-      ...field,
-      id: createUniqueSensitiveFieldId(field.id, seenIndex),
-    };
-  });
-
-  return normalized.sort((a, b) => a.id.localeCompare(b.id));
-};
-
-export const sanitizeText = (text: string): SanitizedMemory => {
-  const sensitiveFields: SensitiveField[] = [];
-  const placeholderMatcher = new RegExp(PLACEHOLDER_REGEX.source, 'g');
-
-  const sanitized = text.replace(placeholderMatcher, (_match, type: string, id: string) => {
-    sensitiveFields.push({
-      id,
-      type,
-      description: descriptionForType(type),
-      status: 'requires_approval' as const,
-    });
-    return naturalTextForType(type);
-  });
-
-  return {
-    text: sanitized,
-    sensitiveFields: normalizeAndOrderSensitiveFields(sensitiveFields),
-  };
-};
-
 export type {
-  SensitiveField,
-  SanitizedMemory,
   SensitivePlaceholderMatch,
   ResolveInput,
   ApprovalRequestPayload,

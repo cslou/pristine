@@ -1,10 +1,9 @@
 /**
- * Phase-1 smoke test — verifies PristineLocal.create() and createLite() boot
- * cleanly without contacting any live model or filesystem path.
- *
- * The Phase-1 public API is also exercised end-to-end within a single
- * process: storeAsync enqueues; searchConversations + getConversation
- * return the enqueued conversation by keyword and by id.
+ * Public-API smoke test — verifies `PristineLocal.create()` boots cleanly
+ * without contacting any live model or filesystem path, and that the
+ * public API round-trips end-to-end within a single process: `storeAsync`
+ * enqueues; `searchConversations` + `getConversation` return the enqueued
+ * conversation by keyword and by id.
  */
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +26,7 @@ const makeEmbedderStub = (): Embedder => ({
   ),
 });
 
-describe('Phase-1 smoke — PristineLocal boots and the public API round-trips', () => {
+describe('public-API smoke — PristineLocal boots and the public API round-trips', () => {
   const databases: Database.Database[] = [];
 
   afterEach(() => {
@@ -55,8 +54,8 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     }
   });
 
-  it('src/index.ts public barrel exports the Phase-1 surface (import-level check)', () => {
-    // Named-export contract — all symbols a Phase-1 SDK consumer needs must
+  it('src/index.ts public barrel exports the public-API surface (import-level check)', () => {
+    // Named-export contract — all symbols an SDK consumer needs must
     // resolve to defined values at import time. A future refactor that
     // silently drops one of these exports breaks downstream imports at
     // consume-site with no local signal; this test catches it at the barrel.
@@ -71,11 +70,11 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     // set. `toEqual` with an exact sorted list catches both missing exports
     // (regression) and accidental re-exports (sprawl) — `arrayContaining`
     // only enforces the subset, which would silently pass extras through.
-    // `IngestQueue` was removed in sprint-018 Story 4 (internal-only
-    // plumbing); `IngestQueueError` stays because consumers catch it.
-    // `InvalidArgumentError` was added to the barrel post-sprint-018
-    // /review (the two new Phase-4 methods narrow their error set to
-    // this single class — consumers need it for typed catches).
+    // `IngestQueue` is internal-only plumbing; `IngestQueueError` stays
+    // because consumers catch it. `InvalidArgumentError` is on the barrel
+    // because the two passthrough methods (drainEmbedQueue,
+    // buildSessionVector) narrow their error set to this single class —
+    // consumers need it for typed catches.
     const keys = Object.keys(PristineBarrel).sort();
     expect(keys).toEqual([
       'AppError',
@@ -88,7 +87,7 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     ]);
   });
 
-  it('Phase-1 public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
+  it('public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
     const db = createDatabase(':memory:');
     // storeAsync requires Pristine.create() (the indexer pipeline needs an
     // embedder). Use the stub embedder to keep the smoke fast and offline.

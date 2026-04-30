@@ -1,5 +1,5 @@
 /**
- * Sprint-016 Story 7 ad-hoc retrieval-quality demo.
+ * Ad-hoc retrieval-quality demo.
  *
  * Seeds a realistic 2-project corpus and runs a battery of queries
  * through vectorSearch + ftsSearch + hybridSearch so a human can

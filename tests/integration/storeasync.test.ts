@@ -5,15 +5,15 @@ import { createDatabase } from '../../src/core/database.js';
 import type { Embedder } from '../../src/core/interfaces.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-016 Story 1 — storeAsync end-to-end populates corpus via worker drain
+// storeAsync end-to-end populates corpus via worker drain
 // ---------------------------------------------------------------------------
 //
 // Asserts that the public SDK surface `Pristine.create({...}).storeAsync`
-// drives the same Phase-3 pipeline scripts/smoke-indexer.ts proves works
+// drives the same indexer pipeline scripts/smoke-indexer.ts proves works
 // at the module level: messages inserted, embed-message tasks enqueued,
 // worker drains them, vec_windows / window_messages / messages_fts
 // populated. This is the integration-shaped contract the searcher
-// primitive (Stories 2-6) will read from.
+// primitive reads from.
 
 // Deterministic 768-d stub: same seed-by-length shape as
 // tests/integration/indexer.test.ts so output stays stable across runs
@@ -30,7 +30,7 @@ const makeStubEmbedder = (): Embedder => ({
     }),
 });
 
-describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () => {
+describe('storeAsync — end-to-end corpus population', () => {
   let db: Database.Database;
   let client: PristineLocal;
 

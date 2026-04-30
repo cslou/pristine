@@ -21,7 +21,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
 
 const DB_PATH = '/tmp/pristine-demo.db';
@@ -279,7 +278,7 @@ const main = async (): Promise<void> => {
   log('');
   log('Draining embed-worker (this is the slow part — Nomic loads + embeds each message)...');
   const t0 = Date.now();
-  const processed = await runEmbedWorker(client.ingestQueue);
+  const processed = await client.drainEmbedQueue();
   log(`Drained ${processed} embed tasks in ${Date.now() - t0} ms`);
 
   log('');
@@ -288,11 +287,6 @@ const main = async (): Promise<void> => {
     await buildSessionVector(db, embedder, id);
   }
   log(`Built ${conversationIds.size} session vectors`);
-
-  if (client.searcher === null) {
-    log('FAIL — pristine.searcher is null');
-    process.exit(1);
-  }
 
   // Helpers to print results
   const messageContent = (messageId: number): string => {

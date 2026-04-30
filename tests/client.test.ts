@@ -241,16 +241,18 @@ describe('PristineLocal', () => {
     });
   });
 
-  describe('ingestQueue property', () => {
-    it('exposes ingestQueue on full client', async () => {
+  describe('pendingEmbedTasks getter', () => {
+    it('exposes a numeric queue depth on full client', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
         embedder: deps.embedder,
       });
 
-      expect(client.ingestQueue).toBeDefined();
-      expect(client.ingestQueue.claimNext).toBeTypeOf('function');
-      expect(client.ingestQueue.processNext).toBeTypeOf('function');
+      expect(typeof client.pendingEmbedTasks).toBe('number');
+    });
+
+    it('regression: createLite is no longer on the PristineLocal class', () => {
+      expect((PristineLocal as unknown as Record<string, unknown>).createLite).toBeUndefined();
     });
   });
 
@@ -271,7 +273,7 @@ describe('PristineLocal', () => {
 
       expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
       // Indexer enqueues one embed-message task per inserted message.
-      expect(client.ingestQueue.pending).toBe(2);
+      expect(client.pendingEmbedTasks).toBe(2);
     });
 
     it('returns existing conversationId for duplicate conversation without re-enqueueing', async () => {
@@ -286,39 +288,7 @@ describe('PristineLocal', () => {
 
       expect(second).toBe(first);
       // Only the first call enqueued tasks; the duplicate path returns early.
-      expect(client.ingestQueue.pending).toBe(1);
-    });
-  });
-
-  describe('createLite()', () => {
-    it('creates a lite client with in-memory DB', () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      expect(client).toBeInstanceOf(PristineLocal);
-      expect(client.ingestQueue).toBeDefined();
-
-      liteDb.close();
-    });
-
-    it('storeAsync() throws on lite clients (no embedder, no indexer)', () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      expect(() =>
-        client.storeAsync([{ role: 'user', content: 'Hello from lite' }], 'lite-user'),
-      ).toThrow(InvalidArgumentError);
-
-      liteDb.close();
-    });
-
-    it('searcher is null on lite clients (no embedder)', () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      expect(client.searcher).toBeNull();
-
-      liteDb.close();
+      expect(client.pendingEmbedTasks).toBe(1);
     });
   });
 
@@ -329,8 +299,7 @@ describe('PristineLocal', () => {
         embedder: deps.embedder,
       });
 
-      expect(client.searcher).not.toBeNull();
-      expect(typeof client.searcher?.vectorSearch).toBe('function');
+      expect(typeof client.searcher.vectorSearch).toBe('function');
     });
   });
 
@@ -371,35 +340,9 @@ describe('PristineLocal', () => {
       // Idempotent: a second drain on an empty queue returns 0.
       await expect(client.drainEmbedQueue()).resolves.toBe(0);
     });
-
-    it('throws InvalidArgumentError on lite clients (no embedder)', async () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      // The error is thrown synchronously inside the async method's first
-      // tick, so the rejection arrives via the returned promise.
-      await expect(client.drainEmbedQueue()).rejects.toBeInstanceOf(InvalidArgumentError);
-
-      liteDb.close();
-    });
   });
 
-  // -------------------------------------------------------------------------
-  // Sprint-018 Story 3 — buildSessionVector passthrough
-  // -------------------------------------------------------------------------
-
   describe('buildSessionVector()', () => {
-    it('throws InvalidArgumentError on lite clients (no embedder)', async () => {
-      const liteDb = createDatabase(':memory:');
-      const client = PristineLocal.createLite({ db: liteDb });
-
-      await expect(client.buildSessionVector('any-id')).rejects.toBeInstanceOf(
-        InvalidArgumentError,
-      );
-
-      liteDb.close();
-    });
-
     it('throws InvalidArgumentError when conversationId is empty', async () => {
       const client = await PristineLocal.create({
         db: deps.db,

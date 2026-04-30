@@ -19,7 +19,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
 
 const DB_PATH = '/tmp/pristine-smoke.db';
@@ -57,11 +56,11 @@ const main = async (): Promise<void> => {
 
   const conversationId = client.storeAsync(turns, userId, projectId);
   log(`smoke: storeAsync → conversationId=${conversationId}`);
-  log(`smoke: pending tasks before drain: ${client.ingestQueue.pending}`);
+  log(`smoke: pending tasks before drain: ${client.pendingEmbedTasks}`);
 
   log('smoke: embed-worker draining (Nomic loads on first call — slow)...');
   const t0 = Date.now();
-  const processed = await runEmbedWorker(client.ingestQueue);
+  const processed = await client.drainEmbedQueue();
   log(`smoke: embed-worker processed ${processed} task(s) in ${Date.now() - t0} ms`);
 
   // storeAsync does NOT auto-build the session vector (sprint-015 §5
@@ -130,7 +129,7 @@ const main = async (): Promise<void> => {
     'smoke-user-b',
     otherProjectId,
   );
-  const processedB = await runEmbedWorker(client.ingestQueue);
+  const processedB = await client.drainEmbedQueue();
   log(`smoke: drained second project — ${processedB} tasks`);
 
   if (client.searcher === null) {
@@ -173,7 +172,7 @@ const main = async (): Promise<void> => {
     'smoke-user-fts',
     'smoke-project-fts',
   );
-  await runEmbedWorker(client.ingestQueue);
+  await client.drainEmbedQueue();
 
   const ftsHits = await client.searcher.ftsSearch(
     '"PRSTN-9001"',

@@ -93,7 +93,7 @@
 // ---------------------------------------------------------------------------
 
 export { PristineLocal } from './client.js';
-export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
+export type { PristineLocalConfig } from './client.js';
 
 // ---------------------------------------------------------------------------
 // Core types (consumer-facing)

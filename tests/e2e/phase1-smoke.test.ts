@@ -47,7 +47,7 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
 
     try {
       expect(client).toBeInstanceOf(PristineLocal);
-      expect(client.ingestQueue).toBeDefined();
+      expect(typeof client.pendingEmbedTasks).toBe('number');
 
       await client.dispose();
     } finally {
@@ -88,16 +88,6 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     ]);
   });
 
-  it('createLite() succeeds with no Embedder at all', () => {
-    const db = createDatabase(':memory:');
-    databases.push(db);
-
-    const client = PristineLocal.createLite({ db });
-
-    expect(client).toBeInstanceOf(PristineLocal);
-    expect(client.ingestQueue).toBeDefined();
-  });
-
   it('Phase-1 public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
     const db = createDatabase(':memory:');
     // storeAsync requires Pristine.create() (the indexer pipeline needs an
@@ -129,18 +119,18 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     }
   });
 
-  it('privacy scrubOutput() works with no live LLM', () => {
+  it('privacy scrubOutput() works without ingest', async () => {
     const db = createDatabase(':memory:');
     databases.push(db);
 
-    const client = PristineLocal.createLite({ db });
+    const client = await PristineLocal.create({ db, embedder: makeEmbedderStub() });
     const scrubbed = client.scrubOutput(
       'Hello [SENSITIVE:name:abc-123], here is your confirmation.',
       [],
     );
 
     // Full output check, not just negative: the placeholder is stripped in
-    // place (no spacing fix-up in Phase 1) and no stray tokens remain.
+    // place (no spacing fix-up) and no stray tokens remain.
     expect(scrubbed).toBe('Hello , here is your confirmation.');
     expect(scrubbed).not.toContain('[SENSITIVE:');
   });

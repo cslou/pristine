@@ -5,7 +5,8 @@
 // multiple lists accumulate higher fused scores.
 //
 // `k=60` is the original-paper default; fairness across vector + FTS rank
-// scales has held empirically across many retrieval benchmarks.
+// scales has held empirically across many retrieval benchmarks. Don't tune
+// until an eval suite produces signal.
 //
 // **Why `idOf` is required (no default).** The caller passes a heterogeneous
 // union `WindowHit | MessageHit | SessionHit`; there's no sensible default

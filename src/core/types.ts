@@ -30,29 +30,6 @@ export interface ConversationDetail {
   readonly messages: readonly Message[];
 }
 
-// ---------------------------------------------------------------------------
-// Memory & Store
-// ---------------------------------------------------------------------------
-
-export interface Memory {
-  readonly id: string;
-  readonly userId: string;
-  readonly text: string;
-  readonly embedding: number[];
-  readonly contentHash: string;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly lastAccessed: string;
-  readonly sourceConversationId?: string;
-  readonly metadata: Record<string, unknown>;
-  readonly isDeleted: boolean;
-  readonly validFrom?: string;
-  readonly validUntil?: string;
-  readonly supersededBy?: string;
-  readonly supersedes?: string;
-  readonly supersessionReason?: string;
-}
-
 export type TemporalMode = 'current' | 'as_of' | 'full';
 
 // ---------------------------------------------------------------------------
@@ -123,18 +100,6 @@ export type SecureAndRedactResult =
 // ---------------------------------------------------------------------------
 // Sanitizer
 // ---------------------------------------------------------------------------
-
-export interface SensitiveField {
-  readonly id: string;
-  readonly type: string;
-  readonly description: string;
-  readonly status: 'requires_approval';
-}
-
-export interface SanitizedMemory {
-  readonly text: string;
-  readonly sensitiveFields: readonly SensitiveField[];
-}
 
 export interface SensitivePlaceholderMatch {
   readonly placeholder: string;

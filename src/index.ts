@@ -99,11 +99,6 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 // Core types (consumer-facing)
 // ---------------------------------------------------------------------------
 
-// `Memory` (the legacy fact-ledger row shape) is no longer re-exported
-// here. The type itself stays in `src/core/types.ts` for now — internal
-// consumers (`src/memory/retriever/ranking.ts`, `SanitizedMemory`) still
-// reference it and import direct from `core/types`. Full removal is the
-// next cleanup pass.
 export type {
   ConversationDetail,
   ConversationSearchResult,

@@ -1,7 +1,6 @@
-import type { LlmClient } from '../../core/interfaces.js';
 import type { JsonSchema } from '../../core/types.js';
 import { AppError } from '../../core/errors.js';
-import type { OllamaConfig } from '../types.js';
+import type { LlmClient, OllamaConfig } from '../types.js';
 
 const DEFAULT_HOST = 'http://localhost:11434';
 const DEFAULT_MAX_TOKENS = 4096;

@@ -1,5 +1,15 @@
-export type { LlmClient } from '../core/interfaces.js';
+import type { JsonSchema } from '../core/types.js';
+
 export type { JsonSchema, LocalConfig } from '../core/types.js';
+
+export interface LlmClient {
+  generate<T>(params: {
+    readonly systemPrompt: string;
+    readonly userPrompt: string;
+    readonly schema: JsonSchema;
+    readonly maxTokens?: number;
+  }): Promise<T>;
+}
 
 export interface LlamaCppConfig {
   readonly modelPath: string;

@@ -125,9 +125,7 @@ export type {
 // Interfaces (for DI, custom implementations, and test mocks)
 // ---------------------------------------------------------------------------
 
-export type { Embedder, LlmClient } from './core/interfaces.js';
-
-export type { LlmClients } from './engine/index.js';
+export type { Embedder } from './core/interfaces.js';
 
 export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 

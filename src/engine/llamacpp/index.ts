@@ -1,10 +1,9 @@
 import { getLlama, LlamaChatSession } from 'node-llama-cpp';
 import type { Llama, LlamaModel, LlamaContext, LlamaContextSequence } from 'node-llama-cpp';
 import { existsSync } from 'node:fs';
-import type { LlmClient } from '../../core/interfaces.js';
 import type { JsonSchema } from '../../core/types.js';
 import { AppError, DownloadError } from '../../core/errors.js';
-import type { LlamaCppConfig } from '../types.js';
+import type { LlamaCppConfig, LlmClient } from '../types.js';
 
 const DEFAULT_MAX_TOKENS = 4096;
 const DEFAULT_TEMPERATURE = 0;

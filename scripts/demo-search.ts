@@ -288,11 +288,6 @@ const main = async (): Promise<void> => {
   }
   log(`Built ${conversationIds.size} session vectors`);
 
-  if (client.searcher === null) {
-    log('FAIL — pristine.searcher is null');
-    process.exit(1);
-  }
-
   // Helpers to print results
   const messageContent = (messageId: number): string => {
     const row = db

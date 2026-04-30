@@ -132,10 +132,6 @@ const main = async (): Promise<void> => {
   const processedB = await client.drainEmbedQueue();
   log(`smoke: drained second project — ${processedB} tasks`);
 
-  if (client.searcher === null) {
-    log('smoke: FAIL — pristine.searcher is null on full client; should be exposed');
-    process.exit(1);
-  }
   const hitsA = await client.searcher.vectorSearch('sliding windows', { projectId }, 10);
   log(`smoke: vectorSearch in ${projectId} → ${hitsA.length} hits`);
   const stmt = db.prepare('SELECT project_id FROM conversations WHERE id = ?');

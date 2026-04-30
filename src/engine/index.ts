@@ -1,13 +1,8 @@
-import type { LlmClient } from '../core/interfaces.js';
+import type { LlmClient } from './types.js';
 import type { ModelConfig, ModelEntry } from '../core/init.js';
 import { loadModelConfig } from '../core/init.js';
 import { LlamaCppClient } from './llamacpp/index.js';
 import { OllamaClient } from './ollama/index.js';
-
-export interface LlmClients {
-  readonly privacyClient: LlmClient;
-  readonly memoryClient: LlmClient;
-}
 
 function entriesMatch(a: ModelEntry, b: ModelEntry): boolean {
   if (a.engine !== b.engine) return false;
@@ -31,7 +26,10 @@ function createClientFromEntry(entry: ModelEntry): LlmClient {
   });
 }
 
-export function createLlmClients(configDir?: string): LlmClients {
+export function createLlmClients(configDir?: string): {
+  readonly privacyClient: LlmClient;
+  readonly memoryClient: LlmClient;
+} {
   const config: ModelConfig = loadModelConfig(configDir);
   const privacyClient = createClientFromEntry(config.privacy);
 

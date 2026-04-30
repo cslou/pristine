@@ -30,8 +30,6 @@ export interface ConversationDetail {
   readonly messages: readonly Message[];
 }
 
-export type TemporalMode = 'current' | 'as_of' | 'full';
-
 // ---------------------------------------------------------------------------
 // Classification & Sensitivity
 // ---------------------------------------------------------------------------

@@ -100,13 +100,10 @@ export type { PristineLocalConfig, PristineLiteConfig } from './client.js';
 // ---------------------------------------------------------------------------
 
 // `Memory` (the legacy fact-ledger row shape) is no longer re-exported
-// here. The type itself stays in `src/core/types.ts` for now —
-// `SanitizedMemory` derives from it and `src/memory/retriever/ranking.ts`
-// still references it; both internal consumers import direct from
-// `core/types`. Full removal of the `Memory` type is staged for the
-// planned LLM-removal effort, alongside the privacy LLM classifier and
-// the `LlmClient` / `LlmClients` interfaces that anchor the legacy fact
-// pipeline.
+// here. The type itself stays in `src/core/types.ts` for now — internal
+// consumers (`src/memory/retriever/ranking.ts`, `SanitizedMemory`) still
+// reference it and import direct from `core/types`. Full removal is the
+// next cleanup pass.
 export type {
   ConversationDetail,
   ConversationSearchResult,

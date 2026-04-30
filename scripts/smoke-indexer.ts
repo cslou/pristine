@@ -1,15 +1,12 @@
 /**
- * Manual e2e smoke for sprint-016 storeAsync rewire.
+ * Manual e2e smoke for storeAsync.
  *
- * Drives the spec-005 Phase-3 indexer pipeline through the public SDK
- * surface — Pristine.create({...}).storeAsync(...) — exactly as a
- * downstream consumer would. Demonstrates the rewire shipped in
- * sprint-016 Story 1: storeAsync now composes addEmptyConversation +
+ * Drives the indexer pipeline through the public SDK surface
+ * — Pristine.create({...}).storeAsync(...) — exactly as a downstream
+ * consumer would: storeAsync composes addEmptyConversation +
  * indexer.ingest, the embed-worker drains the queue with the real Nomic
  * embedder, and vec_windows / window_messages / messages_fts populate
  * end-to-end.
- *
- * Replaces the sprint-015 indexer-direct smoke with the SDK-level path.
  *
  * Usage:
  *   npx tsx scripts/smoke-indexer.ts
@@ -63,10 +60,9 @@ const main = async (): Promise<void> => {
   const processed = await client.drainEmbedQueue();
   log(`smoke: embed-worker processed ${processed} task(s) in ${Date.now() - t0} ms`);
 
-  // storeAsync does NOT auto-build the session vector (sprint-015 §5
-  // Technical Notes: explicit consumer demand only). Build it inline so
-  // the smoke captures the vec_sessions row count too — the same shape
-  // sprint-016+ retrieval consumers will rely on.
+  // storeAsync does NOT auto-build the session vector — explicit consumer
+  // demand only. Build it inline so the smoke captures the vec_sessions
+  // row count too.
   log('smoke: buildSessionVector ...');
   await buildSessionVector(db, embedder, conversationId);
   log('smoke: buildSessionVector → ok');
@@ -110,7 +106,7 @@ const main = async (): Promise<void> => {
   }
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 2 — searcher.vectorSearch two-project leak check.
+  // searcher.vectorSearch two-project leak check.
   // Seed a SECOND project with deliberately overlapping content; query
   // project-A; assert zero hits leak from project-B. Pins the
   // filter-first project-isolation contract end-to-end against the
@@ -150,7 +146,7 @@ const main = async (): Promise<void> => {
   if (!leakOk) allOk = false;
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 3 — searcher.ftsSearch error-code lookup round-trip.
+  // searcher.ftsSearch error-code lookup round-trip.
   // Seed a conversation containing a unique error-code-shaped string,
   // search for it via FTS5 phrase query, assert exactly one hit
   // belonging to the seeded conversation. Demonstrates literal-keyword
@@ -185,7 +181,7 @@ const main = async (): Promise<void> => {
   if (!ftsOk) allOk = false;
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 4 — searcher.hybridSearch RRF fusion round-trip.
+  // searcher.hybridSearch RRF fusion round-trip.
   // Query for "PRSTN-9001" — the literal error code — and observe both
   // the FTS leg (literal match on the user message) AND the vector
   // leg (topical match on the windows around the error) surface, then
@@ -213,7 +209,7 @@ const main = async (): Promise<void> => {
   if (!hybridOk) allOk = false;
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 5 — 3-source hybrid fan-out round-trip.
+  // 3-source hybrid fan-out round-trip.
   // Build session vectors for all seeded conversations and re-run the
   // hybrid query — the session leg now contributes alongside vector
   // and FTS. Demonstrates cross-conversation reference recall (a

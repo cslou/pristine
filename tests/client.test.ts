@@ -303,10 +303,6 @@ describe('PristineLocal', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Sprint-018 Story 2 — drainEmbedQueue passthrough
-  // -------------------------------------------------------------------------
-
   describe('drainEmbedQueue()', () => {
     it('returns 0 when the queue is empty (idempotent)', async () => {
       const client = await PristineLocal.create({

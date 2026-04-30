@@ -4,15 +4,13 @@ Local-first privacy and memory SDK. No API calls, no server, no data leaving the
 
 ## Key References
 
-- **Implementation spec:** `docs/specs/implementation-spec-001.md`
+- **Implementation spec:** `docs/specs/implementation-spec-005.md`
 - **Sprint docs:** `docs/sprints/`
 - **Source repo for porting:** `~/projects/memory` (GitHub: `getlou-gh/memory`)
 
 ## Architecture
 
-- **LlmClient** uses `generate<T>()` interface (Section 5.2 of spec) — NOT the Anthropic SDK `messages.create()` shape
 - Each module creates its own SQLite tables on init — no centralized migration phase
-- Two LLM engine backends: llamacpp (in-process) and ollama (HTTP). Both implement `LlmClient`.
 - Embedding via `@huggingface/transformers` + Nomic Embed v1.5 (768-dim vectors)
 - Storage: single SQLite file per user via `better-sqlite3` + `sqlite-vec`
 
@@ -25,8 +23,8 @@ Local-first privacy and memory SDK. No API calls, no server, no data leaving the
 - Modules are grouped by workstream:
   - `src/privacy/` — sanitizer, classifier, vault, and pipeline (`secureAndRedact`, `reveal`, `scrubOutput`)
   - `src/memory/` — extractor, consolidator, store, temporal, retriever, query-analyzer, orchestrator, episodes, graph
-  - Shared: `src/core/`, `src/engine/`, `src/embedder/`, `src/models/`
-- Implementations live in subdirectories (e.g., `privacy/vault/sqlite/`, `engine/llamacpp/`)
+  - Shared: `src/core/`, `src/embedder/`
+- Implementations live in subdirectories (e.g., `privacy/vault/sqlite/`)
 
 ## Coding Conventions
 

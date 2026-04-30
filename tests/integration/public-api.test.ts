@@ -116,7 +116,7 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
       expect(drained).toBeGreaterThanOrEqual(1);
       // searcher is non-null on Pristine.create() (vs createLite); the
       // smoke test above pins this invariant.
-      const hits = await client.searcher!.hybridSearch('hello', { projectId }, 5);
+      const hits = await client.searcher.hybridSearch('hello', { projectId }, 5);
       expect(hits.length).toBeGreaterThan(0);
     },
     SLOW_TEST_TIMEOUT_MS,
@@ -145,7 +145,7 @@ describe.skipIf(skipSlow)('public-API integration harness — sprint-018 Story 1
       const { projectId, conversationIds } = await seedPublicApiCorpus(client);
       await client.drainEmbedQueue();
       await client.buildSessionVector(conversationIds[0]);
-      const hits = await client.searcher!.hybridSearch('hello', { projectId }, 10);
+      const hits = await client.searcher.hybridSearch('hello', { projectId }, 10);
       const sessionHits = hits.filter((h) => h.kind === 'session');
       expect(sessionHits.length).toBeGreaterThanOrEqual(1);
     },

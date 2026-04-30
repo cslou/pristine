@@ -48,13 +48,8 @@
  * - **`Embedder`** — supply a custom embedder (e.g., remote API,
  *   alternate model) by implementing `embed(text)` + `embedBatch(texts)`.
  *   The default embedder is `LocalEmbedder` (Nomic v1.5).
- * - **`LlmClient`** — implements `generate<T>()` (NOT the Anthropic SDK
- *   `messages.create()` shape). Used by the privacy classifier and the
- *   memory pipeline. Bundle two as `LlmClients = { privacyClient,
- *   memoryClient }`. Defaults wire `LlamaCppClient` or `OllamaClient`
- *   depending on `models.json` config.
  *
- * Both interfaces are re-exported here so consumers can declare custom
+ * This interface is re-exported here so consumers can declare custom
  * impls without reaching into internal modules.
  *
  * ## Errors consumers catch

@@ -27,8 +27,8 @@ function createClientFromEntry(entry: ModelEntry): LlmClient {
 }
 
 export function createLlmClients(configDir?: string): {
-  privacyClient: LlmClient;
-  memoryClient: LlmClient;
+  readonly privacyClient: LlmClient;
+  readonly memoryClient: LlmClient;
 } {
   const config: ModelConfig = loadModelConfig(configDir);
   const privacyClient = createClientFromEntry(config.privacy);

@@ -28,6 +28,7 @@
   - **Distributed query / federation.** Single SQLite file, single connection. No cross-database joins, no `ATTACH DATABASE` support.
   - **Caching of compiled prepared statements.** First-pass simplicity: `db.prepare()` per call; revisit if a benchmark demands it (Phase 7 territory).
   - **Worker-thread isolation for `executeReadOnly`.** better-sqlite3 is synchronous; up to `MAX_TIMEOUT_MS` (10s) the Node event loop is fully blocked. JSDoc documents this constraint; a worker-thread wrapper is a follow-up sprint when Phase 6 reference tools land on a hot path.
+  - **LLM-removal sprint** — out of scope per the standing sprint-016 retro decision. Recorded here so the cross-sprint architectural decision survives the template migration.
 
 ### Affected Flows
 
@@ -78,9 +79,10 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Harness includes a `seedSqlCorpus()` helper that creates 2 projects × 3 conversations × 3 messages — small, deterministic, dim-stable (no random IDs in assertions).
 - **Functional verification:**
   - [ ] `npm run test:integration` shows the 7 new harness tests as failing with the stub-throw error message (NOT TS errors); pass condition: error stack mentions `searcher.sql: not implemented`.
-  - [ ] `seedSqlCorpus()` validated by an inline `expect()` block at the top of the harness `describe()` that asserts `client.searcher.sql` would receive a deterministic 18-row corpus (2×3×3). Pass condition: the inline check throws if seeding produced a different row count.
+  - [ ] `seedSqlCorpus()` validated by an inline `expect()` block at the top of the harness `describe()` that asserts seeding via `client.storeAsync` + `client.drainEmbedQueue` produced exactly 18 rows total across the 2 projects × 3 conversations × 3 messages (NOT calling `searcher.sql`, which only exists as a stub at this story). Pass condition: post-seeding `SELECT COUNT(*) FROM messages` (via the writable connection used by `storeAsync`) returns 18; the inline check throws if seeding produced a different row count.
 - **Regression verification:**
-  - [ ] `npm run test:integration` (excluding the new RED tests) — pass condition: existing integration tests still pass at exact pre-Story-1 count.
+  - [ ] **Baseline-capture step (run BEFORE writing the harness file):** `npm run test:integration -- --reporter=verbose 2>&1 | grep -cE "^[[:space:]]*✓"` and record the count in the Story 1 PR body under a `## pre-Story-1 integration-test baseline` heading.
+  - [ ] `npm run test:integration` (excluding the new RED tests) — pass condition: post-Story-1 pass count equals the recorded baseline (existing integration tests unaffected by harness scaffolding).
   - [ ] `npm run test:unit` — pass condition: unit suite unaffected by harness scaffolding.
 - **Manual-only verification:** N/A (backend test harness, fully automated).
 - **Planned commits:**
@@ -113,19 +115,20 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Acceptance criteria:**
   - [ ] New module `src/memory/searcher/sql-backend.ts` (or co-located with `searcher/index.ts` if size warrants) exposes `executeReadOnly(sql: string, params: readonly unknown[], opts: { rowCap: number; timeoutMs: number }): Promise<readonly Row[]>`.
   - [ ] Each `executeReadOnly` call opens a connection in `SQLITE_OPEN_READONLY` mode against the same DB file as the writable connection. Connection lifecycle: open → execute → close (no shared read-only connection across calls — keeps the row cap + timeout per-call).
-  - [ ] Read-only connection aborts queries exceeding `timeoutMs` (default 5000) via `progress_handler` if exposed by the better-sqlite3 binding, OR via `setTimeout` + `db.interrupt()` fallback if not. Either mechanism throws `QueryTimeoutError` (new error class extending `AppError`); the exact mechanism chosen is documented in the Story-2 PR body so reviewers know which code path to scrutinize.
-  - [ ] Cursor wrapper enforces row cap: cursor is iterated up to `rowCap` (default 1000), then closed; any rows beyond the cap are silently dropped (NOT an error — caller chose the cap or accepted default).
+  - [ ] Read-only connection aborts queries exceeding `timeoutMs` (default 5000) via `progress_handler` if exposed by the better-sqlite3 binding, OR via `setTimeout` + `db.interrupt()` fallback if not. Either mechanism throws `QueryTimeoutError` (new error class extending `AppError`); the exact mechanism chosen is documented in a Story-2 commit comment (co-located with the code so future `git blame` traces preserve the rationale — NOT just in the PR body, which is ephemeral).
+  - [ ] Cursor wrapper enforces row cap: cursor is iterated up to `rowCap` (default 1000), then closed; any rows beyond the cap are silently dropped (NOT an error — caller chose the cap or accepted default). **Document this silent-drop behavior in the JSDoc on `executeReadOnly`** (checkable AC, not just a tech note).
   - [ ] Per-call options: `rowCap` (1 ≤ cap ≤ 10000 — `MAX_ROW_CAP`), `timeoutMs` (100 ≤ ms ≤ 10000 — `MAX_TIMEOUT_MS`). Out-of-range values throw `InvalidArgumentError`.
   - [ ] **`executeReadOnly` does NOT inspect the SQL string for a `LIMIT` clause that exceeds `rowCap`** — the row-cap cursor will silently truncate at `rowCap` regardless. Document in JSDoc that callers MUST keep their SQL `LIMIT` ≤ `rowCap`; mismatch is a caller bug, not an SDK error.
   - [ ] `Row` type is `Readonly<Record<string, unknown>>` — opaque to the backend; downstream typing happens at the consumer layer.
   - [ ] **Timeout helper export.** Story 2 exports a `withTimeout(prepareStmt, ms)` primitive (or equivalent shape) that wraps prepared-statement execution with the same `setTimeout` + `db.interrupt()` envelope. Both `executeReadOnly` and Story 3's validation phase consume this helper directly so the timeout mechanism isn't duplicated across modules.
 - **Functional verification:**
   - [ ] Inner-loop unit test: `executeReadOnly` honors row-cap with a deterministic 2000-row inline corpus — pass condition: `rowCap=500` returns exactly 500 rows; `rowCap=2000` returns 2000.
-  - [ ] Inner-loop unit test: timeout fires with a deliberately-slow query (`SELECT * FROM <large-table> CROSS JOIN <large-table>` against a small temp table — caps the test runtime at ≤12s) — pass condition: `QueryTimeoutError` thrown within `timeoutMs` + 2s margin.
+  - [ ] Inner-loop unit test: timeout fires with a deliberately-slow query (`SELECT * FROM <large-table> CROSS JOIN <large-table>` against a small temp table; cap the test wall-time at `timeoutMs + 2s` ≈ 7s at default `timeoutMs=5000` — NOT the pipeline-level ≤12s DoS budget, which is too loose for a unit test) — pass condition: `QueryTimeoutError` thrown within `timeoutMs + 2000ms`.
   - [ ] Inner-loop unit test: out-of-range `rowCap` and `timeoutMs` throw `InvalidArgumentError` — pass condition: error class match for `rowCap=0`, `rowCap=10001`, `timeoutMs=99`, `timeoutMs=10001`.
   - [ ] Inner-loop unit test: connection close on success AND on error — pass condition: leaked-connection counter (or `db.open` flag observation) returns to zero after both paths.
   - [ ] Inner-loop unit test: read-only connection rejects DML at the SQLite layer (sanity check — even if a future bug lets DML through the parser, the connection blocks it) — pass condition: `INSERT INTO messages ...` throws better-sqlite3 read-only error from the connection.
-  - [ ] Story 1's row-cap and timeout RED tests go GREEN after this story merges.
+  - [ ] Inner-loop unit test: `withTimeout(prepareStmt, ms)` is exported and callable — pass condition: `import { withTimeout } from '../../src/memory/searcher/sql-backend.js'` resolves; `withTimeout(db.prepare('SELECT 1'), 200)` returns rows without throwing on a fast query AND throws `QueryTimeoutError` on a deliberately-slow query.
+  - [ ] **Story 1's row-cap and timeout outer-loop RED tests remain RED after this story** (they invoke `client.searcher.sql(...)` which is only wired in Story 4; Story 2 ships the `executeReadOnly` backend in isolation). Functional coverage of row-cap + timeout for THIS story is via the inner-loop unit tests above; outer-loop transitions GREEN in Story 4.
 - **Regression verification:**
   - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green.
   - [ ] `npm run test:integration` — pass condition: existing integration tests unaffected by the new module; Story 1 RED tests for unrelated stories (Story 3/4/5) remain RED.
@@ -163,7 +166,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] `validateSqlAccess(sql: string, allowlist: ReadonlySet<string>): void` calls `parseSqlAccess` and throws `InvalidSqlError` if (a) `isSelect` is false, OR (b) any table in `tables` is NOT in `allowlist`. The error message names the offending table or non-SELECT keyword for debuggability.
   - [ ] **Non-SELECT keyword set (locked):** `EXPLAIN`, `EXPLAIN QUERY PLAN`, `PRAGMA`, `ATTACH`, `DETACH`, `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `REINDEX`, `VACUUM`, `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE`, `ANALYZE`, `REPLACE` are all NOT-SELECT (rejected). Top-level statement must be `SELECT` or `WITH ... SELECT`.
   - [ ] The default allowlist is `new Set(['messages_public', 'conversations_public', 'summaries_public'])` — exposed as `DEFAULT_PUBLIC_VIEW_ALLOWLIST` from the module for re-use in tests / future spec evolution.
-  - [ ] **Story-start decision (decided autonomously by Story 3 — does NOT depend on Story 6 running first):** inspect `messages_fts`'s column footprint at story start via `PRAGMA table_info(messages_fts);` AND `SELECT name FROM sqlite_schema WHERE name LIKE 'messages_fts%';` (the second discovers FTS5 internal shadow tables: `messages_fts_data`, `messages_fts_idx`, `messages_fts_content`, `messages_fts_docsize`, `messages_fts_config`). **Decision rule:** IF `messages_fts` exposes only the externally-projected `content` column (no `metadata`, no `parent_message_id`) AND none of the `messages_fts_*` shadow tables are accidentally added to the allowlist, extend the default allowlist to include exactly the literal string `messages_fts` (string-exact match, no prefix matching). Otherwise DO NOT extend — bounce the FTS-recipe requirement to a follow-up sprint that ships a `messages_fts_public` view. **Pass condition (checkable):** Story 3 PR body contains a `## messages_fts allowlist decision` heading whose body includes (a) one of the literal strings `extended` or `not extended`, (b) a one-paragraph reason, and (c) the verbatim `PRAGMA table_info(messages_fts)` + `sqlite_schema` query output. Story 6's executing agent consumes this heading as a read-only input at its story start without re-investigation.
+  - [ ] **Story-start decision (decided autonomously by Story 3 — does NOT depend on Story 6 running first):** inspect `messages_fts`'s column footprint at story start via `PRAGMA table_info(messages_fts);` AND `SELECT name FROM sqlite_schema WHERE name LIKE 'messages_fts%';` (the second discovers FTS5 internal shadow tables: `messages_fts_data`, `messages_fts_idx`, `messages_fts_content`, `messages_fts_docsize`, `messages_fts_config` (and `messages_fts_vocab` if the FTS5 vocabulary auxiliary table exists in this binding — verify at story start via the `sqlite_schema LIKE 'messages_fts%'` query)). **Decision rule:** IF `messages_fts` exposes only the externally-projected `content` column (no `metadata`, no `parent_message_id`) AND none of the `messages_fts_*` shadow tables are accidentally added to the allowlist, extend the default allowlist to include exactly the literal string `messages_fts` (string-exact match, no prefix matching). Otherwise DO NOT extend — bounce the FTS-recipe requirement to a follow-up sprint that ships a `messages_fts_public` view. **Pass condition (checkable):** Story 3 PR body contains a `## messages_fts allowlist decision` heading whose body includes (a) one of the literal strings `extended` or `not extended`, (b) a one-paragraph reason, and (c) the verbatim `PRAGMA table_info(messages_fts)` + `sqlite_schema` query output. Story 6's executing agent consumes this heading as a read-only input at its story start without re-investigation.
   - [ ] Parser handles: identifier quoting (`"messages"`, `[messages]`, `` `messages` ``); **schema prefixes — only `main.` is stripped for allowlist comparison** (`main.messages_public` → `messages_public`); `temp.<anything>`, `aux.<anything>`, and any other schema prefix throw `InvalidSqlError` (defense-in-depth — the actual primary defense against `ATTACH` is the locked non-SELECT keyword set above which already rejects `ATTACH` outright; the read-only connection flag is a secondary safety net since SQLite restricts writes on read-only connections but does NOT prevent the `ATTACH` statement itself); case-insensitivity (`SELECT` / `select` / `Select` all detected as SELECT); comments (`-- comment`, `/* comment */`) stripped before parsing.
   - [ ] **Allowlist comparison is string-exact (no prefix or substring match)** so `messages_fts_data` is never matched as `messages_fts`.
   - [ ] Parser is conservative: if it cannot determine a table reference unambiguously (e.g., unrecognized SQL syntax), it throws `InvalidSqlError` rather than allowing the query through. Documented in JSDoc as "deny on parse uncertainty."
@@ -171,8 +174,10 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Inner-loop unit tests: table-driven test list of 30+ SQL strings labeled `(input, expected: 'allow' | 'reject', reason)` — pass condition: every case matches expectation including the 12+ adversarial cases (SQL-injection-style payloads, identifier-encoding tricks, CTE attacks, `EXPLAIN QUERY PLAN` prefix, `PRAGMA` access).
   - [ ] Inner-loop unit test: schema-prefix `main.messages_public` → resolves to `messages_public` (allow); `temp.messages_public` → reject; `aux.messages` → reject.
   - [ ] Inner-loop unit test: `messages_fts_data` is rejected even if `messages_fts` is in the allowlist (string-exact match) — pass condition: `InvalidSqlError` thrown with the offending table name in the message.
-  - [ ] Inner-loop unit test: nested CTE `WITH a AS (WITH b AS (SELECT * FROM messages) SELECT * FROM b) SELECT * FROM a` is rejected (parser recurses into inner CTE).
+  - [ ] Inner-loop unit test: nested CTE `WITH a AS (WITH b AS (SELECT * FROM messages) SELECT * FROM b) SELECT * FROM a` is rejected (parser recurses into inner CTE). **Note:** this is the inner-loop (unit) layer; Story 5 adversarial class (e) exercises the same case at the outer-loop (integration) layer — both layers required, not redundant.
+  - [ ] Inner-loop unit test: deny-on-parse-uncertainty — `validateSqlAccess` on an unrecognized-syntax input (e.g. `'FROBNICATE messages_public'`, `'SELECT FROM ...'` with malformed FROM clause, or any SQL the table-extractor cannot resolve unambiguously) throws `InvalidSqlError` rather than allowing through. Pass condition: error class is `InvalidSqlError` AND error message names the offending input or "parse uncertainty".
   - [ ] Story 1's non-SELECT rejection + internal-table rejection RED tests go GREEN.
+  - [ ] **Story 1's raw-SELECT outer-loop RED tests remain RED after this story** (they need Story 4 wiring); Story 1's row-cap + timeout outer-loop tests also remain RED (Story 4).
 - **Regression verification:**
   - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green.
   - [ ] `npm run test:integration` — pass condition: Story 1 row-cap + timeout RED tests still RED (they belong to Story 4 wiring); Story 1 non-SELECT + internal-table tests now GREEN.
@@ -216,6 +221,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Functional verification:**
   - [ ] Inner-loop unit test: order-of-operations — spy on `validateSqlAccess` and `executeReadOnly` (vitest `vi.spyOn` on the imported module), call `searcher.sql(...)`, assert `validateSqlAccess.mock.invocationCallOrder[0] < executeReadOnly.mock.invocationCallOrder[0]`. Pass condition: validate runs strictly before execute on every code path.
   - [ ] Inner-loop unit test: default-opt application — `searcher.sql('SELECT 1')` with no opts uses `rowCap=1000` + `timeoutMs=5000` defaults. Pass condition: defaults observed via the spied `executeReadOnly` call args.
+  - [ ] JSDoc placement check: `grep -nE "vectorSearch|ftsSearch|hybridSearch|sessionVectorSearch|\\bsql\\b" src/memory/searcher/index.ts` shows all five methods named in the same JSDoc-comment block above the `Searcher` interface. Pass condition: a single contiguous JSDoc block contains references to all five names.
   - [ ] Story 1's outer-loop tests for raw SELECT (×2), non-SELECT rejection, internal-table rejection, row cap, and timeout all GREEN after this story merges.
 - **Regression verification:**
   - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green; the four existing search methods (`vectorSearch`/`ftsSearch`/`hybridSearch`/`sessionVectorSearch`) unaffected.
@@ -251,9 +257,9 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Acceptance criteria:**
   - [ ] Adversarial cases **appended to `tests/integration/searcher-sql.test.ts`** (locked — single file keeps the harness's adversarial coverage co-located with its happy-path coverage and avoids fragmenting test-discovery globs) — at least 20 adversarial test cases organized into 5 attack classes under a top-level `describe('searcher.sql adversarial suite', ...)` block:
     - **(a) DML attempts** (≥ 5 cases): `INSERT`, `UPDATE`, `DELETE`, `DROP TABLE`, `ALTER TABLE`. Each must throw `InvalidSqlError`.
-    - **(b) Internal-table SELECT** (≥ 5 cases): `SELECT * FROM messages`, `SELECT * FROM conversations`, `SELECT * FROM vec_windows`, `SELECT * FROM vec_sessions`, `SELECT * FROM messages_fts`. Each must throw `InvalidSqlError`. **Allowlist-conditional substitution (locked at Story 1 scaffold time):** if Story 3 extended the default allowlist to include `messages_fts` (decided autonomously in Story 3 — see Story 3 PR body), drop `messages_fts` from this case set AND substitute **all five** FTS5 shadow tables enumerated in Story 3's AC: `messages_fts_data`, `messages_fts_idx`, `messages_fts_content`, `messages_fts_docsize`, `messages_fts_config` (each must reject — confirms string-exact matching). Also append `SELECT * FROM embed_jobs` and `SELECT * FROM migrations` IF those tables exist in `src/conversations/store.ts` (probe via `grep -n "CREATE TABLE" src/conversations/store.ts` at scaffold time).
+    - **(b) Internal-table SELECT** (≥ 5 cases): `SELECT * FROM messages`, `SELECT * FROM conversations`, `SELECT * FROM vec_windows`, `SELECT * FROM vec_sessions`, `SELECT * FROM messages_fts`. Each must throw `InvalidSqlError`. **Allowlist-conditional substitution (locked at Story 1 scaffold time):** if Story 3 extended the default allowlist to include `messages_fts` (decided autonomously in Story 3 — see Story 3 PR body), drop `messages_fts` from this case set AND substitute **all five** FTS5 shadow tables enumerated in Story 3's AC: `messages_fts_data`, `messages_fts_idx`, `messages_fts_content`, `messages_fts_docsize`, `messages_fts_config` (and `messages_fts_vocab` if the FTS5 vocabulary auxiliary table exists in this binding — verify at story start via the `sqlite_schema LIKE 'messages_fts%'` query) (each must reject — confirms string-exact matching). Also append `SELECT * FROM embed_jobs` and `SELECT * FROM migrations` IF those tables exist in `src/conversations/store.ts` (probe via `grep -n "CREATE TABLE" src/conversations/store.ts` at scaffold time).
     - **(c) Vault / privacy surface SELECT** (≥ 3 cases): use the standardized probe defined in Story 1 Tech Notes (`grep -rn "CREATE TABLE.*vault\\|CREATE TABLE.*key" src/privacy/`) to enumerate target tables. **Fallback (locked):** if the probe returns zero privacy-module tables, substitute 3 internal-corpus tables not in the public-view allowlist (e.g., `messages_fts`, `vec_windows`, `vec_sessions`); document the substitution in the test-file header. Each must throw `InvalidSqlError`.
-    - **(d) DoS / row-cap escape** (≥ 3 cases): cartesian join over a small table that produces > 1M rows; the row cap must terminate iteration at `rowCap`. Long-running sleep-style query (using `randomblob(1000000)` recursion or a CTE bomb); the timeout must fire and throw `QueryTimeoutError`. Wall-time bound for each test: ≤(MAX_TIMEOUT_MS + 2000)ms = ≤12s.
+    - **(d) DoS / row-cap escape** (≥ 3 cases): cartesian join over a small table that produces > 1M rows; the row cap must terminate iteration at `rowCap`. Long-running sleep-style query (using `randomblob(1000000)` recursion or a CTE bomb); the timeout must fire and throw `QueryTimeoutError`. Wall-time bound for each test: ≤(MAX_TIMEOUT_MS + 2000)ms = ≤12s. **Fallback (locked AC, NOT just tech-note prose):** if Story 2's row-cap cursor cannot short-circuit SQLite's join evaluation cleanly (verify at story start), the cartesian-join test instead asserts wall-time bound only (`≤12s` total) — flag the limitation in the story PR for a future optimization sprint; do NOT block this story on cursor short-circuit being optimal.
     - **(e) Identifier-encoding tricks** (≥ 5 cases): `SELECT * FROM "messages"`, `SELECT * FROM [messages]`, `` SELECT * FROM `messages` ``, `SELECT * FROM main.messages`, `SELECT * FROM temp.messages_public` (schema-prefix-other-than-`main.` must reject — confirms `main.`-only stripping), `SELECT * FROM messages -- comment`, `SELECT /* injected */ * FROM messages`, `WITH foo AS (SELECT * FROM messages) SELECT * FROM foo`, **nested-CTE attack** `WITH a AS (WITH b AS (SELECT * FROM messages) SELECT * FROM b) SELECT * FROM a`. Each must throw `InvalidSqlError`.
   - [ ] All adversarial tests run on every CI invocation (NOT marked `@skip` or `@manual`).
   - [ ] `docs/specs/implementation-spec-005.md` updated by anchor-based search (NOT line numbers — they shift as edits land in the same commit):
@@ -267,8 +273,12 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Functional verification:**
   - [ ] `npm run test:integration` — pass condition: ≥20 adversarial test cases all GREEN; Story 1's vault-access RED test now GREEN.
   - [ ] `npm run test:integration` with deliberate-injection — pass condition: each DML / internal-table / vault / DoS / identifier-encoding case throws the expected error class with a message that names the offending construct (regex-pattern assertion).
-  - [ ] DoS test wall-time check: `time npm run test:integration -- searcher-sql.test.ts` for the DoS sub-suite — pass condition: each DoS test completes within ≤12s wall time.
-  - [ ] Spec touchups verified by `grep`: `grep -n "searcher.sql({view" docs/specs/implementation-spec-005.md` returns zero hits (DSL example deleted); `grep -n "scoped DSL" docs/specs/implementation-spec-005.md` returns zero hits.
+  - [ ] DoS test wall-time check: `time npx vitest run tests/integration/searcher-sql.test.ts -t 'adversarial DoS'` (correct Vitest filter form — passing a bare path after `--` does NOT filter Vitest) — pass condition: each DoS test completes within ≤12s wall time.
+  - [ ] Spec touchups verified by `grep` (multi-anchor, robust against DSL example formatting):
+    - `grep -n "scoped DSL" docs/specs/implementation-spec-005.md` returns zero hits — the §5.1.3 wording was rewritten.
+    - `grep -nE "searcher\.sql\(\{" docs/specs/implementation-spec-005.md` returns zero hits — the DSL example block was deleted.
+    - `grep -n "^### Flow 3 — SQL query (primitive)" docs/specs/implementation-spec-005.md` returns exactly one hit — the heading itself survived (structural-integrity check).
+    - `grep -n "^### Flow 5" docs/specs/implementation-spec-005.md` returns exactly one hit — Flow 5 heading survived.
 - **Regression verification:**
   - [ ] `npm run test:unit` — pass condition: unit suite unaffected by adversarial suite addition.
   - [ ] `npm run test:integration` — pass condition: existing integration tests still pass at exact pre-Story-5 count + ≥20 new adversarial tests.
@@ -318,6 +328,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] **Path (c):** recipe-equivalence unit test — `searcher.sql` with the recipe's raw-SQL string returns row-equivalent results to the legacy `searchConversations` for at least 3 representative inputs (different keyword, different project, empty result). Pass condition: deep-equality of result sets after sorting by `id`.
 - **Regression verification:**
   - [ ] `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration` — all clean for whichever path was taken.
+  - [ ] **Path (a) only:** bidirectional JSDoc cross-references confirmed — pass condition: `grep -nE "searchConversations|searcher\\.ftsSearch|searcher\\.sql" src/client.ts src/memory/searcher/index.ts` returns hits in BOTH files for all three surface names; spot-check one JSDoc block in each file mentions the other two surfaces by name.
   - [ ] **Path (b) only:** existing `searchConversations({ userId })` callsites still pass — pass condition: `grep -rn "searchConversations(" src/ tests/ scripts/` shows no breakage in any existing call.
   - [ ] **Path (c) only:** removed-method audit — `grep -rn "searchConversations" src/ tests/` returns zero hits in production code (only in spec / migration-recipe docs).
   - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
@@ -346,9 +357,19 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - **If decision is (c) — recipe shape.** The recipe must be a copy-pasteable raw-SQL string in the JSDoc and spec, NOT a prose description. Example shape (validate at story start; assumes Story 3 extended allowlist to include `messages_fts`):
     ```ts
     // Recipe: keyword search across a project's conversations, returning per-message snippets ordered by relevance.
-    // NOTE: caller-supplied `limit` MUST satisfy `limit <= rowCap` (default rowCap=1000); the recipe-equivalence
-    // unit test binds limit=10 to keep well under the row cap. If a caller passes limit>rowCap, the row-cap
-    // cursor will silently truncate before LIMIT is satisfied, producing a confusing partial result.
+    // NOTES (all enforced as caller-side preconditions; document in JSDoc when this recipe ships in spec §5.2):
+    //   1. `limit` MUST be a positive integer satisfying `1 <= limit <= rowCap` (default rowCap=1000). Callers MUST
+    //      validate / clamp before calling; passing `limit = -1` would cause SQLite to interpret `LIMIT -1` as
+    //      "unlimited" and the row-cap cursor would become the only bound (still bounded, but degraded UX).
+    //   2. The `snippet(...)` column returns RAW HTML containing `<b>` / `</b>` markers. Consumers rendering this
+    //      output in a browser MUST HTML-escape (or replace markers with neutral tokens) before insertion into
+    //      the DOM — XSS risk if any `keyword` content is rendered without escaping the surrounding text.
+    //   3. On multi-project corpora with broad keywords, the FTS5 MATCH executes BEFORE the project_id filter
+    //      (FROM messages_fts ... JOIN ... WHERE ... AND m.project_id = ?). If the cross-project FTS hit set
+    //      exceeds rowCap, the row-cap cursor truncates BEFORE the project filter narrows results, producing
+    //      silently-incomplete project-scoped output. Mitigation: increase rowCap proportional to corpus
+    //      cross-project breadth, or scope the recipe to single-project use until a `messages_fts_per_project`
+    //      view ships.
     const rows = await client.searcher.sql(
       `SELECT m.id, m.conversation_id, m.role, m.timestamp,
               snippet(messages_fts, 0, '<b>', '</b>', '...', 32) AS snippet
@@ -364,9 +385,10 @@ The Final Verification Story runs all sprint functional verification plus the fu
 
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Uses the story sections above and the existing regression suite as the verification source of truth
-  - [ ] Defines where final verification evidence will be recorded
-  - [ ] Includes full regression verification, not only areas believed to be touched
+  - [ ] Every functional verification item from Stories 1-6 has been run and marked pass / fail / ambiguous / unrun with evidence recorded in `## Final Review`
+  - [ ] Every targeted regression verification item from Stories 1-6 has been run and marked pass / fail / ambiguous / unrun with evidence recorded in `## Final Review`
+  - [ ] Final regression suite (unit, integration `SKIP_SLOW=1` AND `SKIP_SLOW=0`, e2e, smoke-indexer, pre-merge gate) has been run with command + exit-code evidence captured
+  - [ ] Sprint doc Status updated to `🟢 Complete` only if all completion criteria are met
   - [ ] Ready for Lou
 - **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories (1-6)
@@ -383,13 +405,13 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Run all functional verification items from every story (1-6) and record pass/fail evidence in `## Final Review`.
 - **Regression verification:**
   - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence:
-    - `npm run test:unit`
-    - `SKIP_SLOW=1 npm run test:integration`
-    - `SKIP_SLOW=0 npm run test:integration` (real Nomic — gates the sprint completion on full coverage)
-    - `npm run test:e2e`
-    - `npx tsx scripts/smoke-indexer.ts`
-    - `bash .checks/pre-merge.sh`
+  - [ ] Run the full available regression verification suite and record pass/fail evidence (each command's pass condition is `exit 0` AND no `FAILED` / `Error` lines in stdout/stderr unless the command prefixes its summary differently):
+    - `npm run test:unit` — pass condition: exit 0, all unit suites GREEN.
+    - `SKIP_SLOW=1 npm run test:integration` — pass condition: exit 0, no FAILED reporter line.
+    - `SKIP_SLOW=0 npm run test:integration` — pass condition: exit 0, all integration suites GREEN with real Nomic v1.5 (gates sprint completion on full coverage).
+    - `npm run test:e2e` — pass condition: exit 0, all e2e suites GREEN.
+    - `npx tsx scripts/smoke-indexer.ts` — pass condition: script exits 0; stdout contains no `FAILED` / `Error` / `assertion failed` lines.
+    - `bash .checks/pre-merge.sh` — pass condition: exit 0, lint + typecheck + unit gate all pass.
 - **Manual-only verification:** Story 6 path-(c) `@manual` script verification IF that path was taken (otherwise N/A).
 - **Planned commits:**
   1. `docs(sprint-019): final verification evidence + Status → 🟢 Complete + ## Final Review section`

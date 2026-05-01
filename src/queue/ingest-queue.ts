@@ -12,14 +12,12 @@ const STALE_THRESHOLD_SECONDS = 30;
 // DDL
 // ---------------------------------------------------------------------------
 
-// `task_type` is now a singleton: spec-005 Phase 3 (sprint-015) introduced
-// per-message embed tasks; sprint-016 Story 1 deleted the legacy
-// extract-conversation surface (orchestrator pipeline removed in spec-005
-// Phase 1). The CHECK constraint is preserved as a closed-set enum so
-// future task types can be added explicitly. message_id / project_id /
-// session_id are NOT NULL on the embed-message shape — kept nullable in
-// DDL only for backward-compatibility with on-disk rows from earlier
-// sprints; new inserts always populate them.
+// `task_type` is currently a singleton — `embed-message`. The CHECK
+// constraint is preserved as a closed-set enum so future task types can
+// be added explicitly. message_id / project_id / session_id are NOT NULL
+// on the embed-message shape — kept nullable in DDL only for
+// backward-compatibility with on-disk rows from earlier schema versions;
+// new inserts always populate them.
 const INGEST_QUEUE_DDL = `
 CREATE TABLE IF NOT EXISTS pending_ingest_tasks (
   id TEXT PRIMARY KEY,
@@ -89,9 +87,8 @@ export interface IngestTask {
  * + compute windows + assemble + upsert vec_windows / window_messages);
  * `processNext` owns the lifecycle (markCompleted on success,
  * resetToPending on retryable error, markFailed on terminal error).
- *
- * Sprint-015 Story 6 — `src/memory/indexer/embed-worker.ts` provides the
- * production handler; tests can inject stubs.
+ * `src/memory/indexer/embed-worker.ts` provides the production handler;
+ * tests can inject stubs.
  */
 export type EmbedTaskHandler = (task: IngestTask) => Promise<void>;
 
@@ -176,11 +173,11 @@ export class IngestQueue {
   // -------------------------------------------------------------------------
 
   /**
-   * Enqueue a per-message embed task. Used by the spec-005 Phase-3 indexer
-   * (sprint-015 Story 2) after `addMessage` writes a row, so the embed-worker
-   * can claim and process the message asynchronously. Caller passes the
-   * INTEGER message id from `messages.id`; the worker uses it to look up the
-   * message + its containing windows.
+   * Enqueue a per-message embed task. Used by the indexer after
+   * `addMessage` writes a row, so the embed-worker can claim and process
+   * the message asynchronously. Caller passes the INTEGER message id from
+   * `messages.id`; the worker uses it to look up the message + its
+   * containing windows.
    *
    * Unlike `enqueue()`, this does NOT touch `conversations` or `messages` —
    * the indexer owns the corpus write; this method only inserts the task row.

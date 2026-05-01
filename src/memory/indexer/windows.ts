@@ -46,8 +46,8 @@ export interface WindowMessageRow {
  * Behavior:
  *   - `totalMessageCount === 0` or `newMessageSortOrder` out of range → [].
  *   - `1 <= totalMessageCount < windowSize` → ONE partial window, indexes
- *     `[0..totalMessageCount-1]`, `windowIndex = 0`. Phase-3 always indexes
- *     short conversations.
+ *     `[0..totalMessageCount-1]`, `windowIndex = 0`. Short conversations
+ *     are always indexed.
  *   - `totalMessageCount >= windowSize` → regular sliding windows of
  *     `stride = windowSize - windowOverlap`. The final window applies
  *     **tail-slide-back**: when its natural end `(numWindows-1)*stride +
@@ -57,10 +57,9 @@ export interface WindowMessageRow {
  *     configured `windowOverlap` as a result — that's the price of always-
  *     full windows.
  *
- * The signature differs from the sprint-015 sketch (`(conversationId,
- * sortOrder, config)` → `(sortOrder, totalCount, config)`) — `conversationId`
- * was unused for pure logic, and the function genuinely needs the total
- * count to determine which windows are currently present.
+ * Signature note: the function takes `(sortOrder, totalCount, config)` —
+ * `conversationId` is unused for pure logic, and the function needs the
+ * total count to determine which windows are currently present.
  *
  * Return value: only the windows that include the new message. Window-index
  * deltas (e.g., the previous tail window getting reshaped on append) are NOT
@@ -160,9 +159,8 @@ export const computeWindowsForMessage = (
 // ---------------------------------------------------------------------------
 
 /**
- * Format one message row as `role: content` for embedding. Matches the
- * format spec-005 §16 references for window text. Exported so tests can
- * pin the format directly; production callers go through
+ * Format one message row as `role: content` for embedding. Exported so
+ * tests can pin the format directly; production callers go through
  * `assembleWindowEmbedding`.
  */
 export const formatMessageForEmbed = (row: WindowMessageRow): string =>
@@ -203,7 +201,7 @@ export const assembleWindowEmbedding = async (
 /**
  * Closure of the four prepared statements + transaction wrapper that
  * `upsertWindow` needs. Created once per `db` via `createWindowWriter` so
- * Story 6's worker reuses statements across many calls.
+ * the embed-worker reuses statements across many calls.
  */
 export interface WindowWriter {
   upsertWindow(
@@ -216,15 +214,15 @@ export interface WindowWriter {
 
 /**
  * Build a `WindowWriter` bound to a database. Prepares the four statements
- * upsertWindow needs once and reuses them across calls — Story 6's worker
- * will call upsertWindow once per affected window per processed message,
- * so per-call statement compilation is real overhead.
+ * upsertWindow needs once and reuses them across calls — the embed-worker
+ * calls upsertWindow once per affected window per processed message, so
+ * per-call statement compilation is real overhead.
  *
  * **Idiom:** vec0 does NOT support INSERT OR REPLACE on (conversation_id,
- * window_index) — the contract pinned by sprint-014's PK-rejection test
- * forces DELETE + INSERT inside a `db.transaction(...)`. The writer does
- * the same for `window_messages` so a (conversation_id, window_index) pair
- * is replaced atomically across both tables.
+ * window_index); the PK-rejection contract forces DELETE + INSERT inside
+ * a `db.transaction(...)`. The writer does the same for `window_messages`
+ * so a (conversation_id, window_index) pair is replaced atomically across
+ * both tables.
  *
  * **BigInt at the vec0 bind boundary:** `vec_windows.window_index` is
  * INTEGER on a vec0 virtual table; better-sqlite3 binds plain JS numbers
@@ -288,7 +286,7 @@ export const createWindowWriter = (db: Database.Database): WindowWriter => {
 /**
  * Convenience one-shot wrapper. Equivalent to
  * `createWindowWriter(db).upsertWindow(...)` — pays the per-call prepare
- * cost. Story 6's worker should use `createWindowWriter` directly and
+ * cost. The embed-worker should use `createWindowWriter` directly and
  * reuse the writer across many calls; this thin shim is for tests and
  * one-off callers.
  */

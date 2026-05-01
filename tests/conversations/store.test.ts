@@ -169,8 +169,9 @@ describe('ConversationStore', () => {
     });
 
     it('writes parent_message_id = NULL by default', () => {
-      // parent_message_id is reserved for the Phase-3 chunker (oversize-message
-      // linkage). addConversation never populates it; every row starts NULL.
+      // parent_message_id is reserved for the indexer's oversize-message
+      // chunker. addConversation never populates it; every row starts
+      // NULL.
       const msgs = makeMessages(['Hi', 'Hello']);
       const id = store.addConversation(msgs, 'user-parent-null');
 
@@ -430,12 +431,11 @@ describe('ConversationStore', () => {
     });
   });
 
-  describe('spec §12 retrieval indexes', () => {
-    // Pins the four retrieval indexes that Phase-4's filter-first vector
-    // search relies on. These were previously asserted in the migration
-    // describe (now deleted); coverage moved here so the post-init shape
+  describe('retrieval indexes', () => {
+    // Pins the four retrieval indexes that the searcher's filter-first
+    // vector path relies on. Coverage lives here so the post-init shape
     // contract stays explicit.
-    it('creates all four spec §12 retrieval indexes in sqlite_master', () => {
+    it('creates all four retrieval indexes in sqlite_master', () => {
       const expected = [
         'ix_conversations_project_started',
         'ix_messages_conv_sort',
@@ -536,14 +536,14 @@ describe('ConversationStore', () => {
     });
 
     it('cascades to window_messages + vec_windows + vec_sessions for indexed conversations (GH #113)', () => {
-      // Sprint-015 Story 1 — once Phase-3 starts writing window_messages rows,
-      // the existing partial-ingest recovery path (deleteById) hits a FK
-      // violation on messages.id without this cascade. Pinned with a fresh
-      // DB so leftover vec rows from other tests don't pollute the assertion.
+      // Once the indexer writes window_messages rows, the existing
+      // partial-ingest recovery path (deleteById) hits a FK violation on
+      // messages.id without this cascade. Pinned with a fresh DB so
+      // leftover vec rows from other tests don't pollute the assertion.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
       const s = new ConversationStore(d);
-      // deleteById cascades to pending_ingest_tasks (sprint-015 schema);
-      // construct an IngestQueue so the table exists.
+      // deleteById cascades to pending_ingest_tasks; construct an
+      // IngestQueue so the table exists.
       new IngestQueue({ db: d });
 
       const id = s.addConversation(makeMessages(['Hi', 'Hello']), 'user-cascade');
@@ -595,12 +595,12 @@ describe('ConversationStore', () => {
       d.close();
     });
 
-    it('cascades to pending_ingest_tasks so partial-ingest recovery never FK-fails (cross-story P1)', () => {
-      // Sprint-015 cumulative-review caught this gap: pending_ingest_tasks
-      // has a FK to conversations(id). Without this DELETE step, calling
-      // deleteById while any embed task is still pending throws FK
-      // violation on the conversations DELETE — exactly the partial-ingest
-      // recovery scenario deleteById exists for.
+    it('cascades to pending_ingest_tasks so partial-ingest recovery never FK-fails', () => {
+      // pending_ingest_tasks has a FK to conversations(id). Without this
+      // DELETE step, calling deleteById while any embed task is still
+      // pending throws FK violation on the conversations DELETE —
+      // exactly the partial-ingest recovery scenario deleteById exists
+      // for.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
       const s = new ConversationStore(d);
       // IngestQueue's constructor creates the pending_ingest_tasks table.
@@ -625,7 +625,7 @@ describe('ConversationStore', () => {
       d.close();
     });
 
-    it('preserves the no-window_messages-rows path (Sprint-009 contract)', () => {
+    it('preserves the no-window_messages-rows path', () => {
       // Regression: a conversation that has never been indexed (no
       // window_messages / vec_windows / vec_sessions rows) must still delete
       // cleanly — the four extra DELETEs are no-ops in that case.
@@ -648,7 +648,7 @@ describe('ConversationStore', () => {
 });
 
 // -----------------------------------------------------------------------------
-// Sprint-014 Story 2 — vec_windows + window_messages + vec_sessions
+// vec_windows + window_messages + vec_sessions
 // -----------------------------------------------------------------------------
 
 // sqlite-vec vec0 tables require BigInt for INTEGER metadata / PK columns.
@@ -663,7 +663,7 @@ const makeEmbedding = (seed: number): Buffer => {
 const readEmbedding = (buf: Buffer): Float32Array =>
   new Float32Array(buf.buffer, buf.byteOffset, 768);
 
-describe('sprint-014 Story 2 — vec tables', () => {
+describe('vec tables', () => {
   it('creates vec_windows, window_messages, vec_sessions in sqlite_master', () => {
     const rows = db
       .prepare(
@@ -676,7 +676,7 @@ describe('sprint-014 Story 2 — vec tables', () => {
     expect(names).toContain('vec_sessions');
   });
 
-  it('creates ix_window_messages_message_id for Phase-4 reverse joins', () => {
+  it('creates ix_window_messages_message_id for reverse joins', () => {
     const row = db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ix_window_messages_message_id'",
@@ -761,8 +761,8 @@ describe('sprint-014 Story 2 — vec tables', () => {
     // vec0 does not support INSERT OR REPLACE on the declared PRIMARY KEY —
     // duplicate inserts throw a UNIQUE constraint. The indexer's "replace"
     // idiom is DELETE + INSERT inside a transaction; this test pins that
-    // contract at the schema level so sprint-015's write-helper lands on
-    // the right primitive.
+    // contract at the schema level so the write-helper lands on the
+    // right primitive.
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     new ConversationStore(d);
 
@@ -801,11 +801,11 @@ describe('sprint-014 Story 2 — vec tables', () => {
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     new ConversationStore(d);
 
-    // Pre-condition: Story 1 enabled PRAGMA foreign_keys = ON. Confirm it
-    // here so this test's failure mode is clear — if the pragma ever
-    // regresses, the FK-rejection would silently pass and this test would
-    // fail on the pragma line rather than the FK assertion, pointing at
-    // the right place.
+    // Pre-condition: PRAGMA foreign_keys = ON. Confirm it here so this
+    // test's failure mode is clear — if the pragma ever regresses, the
+    // FK-rejection would silently pass and this test would fail on the
+    // pragma line rather than the FK assertion, pointing at the right
+    // place.
     expect(d.pragma('foreign_keys', { simple: true })).toBe(1);
 
     expect(() =>
@@ -846,10 +846,10 @@ describe('sprint-014 Story 2 — vec tables', () => {
 });
 
 // -----------------------------------------------------------------------------
-// Sprint-014 Story 3 — public views (messages_public + conversations_public)
+// public views (messages_public + conversations_public)
 // -----------------------------------------------------------------------------
 
-describe('sprint-014 Story 3 — public views', () => {
+describe('public views', () => {
   it('messages_public exposes EXACTLY (id, conversation_id, turn_index, role, content, timestamp, project_id) in declared order', () => {
     const cols = db.prepare('PRAGMA table_info(messages_public)').all() as { name: string }[];
     // No .sort() — the DDL declares a specific column order and SELECT ... *
@@ -910,9 +910,10 @@ describe('sprint-014 Story 3 — public views', () => {
   });
 
   it('messages_public.timestamp is NULL when the underlying message was stored without a timestamp', () => {
-    // Sprint-009's physical messages.timestamp is nullable TEXT; addConversation
-    // without per-message timestamps inserts NULL. strftime('%s', NULL) returns
-    // NULL, so the view's timestamp column passes NULL through for those rows.
+    // The physical messages.timestamp is nullable TEXT; addConversation
+    // without per-message timestamps inserts NULL. strftime('%s', NULL)
+    // returns NULL, so the view's timestamp column passes NULL through
+    // for those rows.
     // This is the documented contract — consumers must handle NULL on
     // messages_public.timestamp, not assume the INTEGER type annotation
     // guarantees non-null.
@@ -930,8 +931,8 @@ describe('sprint-014 Story 3 — public views', () => {
   it('round-trips addConversation data through messages_public with correct aliases', () => {
     const timestamp = '2026-04-24T10:00:00';
     // strftime('%s', '2026-04-24T10:00:00') assumes UTC when there's no tz
-    // suffix, which is the Sprint-009 datetime('now') default. Compute the
-    // expected unix-ms value the same way the view's CAST does.
+    // suffix, which is the datetime('now') default. Compute the expected
+    // unix-ms value the same way the view's CAST does.
     const expectedMs = Math.floor(Date.parse(`${timestamp}Z`) / 1000) * 1000;
 
     const convId = store.addConversation(
@@ -994,10 +995,10 @@ describe('sprint-014 Story 3 — public views', () => {
 });
 
 // -----------------------------------------------------------------------------
-// Sprint-014 Story 4 — summaries table + API surface
+// summaries table + API surface
 // -----------------------------------------------------------------------------
 
-describe('sprint-014 Story 4 — summaries schema', () => {
+describe('summaries schema', () => {
   it('creates the summaries table + ix_summaries_project_time index', () => {
     const tableRow = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'summaries'")
@@ -1025,7 +1026,7 @@ describe('sprint-014 Story 4 — summaries schema', () => {
   });
 });
 
-describe('sprint-014 Story 4 — addMessage', () => {
+describe('addMessage', () => {
   it('appends a message with correct sort_order = N+1 when N messages exist (return void)', () => {
     const convId = store.addConversation(makeMessages(['msg0', 'msg1']), 'user-seq');
     // Confirm baseline: parent has 2 messages (sort_order 0 + 1).
@@ -1035,9 +1036,9 @@ describe('sprint-014 Story 4 — addMessage', () => {
     expect(beforeCount.c).toBe(2);
 
     const result = store.addMessage(convId, { role: 'user', content: 'appended-after' });
-    // Sprint-015 Story 2: addMessage returns the inserted messages.id so the
-    // indexer can enqueue a per-message task atomically. The id is a positive
-    // integer pulled from the same transaction's lastInsertRowid.
+    // addMessage returns the inserted messages.id so the indexer can
+    // enqueue a per-message task atomically. The id is a positive integer
+    // pulled from the same transaction's lastInsertRowid.
     expect(typeof result).toBe('number');
     expect(result).toBeGreaterThan(0);
 
@@ -1137,7 +1138,7 @@ describe('sprint-014 Story 4 — addMessage', () => {
   });
 });
 
-describe('sprint-014 Story 4 — addSummary + getRecentSummaries', () => {
+describe('addSummary + getRecentSummaries', () => {
   it('addSummary inserts a row and returns a non-empty id', () => {
     const id = store.addSummary({
       sessionId: 'sess-1',

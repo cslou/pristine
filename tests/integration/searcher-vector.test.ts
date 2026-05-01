@@ -11,13 +11,13 @@ import { createSearcher } from '../../src/memory/searcher/index.js';
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-016 Story 2 — searcher.vectorSearch end-to-end (filter-first KNN)
+// searcher.vectorSearch end-to-end (filter-first KNN)
 // ---------------------------------------------------------------------------
 //
 // Pins:
 //   1. The vec0 KNN read-path syntax (`WHERE embedding MATCH ? AND k = ?
 //      AND conversation_id IN (...)`) actually works against the installed
-//      sqlite-vec — sprint-014 only exercised the write path.
+//      sqlite-vec end-to-end (write + read).
 //   2. Cross-project isolation: a query in project A returns ZERO hits
 //      from project B, regardless of vector similarity.
 //   3. Filter-first ordering: the candidate-set query hits the
@@ -26,9 +26,9 @@ import { IngestQueue } from '../../src/queue/ingest-queue.js';
 //   5. Empty candidate set returns []; argument-validation guards trip.
 
 // Deterministic stub embedder. Maps query text to a 768-d vector by
-// hashing the text length into the first dim. Same shape as the
-// sprint-015 integration tests so two queries with the same length
-// embed identically — useful for asserting tie-breaking.
+// hashing the text length into the first dim. Same shape as the indexer
+// integration tests so two queries with the same length embed
+// identically — useful for asserting tie-breaking.
 //
 // For the cross-project isolation test we need queries from project A
 // and project B to embed to similar vectors so that the project filter
@@ -263,9 +263,9 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
 
   it('scoring monotonicity: hits returned in descending similarity order (higher = closer)', async () => {
     // WindowHit.score is similarity (1/(1+distance)) — higher = more
-    // similar — to match Story 4's RRF fusion convention. Hits come back
-    // in KNN-distance-ascending order, which maps to score-descending
-    // order monotonically (the inversion is monotonic).
+    // similar — to match the RRF fusion convention. Hits come back in
+    // KNN-distance-ascending order, which maps to score-descending order
+    // monotonically (the inversion is monotonic).
     await seedConversation(p, 'alice', 'project-a', [
       'cat dog bird',
       'apple banana',

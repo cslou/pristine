@@ -224,11 +224,10 @@ describe('processEmbedTask', () => {
     const windowWriter = createWindowWriter(db);
     const config = { windowSize: 3, windowOverlap: 1 };
 
-    // taskType narrowed to 'embed-message' at the type level (sprint-016
-    // Story 1 deleted extract-conversation), but the runtime guard remains
-    // for defense against legacy DB rows whose stored task_type predates
-    // the CHECK collapse. Cast through `unknown` to construct a malformed
-    // task that exercises the guard.
+    // taskType is narrowed to 'embed-message' at the type level, but the
+    // runtime guard remains for defense against legacy DB rows whose
+    // stored task_type predates the CHECK collapse. Cast through
+    // `unknown` to construct a malformed task that exercises the guard.
     const task = {
       id: 'task-wrong',
       conversationId: 'c',
@@ -346,7 +345,7 @@ describe('runEmbedWorker (end-to-end via IngestQueue.processNext)', () => {
   });
 });
 
-describe('crash-recovery via stale-claim reset (sprint-015 Story 6)', () => {
+describe('crash-recovery via stale-claim reset', () => {
   it('re-claims a task that was claimed but never marked complete', async () => {
     // Inline simulation of the "worker crashed mid-task" scenario:
     // 1. Enqueue tasks via real ingest path.

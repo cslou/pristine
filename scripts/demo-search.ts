@@ -262,7 +262,7 @@ const main = async (): Promise<void> => {
     embedder,
   });
 
-  log('=== Sprint-016 ad-hoc retrieval demo ===');
+  log('=== Ad-hoc retrieval demo ===');
   log(`DB: ${DB_PATH} (Nomic v1.5 loads on first embed call)`);
   log('');
 

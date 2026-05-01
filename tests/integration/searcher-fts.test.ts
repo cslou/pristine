@@ -11,7 +11,7 @@ import { createSearcher } from '../../src/memory/searcher/index.js';
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-016 Story 3 — searcher.ftsSearch end-to-end (FTS5 + filter scope)
+// searcher.ftsSearch end-to-end (FTS5 + filter scope)
 // ---------------------------------------------------------------------------
 //
 // Pins:
@@ -270,7 +270,7 @@ describe('searcher.ftsSearch — end-to-end (FTS5 + filter scope)', () => {
     // Build a fresh DB that has NO messages_fts table; the
     // SQLITE_ERROR ("no such table: messages_fts") must propagate as a
     // SqliteError, not get silently misclassified as a user-input
-    // error. Pins the iter-2 P1 fix that narrowed the catch regex.
+    // error. Pins the catch-regex narrowing.
     const bareDb = createDatabase({
       path: ':memory:',
       loadSqliteVec: false,

@@ -5,7 +5,7 @@ import { defaultTokenCounter, type TokenCounter } from '../orchestrator/chunker.
 import { formatMessageForEmbed, type WindowMessageRow } from './windows.js';
 
 // ---------------------------------------------------------------------------
-// buildSessionVector — sprint-015 Story 5 (spec-005 §16 Phase 3 P3-S4)
+// buildSessionVector — embeds a whole conversation into vec_sessions
 // ---------------------------------------------------------------------------
 
 /**
@@ -25,7 +25,7 @@ export interface BuildSessionVectorOptions {
 
 /**
  * Embed an entire conversation as a single 768-d vector and store it in
- * `vec_sessions`. Phase-4 hybrid retrieval reads this row as the
+ * `vec_sessions`. The hybrid retriever reads this row as the
  * coarse-grained session signal alongside the fine-grained `vec_windows`.
  *
  * Flow:
@@ -36,8 +36,7 @@ export interface BuildSessionVectorOptions {
  *   3. If the conversation has zero messages → return early (no-op; no
  *      vec_sessions write). Documented contract: an empty conversation
  *      has nothing to embed.
- *   4. Role-prefix each message (`role: content` per spec-005 §16) and
- *      join with newlines.
+ *   4. Role-prefix each message (`role: content`) and join with newlines.
  *   5. **Pre-embed token guard** — if the joined text exceeds
  *      `MAX_SESSION_VECTOR_TOKENS` per `tokenCounter` (default
  *      ~4-chars/token heuristic), throw `InvalidArgumentError`. Avoids
@@ -48,7 +47,7 @@ export interface BuildSessionVectorOptions {
  *      wrapper is synchronous).
  *   7. Inside `db.transaction(...)`: DELETE the existing `vec_sessions`
  *      row for `conversation_id` (vec0 PK rejects INSERT OR REPLACE —
- *      sprint-014 Story 2's PK-rejection test contract), then INSERT the
+ *      enforced by the PK-rejection test contract), then INSERT the
  *      fresh row with `+updated_at = BigInt(Date.now())`.
  *
  * The `db.transaction` wraps only steps 7's DELETE + INSERT, so a thrown
@@ -94,7 +93,7 @@ export const buildSessionVector = async (
 
   if (messageRows.length === 0) {
     // Empty conversation — no-op. Documented contract: don't write an
-    // empty session vector. Phase-4 retrieval treats a missing
+    // empty session vector. The hybrid retriever treats a missing
     // vec_sessions row as "no session-level signal yet."
     return;
   }

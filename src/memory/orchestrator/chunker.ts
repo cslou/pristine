@@ -1,17 +1,16 @@
 // Sliding-window conversation chunker.
 //
-// Originally preserved as the sole survivor of `src/memory/orchestrator/`
-// through the spec-005 Phase-1 removal sweep. Sprint-015 Story 4 extends
-// the file with a sibling primitive — `splitOversizeMessage` — for
-// per-message chunking when a single turn exceeds the embedder's context
-// budget. The original `chunkConversation` survives unchanged for any
-// callers that still split conversation arrays into windows.
+// Two sibling primitives live here:
+// - `chunkConversation` — splits a message array into overlapping windows
+//   for callers that batch-process conversations.
+// - `splitOversizeMessage` — splits a single message that exceeds the
+//   embedder's context budget into smaller chunks.
 
 import { parse as babelParse } from '@babel/parser';
 import type { Message } from '../../core/types.js';
 
 // ---------------------------------------------------------------------------
-// chunkConversation — original (sprint-013) sliding-window chunker
+// chunkConversation — sliding-window chunker
 // ---------------------------------------------------------------------------
 
 export const CHUNK_SIZE = 20;
@@ -40,7 +39,7 @@ export function chunkConversation(
 }
 
 // ---------------------------------------------------------------------------
-// splitOversizeMessage — sprint-015 Story 4 (spec-005 §16 Phase 3 P3-S3)
+// splitOversizeMessage — per-message chunking for oversize turns
 // ---------------------------------------------------------------------------
 
 /**
@@ -57,10 +56,10 @@ export const OVERSIZE_TOKEN_THRESHOLD = 3000;
 export const OVERSIZE_OVERLAP_TOKENS = 200;
 
 /**
- * Approximate-tokens-from-text counter. Sprint-015 doesn't ship a real
- * tokenizer accessor on the Embedder interface (its current contract is
- * `embed(text)` and `embedBatch(texts)` only), so we approximate by
- * `Math.ceil(text.length / 4)` — the conventional 4-chars/token estimate.
+ * Approximate-tokens-from-text counter. The Embedder interface doesn't
+ * expose a tokenizer accessor (its contract is `embed(text)` and
+ * `embedBatch(texts)` only), so we approximate by `Math.ceil(text.length / 4)`
+ * — the conventional 4-chars/token estimate.
  *
  * The embedder's actual tokenizer (Nomic v1.5 is BERT-style WordPiece) may
  * count slightly fewer tokens for English prose and slightly more for code.

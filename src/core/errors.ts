@@ -12,13 +12,6 @@ export class LlmClassificationError extends AppError {
   }
 }
 
-export class DownloadError extends AppError {
-  public constructor(message: string) {
-    super(message);
-    this.name = 'DownloadError';
-  }
-}
-
 export class ResolveApprovalError extends AppError {
   public constructor(message: string) {
     super(message);

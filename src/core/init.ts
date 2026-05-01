@@ -6,95 +6,22 @@ import { createDefaultDatabase } from './database.js';
 import type { EmbedderConfig } from '../embedder/index.js';
 
 // ---------------------------------------------------------------------------
-// ModelConfig types (discriminated union on 'engine')
+// PristineConfig — init-time SDK config (currently embedder-only)
 // ---------------------------------------------------------------------------
 
-export interface OllamaModelEntry {
-  readonly engine: 'ollama';
-  readonly model: string;
-  readonly host?: string;
-}
-
-export interface LlamaCppModelEntry {
-  readonly engine: 'llamacpp';
-  readonly path: string;
-  readonly gpu?: 'auto' | 'metal' | 'cuda' | 'vulkan' | false;
-}
-
-export type ModelEntry = OllamaModelEntry | LlamaCppModelEntry;
-
-export interface ModelConfig {
-  readonly privacy: ModelEntry;
-  readonly memory: ModelEntry;
+export interface PristineConfig {
   readonly embedder?: EmbedderConfig;
 }
 
-export const DEFAULT_MODEL_CONFIG: ModelConfig = {
-  privacy: { engine: 'ollama', model: 'llama3.2:latest' },
-  memory: { engine: 'ollama', model: 'llama3.2:latest' },
+export const DEFAULT_PRISTINE_CONFIG: PristineConfig = {
+  embedder: { engine: 'local' },
 };
 
 // ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
 
-const VALID_ENGINES = new Set(['ollama', 'llamacpp']);
-const VALID_GPU_VALUES = new Set<unknown>(['auto', 'metal', 'cuda', 'vulkan', false]);
-
-const EXAMPLE_CONFIG = JSON.stringify(DEFAULT_MODEL_CONFIG, null, 2);
-
-function validateModelEntry(value: unknown, section: string): ModelEntry {
-  if (typeof value !== 'object' || value === null) {
-    throw new ConfigError(
-      `"${section}" in models.json must be an object. Example:\n${EXAMPLE_CONFIG}`,
-    );
-  }
-
-  const obj = value as Record<string, unknown>;
-
-  if (typeof obj.engine !== 'string' || !VALID_ENGINES.has(obj.engine)) {
-    throw new ConfigError(
-      `Unknown engine "${String(obj.engine)}" in "${section}". Valid engines: ollama, llamacpp`,
-    );
-  }
-
-  if (obj.engine === 'ollama') {
-    if (typeof obj.model !== 'string' || obj.model.length === 0) {
-      throw new ConfigError(`"${section}" with engine "ollama" requires a non-empty "model" field`);
-    }
-    if (obj.host !== undefined && (typeof obj.host !== 'string' || obj.host.length === 0)) {
-      throw new ConfigError(`"${section}.host" must be a non-empty string if provided`);
-    }
-    return {
-      engine: 'ollama',
-      model: obj.model,
-      ...(obj.host !== undefined ? { host: obj.host as string } : {}),
-    };
-  }
-
-  // engine === 'llamacpp'
-  if (typeof obj.path !== 'string' || obj.path.length === 0) {
-    throw new ConfigError(`"${section}" with engine "llamacpp" requires a non-empty "path" field`);
-  }
-  if (!existsSync(obj.path)) {
-    throw new ConfigError(
-      `GGUF file not found: ${obj.path} (configured in "${section}").\n` +
-        `Update the path in ~/.pristine/models.json:\n\n` +
-        `  { "${section}": { "engine": "llamacpp", "path": "/absolute/path/to/model.gguf" } }`,
-    );
-  }
-  if (obj.gpu !== undefined && !VALID_GPU_VALUES.has(obj.gpu)) {
-    throw new ConfigError(
-      `Invalid gpu value "${String(obj.gpu)}" in "${section}". ` +
-        `Valid values: auto, metal, cuda, vulkan, false`,
-    );
-  }
-  return {
-    engine: 'llamacpp',
-    path: obj.path,
-    ...(obj.gpu !== undefined ? { gpu: obj.gpu as LlamaCppModelEntry['gpu'] } : {}),
-  };
-}
+const EXAMPLE_EMBEDDER_CONFIG = JSON.stringify(DEFAULT_PRISTINE_CONFIG, null, 2);
 
 const VALID_EMBEDDER_ENGINES = new Set(['ollama', 'local']);
 
@@ -138,10 +65,10 @@ function validateEmbedderEntry(value: unknown): EmbedderConfig {
 }
 
 // ---------------------------------------------------------------------------
-// loadModelConfig
+// loadPristineConfig
 // ---------------------------------------------------------------------------
 
-export function loadModelConfig(configDir?: string): ModelConfig {
+export function loadPristineConfig(configDir?: string): PristineConfig {
   const dir = configDir ?? join(homedir(), '.pristine');
   const filePath = join(dir, 'models.json');
 
@@ -157,32 +84,20 @@ export function loadModelConfig(configDir?: string): ModelConfig {
   } catch (cause) {
     const msg = cause instanceof Error ? cause.message : String(cause);
     throw new ConfigError(
-      `Invalid JSON in ${filePath}: ${msg}\n\nExpected format:\n${EXAMPLE_CONFIG}`,
+      `Invalid JSON in ${filePath}: ${msg}\n\nExpected format:\n${EXAMPLE_EMBEDDER_CONFIG}`,
     );
   }
 
-  if (typeof raw !== 'object' || raw === null) {
-    throw new ConfigError(`models.json must be a JSON object. Expected format:\n${EXAMPLE_CONFIG}`);
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new ConfigError(
+      `models.json must be a JSON object. Expected format:\n${EXAMPLE_EMBEDDER_CONFIG}`,
+    );
   }
 
   const obj = raw as Record<string, unknown>;
-
-  if (!('privacy' in obj)) {
-    throw new ConfigError(
-      `models.json is missing required "privacy" section. Expected format:\n${EXAMPLE_CONFIG}`,
-    );
-  }
-  if (!('memory' in obj)) {
-    throw new ConfigError(
-      `models.json is missing required "memory" section. Expected format:\n${EXAMPLE_CONFIG}`,
-    );
-  }
-
-  const privacy = validateModelEntry(obj.privacy, 'privacy');
-  const memory = validateModelEntry(obj.memory, 'memory');
   const embedder = 'embedder' in obj ? validateEmbedderEntry(obj.embedder) : undefined;
 
-  return { privacy, memory, ...(embedder ? { embedder } : {}) };
+  return embedder ? { embedder } : {};
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +108,7 @@ export interface InitPristineResult {
   readonly baseDir: string;
   readonly configPath: string;
   readonly databasePath: string;
-  readonly config: ModelConfig;
+  readonly config: PristineConfig;
 }
 
 export function initPristine(baseDir?: string): InitPristineResult {
@@ -205,13 +120,12 @@ export function initPristine(baseDir?: string): InitPristineResult {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(join(dir, 'keys'), { recursive: true, mode: 0o700 });
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  mkdirSync(join(dir, 'models'), { recursive: true });
 
   if (!existsSync(configPath)) {
-    writeFileSync(configPath, JSON.stringify(DEFAULT_MODEL_CONFIG, null, 2) + '\n');
+    writeFileSync(configPath, JSON.stringify(DEFAULT_PRISTINE_CONFIG, null, 2) + '\n');
   }
 
-  const config = loadModelConfig(dir);
+  const config = loadPristineConfig(dir);
 
   const db = createDefaultDatabase(dataDir);
   db.close();

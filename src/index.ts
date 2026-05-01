@@ -62,8 +62,8 @@
  *   passthrough methods (`drainEmbedQueue`, `buildSessionVector`)
  *   narrow the indexer's broader error set to this single class so
  *   callers have one type to catch.
- * - **`ConfigError`** — bad config (invalid `models.json`, missing model
- *   files); typically surfaces during `Pristine.create({...})`.
+ * - **`ConfigError`** — bad config (invalid `models.json`); typically
+ *   surfaces during `Pristine.create({...})`.
  *
  * Other domain-specific subclasses (e.g. `ConversationNotFoundError`)
  * live in `src/core/errors.ts` and extend `AppError`; they are NOT

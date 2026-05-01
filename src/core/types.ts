@@ -221,17 +221,3 @@ export interface KeyPairWithStatus {
   readonly privateKey: string;
   readonly created: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-export interface PromptConfig {
-  readonly classifier?: string;
-}
-
-export interface LocalConfig {
-  readonly embedModel?: string;
-  readonly dataDir?: string;
-  readonly prompts?: PromptConfig;
-}

@@ -11,7 +11,7 @@ import { createSearcher } from '../../src/memory/searcher/index.js';
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-016 Story 5 — sessionVectorSearch + 3-source hybrid fan-out
+// sessionVectorSearch + 3-source hybrid fan-out
 // ---------------------------------------------------------------------------
 //
 // Pins:

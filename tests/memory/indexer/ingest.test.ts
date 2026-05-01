@@ -325,7 +325,7 @@ describe('Indexer.ingest error propagation', () => {
   });
 });
 
-describe('Indexer.ingest oversize-message chunking (sprint-015 Story 4)', () => {
+describe('Indexer.ingest oversize-message chunking', () => {
   it('splits an oversize prose turn into N chunks linked via parent_message_id', () => {
     const conversationId = store.addConversation(makeMessages(['seed']), 'user-oversize');
     // Inject a tiny threshold + char-tokens counter so we don't have to
@@ -457,9 +457,9 @@ function delta() { return 4; }
 
 describe('Indexer.ingest does NOT do embedding work synchronously', () => {
   it('returns before any embed-message task transitions to processing', () => {
-    // Phase-3 contract: embedding is offloaded to the worker. After ingest()
-    // returns, every newly-enqueued task is still in 'pending' status — no
-    // implicit processing happens inside ingest().
+    // Indexer contract: embedding is offloaded to the worker. After
+    // ingest() returns, every newly-enqueued task is still in 'pending'
+    // status — no implicit processing happens inside ingest().
     const conversationId = store.addConversation(makeMessages(['seed']), 'user-async');
     const indexer = createIndexer({ db, conversationStore: store, ingestQueue: queue });
 

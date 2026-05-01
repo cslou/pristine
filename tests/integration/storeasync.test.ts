@@ -60,7 +60,7 @@ describe('storeAsync — end-to-end corpus population', () => {
       { role: 'assistant' as const, content: 'turn six — final answer' },
     ];
 
-    const conversationId = client.storeAsync(turns, 'sprint-016-user', 'sprint-016-project');
+    const conversationId = client.storeAsync(turns, 'test-user-a', 'test-project-a');
     expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
 
     // Pre-drain: messages already inserted (synchronous), embed tasks
@@ -112,7 +112,7 @@ describe('storeAsync — end-to-end corpus population', () => {
 
     // searchConversations returns the populated FTS hit by keyword.
     const hits = client.searchConversations({
-      userId: 'sprint-016-user',
+      userId: 'test-user-a',
       keyword: 'sliding',
     });
     expect(hits).toHaveLength(1);
@@ -122,7 +122,7 @@ describe('storeAsync — end-to-end corpus population', () => {
     const detail = client.getConversation(conversationId);
     expect(detail).not.toBeNull();
     expect(detail!.messages).toHaveLength(6);
-    expect(detail!.userId).toBe('sprint-016-user');
+    expect(detail!.userId).toBe('test-user-a');
   });
 
   it('rolls back the conversation row when indexer.ingest fails (atomic transaction)', async () => {

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppError, ConfigError } from '../../src/core/errors.js';
-import { DEFAULT_MODEL_CONFIG, initPristine, loadModelConfig } from '../../src/core/init.js';
+import { DEFAULT_PRISTINE_CONFIG, initPristine, loadPristineConfig } from '../../src/core/init.js';
 import { createDefaultDatabase } from '../../src/core/database.js';
 
 let cleanupDirs: string[] = [];
@@ -34,227 +34,59 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// loadModelConfig
+// loadPristineConfig
 // ---------------------------------------------------------------------------
 
-describe('loadModelConfig', () => {
-  it('loads valid Ollama config', () => {
-    const dir = makeTmpDir('cfg-ollama');
-    const config = {
-      privacy: { engine: 'ollama', model: 'llama3.2:latest' },
-      memory: { engine: 'ollama', model: 'llama3.2:latest' },
-    };
-    writeFileSync(join(dir, 'models.json'), JSON.stringify(config));
-
-    const result = loadModelConfig(dir);
-
-    expect(result.privacy.engine).toBe('ollama');
-    expect(result.memory.engine).toBe('ollama');
-    if (result.privacy.engine === 'ollama') {
-      expect(result.privacy.model).toBe('llama3.2:latest');
-    }
-  });
-
-  it('loads valid llamacpp config', () => {
-    const dir = makeTmpDir('cfg-llamacpp');
-    const ggufPath = join(dir, 'fake.gguf');
-    writeFileSync(ggufPath, '');
-    const config = {
-      privacy: { engine: 'llamacpp', path: ggufPath },
-      memory: { engine: 'llamacpp', path: ggufPath },
-    };
-    writeFileSync(join(dir, 'models.json'), JSON.stringify(config));
-
-    const result = loadModelConfig(dir);
-
-    expect(result.privacy.engine).toBe('llamacpp');
-    if (result.privacy.engine === 'llamacpp') {
-      expect(result.privacy.path).toBe(ggufPath);
-    }
-  });
-
-  it('loads mixed config (ollama privacy, llamacpp memory)', () => {
-    const dir = makeTmpDir('cfg-mixed');
-    const ggufPath = join(dir, 'fake.gguf');
-    writeFileSync(ggufPath, '');
-    const config = {
-      privacy: { engine: 'ollama', model: 'llama3.2:latest' },
-      memory: { engine: 'llamacpp', path: ggufPath },
-    };
-    writeFileSync(join(dir, 'models.json'), JSON.stringify(config));
-
-    const result = loadModelConfig(dir);
-
-    expect(result.privacy.engine).toBe('ollama');
-    expect(result.memory.engine).toBe('llamacpp');
-  });
-
+describe('loadPristineConfig', () => {
   it('throws ConfigError when file does not exist', () => {
     const dir = makeTmpDir('cfg-missing');
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/Model config not found/);
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/Model config not found/);
   });
 
   it('throws ConfigError for malformed JSON', () => {
     const dir = makeTmpDir('cfg-malformed');
     writeFileSync(join(dir, 'models.json'), '{not valid json}');
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/Invalid JSON/);
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/Invalid JSON/);
   });
 
-  it('throws ConfigError when privacy section missing', () => {
-    const dir = makeTmpDir('cfg-no-privacy');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({ memory: { engine: 'ollama', model: 'x' } }),
-    );
+  it('throws ConfigError when root is not a JSON object', () => {
+    const dir = makeTmpDir('cfg-non-object');
+    writeFileSync(join(dir, 'models.json'), JSON.stringify(['array', 'not object']));
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/missing required "privacy"/);
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/must be a JSON object/);
   });
 
-  it('throws ConfigError when memory section missing', () => {
-    const dir = makeTmpDir('cfg-no-memory');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({ privacy: { engine: 'ollama', model: 'x' } }),
-    );
+  it('returns empty config when models.json is `{}`', () => {
+    const dir = makeTmpDir('cfg-empty');
+    writeFileSync(join(dir, 'models.json'), '{}');
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/missing required "memory"/);
+    const result = loadPristineConfig(dir);
+
+    expect(result).toEqual({});
   });
 
-  it('throws ConfigError for unknown engine', () => {
-    const dir = makeTmpDir('cfg-bad-engine');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'pytorch', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/Unknown engine "pytorch"/);
-  });
-
-  it('throws ConfigError when ollama config missing model', () => {
-    const dir = makeTmpDir('cfg-no-model');
+  it('silently ignores legacy privacy / memory fields (backward compatible)', () => {
+    // Existing installs may have an older models.json with privacy and
+    // memory engine sections. Those fields are no longer consumed; the
+    // loader passes them through unread.
+    const dir = makeTmpDir('cfg-legacy');
     writeFileSync(
       join(dir, 'models.json'),
       JSON.stringify({
-        privacy: { engine: 'ollama' },
-        memory: { engine: 'ollama', model: 'x' },
+        privacy: { engine: 'ollama', model: 'llama3.2:latest' },
+        memory: { engine: 'ollama', model: 'llama3.2:latest' },
+        embedder: { engine: 'local' },
       }),
     );
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/requires a non-empty "model"/);
-  });
+    const result = loadPristineConfig(dir);
 
-  it('throws ConfigError when llamacpp config missing path', () => {
-    const dir = makeTmpDir('cfg-no-path');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'llamacpp' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/requires a non-empty "path"/);
-  });
-
-  it('throws ConfigError when llamacpp path does not exist', () => {
-    const dir = makeTmpDir('cfg-bad-path');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'llamacpp', path: '/nonexistent/model.gguf' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/GGUF file not found/);
-    expect(() => loadModelConfig(dir)).toThrow(/Update the path in/);
-    expect(() => loadModelConfig(dir)).toThrow(/"engine": "llamacpp"/);
-  });
-
-  it('includes example config in malformed JSON error', () => {
-    const dir = makeTmpDir('cfg-example');
-    writeFileSync(join(dir, 'models.json'), '{bad json');
-
-    expect(() => loadModelConfig(dir)).toThrow(/Expected format:/);
-    expect(() => loadModelConfig(dir)).toThrow(/"engine": "ollama"/);
-  });
-
-  it('includes valid engines in unknown engine error', () => {
-    const dir = makeTmpDir('cfg-engines-list');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'vllm', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    expect(() => loadModelConfig(dir)).toThrow(/Valid engines: ollama, llamacpp/);
-  });
-
-  it('accepts optional host in ollama config', () => {
-    const dir = makeTmpDir('cfg-host');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x', host: 'http://custom:1234' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    const result = loadModelConfig(dir);
-
-    if (result.privacy.engine === 'ollama') {
-      expect(result.privacy.host).toBe('http://custom:1234');
-    }
-  });
-
-  it('throws ConfigError for invalid gpu value in llamacpp config', () => {
-    const dir = makeTmpDir('cfg-bad-gpu');
-    const ggufPath = join(dir, 'fake.gguf');
-    writeFileSync(ggufPath, '');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'llamacpp', path: ggufPath, gpu: 'rocm' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/Invalid gpu value "rocm"/);
-  });
-
-  it('accepts optional gpu in llamacpp config', () => {
-    const dir = makeTmpDir('cfg-gpu');
-    const ggufPath = join(dir, 'fake.gguf');
-    writeFileSync(ggufPath, '');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'llamacpp', path: ggufPath, gpu: 'metal' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
-
-    const result = loadModelConfig(dir);
-
-    if (result.privacy.engine === 'llamacpp') {
-      expect(result.privacy.gpu).toBe('metal');
-    }
+    expect(result.embedder?.engine).toBe('local');
   });
 
   // -------------------------------------------------------------------------
@@ -266,13 +98,11 @@ describe('loadModelConfig', () => {
     writeFileSync(
       join(dir, 'models.json'),
       JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
         embedder: { engine: 'ollama', model: 'nomic-embed-text' },
       }),
     );
 
-    const result = loadModelConfig(dir);
+    const result = loadPristineConfig(dir);
 
     expect(result.embedder).toBeDefined();
     expect(result.embedder?.engine).toBe('ollama');
@@ -283,31 +113,18 @@ describe('loadModelConfig', () => {
 
   it('loads embedder config with engine "local"', () => {
     const dir = makeTmpDir('cfg-embedder-local');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-        embedder: { engine: 'local' },
-      }),
-    );
+    writeFileSync(join(dir, 'models.json'), JSON.stringify({ embedder: { engine: 'local' } }));
 
-    const result = loadModelConfig(dir);
+    const result = loadPristineConfig(dir);
 
     expect(result.embedder?.engine).toBe('local');
   });
 
-  it('returns undefined embedder when section is missing (backward compatible)', () => {
+  it('returns undefined embedder when section is missing', () => {
     const dir = makeTmpDir('cfg-no-embedder');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-      }),
-    );
+    writeFileSync(join(dir, 'models.json'), JSON.stringify({}));
 
-    const result = loadModelConfig(dir);
+    const result = loadPristineConfig(dir);
 
     expect(result.embedder).toBeUndefined();
   });
@@ -316,14 +133,10 @@ describe('loadModelConfig', () => {
     const dir = makeTmpDir('cfg-embedder-host');
     writeFileSync(
       join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-        embedder: { engine: 'ollama', host: 'http://remote:9999' },
-      }),
+      JSON.stringify({ embedder: { engine: 'ollama', host: 'http://remote:9999' } }),
     );
 
-    const result = loadModelConfig(dir);
+    const result = loadPristineConfig(dir);
 
     if (result.embedder?.engine === 'ollama') {
       expect(result.embedder.host).toBe('http://remote:9999');
@@ -332,47 +145,29 @@ describe('loadModelConfig', () => {
 
   it('throws ConfigError for unknown embedder engine', () => {
     const dir = makeTmpDir('cfg-embedder-bad-engine');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-        embedder: { engine: 'llamacpp' },
-      }),
-    );
+    writeFileSync(join(dir, 'models.json'), JSON.stringify({ embedder: { engine: 'llamacpp' } }));
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/Unknown embedder engine "llamacpp"/);
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/Unknown embedder engine "llamacpp"/);
   });
 
   it('throws ConfigError for non-object embedder section', () => {
     const dir = makeTmpDir('cfg-embedder-non-obj');
-    writeFileSync(
-      join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-        embedder: 'ollama',
-      }),
-    );
+    writeFileSync(join(dir, 'models.json'), JSON.stringify({ embedder: 'ollama' }));
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/"embedder" in models.json must be an object/);
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/"embedder" in models.json must be an object/);
   });
 
   it('throws ConfigError for empty embedder model string', () => {
     const dir = makeTmpDir('cfg-embedder-empty-model');
     writeFileSync(
       join(dir, 'models.json'),
-      JSON.stringify({
-        privacy: { engine: 'ollama', model: 'x' },
-        memory: { engine: 'ollama', model: 'x' },
-        embedder: { engine: 'ollama', model: '' },
-      }),
+      JSON.stringify({ embedder: { engine: 'ollama', model: '' } }),
     );
 
-    expect(() => loadModelConfig(dir)).toThrow(ConfigError);
-    expect(() => loadModelConfig(dir)).toThrow(/must be a non-empty string/);
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/must be a non-empty string/);
   });
 });
 
@@ -462,17 +257,16 @@ describe('initPristine', () => {
     expect(existsSync(baseDir)).toBe(true);
     expect(existsSync(join(baseDir, 'keys'))).toBe(true);
     expect(existsSync(join(baseDir, 'data'))).toBe(true);
-    expect(existsSync(join(baseDir, 'models'))).toBe(true);
   });
 
-  it('writes default models.json with Ollama defaults', () => {
+  it('writes default models.json with embedder-only shape', () => {
     const dir = makeTmpDir('init-config');
     const baseDir = join(dir, 'pristine');
 
     initPristine(baseDir);
 
     const raw = JSON.parse(readFileSync(join(baseDir, 'models.json'), 'utf-8')) as unknown;
-    expect(raw).toEqual(DEFAULT_MODEL_CONFIG);
+    expect(raw).toEqual(DEFAULT_PRISTINE_CONFIG);
   });
 
   it('does not overwrite existing models.json', () => {
@@ -480,10 +274,7 @@ describe('initPristine', () => {
     const baseDir = join(dir, 'pristine');
     mkdirSync(baseDir, { recursive: true });
 
-    const customConfig = {
-      privacy: { engine: 'ollama', model: 'custom-model' },
-      memory: { engine: 'ollama', model: 'custom-model' },
-    };
+    const customConfig = { embedder: { engine: 'ollama', model: 'mxbai-embed-large' } };
     writeFileSync(join(baseDir, 'models.json'), JSON.stringify(customConfig, null, 2));
 
     initPristine(baseDir);
@@ -521,7 +312,7 @@ describe('initPristine', () => {
     expect(result.baseDir).toBe(baseDir);
     expect(result.configPath).toBe(join(baseDir, 'models.json'));
     expect(result.databasePath).toBe(join(baseDir, 'data', 'pristine.db'));
-    expect(result.config).toEqual(DEFAULT_MODEL_CONFIG);
+    expect(result.config).toEqual(DEFAULT_PRISTINE_CONFIG);
   });
 
   it('sets 0o700 on baseDir, keys/, data/ (Unix only)', () => {

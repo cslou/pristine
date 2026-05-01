@@ -553,9 +553,8 @@ describe('searcher cross-cutting — static import guard', () => {
       // 'pg-promise', etc. don't false-positive.
       { label: 'pg', regex: /from\s+['"]pg['"]|require\(['"]pg['"]\)/ },
       // @supabase/* covers all submodules: @supabase/supabase-js,
-      // @supabase/auth-js, etc. The original story-1 pattern matched
-      // bare '@supabase' only; this catches the realistic submodule
-      // imports too.
+      // @supabase/auth-js, etc. The pattern catches submodule imports
+      // (a bare '@supabase' match would miss the realistic shapes).
       {
         label: '@supabase/*',
         regex: /from\s+['"]@supabase\/[^'"]+['"]|require\(['"]@supabase\/[^'"]+['"]\)/,

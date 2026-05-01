@@ -595,12 +595,12 @@ describe('ConversationStore', () => {
       d.close();
     });
 
-    it('cascades to pending_ingest_tasks so partial-ingest recovery never FK-fails (cross-story P1)', () => {
-      // Sprint-015 cumulative-review caught this gap: pending_ingest_tasks
-      // has a FK to conversations(id). Without this DELETE step, calling
-      // deleteById while any embed task is still pending throws FK
-      // violation on the conversations DELETE — exactly the partial-ingest
-      // recovery scenario deleteById exists for.
+    it('cascades to pending_ingest_tasks so partial-ingest recovery never FK-fails', () => {
+      // pending_ingest_tasks has a FK to conversations(id). Without this
+      // DELETE step, calling deleteById while any embed task is still
+      // pending throws FK violation on the conversations DELETE —
+      // exactly the partial-ingest recovery scenario deleteById exists
+      // for.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
       const s = new ConversationStore(d);
       // IngestQueue's constructor creates the pending_ingest_tasks table.
@@ -625,7 +625,7 @@ describe('ConversationStore', () => {
       d.close();
     });
 
-    it('preserves the no-window_messages-rows path (Sprint-009 contract)', () => {
+    it('preserves the no-window_messages-rows path', () => {
       // Regression: a conversation that has never been indexed (no
       // window_messages / vec_windows / vec_sessions rows) must still delete
       // cleanly — the four extra DELETEs are no-ops in that case.
@@ -910,9 +910,10 @@ describe('public views', () => {
   });
 
   it('messages_public.timestamp is NULL when the underlying message was stored without a timestamp', () => {
-    // Sprint-009's physical messages.timestamp is nullable TEXT; addConversation
-    // without per-message timestamps inserts NULL. strftime('%s', NULL) returns
-    // NULL, so the view's timestamp column passes NULL through for those rows.
+    // The physical messages.timestamp is nullable TEXT; addConversation
+    // without per-message timestamps inserts NULL. strftime('%s', NULL)
+    // returns NULL, so the view's timestamp column passes NULL through
+    // for those rows.
     // This is the documented contract — consumers must handle NULL on
     // messages_public.timestamp, not assume the INTEGER type annotation
     // guarantees non-null.
@@ -930,8 +931,8 @@ describe('public views', () => {
   it('round-trips addConversation data through messages_public with correct aliases', () => {
     const timestamp = '2026-04-24T10:00:00';
     // strftime('%s', '2026-04-24T10:00:00') assumes UTC when there's no tz
-    // suffix, which is the Sprint-009 datetime('now') default. Compute the
-    // expected unix-ms value the same way the view's CAST does.
+    // suffix, which is the datetime('now') default. Compute the expected
+    // unix-ms value the same way the view's CAST does.
     const expectedMs = Math.floor(Date.parse(`${timestamp}Z`) / 1000) * 1000;
 
     const convId = store.addConversation(

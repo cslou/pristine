@@ -118,7 +118,7 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
 END;
 `;
 
-// Spec-005 §12 indexes — `project_id` and `parent_message_id` are defined
+// Retrieval indexes — `project_id` and `parent_message_id` are defined
 // inline in CONVERSATION_STORE_DDL above, so these indexes can land
 // immediately after the base tables in initConversationTables.
 const RETRIEVAL_INDEXES_DDL = `
@@ -132,7 +132,7 @@ CREATE INDEX IF NOT EXISTS ix_messages_parent
   ON messages(parent_message_id);
 `;
 
-// Spec-005 §12 vec_windows — sliding-window primary semantic index. vec0 stores
+// vec_windows — sliding-window primary semantic index. vec0 stores
 // 768-d Nomic Embed v1.5 vectors keyed by (conversation_id, window_index). The
 // `float[768]` is the sqlite-vec typed-column syntax; vec0 handles the BLOB
 // representation internally. Requires sqlite-vec loaded on the connection.
@@ -271,11 +271,11 @@ CREATE INDEX IF NOT EXISTS ix_summaries_project_time
   ON summaries(project_id, timestamp DESC);
 `;
 
-// Spec-005 §12 summaries_public — read-only public view. Excludes the
-// metadata column (private caller-state) per spec §12 privacy invariant;
-// exposes everything else verbatim. No CAST needed — summaries.timestamp
-// is already stored as INTEGER unix ms (unlike messages.timestamp which
-// was TEXT from Sprint-009).
+// summaries_public — read-only public view. Excludes the metadata
+// column (private caller-state) per the privacy invariant; exposes
+// everything else verbatim. No CAST needed — summaries.timestamp is
+// already stored as INTEGER unix ms (unlike messages.timestamp which
+// is stored as TEXT).
 const SUMMARIES_PUBLIC_DDL = `
 CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, timestamp) AS
   SELECT id, session_id, project_id, text, timestamp FROM summaries;

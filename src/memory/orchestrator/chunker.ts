@@ -56,10 +56,10 @@ export const OVERSIZE_TOKEN_THRESHOLD = 3000;
 export const OVERSIZE_OVERLAP_TOKENS = 200;
 
 /**
- * Approximate-tokens-from-text counter. Sprint-015 doesn't ship a real
- * tokenizer accessor on the Embedder interface (its current contract is
- * `embed(text)` and `embedBatch(texts)` only), so we approximate by
- * `Math.ceil(text.length / 4)` — the conventional 4-chars/token estimate.
+ * Approximate-tokens-from-text counter. The Embedder interface doesn't
+ * expose a tokenizer accessor (its contract is `embed(text)` and
+ * `embedBatch(texts)` only), so we approximate by `Math.ceil(text.length / 4)`
+ * — the conventional 4-chars/token estimate.
  *
  * The embedder's actual tokenizer (Nomic v1.5 is BERT-style WordPiece) may
  * count slightly fewer tokens for English prose and slightly more for code.

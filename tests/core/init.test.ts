@@ -71,8 +71,8 @@ describe('loadPristineConfig', () => {
   });
 
   it('silently ignores legacy privacy / memory fields (backward compatible)', () => {
-    // Existing installs may have a sprint-019-era models.json with privacy
-    // and memory engine sections. Those fields are no longer consumed; the
+    // Existing installs may have an older models.json with privacy and
+    // memory engine sections. Those fields are no longer consumed; the
     // loader passes them through unread.
     const dir = makeTmpDir('cfg-legacy');
     writeFileSync(
@@ -257,7 +257,6 @@ describe('initPristine', () => {
     expect(existsSync(baseDir)).toBe(true);
     expect(existsSync(join(baseDir, 'keys'))).toBe(true);
     expect(existsSync(join(baseDir, 'data'))).toBe(true);
-    expect(existsSync(join(baseDir, 'models'))).toBe(true);
   });
 
   it('writes default models.json with embedder-only shape', () => {

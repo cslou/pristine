@@ -21,7 +21,7 @@ export const DEFAULT_PRISTINE_CONFIG: PristineConfig = {
 // Validation helpers
 // ---------------------------------------------------------------------------
 
-const EXAMPLE_CONFIG = JSON.stringify(DEFAULT_PRISTINE_CONFIG, null, 2);
+const EXAMPLE_EMBEDDER_CONFIG = JSON.stringify(DEFAULT_PRISTINE_CONFIG, null, 2);
 
 const VALID_EMBEDDER_ENGINES = new Set(['ollama', 'local']);
 
@@ -84,12 +84,14 @@ export function loadPristineConfig(configDir?: string): PristineConfig {
   } catch (cause) {
     const msg = cause instanceof Error ? cause.message : String(cause);
     throw new ConfigError(
-      `Invalid JSON in ${filePath}: ${msg}\n\nExpected format:\n${EXAMPLE_CONFIG}`,
+      `Invalid JSON in ${filePath}: ${msg}\n\nExpected format:\n${EXAMPLE_EMBEDDER_CONFIG}`,
     );
   }
 
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    throw new ConfigError(`models.json must be a JSON object. Expected format:\n${EXAMPLE_CONFIG}`);
+    throw new ConfigError(
+      `models.json must be a JSON object. Expected format:\n${EXAMPLE_EMBEDDER_CONFIG}`,
+    );
   }
 
   const obj = raw as Record<string, unknown>;
@@ -118,7 +120,6 @@ export function initPristine(baseDir?: string): InitPristineResult {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   mkdirSync(join(dir, 'keys'), { recursive: true, mode: 0o700 });
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  mkdirSync(join(dir, 'models'), { recursive: true });
 
   if (!existsSync(configPath)) {
     writeFileSync(configPath, JSON.stringify(DEFAULT_PRISTINE_CONFIG, null, 2) + '\n');

@@ -58,7 +58,7 @@ export interface IndexOptions {
   readonly projectId: string;
   /** Pre-existing conversation. Must already exist via `addConversation`. */
   readonly conversationId: string;
-  /** Optional session id; pass-through for future summary-injection consumers. */
+  /** Optional session id; pass-through for summary-injection consumers. */
   readonly sessionId?: string;
 }
 

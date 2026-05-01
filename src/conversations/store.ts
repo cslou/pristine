@@ -430,8 +430,8 @@ export class ConversationStore {
    * its `project_id`, (2) compute `MAX(sort_order) + 1`, (3) insert the
    * message + bump `conversations.message_count` by 1. Concurrent appends
    * serialize at the SQLite level so the ordinal sequence stays gapless
-   * and the counter stays accurate. The contract is pinned for
-   * worker-thread concurrency.
+   * and the counter stays accurate. The contract is pinned proactively
+   * so worker-thread concurrency consumers can rely on it.
    *
    * **Project scope from parent.** `project_id` is read from the parent
    * conversation row, NOT supplied by the caller. This prevents cross-
@@ -444,9 +444,10 @@ export class ConversationStore {
    *
    * Returns the inserted `messages.id` (INTEGER PRIMARY KEY) so callers
    * like the indexer can enqueue per-message tasks without re-querying by
-   * (conversationId, sort_order). The shipped schema uses INTEGER ids
-   * (not UUIDs); surfacing the id from the same transaction is the
-   * natural reconciliation. Tracked alongside #106.
+   * (conversationId, sort_order). The original interface sketched a void
+   * primitive, but the shipped schema uses INTEGER ids (not UUIDs) and
+   * the indexer needs the id atomically — surfacing it from the same
+   * transaction is the natural reconciliation. Tracked alongside #106.
    */
   public addMessage(
     conversationId: string,
@@ -669,12 +670,11 @@ export class ConversationStore {
    *   - `window_messages.message_id` has FK to `messages.id`, so its rows
    *     MUST be removed before the messages rows.
    *   - `pending_ingest_tasks.conversation_id` has FK to `conversations.id`,
-   *     so its rows MUST be removed before the conversations row.
-   *     Without this DELETE, the partial-ingest recovery
-   *     scenario this method exists for (calling `deleteById` while embed
-   *     tasks are still pending) FK-fails on the conversations DELETE — the
-   *     transaction rolls back and the conversation stays in a half-indexed
-   *     state.
+   *     so its rows MUST be removed before the conversations row. Without
+   *     this DELETE, the partial-ingest recovery scenario this method
+   *     exists for (calling `deleteById` while embed tasks are still
+   *     pending) FK-fails on the conversations DELETE — the transaction
+   *     rolls back and the conversation stays in a half-indexed state.
    *   - `vec_windows` / `vec_sessions` have no FK (vec0 does not enforce
    *     them), but we DELETE those vector rows in the same transaction so
    *     orphans never accumulate after a recovery.

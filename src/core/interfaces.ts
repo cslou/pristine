@@ -1,24 +1,10 @@
 import type {
   ClassificationPipelineResult,
-  JsonSchema,
   KeyPairWithStatus,
   SensitivityReport,
   VaultEntry,
   VaultEntryInput,
 } from './types.js';
-
-// ---------------------------------------------------------------------------
-// LLM Inference
-// ---------------------------------------------------------------------------
-
-export interface LlmClient {
-  generate<T>(params: {
-    readonly systemPrompt: string;
-    readonly userPrompt: string;
-    readonly schema: JsonSchema;
-    readonly maxTokens?: number;
-  }): Promise<T>;
-}
 
 // ---------------------------------------------------------------------------
 // Embedding

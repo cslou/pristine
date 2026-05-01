@@ -1,15 +1,9 @@
 /**
- * Phase-1 smoke test — verifies PristineLocal.create() and createLite() boot
- * cleanly with no live LLM connection (neither llamacpp nor ollama).
- *
- * Satisfies sprint-013 Story 4 AC: "A minimal integration smoke test
- * demonstrates PristineLocal.create() succeeding with neither llamacpp nor
- * ollama configured." The test injects stub LlmClient factories so
- * construction exercises no network / filesystem / model-config path.
- *
- * The Phase-1 public API is also exercised end-to-end within a single
- * process: storeAsync enqueues; searchConversations + getConversation
- * return the enqueued conversation by keyword and by id.
+ * Public-API smoke test — verifies `PristineLocal.create()` boots cleanly
+ * without contacting any live model or filesystem path, and that the
+ * public API round-trips end-to-end within a single process: `storeAsync`
+ * enqueues; `searchConversations` + `getConversation` return the enqueued
+ * conversation by keyword and by id.
  */
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,12 +17,7 @@ import {
   PristineLocal,
   createDatabase as createDatabaseFromBarrel,
 } from '../../src/index.js';
-import type { LlmClient, Embedder } from '../../src/core/interfaces.js';
-import type { LlmClients } from '../../src/engine/index.js';
-
-const makeLlmStub = (): LlmClient => ({
-  generate: (async () => ({})) as LlmClient['generate'],
-});
+import type { Embedder } from '../../src/core/interfaces.js';
 
 const makeEmbedderStub = (): Embedder => ({
   embed: vi.fn(async () => Array.from({ length: 768 }, () => 0)),
@@ -37,33 +26,27 @@ const makeEmbedderStub = (): Embedder => ({
   ),
 });
 
-describe('Phase-1 smoke — PristineLocal boots and the public API round-trips', () => {
+describe('public-API smoke — PristineLocal boots and the public API round-trips', () => {
   const databases: Database.Database[] = [];
 
   afterEach(() => {
     for (const db of databases.splice(0)) db.close();
   });
 
-  it('create() succeeds with DI overrides (no llamacpp / ollama contact)', async () => {
+  it('create() succeeds with DI overrides (no model contact)', async () => {
     const db = createDatabase(':memory:');
     // NB: don't push to `databases` — client.dispose() with DI-provided deps
     // leaves the DB to the caller (ownsDb=false). We close it in finally so
     // a dispose rejection still releases the handle.
 
-    const llmClients: LlmClients = {
-      privacyClient: makeLlmStub(),
-      memoryClient: makeLlmStub(),
-    };
-
     const client = await PristineLocal.create({
       db,
-      llmClients,
       embedder: makeEmbedderStub(),
     });
 
     try {
       expect(client).toBeInstanceOf(PristineLocal);
-      expect(client.ingestQueue).toBeDefined();
+      expect(typeof client.pendingEmbedTasks).toBe('number');
 
       await client.dispose();
     } finally {
@@ -71,8 +54,8 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     }
   });
 
-  it('src/index.ts public barrel exports the Phase-1 surface (import-level check)', () => {
-    // Named-export contract — all symbols a Phase-1 SDK consumer needs must
+  it('src/index.ts public barrel exports the public-API surface (import-level check)', () => {
+    // Named-export contract — all symbols an SDK consumer needs must
     // resolve to defined values at import time. A future refactor that
     // silently drops one of these exports breaks downstream imports at
     // consume-site with no local signal; this test catches it at the barrel.
@@ -87,11 +70,11 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     // set. `toEqual` with an exact sorted list catches both missing exports
     // (regression) and accidental re-exports (sprawl) — `arrayContaining`
     // only enforces the subset, which would silently pass extras through.
-    // `IngestQueue` was removed in sprint-018 Story 4 (internal-only
-    // plumbing); `IngestQueueError` stays because consumers catch it.
-    // `InvalidArgumentError` was added to the barrel post-sprint-018
-    // /review (the two new Phase-4 methods narrow their error set to
-    // this single class — consumers need it for typed catches).
+    // `IngestQueue` is internal-only plumbing; `IngestQueueError` stays
+    // because consumers catch it. `InvalidArgumentError` is on the barrel
+    // because the two passthrough methods (drainEmbedQueue,
+    // buildSessionVector) narrow their error set to this single class —
+    // consumers need it for typed catches.
     const keys = Object.keys(PristineBarrel).sort();
     expect(keys).toEqual([
       'AppError',
@@ -104,28 +87,12 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     ]);
   });
 
-  it('createLite() succeeds with no LlmClient or Embedder at all', () => {
+  it('public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
     const db = createDatabase(':memory:');
-    databases.push(db);
-
-    const client = PristineLocal.createLite({ db });
-
-    expect(client).toBeInstanceOf(PristineLocal);
-    expect(client.ingestQueue).toBeDefined();
-  });
-
-  it('Phase-1 public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
-    const db = createDatabase(':memory:');
-    // sprint-016 Story 1: storeAsync now requires Pristine.create() (the
-    // indexer pipeline needs an embedder). Use stub LLM/embedder DI to keep
-    // the smoke fast and offline.
-    const llmClients: LlmClients = {
-      privacyClient: makeLlmStub(),
-      memoryClient: makeLlmStub(),
-    };
+    // storeAsync requires Pristine.create() (the indexer pipeline needs an
+    // embedder). Use the stub embedder to keep the smoke fast and offline.
     const client = await PristineLocal.create({
       db,
-      llmClients,
       embedder: makeEmbedderStub(),
     });
 
@@ -151,18 +118,18 @@ describe('Phase-1 smoke — PristineLocal boots and the public API round-trips',
     }
   });
 
-  it('privacy scrubOutput() works with no live LLM', () => {
+  it('privacy scrubOutput() works without ingest', async () => {
     const db = createDatabase(':memory:');
     databases.push(db);
 
-    const client = PristineLocal.createLite({ db });
+    const client = await PristineLocal.create({ db, embedder: makeEmbedderStub() });
     const scrubbed = client.scrubOutput(
       'Hello [SENSITIVE:name:abc-123], here is your confirmation.',
       [],
     );
 
     // Full output check, not just negative: the placeholder is stripped in
-    // place (no spacing fix-up in Phase 1) and no stray tokens remain.
+    // place (no spacing fix-up) and no stray tokens remain.
     expect(scrubbed).toBe('Hello , here is your confirmation.');
     expect(scrubbed).not.toContain('[SENSITIVE:');
   });

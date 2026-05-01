@@ -11,7 +11,6 @@ import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
 import { IngestQueueError, InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
-import { createLlmClients, type LlmClients } from './engine/index.js';
 import { createEmbedder } from './embedder/index.js';
 import { ConversationStore } from './conversations/store.js';
 import { IngestQueue } from './queue/ingest-queue.js';
@@ -39,14 +38,8 @@ export interface PristineLocalConfig {
   readonly baseDir?: string;
   readonly keysDir?: string;
   readonly db?: Database.Database;
-  readonly llmClients?: LlmClients;
   readonly embedder?: Embedder;
   readonly privacy?: DeterministicClassifierConfig;
-}
-
-export interface PristineLiteConfig {
-  readonly db?: Database.Database;
-  readonly baseDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,43 +47,37 @@ export interface PristineLiteConfig {
 // ---------------------------------------------------------------------------
 
 export class PristineLocal {
-  public readonly ingestQueue: IngestQueue;
   /**
-   * Public retrieval primitive. Defined on full clients
-   * (`Pristine.create({...})`) and `null` on lite clients — the vector
-   * path needs an embedder. Asymmetry vs `indexer` (private) is
-   * deliberate: `searcher` is the consumer-facing query surface;
-   * `indexer` is plumbing that `storeAsync` drives internally.
+   * Public retrieval primitive — the consumer-facing query surface. The
+   * indexer pipeline plumbing that `storeAsync` drives internally stays
+   * private.
    */
-  public readonly searcher: Searcher | null;
+  public readonly searcher: Searcher;
 
+  private readonly ingestQueue: IngestQueue;
   private readonly conversationStore: ConversationStore;
-  private readonly indexer: Indexer | null;
+  private readonly indexer: Indexer;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
-  private readonly llmClients: LlmClients;
   private readonly keyManager: KeyManager;
   private readonly kekManager: KekManager;
   private readonly vaultStore: VaultStore;
   private readonly ownsDb: boolean;
   private readonly ownsEmbedder: boolean;
-  private readonly ownsLlmClients: boolean;
   private readonly privacyClassifierConfig: DeterministicClassifierConfig | undefined;
 
   private constructor(deps: {
     ingestQueue: IngestQueue;
     conversationStore: ConversationStore;
-    indexer: Indexer | null;
-    searcher: Searcher | null;
+    indexer: Indexer;
+    searcher: Searcher;
     db: Database.Database;
     embedder: Embedder;
-    llmClients: LlmClients;
     keyManager: KeyManager;
     kekManager: KekManager;
     vaultStore: VaultStore;
     ownsDb: boolean;
     ownsEmbedder: boolean;
-    ownsLlmClients: boolean;
     privacyClassifierConfig?: DeterministicClassifierConfig;
   }) {
     this.ingestQueue = deps.ingestQueue;
@@ -99,14 +86,21 @@ export class PristineLocal {
     this.searcher = deps.searcher;
     this.db = deps.db;
     this.embedder = deps.embedder;
-    this.llmClients = deps.llmClients;
     this.keyManager = deps.keyManager;
     this.kekManager = deps.kekManager;
     this.vaultStore = deps.vaultStore;
     this.ownsDb = deps.ownsDb;
     this.ownsEmbedder = deps.ownsEmbedder;
-    this.ownsLlmClients = deps.ownsLlmClients;
     this.privacyClassifierConfig = deps.privacyClassifierConfig;
+  }
+
+  /**
+   * Number of pending embed tasks queued by `storeAsync` and not yet drained.
+   * Useful for dashboards or progress reporting; consumers who want to wait
+   * for the queue to reach idle should call `drainEmbedQueue()`.
+   */
+  public get pendingEmbedTasks(): number {
+    return this.ingestQueue.pending;
   }
 
   // -------------------------------------------------------------------------
@@ -114,17 +108,13 @@ export class PristineLocal {
   // -------------------------------------------------------------------------
 
   public static async create(config: PristineLocalConfig = {}): Promise<PristineLocal> {
-    const fullyInjected =
-      config.db !== undefined && config.llmClients !== undefined && config.embedder !== undefined;
+    const fullyInjected = config.db !== undefined && config.embedder !== undefined;
 
     const init = fullyInjected ? null : initPristine(config.baseDir);
 
     const ownsDb = config.db === undefined;
     const db =
       config.db ?? createDefaultDatabase(init?.baseDir ? `${init.baseDir}/data` : undefined);
-
-    const ownsLlmClients = config.llmClients === undefined;
-    const llmClients = config.llmClients ?? createLlmClients(init?.baseDir);
 
     const ownsEmbedder = config.embedder === undefined;
     const embedder =
@@ -170,51 +160,12 @@ export class PristineLocal {
       searcher,
       db,
       embedder,
-      llmClients,
       keyManager,
       kekManager,
       vaultStore,
       ownsDb,
       ownsEmbedder,
-      ownsLlmClients,
       privacyClassifierConfig: config.privacy,
-    });
-  }
-
-  /**
-   * Lightweight client with only DB, ConversationStore, and IngestQueue.
-   * No embedder, no LLM clients, no indexer. Supports `searchConversations()`
-   * and `getConversation()` for read-only flows.
-   *
-   * `storeAsync()` is NOT available on lite clients — the indexer pipeline
-   * requires an embedder. Calling `createLite().storeAsync(...)` throws
-   * `InvalidArgumentError`. For ingest, use `Pristine.create({...})` instead;
-   * the embedder loads lazily so synchronous startup paths still pay only
-   * the construction cost.
-   */
-  public static createLite(config: PristineLiteConfig = {}): PristineLocal {
-    const ownsDb = config.db === undefined;
-    const db =
-      config.db ?? createDefaultDatabase(config.baseDir ? `${config.baseDir}/data` : undefined);
-
-    const conversationStore = new ConversationStore(db);
-    const ingestQueue = new IngestQueue({ db });
-
-    return new PristineLocal({
-      ingestQueue,
-      conversationStore,
-      indexer: null,
-      searcher: null,
-      db,
-      embedder: null as unknown as Embedder,
-      llmClients: null as unknown as LlmClients,
-      keyManager: null as unknown as KeyManager,
-      kekManager: null as unknown as KekManager,
-      vaultStore: null as unknown as VaultStore,
-      ownsDb,
-      ownsEmbedder: false,
-      ownsLlmClients: false,
-      privacyClassifierConfig: undefined,
     });
   }
 
@@ -231,18 +182,8 @@ export class PristineLocal {
    * On duplicate (same userId + same content hash), returns the existing
    * conversation id without re-enqueueing — the prior call's tasks remain
    * the source of truth.
-   *
-   * Requires a fully-constructed `Pristine.create({...})`. `createLite()`
-   * has no embedder, so the indexer pipeline can't run; calling
-   * `createLite().storeAsync(...)` throws `InvalidArgumentError`.
    */
   public storeAsync(conversation: readonly Message[], userId: string, projectId?: string): string {
-    const indexer = this.indexer;
-    if (indexer === null) {
-      throw new InvalidArgumentError(
-        'storeAsync requires Pristine.create() — createLite has no embedder; for ingest, use Pristine.create() (the embedder loads lazily, so synchronous startup paths still pay only construction cost)',
-      );
-    }
     // Normalize projectId once so the conversation row and the embed
     // tasks land with the same project_id. Empty string is treated as
     // "unset" to mirror addEmptyConversation's resolution logic (see
@@ -292,7 +233,7 @@ export class PristineLocal {
         }
         throw error;
       }
-      indexer.ingest(conversation, { projectId: resolvedProjectId, conversationId: id });
+      this.indexer.ingest(conversation, { projectId: resolvedProjectId, conversationId: id });
       return id;
     });
 
@@ -318,7 +259,7 @@ export class PristineLocal {
    * const conversationId = client.storeAsync(messages, userId, projectId);
    * const drained = await client.drainEmbedQueue();
    * console.log(`indexed ${drained} messages`);
-   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * const hits = await client.searcher.hybridSearch(query, { projectId }, 10);
    * ```
    *
    * Not needed if the consumer runs `scripts/embed-worker.ts` as a
@@ -338,22 +279,9 @@ export class PristineLocal {
    * future sprint may add `drainEmbedQueue({ onProgress })` once a
    * real consumer demands it.
    *
-   * **Lite clients.** `createLite()` has no embedder and so no
-   * embed-task handler wired into its `IngestQueue`; without the
-   * guard, calling `drainEmbedQueue` would silently mark every
-   * pending task as failed (the queue rejects un-handlable tasks
-   * without raising to the caller), losing the embed work without
-   * any error signal. Throws `InvalidArgumentError` early instead.
-   *
    * @returns Number of tasks processed (success + failure both count).
-   * @throws `InvalidArgumentError` when called on a `createLite()` client.
    */
   public async drainEmbedQueue(): Promise<number> {
-    if (this.indexer === null) {
-      throw new InvalidArgumentError(
-        'drainEmbedQueue requires Pristine.create() — createLite has no embedder; for ingest, use Pristine.create() (the embedder loads lazily, so synchronous startup paths still pay only construction cost)',
-      );
-    }
     return runEmbedWorker(this.ingestQueue);
   }
 
@@ -379,12 +307,9 @@ export class PristineLocal {
    * const conversationId = client.storeAsync(messages, userId, projectId);
    * await client.drainEmbedQueue();          // flush per-message embeds
    * await client.buildSessionVector(conversationId); // populate vec_sessions
-   * const hits = await client.searcher!.hybridSearch(query, { projectId }, 10);
+   * const hits = await client.searcher.hybridSearch(query, { projectId }, 10);
    * // hybridSearch's session leg now returns kind:'session' hits.
    * ```
-   *
-   * **Lite clients.** Throws `InvalidArgumentError` (no embedder, no
-   * indexer wired).
    *
    * **Error contract.** Throws `InvalidArgumentError` for: empty
    * conversationId, missing conversationId (no row in `conversations`),
@@ -410,15 +335,10 @@ export class PristineLocal {
    * intended pattern.
    *
    * @param conversationId The conversation id returned by `storeAsync`.
-   * @throws `InvalidArgumentError` for lite clients, empty/missing
-   *   conversationId, or token-budget violations.
+   * @throws `InvalidArgumentError` for empty/missing conversationId or
+   *   token-budget violations.
    */
   public async buildSessionVector(conversationId: string): Promise<void> {
-    if (this.indexer === null) {
-      throw new InvalidArgumentError(
-        'buildSessionVector requires Pristine.create() — createLite has no embedder; use Pristine.create() to enable session-vector indexing',
-      );
-    }
     if (conversationId === '') {
       throw new InvalidArgumentError('buildSessionVector: conversationId is required (empty)');
     }
@@ -503,15 +423,6 @@ export class PristineLocal {
   public async dispose(): Promise<void> {
     if (this.ownsEmbedder && 'dispose' in this.embedder) {
       await (this.embedder as { dispose: () => Promise<void> }).dispose();
-    }
-
-    if (this.ownsLlmClients) {
-      const clients = new Set([this.llmClients.privacyClient, this.llmClients.memoryClient]);
-      for (const client of clients) {
-        if ('dispose' in client) {
-          await (client as { dispose: () => Promise<void> }).dispose();
-        }
-      }
     }
 
     if (this.ownsDb) {

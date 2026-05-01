@@ -2,24 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { PristineLocal } from '../../src/client.js';
 import { createDatabase } from '../../src/core/database.js';
-import type { Embedder, LlmClient } from '../../src/core/interfaces.js';
-import type { LlmClients } from '../../src/engine/index.js';
-import { runEmbedWorker } from '../../src/memory/indexer/embed-worker.js';
+import type { Embedder } from '../../src/core/interfaces.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-016 Story 1 — storeAsync end-to-end populates corpus via worker drain
+// storeAsync end-to-end populates corpus via worker drain
 // ---------------------------------------------------------------------------
 //
 // Asserts that the public SDK surface `Pristine.create({...}).storeAsync`
-// drives the same Phase-3 pipeline scripts/smoke-indexer.ts proves works
+// drives the same indexer pipeline scripts/smoke-indexer.ts proves works
 // at the module level: messages inserted, embed-message tasks enqueued,
 // worker drains them, vec_windows / window_messages / messages_fts
 // populated. This is the integration-shaped contract the searcher
-// primitive (Stories 2-6) will read from.
-
-const makeStubLlmClient = (): LlmClient => ({
-  generate: (async () => ({})) as LlmClient['generate'],
-});
+// primitive reads from.
 
 // Deterministic 768-d stub: same seed-by-length shape as
 // tests/integration/indexer.test.ts so output stays stable across runs
@@ -36,12 +30,7 @@ const makeStubEmbedder = (): Embedder => ({
     }),
 });
 
-const makeLlmClients = (): LlmClients => ({
-  privacyClient: makeStubLlmClient(),
-  memoryClient: makeStubLlmClient(),
-});
-
-describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () => {
+describe('storeAsync — end-to-end corpus population', () => {
   let db: Database.Database;
   let client: PristineLocal;
 
@@ -49,7 +38,6 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
     db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     client = await PristineLocal.create({
       db,
-      llmClients: makeLlmClients(),
       embedder: makeStubEmbedder(),
     });
   });
@@ -81,7 +69,7 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
       .n;
     expect(messagesBefore).toBe(6);
 
-    const pendingBefore = client.ingestQueue.pending;
+    const pendingBefore = client.pendingEmbedTasks;
     expect(pendingBefore).toBe(6);
 
     const vecBefore = (db.prepare('SELECT COUNT(*) AS n FROM vec_windows').get() as { n: number })
@@ -90,7 +78,7 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
 
     // Drain the queue — the embed-worker handler is the one Pristine.create
     // wired up in commit 1.
-    const processed = await runEmbedWorker(client.ingestQueue);
+    const processed = await client.drainEmbedQueue();
     expect(processed).toBe(6);
 
     // Post-drain: corpus + queue match the smoke-indexer expected counts.
@@ -172,17 +160,17 @@ describe('storeAsync — end-to-end corpus population (sprint-016 Story 1)', () 
 
     const first = client.storeAsync(turns, 'dup-user');
     expect(first).toMatch(/^[0-9a-f-]{36}$/);
-    expect(client.ingestQueue.pending).toBe(2);
+    expect(client.pendingEmbedTasks).toBe(2);
 
     // Drain so the second call doesn't see lingering pending rows.
-    await runEmbedWorker(client.ingestQueue);
+    await client.drainEmbedQueue();
 
     const second = client.storeAsync(turns, 'dup-user');
     expect(second).toBe(first);
 
     // Duplicate path returns early — no new tasks enqueued, no new
     // messages inserted.
-    expect(client.ingestQueue.pending).toBe(0);
+    expect(client.pendingEmbedTasks).toBe(0);
     const totalTasks = (
       db.prepare('SELECT COUNT(*) AS n FROM pending_ingest_tasks').get() as { n: number }
     ).n;

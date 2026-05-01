@@ -1,15 +1,12 @@
 /**
- * Manual e2e smoke for sprint-016 storeAsync rewire.
+ * Manual e2e smoke for storeAsync.
  *
- * Drives the spec-005 Phase-3 indexer pipeline through the public SDK
- * surface — Pristine.create({...}).storeAsync(...) — exactly as a
- * downstream consumer would. Demonstrates the rewire shipped in
- * sprint-016 Story 1: storeAsync now composes addEmptyConversation +
+ * Drives the indexer pipeline through the public SDK surface
+ * — Pristine.create({...}).storeAsync(...) — exactly as a downstream
+ * consumer would: storeAsync composes addEmptyConversation +
  * indexer.ingest, the embed-worker drains the queue with the real Nomic
  * embedder, and vec_windows / window_messages / messages_fts populate
  * end-to-end.
- *
- * Replaces the sprint-015 indexer-direct smoke with the SDK-level path.
  *
  * Usage:
  *   npx tsx scripts/smoke-indexer.ts
@@ -19,9 +16,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { AppError } from '../src/core/errors.js';
-import type { LlmClient } from '../src/core/interfaces.js';
-import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
 
 const DB_PATH = '/tmp/pristine-smoke.db';
@@ -29,15 +23,6 @@ const DB_PATH = '/tmp/pristine-smoke.db';
 const log = (msg: string): void => {
   // eslint-disable-next-line no-console
   console.log(msg);
-};
-
-// Lazy-stub LlmClient — storeAsync does not exercise the LLM path, but
-// Pristine.create requires LlmClients in its DI shape. The stub never
-// gets called.
-const stubLlmClient: LlmClient = {
-  generate: (async () => {
-    throw new AppError('smoke: LlmClient.generate not exercised by storeAsync');
-  }) as LlmClient['generate'],
 };
 
 const main = async (): Promise<void> => {
@@ -52,7 +37,6 @@ const main = async (): Promise<void> => {
 
   const client = await PristineLocal.create({
     db,
-    llmClients: { privacyClient: stubLlmClient, memoryClient: stubLlmClient },
     embedder,
   });
 
@@ -69,17 +53,16 @@ const main = async (): Promise<void> => {
 
   const conversationId = client.storeAsync(turns, userId, projectId);
   log(`smoke: storeAsync → conversationId=${conversationId}`);
-  log(`smoke: pending tasks before drain: ${client.ingestQueue.pending}`);
+  log(`smoke: pending tasks before drain: ${client.pendingEmbedTasks}`);
 
   log('smoke: embed-worker draining (Nomic loads on first call — slow)...');
   const t0 = Date.now();
-  const processed = await runEmbedWorker(client.ingestQueue);
+  const processed = await client.drainEmbedQueue();
   log(`smoke: embed-worker processed ${processed} task(s) in ${Date.now() - t0} ms`);
 
-  // storeAsync does NOT auto-build the session vector (sprint-015 §5
-  // Technical Notes: explicit consumer demand only). Build it inline so
-  // the smoke captures the vec_sessions row count too — the same shape
-  // sprint-016+ retrieval consumers will rely on.
+  // storeAsync does NOT auto-build the session vector — explicit consumer
+  // demand only. Build it inline so the smoke captures the vec_sessions
+  // row count too.
   log('smoke: buildSessionVector ...');
   await buildSessionVector(db, embedder, conversationId);
   log('smoke: buildSessionVector → ok');
@@ -123,7 +106,7 @@ const main = async (): Promise<void> => {
   }
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 2 — searcher.vectorSearch two-project leak check.
+  // searcher.vectorSearch two-project leak check.
   // Seed a SECOND project with deliberately overlapping content; query
   // project-A; assert zero hits leak from project-B. Pins the
   // filter-first project-isolation contract end-to-end against the
@@ -142,13 +125,9 @@ const main = async (): Promise<void> => {
     'smoke-user-b',
     otherProjectId,
   );
-  const processedB = await runEmbedWorker(client.ingestQueue);
+  const processedB = await client.drainEmbedQueue();
   log(`smoke: drained second project — ${processedB} tasks`);
 
-  if (client.searcher === null) {
-    log('smoke: FAIL — pristine.searcher is null on full client; should be exposed');
-    process.exit(1);
-  }
   const hitsA = await client.searcher.vectorSearch('sliding windows', { projectId }, 10);
   log(`smoke: vectorSearch in ${projectId} → ${hitsA.length} hits`);
   const stmt = db.prepare('SELECT project_id FROM conversations WHERE id = ?');
@@ -167,7 +146,7 @@ const main = async (): Promise<void> => {
   if (!leakOk) allOk = false;
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 3 — searcher.ftsSearch error-code lookup round-trip.
+  // searcher.ftsSearch error-code lookup round-trip.
   // Seed a conversation containing a unique error-code-shaped string,
   // search for it via FTS5 phrase query, assert exactly one hit
   // belonging to the seeded conversation. Demonstrates literal-keyword
@@ -185,7 +164,7 @@ const main = async (): Promise<void> => {
     'smoke-user-fts',
     'smoke-project-fts',
   );
-  await runEmbedWorker(client.ingestQueue);
+  await client.drainEmbedQueue();
 
   const ftsHits = await client.searcher.ftsSearch(
     '"PRSTN-9001"',
@@ -202,7 +181,7 @@ const main = async (): Promise<void> => {
   if (!ftsOk) allOk = false;
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 4 — searcher.hybridSearch RRF fusion round-trip.
+  // searcher.hybridSearch RRF fusion round-trip.
   // Query for "PRSTN-9001" — the literal error code — and observe both
   // the FTS leg (literal match on the user message) AND the vector
   // leg (topical match on the windows around the error) surface, then
@@ -230,7 +209,7 @@ const main = async (): Promise<void> => {
   if (!hybridOk) allOk = false;
 
   // -------------------------------------------------------------------
-  // Sprint-016 Story 5 — 3-source hybrid fan-out round-trip.
+  // 3-source hybrid fan-out round-trip.
   // Build session vectors for all seeded conversations and re-run the
   // hybrid query — the session leg now contributes alongside vector
   // and FTS. Demonstrates cross-conversation reference recall (a

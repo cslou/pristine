@@ -1,5 +1,5 @@
 /**
- * Sprint-016 Story 7 ad-hoc retrieval-quality demo.
+ * Ad-hoc retrieval-quality demo.
  *
  * Seeds a realistic 2-project corpus and runs a battery of queries
  * through vectorSearch + ftsSearch + hybridSearch so a human can
@@ -21,9 +21,6 @@ import { existsSync, rmSync } from 'node:fs';
 import { PristineLocal } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { LocalEmbedder } from '../src/embedder/local/index.js';
-import { AppError } from '../src/core/errors.js';
-import type { LlmClient } from '../src/core/interfaces.js';
-import { runEmbedWorker } from '../src/memory/indexer/embed-worker.js';
 import { buildSessionVector } from '../src/memory/indexer/session-vector.js';
 
 const DB_PATH = '/tmp/pristine-demo.db';
@@ -31,12 +28,6 @@ const DB_PATH = '/tmp/pristine-demo.db';
 const log = (msg: string): void => {
   // eslint-disable-next-line no-console
   console.log(msg);
-};
-
-const stubLlmClient: LlmClient = {
-  generate: (async () => {
-    throw new AppError('demo: LlmClient.generate not exercised');
-  }) as LlmClient['generate'],
 };
 
 // ---------------------------------------------------------------------------
@@ -268,7 +259,6 @@ const main = async (): Promise<void> => {
   const embedder = new LocalEmbedder();
   const client = await PristineLocal.create({
     db,
-    llmClients: { privacyClient: stubLlmClient, memoryClient: stubLlmClient },
     embedder,
   });
 
@@ -288,7 +278,7 @@ const main = async (): Promise<void> => {
   log('');
   log('Draining embed-worker (this is the slow part — Nomic loads + embeds each message)...');
   const t0 = Date.now();
-  const processed = await runEmbedWorker(client.ingestQueue);
+  const processed = await client.drainEmbedQueue();
   log(`Drained ${processed} embed tasks in ${Date.now() - t0} ms`);
 
   log('');
@@ -297,11 +287,6 @@ const main = async (): Promise<void> => {
     await buildSessionVector(db, embedder, id);
   }
   log(`Built ${conversationIds.size} session vectors`);
-
-  if (client.searcher === null) {
-    log('FAIL — pristine.searcher is null');
-    process.exit(1);
-  }
 
   // Helpers to print results
   const messageContent = (messageId: number): string => {

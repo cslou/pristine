@@ -1,6 +1,4 @@
 export type {
-  SensitiveField,
-  SanitizedMemory,
   SensitivePlaceholderMatch,
   ApprovalRequestPayload,
   ApprovalDecision,

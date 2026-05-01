@@ -848,11 +848,10 @@ Consumer calls: client.storeAsync(messages, userId, projectId?)
 **Design notes:**
 
 - **storeAsync vs. indexer.ingest direct.** `storeAsync` is the consumer-facing one-shot ingest (whole conversation up front). `indexer.ingest` is the lower primitive that appends turns to an existing conversation — used by `storeAsync`'s composition and by callers that stream turns over time (e.g., `addEmptyConversation` once, then `indexer.ingest(newTurns)` per arrival). Both write through the same `pending_ingest_tasks` queue.
-- **`createLite()` does not expose `storeAsync`.** Lite has no embedder, so the indexer pipeline can't run; calling `createLite().storeAsync(...)` throws `InvalidArgumentError`. Lite remains useful for read-only flows (`searchConversations`, `getConversation`).
 - **Session vector is NOT auto-built.** `storeAsync` writes message + window vectors via the embed-worker; building `vec_sessions` is a separate explicit call (`indexer.buildSessionVector(conversationId)`). Sprint-015 §5 deferred auto-invocation until retrieval pressure is real; revisit in sprint-017+.
 - **Crash safety** — message row persisted in the same transaction as the pending task (within `indexer.ingest`'s outer transaction); worker crash recovers via self-healing claim (existing behavior from spec-003 Phase 5).
 - **Idempotency** — windows re-embed on each fill-up step via `INSERT OR REPLACE` keyed by `(conversation_id, window_index)`. Content-hash dedup applies at the conversation level via `UNIQUE(user_id, content_hash)` on `conversations`; `storeAsync`'s duplicate path returns the existing `conversationId` without re-enqueueing.
-- **Latency** — <0.5s for the synchronous storeAsync path (no model load — embedder + LLM clients are lazy); ~0.1s per message in the embed-worker (Nomic CPU embedding).
+- **Latency** — <0.5s for the synchronous storeAsync path (no model load — the embedder is lazy); ~0.1s per message in the embed-worker (Nomic CPU embedding).
 
 ### Flow 2 — Retrieval (primitive)
 

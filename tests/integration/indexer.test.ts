@@ -12,21 +12,17 @@ import { createWindowWriter } from '../../src/memory/indexer/windows.js';
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-015 Story 7 — End-to-end integration tests
+// End-to-end integration tests
 // ---------------------------------------------------------------------------
 //
-// Exercises the full Phase-3 pipeline (indexer → queue → embed-worker →
+// Exercises the full indexer pipeline (indexer → queue → embed-worker →
 // vec_windows / window_messages / vec_sessions populated) at the surface
-// sprint-016's searcher will read from. Uses a stubbed embedder for CI
-// (deterministic vectors); a parallel suite gated by `SKIP_SLOW_TESTS`
-// exercises the same flow against the real Nomic v1.5 model.
+// the searcher reads from. Uses a stubbed embedder for CI (deterministic
+// vectors); a parallel suite gated by `SKIP_SLOW_TESTS` exercises the
+// same flow against the real Nomic v1.5 model.
 //
-// The AC mentions `storeAsync` end-to-end, but per the Sprint-Level
-// Technical Context `src/client.ts` stays untouched in sprint-015.
-// `storeAsync` still calls the legacy conversation-level `enqueue`.
-// Wiring `client.ts.storeAsync` to call `indexer.ingest` is sprint-016's
-// concern. These integration tests therefore use `indexer.ingest`
-// directly, which is the same path Story 6's worker drains against.
+// These integration tests use `indexer.ingest` directly, which is the
+// same path the embed-worker drains against.
 
 const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
 
@@ -137,8 +133,7 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     expect(totalWindowMessages).toBe(3 * 9);
 
     // FTS5 indexes EVERY message (seeds + ingested) via the AFTER INSERT
-    // trigger from sprint-009. Total messages = 3 conversations × 6
-    // messages each = 18.
+    // trigger. Total messages = 3 conversations × 6 messages each = 18.
     const totalMessages = (
       p.db.prepare('SELECT COUNT(*) AS c FROM messages').get() as { c: number }
     ).c;
@@ -215,12 +210,12 @@ describe('indexer end-to-end (stubbed embedder)', () => {
     ).c;
     expect(vecCount).toBeGreaterThan(0);
 
-    // Phase-4 retrieval reverse-lookup: given a parent id, find all
-    // chunks. Uses the `ix_messages_parent` index added in sprint-014
-    // Story 1; this query exercises that index path directly (filters by
-    // parent_message_id, not by primary key). Sorted both sides so the
-    // assertion isn't implicitly coupled to the ingest's insertion-order
-    // contract — ix_messages_parent is what's under test, not ordering.
+    // Reverse-lookup: given a parent id, find all chunks. Uses the
+    // `ix_messages_parent` index; this query exercises that index path
+    // directly (filters by parent_message_id, not by primary key).
+    // Sorted both sides so the assertion isn't implicitly coupled to
+    // the ingest's insertion-order contract — ix_messages_parent is
+    // what's under test, not ordering.
     const chunkRows = p.db
       .prepare('SELECT id FROM messages WHERE parent_message_id = ?')
       .all(parentId) as { id: number }[];

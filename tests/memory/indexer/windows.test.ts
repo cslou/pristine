@@ -350,8 +350,8 @@ describe('upsertWindow', () => {
 
 describe('createWindowWriter', () => {
   it('reuses prepared statements across multiple upsertWindow calls (factory pattern)', () => {
-    // Confirms the closure-cached statements work for >1 invocation; the
-    // hot-path concern Story 6's worker exercises.
+    // Confirms the closure-cached statements work for >1 invocation —
+    // the hot-path concern the embed-worker exercises.
     const conversationId = store.addConversation(
       makeMessages(['m0', 'm1', 'm2', 'm3', 'm4']),
       'user-factory',

@@ -93,7 +93,7 @@ describe('chunkConversation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// splitOversizeMessage — sprint-015 Story 4
+// splitOversizeMessage
 // ---------------------------------------------------------------------------
 
 // Deterministic token counter — 1 char == 1 token. Lets us write tests in

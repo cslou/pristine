@@ -156,10 +156,10 @@ describe('buildSessionVector (helper)', () => {
   });
 
   it('preserves the prior vec_sessions row when the embedder throws on rebuild', async () => {
-    // Atomicity / rollback case the prior /review flagged: a prior session
-    // vector exists; the embedder fails on rebuild; the prior row stays
-    // intact. Achieved because the embed runs BEFORE the DELETE+INSERT
-    // transaction opens — the transaction never starts on failure.
+    // Atomicity / rollback case: a prior session vector exists; the
+    // embedder fails on rebuild; the prior row stays intact. Achieved
+    // because the embed runs BEFORE the DELETE+INSERT transaction opens
+    // — the transaction never starts on failure.
     const conversationId = store.addConversation(makeMessages(['hi']), 'user-prior');
     const { embedder: goodEmbedder } = makeStubEmbedder(Array.from({ length: 768 }, () => 0.123));
     await buildSessionVector(db, goodEmbedder, conversationId);
@@ -277,7 +277,7 @@ describe('Indexer.buildSessionVector (facade method)', () => {
 
   it('throws InvalidArgumentError if deps.embedder is missing', async () => {
     const conversationId = store.addConversation(makeMessages(['hi']), 'user-noembed');
-    // No embedder in deps — Story 2's ingest path doesn't need one, so the
+    // No embedder in deps — the ingest path doesn't need one, so the
     // dep is optional. buildSessionVector requires it.
     const indexer = createIndexer({
       db,

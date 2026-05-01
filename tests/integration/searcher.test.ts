@@ -20,21 +20,21 @@ import {
 import { IngestQueue } from '../../src/queue/ingest-queue.js';
 
 // ---------------------------------------------------------------------------
-// Sprint-016 Story 6 — cross-cutting searcher contract suite
+// Cross-cutting searcher contract suite
 // ---------------------------------------------------------------------------
 //
 // Locks the searcher's behavioral contract across all three primitives
 // (vectorSearch, ftsSearch, hybridSearch — sessionVectorSearch tested
-// through hybridSearch's session-source projection). Phase 5
-// (searcher.sql) and Phase 7 (eval framework) build on this foundation;
-// the tests here are the "spec" they target.
+// through hybridSearch's session-source projection). The tests here are
+// the "spec" the searcher.sql primitive and any future eval framework
+// build on top of.
 //
 // Test names ARE documentation: read each describe + it block as a
-// statement of contract. Per Story 6 Technical Notes, this file is
-// intentionally light on production-code changes; bug fixes belong in
-// the relevant feature story branch, not here.
+// statement of contract. This file is intentionally light on
+// production-code changes; bug fixes belong in the relevant feature
+// branch, not here.
 //
-// Suite structure (sprint AC lines 234-240):
+// Suite structure:
 //   1. Shared corpus + helpers
 //   2. Filter correctness matrix (5 filter dims × 3 methods)
 //   3. Ranking stability across runs
@@ -535,16 +535,14 @@ describe('searcher cross-cutting — cross-project isolation', () => {
 
 // ---------------------------------------------------------------------------
 // 6. Static src/ filesystem grep guard — searcher must not introduce
-//    forbidden LLM SDK imports (mirrors sprint-015 Story 7's pattern).
+//    forbidden LLM SDK imports.
 // ---------------------------------------------------------------------------
 
 describe('searcher cross-cutting — static import guard', () => {
   it('no banned LLM SDK imports anywhere under src/', () => {
-    // Walk the FULL src/ tree (sprint AC line 239). Same pattern as
-    // sprint-015 Story 7's import guard but anchored at src/ rather
-    // than a subdirectory. Catches any module — searcher, indexer,
-    // queue, retriever, sanitizer, etc. — that introduces a banned
-    // SDK dependency.
+    // Walk the FULL src/ tree. Catches any module — searcher, indexer,
+    // queue, retriever, sanitizer, etc. — that introduces a banned SDK
+    // dependency.
     const banned = [
       {
         label: '@anthropic-ai/sdk',

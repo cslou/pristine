@@ -11,7 +11,7 @@ import {
 } from './windows.js';
 
 // ---------------------------------------------------------------------------
-// embed-worker — sprint-015 Story 6 (spec-005 §16 Phase 3 P3-S5)
+// embed-worker — drains the per-message embed queue
 // ---------------------------------------------------------------------------
 
 /**

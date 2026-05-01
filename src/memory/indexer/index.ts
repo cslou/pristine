@@ -15,11 +15,10 @@ import { buildSessionVector } from './session-vector.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Configuration for the sliding-window indexer (sprint-015 spec-005 §16
- * Phase 3). `windowSize` is the number of consecutive messages combined into
- * one embedded window; `windowOverlap` is the number of messages shared
- * between adjacent windows. The stride between windows is
- * `windowSize - windowOverlap`. Defaults match spec §16 Phase 3 P3-S1.
+ * Configuration for the sliding-window indexer. `windowSize` is the
+ * number of consecutive messages combined into one embedded window;
+ * `windowOverlap` is the number of messages shared between adjacent
+ * windows. The stride between windows is `windowSize - windowOverlap`.
  */
 export interface IndexerConfig {
   readonly windowSize?: number;
@@ -38,8 +37,8 @@ export interface ResolvedIndexerConfig {
  *
  * `mimeType` is an optional hint that routes oversize chunking through the
  * AST splitter (e.g., `text/x-typescript`) instead of the prose splitter.
- * Sprint-015 Story 4. The field is NOT stored on the messages row — it
- * influences chunking only.
+ * The field is NOT stored on the messages row — it influences chunking
+ * only.
  *
  * Note on naming: this module deliberately uses `Index*` names rather than
  * `Ingest*` because `IngestOptions` and `IngestResult` are already taken in
@@ -59,7 +58,7 @@ export interface IndexOptions {
   readonly projectId: string;
   /** Pre-existing conversation. Must already exist via `addConversation`. */
   readonly conversationId: string;
-  /** Optional session id; pass-through for Phase-5 summary injection. */
+  /** Optional session id; pass-through for summary-injection consumers. */
   readonly sessionId?: string;
 }
 
@@ -75,7 +74,7 @@ export interface Indexer {
    * Atomic primitive: insert all turns as message rows + enqueue one
    * embed-message task per inserted row, all in a single transaction.
    * Returns synchronously once the corpus + queue rows are committed; the
-   * embed-worker (sprint-015 Story 6) consumes the queue asynchronously.
+   * embed-worker consumes the queue asynchronously.
    *
    * Throws `InvalidArgumentError` for empty turns / empty opts strings.
    * Throws `ConversationNotFoundError` if `opts.conversationId` doesn't
@@ -86,21 +85,19 @@ export interface Indexer {
    */
   ingest(turns: readonly IndexTurn[], opts: IndexOptions): IndexResult;
   /**
-   * Embed an entire conversation as a single 768-d vector and write it to
-   * `vec_sessions`. The session vector is Phase-4's coarse-grained
-   * retrieval signal alongside the fine-grained `vec_windows`. Sprint-015
-   * Story 5 (spec-005 §5.1.2 / §16 Phase 3 P3-S4).
+   * Embed an entire conversation as a single 768-d vector and write it
+   * to `vec_sessions`. The session vector is the hybrid retriever's
+   * coarse-grained signal alongside the fine-grained `vec_windows`.
    *
-   * Sprint-015 calls this only on explicit consumer demand — NOT
-   * auto-invoked by `ingest()`. Auto-build-on-ingest hooks can land in
-   * sprint-016 once retrieval pressure is real and the cost/benefit is
-   * concrete.
+   * Called only on explicit consumer demand — NOT auto-invoked by
+   * `ingest()`. Auto-build-on-ingest hooks can land later once retrieval
+   * pressure is real and the cost/benefit is concrete.
    *
    * Throws `ConversationNotFoundError` if `conversationId` doesn't
    * resolve. No-op when the conversation has zero messages.
    */
   buildSessionVector(conversationId: string): Promise<void>;
-  /** The resolved (defaults-applied) config. Read by Stories 3 + 6. */
+  /** The resolved (defaults-applied) config. */
   readonly config: ResolvedIndexerConfig;
 }
 
@@ -109,18 +106,18 @@ export interface IndexerDeps {
   readonly conversationStore: ConversationStore;
   readonly ingestQueue: IngestQueue;
   /**
-   * Embedder used by `buildSessionVector` (sprint-015 Story 5). Optional
-   * — the indexer's `ingest()` path doesn't embed (the worker does), so
-   * if the consumer never calls `buildSessionVector()` they don't need to
-   * pass an embedder. Calling `buildSessionVector()` without one throws
+   * Embedder used by `buildSessionVector`. Optional — the indexer's
+   * `ingest()` path doesn't embed (the worker does), so if the consumer
+   * never calls `buildSessionVector()` they don't need to pass an
+   * embedder. Calling `buildSessionVector()` without one throws
    * `InvalidArgumentError`.
    */
   readonly embedder?: Embedder;
   readonly config?: IndexerConfig;
   /**
    * Optional override for the oversize-chunker — token counter + threshold
-   * + overlap. Sprint-015 Story 4. Defaults match Graphiti
-   * (3000 tokens, 200-token overlap, ~4-chars/token heuristic).
+   * + overlap. Defaults match Graphiti (3000 tokens, 200-token overlap,
+   * ~4-chars/token heuristic).
    */
   readonly oversizeOptions?: SplitOversizeOptions;
 }
@@ -189,9 +186,9 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
     // would leave them partially populated on rollback; the caller can't
     // observe that today, but it's a fragile pattern under refactor.)
     const runTransaction = deps.db.transaction((): { messageIds: number[]; taskIds: string[] } => {
-      // Story 2 AC has the caller pass { projectId, conversationId,
-      // sessionId? } — userId comes from the conversation row (single
-      // source of truth). Pre-check before any INSERT so rollback is cheap.
+      // The caller passes { projectId, conversationId, sessionId? } —
+      // userId comes from the conversation row (single source of truth).
+      // Pre-check before any INSERT so rollback is cheap.
       const userId = deps.conversationStore.getConversationUserId(opts.conversationId);
       if (userId === null) {
         throw new ConversationNotFoundError(`Conversation not found: ${opts.conversationId}`);
@@ -201,11 +198,11 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
       const taskIds: string[] = [];
 
       for (const turn of turns) {
-        // Story 4 — oversize chunker. Below-threshold turns return as a
+        // Oversize chunker. Below-threshold turns return as a
         // single-element array (cheap no-op); above-threshold turns split
         // into N chunks. We write the parent FIRST, then each chunk with
-        // parent_message_id set so Phase-4 can resolve a window hit back
-        // to the original turn via ix_messages_parent.
+        // parent_message_id set so the hybrid retriever can resolve a
+        // window hit back to the original turn via ix_messages_parent.
         const chunks = splitOversizeMessage(
           {
             role: turn.role,
@@ -229,10 +226,10 @@ export const createIndexer = (deps: IndexerDeps): Indexer => {
           // The chunks store `chunk.content` from `splitOversizeMessage`
           // — for code-fenced content, that's the FENCE-STRIPPED form
           // (the AST splitter strips ```ts ... ``` before parsing). So
-          // Phase-4 retrieval consumers reading "the original turn"
-          // should follow `parent_message_id` to the parent row; consumers
+          // Retrieval consumers reading "the original turn" should
+          // follow `parent_message_id` to the parent row; consumers
           // joining chunks see the stripped form. Documented so future
-          // story work picking the right field is unambiguous.
+          // work picking the right field is unambiguous.
           parentMessageId = deps.conversationStore.addMessage(opts.conversationId, {
             role: turn.role,
             content: turn.content,

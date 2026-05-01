@@ -155,17 +155,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
 );
 `;
 
-// Spec-005 §12 window_messages — join table resolving the messages that
-// comprise each window. Composite PK mirrors the vec_windows key +
-// message_id, so the same (conversation_id, window_index) pair in both
-// tables is the indexer's atomic write unit. message_id is INTEGER to
-// match the current messages.id type (see sprint-014 Known Deviation #1
-// and GH issue #106 for the future TEXT UUID migration).
+// window_messages — join table resolving the messages that comprise each
+// window. Composite PK mirrors the vec_windows key + message_id, so the
+// same (conversation_id, window_index) pair in both tables is the
+// indexer's atomic write unit. message_id is INTEGER to match the
+// current messages.id type (see GH issue #106 for the future TEXT UUID
+// migration).
 //
-// ix_window_messages_message_id supports Phase-4 reverse lookups (window
-// hits resolve to constituent message_ids) without a full scan of
-// window_messages. Spec §12's index list omits this, but the Phase-4
-// join pattern makes it load-bearing at scale.
+// ix_window_messages_message_id supports reverse lookups (window hits
+// resolve to constituent message_ids) without a full scan of
+// window_messages — load-bearing at scale.
 const WINDOW_MESSAGES_DDL = `
 CREATE TABLE IF NOT EXISTS window_messages (
   conversation_id TEXT NOT NULL,
@@ -178,15 +177,14 @@ CREATE INDEX IF NOT EXISTS ix_window_messages_message_id
   ON window_messages(message_id);
 `;
 
-// Spec-005 §12 vec_sessions — whole-conversation secondary semantic index.
-// One vector per conversation (keyed by conversation_id, PRIMARY KEY), used
-// by Phase-4 hybrid retrieval as a coarse-grained vector source alongside
-// vec_windows. No project_id column per spec §12 — Phase-4 filters sessions
+// vec_sessions — whole-conversation secondary semantic index. One vector
+// per conversation (keyed by conversation_id, PRIMARY KEY), used by the
+// hybrid retriever as a coarse-grained vector source alongside
+// vec_windows. No project_id column — the retriever filters sessions
 // via a pre-query join on conversations.project_id.
 // `+updated_at INTEGER` uses the vec0 auxiliary-column syntax (`+` prefix).
 // vec0 does not accept NOT NULL / CHECK / DEFAULT on auxiliary columns at
-// DDL — the non-null invariant is enforced at the write-helper layer in
-// sprint-015.
+// DDL — the non-null invariant is enforced at the write-helper layer.
 //
 // Same INSERT OR REPLACE caveat as vec_windows: duplicate PK inserts throw
 // UNIQUE constraint failed; use DELETE + INSERT for the replace idiom.
@@ -198,22 +196,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
 );
 `;
 
-// Spec-005 §12 messages_public — read-only view exposing the Phase-5 SQL
-// primitive's safe message surface. Aliases internal column names the spec
-// exposes to consumers (sort_order → turn_index) and casts TEXT timestamps
-// to unix milliseconds so Phase-4 integer-ms range filters work. Excludes
-// parent_message_id — oversize-chunk linkage is an internal concern the
-// SQL-primitive consumer should never see. The explicit column list in
-// the VIEW declaration pins the surface contract; adding a column to the
-// SELECT without also listing it in the view's declared columns raises a
-// DDL error, so the view can't accidentally leak new columns.
+// messages_public — read-only view exposing the safe message surface for
+// the SQL primitive. Aliases internal column names (sort_order →
+// turn_index) and casts TEXT timestamps to unix milliseconds so
+// integer-ms range filters work. Excludes parent_message_id —
+// oversize-chunk linkage is an internal concern the SQL-primitive
+// consumer should never see. The explicit column list in the VIEW
+// declaration pins the surface contract; adding a column to the SELECT
+// without also listing it in the view's declared columns raises a DDL
+// error, so the view can't accidentally leak new columns.
 //
 // **timestamp nullability.** The underlying messages.timestamp column is
-// nullable TEXT (Sprint-009 shape; addConversation without per-message
-// timestamps inserts NULL). `strftime('%s', NULL)` returns NULL, so the
-// view's timestamp column passes NULL through for those rows. Consumers
-// doing time-range filters must handle NULL (e.g. `WHERE timestamp IS NOT
-// NULL AND timestamp > ?`) — coercing to 0 / epoch would lie about data
+// nullable TEXT; `addConversation` without per-message timestamps inserts
+// NULL. `strftime('%s', NULL)` returns NULL, so the view's timestamp
+// column passes NULL through for those rows. Consumers doing time-range
+// filters must handle NULL (e.g. `WHERE timestamp IS NOT NULL AND
+// timestamp > ?`) — coercing to 0 / epoch would lie about data
 // availability. Pinned by the NULL-passthrough test in store.test.ts.
 //
 // **Index pushdown.** The CAST(strftime(...)) expression blocks use of
@@ -236,13 +234,12 @@ CREATE VIEW IF NOT EXISTS messages_public
     FROM messages;
 `;
 
-// Spec-005 §12 conversations_public — read-only public view. Same pattern
-// as messages_public: alias + cast + exclude. created_at (TEXT ISO from
-// datetime('now')) casts to unix milliseconds as started_at (spec §12
-// name). Excludes user_id, content_hash, message_count — all internal
-// implementation details the Phase-5 SQL-primitive consumer should not
-// see. project_id IS exposed — consumers need it for project-scoped
-// retrieval.
+// conversations_public — read-only public view. Same pattern as
+// messages_public: alias + cast + exclude. created_at (TEXT ISO from
+// datetime('now')) casts to unix milliseconds as started_at. Excludes
+// user_id, content_hash, message_count — all internal implementation
+// details the SQL-primitive consumer should not see. project_id IS
+// exposed — consumers need it for project-scoped retrieval.
 const CONVERSATIONS_PUBLIC_DDL = `
 CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
   SELECT id,
@@ -251,15 +248,16 @@ CREATE VIEW IF NOT EXISTS conversations_public (id, project_id, started_at) AS
     FROM conversations;
 `;
 
-// Spec-005 §12 summaries — scratch-pad table for Phase-5 reference summaries
-// injected into the retrieval context. No FK to conversations intentional:
-// session_id is a harness-provided opaque string; multiple conversations may
-// share a session (session lifetime is harness-scoped, not corpus-scoped).
-// `metadata` holds optional caller-provided JSON-encoded state. Per spec §12
-// the column list is (id TEXT PK, session_id TEXT NOT NULL, project_id TEXT
-// NOT NULL, text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT).
-// ix_summaries_project_time covers the recency query pattern getRecentSummaries
-// uses — filter by project_id + order by timestamp DESC.
+// summaries — scratch-pad table for reference summaries injected into the
+// retrieval context. No FK to conversations intentional: session_id is a
+// harness-provided opaque string; multiple conversations may share a
+// session (session lifetime is harness-scoped, not corpus-scoped).
+// `metadata` holds optional caller-provided JSON-encoded state. Column
+// list: (id TEXT PK, session_id TEXT NOT NULL, project_id TEXT NOT NULL,
+// text TEXT NOT NULL, timestamp INTEGER NOT NULL, metadata TEXT).
+// ix_summaries_project_time covers the recency query pattern
+// getRecentSummaries uses — filter by project_id + order by timestamp
+// DESC.
 const SUMMARIES_DDL = `
 CREATE TABLE IF NOT EXISTS summaries (
   id TEXT PRIMARY KEY,
@@ -379,7 +377,7 @@ export class ConversationStore {
    * multi-project-per-user harnesses) pass `projectId` explicitly.
    *
    * Both the conversation row and every message row land with the same
-   * `project_id`, so Phase-4's filter-first vector search can narrow
+   * `project_id`, so the searcher's filter-first vector path can narrow
    * candidates without joining through conversations on every query.
    *
    * Throws on duplicate (user_id, content_hash) — callers should check for
@@ -432,8 +430,8 @@ export class ConversationStore {
    * its `project_id`, (2) compute `MAX(sort_order) + 1`, (3) insert the
    * message + bump `conversations.message_count` by 1. Concurrent appends
    * serialize at the SQLite level so the ordinal sequence stays gapless
-   * and the counter stays accurate. Worker-thread concurrency arrives with
-   * sprint-015's embed-worker; this contract is pinned now.
+   * and the counter stays accurate. The contract is pinned proactively
+   * so worker-thread concurrency consumers can rely on it.
    *
    * **Project scope from parent.** `project_id` is read from the parent
    * conversation row, NOT supplied by the caller. This prevents cross-
@@ -444,12 +442,12 @@ export class ConversationStore {
    * `sort_order` is ordinal, not contiguous — deleting a message and later
    * appending yields `MAX(sort_order) + 1`, so gaps are allowed.
    *
-   * Returns the inserted `messages.id` (INTEGER PRIMARY KEY) so callers like
-   * the sprint-015 indexer can enqueue per-message tasks without re-querying
-   * by (conversationId, sort_order). Spec §5.1.1 sketches a void primitive,
-   * but the shipped schema uses INTEGER ids (not UUIDs per spec §13) and the
-   * indexer needs the id atomically — surfacing it from the same transaction
-   * is the natural reconciliation. Tracked alongside #106.
+   * Returns the inserted `messages.id` (INTEGER PRIMARY KEY) so callers
+   * like the indexer can enqueue per-message tasks without re-querying by
+   * (conversationId, sort_order). The original interface sketched a void
+   * primitive, but the shipped schema uses INTEGER ids (not UUIDs) and
+   * the indexer needs the id atomically — surfacing it from the same
+   * transaction is the natural reconciliation. Tracked alongside #106.
    */
   public addMessage(
     conversationId: string,
@@ -497,7 +495,7 @@ export class ConversationStore {
 
   /**
    * Insert a reference summary into the summaries table. Returns the
-   * generated id. Phase-5's summary-injection flow writes here after the
+   * generated id. The summary-injection flow writes here after the
    * retrieval context is assembled.
    *
    * Unlike `addMessage`, `projectId` IS caller-supplied — summaries aren't
@@ -594,8 +592,7 @@ export class ConversationStore {
    * to provide one-shot ingest without double-inserting messages: this
    * method writes the conversation row + content_hash; the indexer writes
    * the message rows + enqueues per-message embed tasks (preserving the
-   * oversize-chunker behavior). Used by `client.storeAsync` (sprint-016
-   * Story 1).
+   * oversize-chunker behavior). Used by `client.storeAsync`.
    *
    * Throws on duplicate `(user_id, content_hash)` — same UNIQUE-constraint
    * surface as `addConversation`. Callers detect duplicates via
@@ -672,13 +669,12 @@ export class ConversationStore {
    * Order matters:
    *   - `window_messages.message_id` has FK to `messages.id`, so its rows
    *     MUST be removed before the messages rows.
-   *   - `pending_ingest_tasks.conversation_id` has FK to `conversations.id`
-   *     (sprint-015 schema), so its rows MUST be removed before the
-   *     conversations row. Without this DELETE, the partial-ingest recovery
-   *     scenario this method exists for (calling `deleteById` while embed
-   *     tasks are still pending) FK-fails on the conversations DELETE — the
-   *     transaction rolls back and the conversation stays in a half-indexed
-   *     state.
+   *   - `pending_ingest_tasks.conversation_id` has FK to `conversations.id`,
+   *     so its rows MUST be removed before the conversations row. Without
+   *     this DELETE, the partial-ingest recovery scenario this method
+   *     exists for (calling `deleteById` while embed tasks are still
+   *     pending) FK-fails on the conversations DELETE — the transaction
+   *     rolls back and the conversation stays in a half-indexed state.
    *   - `vec_windows` / `vec_sessions` have no FK (vec0 does not enforce
    *     them), but we DELETE those vector rows in the same transaction so
    *     orphans never accumulate after a recovery.

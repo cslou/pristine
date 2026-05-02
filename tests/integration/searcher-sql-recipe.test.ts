@@ -6,11 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDatabase, PristineLocal } from '../../src/index.js';
 
-// Sprint-019 Story 5 FV-1: recipe-equivalence test.
+// Recipe-equivalence test for the canonical migration recipe shipped
+// in spec §5.2 (concrete `client.searcher.sql` raw-SQL form replacing
+// the removed `searchConversations` method).
 //
-// Verifies the locked migration recipe in spec §5.2 (concrete
-// `client.searcher.sql` raw-SQL form) returns the expected per-message
-// FTS5 hits against a seeded corpus on three representative inputs:
+// Verifies the recipe returns the expected per-message FTS5 hits
+// against a seeded corpus on three representative inputs:
 //
 //   1. Different keyword (matches a subset of seeded messages).
 //   2. Different project (project-scoped filter narrows results).
@@ -54,8 +55,8 @@ const escapeFts5Query = (keyword: string): string =>
     .map((t) => `"${t.replace(/"/g, '""')}"`)
     .join(' ');
 
-// Locked recipe (per sprint-019 AC line 352-361). One row per matching
-// message, project-scoped, ordered by FTS5 rank.
+// Locked recipe shape — one row per matching message, project-scoped,
+// ordered by FTS5 rank. Mirrors the spec §5.2 canonical form.
 const RECIPE_SQL = `
   SELECT m.id, m.conversation_id, m.role, m.timestamp,
          snippet(messages_fts, 0, '<b>', '</b>', '...', 32) AS snippet
@@ -111,7 +112,7 @@ afterAll(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe('searcher.sql recipe equivalence (sprint-019 Story 5 FV-1)', () => {
+describe('searcher.sql recipe equivalence', () => {
   it(
     'recipe input #1 (different keyword): "espresso" in project A returns the 2 espresso-mentioning messages',
     { timeout: SLOW_TEST_TIMEOUT_MS },

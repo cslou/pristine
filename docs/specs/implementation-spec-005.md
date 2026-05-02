@@ -342,7 +342,10 @@ const client = await PristineLocal.create({ ... });
 
 // Caller MUST validate / clamp `limit` before calling — see precondition
 // notes below; pass the clamped value as the third positional parameter.
-const limit = Math.min(Math.max(callerLimit | 0, 1), 1000);
+// `Math.trunc(Number(...))` is used instead of `| 0` because the bitwise
+// OR wraps to a negative 32-bit integer for inputs ≥ 2^31, which would
+// then clamp to 1 and silently underdeliver results.
+const limit = Math.min(Math.max(Math.trunc(Number(callerLimit)) || 0, 1), 1000);
 
 const rows = await client.searcher.sql(
   `SELECT m.id, m.conversation_id, m.role, m.timestamp,

@@ -34,6 +34,13 @@ const ALLOWED_SCHEMA_PREFIX = 'main';
 export interface ParseSqlAccessResult {
   readonly tables: readonly string[];
   readonly isSelect: boolean;
+  /**
+   * When `isSelect` is `false`, holds the upper-cased first statement
+   * keyword that triggered the rejection (e.g. `'DROP'`, `'INSERT'`).
+   * Undefined when `isSelect` is `true`. Used by {@link validateSqlAccess}
+   * to construct a debuggable error message naming the offending keyword.
+   */
+  readonly firstStatementKeyword?: string;
 }
 
 type TokenType =
@@ -65,8 +72,18 @@ function stripComments(sql: string): string {
     }
     if (c === '/' && sql[i + 1] === '*') {
       i += 2;
-      while (i < sql.length - 1 && !(sql[i] === '*' && sql[i + 1] === '/')) i += 1;
-      i += 2;
+      let closed = false;
+      while (i + 1 < sql.length) {
+        if (sql[i] === '*' && sql[i + 1] === '/') {
+          i += 2;
+          closed = true;
+          break;
+        }
+        i += 1;
+      }
+      if (!closed) {
+        throw new InvalidSqlError('parse uncertainty: unterminated block comment');
+      }
       continue;
     }
     if (c === "'") {
@@ -90,16 +107,34 @@ function stripComments(sql: string): string {
       const end = c;
       const start = i;
       i += 1;
-      while (i < sql.length && sql[i] !== end) i += 1;
-      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === end) {
+          if (sql[i + 1] === end) {
+            i += 2;
+            continue;
+          }
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
       out += sql.slice(start, i);
       continue;
     }
     if (c === '[') {
       const start = i;
       i += 1;
-      while (i < sql.length && sql[i] !== ']') i += 1;
-      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === ']') {
+          if (sql[i + 1] === ']') {
+            i += 2;
+            continue;
+          }
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
       out += sql.slice(start, i);
       continue;
     }
@@ -146,15 +181,39 @@ function tokenise(sql: string): Token[] {
     if (c === '"' || c === '`') {
       const end = c;
       let j = i + 1;
-      while (j < sql.length && sql[j] !== end) j += 1;
-      tokens.push({ type: 'qident', value: sql.slice(i + 1, j), raw: sql.slice(i, j + 1) });
+      let inner = '';
+      while (j < sql.length) {
+        if (sql[j] === end) {
+          if (sql[j + 1] === end) {
+            inner += end;
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        inner += sql[j];
+        j += 1;
+      }
+      tokens.push({ type: 'qident', value: inner, raw: sql.slice(i, j + 1) });
       i = j + 1;
       continue;
     }
     if (c === '[') {
       let j = i + 1;
-      while (j < sql.length && sql[j] !== ']') j += 1;
-      tokens.push({ type: 'qident', value: sql.slice(i + 1, j), raw: sql.slice(i, j + 1) });
+      let inner = '';
+      while (j < sql.length) {
+        if (sql[j] === ']') {
+          if (sql[j + 1] === ']') {
+            inner += ']';
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        inner += sql[j];
+        j += 1;
+      }
+      tokens.push({ type: 'qident', value: inner, raw: sql.slice(i, j + 1) });
       i = j + 1;
       continue;
     }
@@ -244,8 +303,13 @@ function extractOneTableRef(
     identTok = tokens[nextIdx];
     nextIdx += 1;
   }
-  if (cteNames.has(identTok.value)) return nextIdx;
-  tables.push(identTok.value);
+  // SQLite is case-insensitive for unquoted identifiers, and we treat
+  // quoted identifiers the same way at the allowlist boundary so a caller
+  // cannot trivially shadow an allowlist entry by varying case. Both the
+  // CTE-name lookup and the table push fold the identifier to lowercase.
+  const folded = identTok.value.toLowerCase();
+  if (cteNames.has(folded)) return nextIdx;
+  tables.push(folded);
   return nextIdx;
 }
 
@@ -312,7 +376,10 @@ function parseWithPreamble(
     if (tokens[i].type !== 'word' && tokens[i].type !== 'qident') {
       throw new InvalidSqlError(`parse uncertainty: expected CTE name, got '${tokens[i].raw}'`);
     }
-    cteNames.add(tokens[i].value);
+    // Fold CTE names to lowercase to match the case-folding used at every
+    // FROM/JOIN identifier extraction site below — SQLite identifiers are
+    // case-insensitive when unquoted.
+    cteNames.add(tokens[i].value.toLowerCase());
     i += 1;
     if (i < end && tokens[i].type === 'lparen') {
       const closeIdx = findMatchingRparen(tokens, i, end);
@@ -414,8 +481,11 @@ export function parseSqlAccess(sql: string): ParseSqlAccessResult {
     throw new InvalidSqlError(`expected SELECT or WITH, got '${first.raw}'`);
   }
   const firstUpper = first.value.toUpperCase();
+  // Non-SELECT keywords are reported via the result rather than thrown,
+  // so validateSqlAccess can run the AC-mandated `if (!isSelect)` check
+  // and surface a debuggable error naming the offending keyword.
   if (NON_SELECT_KEYWORDS.has(firstUpper)) {
-    throw new InvalidSqlError(`non-SELECT statement: ${firstUpper}`);
+    return { tables: [], isSelect: false, firstStatementKeyword: firstUpper };
   }
   if (firstUpper !== 'SELECT' && firstUpper !== 'WITH') {
     throw new InvalidSqlError(`expected SELECT or WITH, got '${firstUpper}'`);
@@ -438,7 +508,8 @@ export function parseSqlAccess(sql: string): ParseSqlAccessResult {
     }
     const mainUpper = mainTok.value.toUpperCase();
     if (NON_SELECT_KEYWORDS.has(mainUpper)) {
-      throw new InvalidSqlError(`non-SELECT statement after WITH preamble: ${mainUpper}`);
+      // Same channelling for WITH-prefixed UPDATE / INSERT / DELETE.
+      return { tables: [], isSelect: false, firstStatementKeyword: mainUpper };
     }
     if (mainUpper !== 'SELECT') {
       throw new InvalidSqlError(
@@ -499,11 +570,11 @@ export function parseSqlAccess(sql: string): ParseSqlAccessResult {
  * `messages_fts`).
  */
 export function validateSqlAccess(sql: string, allowlist: ReadonlySet<string>): void {
-  const { tables, isSelect } = parseSqlAccess(sql);
-  if (!isSelect) {
-    throw new InvalidSqlError('non-SELECT statement');
+  const result = parseSqlAccess(sql);
+  if (!result.isSelect) {
+    throw new InvalidSqlError(`non-SELECT statement: ${result.firstStatementKeyword ?? 'unknown'}`);
   }
-  for (const t of tables) {
+  for (const t of result.tables) {
     if (!allowlist.has(t)) {
       throw new InvalidSqlError(`table not in allowlist: ${t}`);
     }

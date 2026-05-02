@@ -20,8 +20,8 @@
   - **Phase 5 ships the THIRD of three primitives.** Sprint-015 shipped `indexer`; sprint-016 shipped `searcher.{vector,fts,hybrid,session}Search`; this sprint completes `searcher` with `searcher.sql`. After this sprint, the spec-005 §5.1 primitive surface is functionally complete.
   - **Single SQL surface, one code path.** Per spec §15 Flow 3 (rebased pre-sprint), every query — whether composed by the integrator's app code or emitted by an LLM through a future Phase 6 reference tool — is a raw SQL string with positional `?` parameters. The DSL originally drafted at spec creation was dropped at sprint-doc rebase: LLMs are competent at SQL, and an additional query grammar adds surface area (extra parser, extra type system, extra failure modes) without commensurate value. Story 2 ships the parser + allowlist; Stories 1 + 3 wire the read-only execution path.
   - **Privacy boundary is the load-bearing concern.** Story 4's adversarial test suite (matching spec §8.6) is non-negotiable: every adversarial query — DML, internal-table SELECT, vault SELECT, DoS via cartesian join — must be rejected with a typed error or row-capped before completion. **A privacy-boundary regression here is a P0 finding.** Each story ships its own functional + regression verification as part of its merge — Story 4 specifically owns the comprehensive adversarial battery on top of the public surface that Story 3 wired.
-  - **No DDL changes (with one allowlist-extension exception).** The public views and underlying tables already exist. This sprint only ships the SQL-execution path on top of them. **Exception:** Story 2 may extend the default allowlist to include the existing `messages_fts` shadow table (no DDL change — just allowing it through the parser) IF its column footprint is private-safe; see Story 2 AC and Story 5 path-(c) recipe. If a missing view surface comes up (e.g., `vec_windows_public`, `messages_fts_public`), defer to a follow-up sprint.
-  - **`searchConversations` decision lives in this sprint as Story 5.** Originally drafted as Story 5 of sprint-018, the decision (keep / align / remove the sprint-009-era `searchConversations`) was relocated here because `searcher.sql` (Stories 1-3 of THIS sprint) is the recipe-alternative for the "remove" path. Bundling the decision with the alternative makes the investigation honest instead of pre-decided.
+  - **No DDL changes (with one allowlist-extension exception).** The public views and underlying tables already exist. This sprint only ships the SQL-execution path on top of them. **Exception:** Story 2 may extend the default allowlist to include the existing `messages_fts` shadow table (no DDL change — just allowing it through the parser) IF its column footprint is private-safe; see Story 2 AC and Story 5's recipe. If a missing view surface comes up (e.g., `vec_windows_public`, `messages_fts_public`), defer to a follow-up sprint.
+  - **`searchConversations` removal lives in this sprint as Story 5.** Originally drafted as Story 5 of sprint-018, the keep/align/remove decision was relocated here because `searcher.sql` (Stories 1-3 of THIS sprint) is the recipe-alternative that makes removal viable. The decision was locked to **Remove + recipe** by user direction during sprint-019 planning — keyword-search composition belongs at the skill / Phase 6 reference-tool layer, not on the SDK's public surface.
 - **Non-goals:**
   - **Phase 6 reference tools** (`search_memory` / `query_memory`) — `query_memory` will compose `searcher.sql` once it ships, but the tool wrappers are a separate sprint.
   - **Mutation surface (DML / DDL).** This primitive is read-only by design (§5.1.3). Any mutation lives behind dedicated SDK methods (`storeAsync`, `addSummary` if/when exposed), never through `searcher.sql`. No `INSERT` / `UPDATE` / `DELETE` / `CREATE` ever runs through this path.
@@ -288,7 +288,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - **Identifier-encoding tricks are the highest-risk class.** Story 2's parser must treat `"messages"`, `[messages]`, and `` `messages` `` as identical to `messages` for allowlist comparison. Adversarial tests verify each form rejects.
   - **Spec touchup grew with the rebase.** Originally a single §15 Flow 3 edit. Post-rebase it touches §5.1.3 (surface wording), §15 Flow 3 (drop DSL example, simplify diagram), §15 Flow 5 (`query_memory` reference impl uses raw SQL not DSL), and §16 Phase-5 done-when. All in one commit so reviewers see the cumulative spec delta together.
 
-#### Story 5: Decide on `searchConversations` — keep, align, or remove (relocated from sprint-018)
+#### Story 5: Remove `searchConversations` + ship raw-SQL recipe (relocated from sprint-018)
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -301,58 +301,32 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** Pristine SDK maintainer evaluating overlap between sprint-009-era `searchConversations` (user-scoped, conversation-level FTS w/ snippets) and the spec-005 surface (`searcher.ftsSearch` message-level + `searcher.sql` over `messages_public` / `conversations_public`), **I want** an explicit decision committed to the docs and reflected in the API, **so that** Phase 6 reference tools and external consumers know which surface to reach for and don't accidentally bake in the legacy one.
-- **Dependencies:** Stories 1-4 (the `searcher.sql` recipe path requires the SQL primitive to exist + be tested). **Hard-input dependency:** Story 2 PR body must include the `## messages_fts allowlist decision` heading per Story 2 AC — Story 5's path-(c) reachability is gated on that heading's content (`extended` vs `not extended`).
+- **As a** Pristine SDK maintainer locking the public surface for Phase 6, **I want** `searchConversations` removed from the SDK (keyword-search composition belongs at the skill / Phase 6 reference-tool layer, not on `client`) and a copy-pasteable raw-SQL recipe shipped in spec §5.2 so future skills/tools can reproduce its shape, **so that** the SDK surface stays minimal and consumers have one canonical recipe instead of an overlapping legacy method.
+- **Dependencies:** Stories 1-4 (the `searcher.sql` recipe requires the SQL primitive to exist + be tested). **Hard-input dependency:** Story 2 PR body must include the `## messages_fts allowlist decision` heading per Story 2 AC — Story 5's recipe shape (FTS5-backed vs deferred-with-follow-up-note) is determined by that heading's content (`extended` vs `not extended`); the method removal itself is unconditional.
 - **Acceptance criteria:**
-  - [ ] Investigation block in the story PR body answers: (1) how does `searchConversations` differ from `searcher.ftsSearch` and `searcher.sql` semantically (scoping, granularity, return shape, snippet rendering); (2) **enumerate every consumer** — list every grep hit for `searchConversations` across `src/`, `tests/`, `scripts/`, and `docs/` (`grep -rn "searchConversations" src/ tests/ scripts/ docs/`), with a one-line note per hit identifying it as production / test / script / doc; (3) the concrete `searcher.sql` recipe that recovers `searchConversations`'s shape (input → output, with the actual raw-SQL string + positional `?` params).
-  - [ ] Decision is one of:
-    - **(a) Keep with doc clarification** — JSDoc on `searchConversations`, `searcher.ftsSearch`, AND `searcher.sql` explaining when to reach for each.
-    - **(b) Align with project-scoping** — make `searchConversations` accept `projectId` (additive — `userId` becomes optional) and harmonize the contract with `searcher.*`.
-    - **(c) Remove + recipe** — delete the method, ship the concrete `searcher.sql` raw-SQL recipe in JSDoc + spec §5.2 reference-implementations.
-  - [ ] **Path-(c) is GATED on Story 2's allowlist decision:** if Story 2's PR body documents `not extended` for `messages_fts`, path-(c) is unreachable in this sprint and the decision MUST be (a) Keep (Story 5 must NOT re-investigate; Story 2's logged outcome is authoritative). If Story 2 documents `extended`, all three paths remain in scope.
-  - [ ] Decision is implemented in this PR (whichever path). Pass condition: every commit in the chosen path's planned-commits sequence (below) is present in the PR's commit list, AND no commits from a different path appear (i.e. paths don't bleed).
-  - [ ] In-repo consumers (`scripts/search-conversations.ts`, any test fixtures) are updated to match the decision. If the decision is (c), the script either migrates to `searcher.sql` (using the documented recipe) or the script itself is removed (with a brief note in commit message).
-  - [ ] If decision is (a) or (b), the JSDoc cross-references are bidirectional (each method points at its alternatives).
+  - [ ] Decision is **locked at sprint planning to Remove + recipe** — the method is removed from the SDK unconditionally. Recipe shape is determined by Story 2's PR body `## messages_fts allowlist decision` heading: if `extended`, the recipe is the FTS5-backed form (locked example in technical notes below) and ships in JSDoc + spec §5.2; if `not extended`, the recipe ships in spec §5.2 with a documented note that the FTS5-backed form lands once a `messages_fts_public` view ships in a follow-up sprint. The SDK-method removal does NOT depend on Story 2's decision.
+  - [ ] Investigation block in the story PR body answers: (1) **enumerate every consumer** — list every grep hit for `searchConversations` across `src/`, `tests/`, `scripts/`, and `docs/` (`grep -rn "searchConversations" src/ tests/ scripts/ docs/`), with a one-line note per hit identifying it as production / test / script / doc; (2) the concrete `searcher.sql` recipe that recovers `searchConversations`'s shape (input → output, with the actual raw-SQL string + positional `?` params), in whichever shape is reachable per Story 2's allowlist decision.
+  - [ ] In-repo consumers (`scripts/search-conversations.ts`, any test fixtures) are updated to match the removal: the script either migrates to `searcher.sql` (using the documented recipe) or the script itself is removed (with a brief note in commit message).
+  - [ ] Removal-audit pass: `grep -rn "searchConversations" src/ tests/` returns zero hits in production code (only spec / migration-recipe / sprint-doc references remain).
 - **Functional verification:**
-  - [ ] **Path (a):** JSDoc grep — `grep -n "searchConversations\|searcher.ftsSearch\|searcher.sql" src/client.ts src/memory/searcher/index.ts` shows mutual cross-references between all three surfaces.
-  - [ ] **Path (b):** unit + integration tests for the new `projectId`-additive param shape — pass condition: `searchConversations({ userId })`, `searchConversations({ projectId })`, AND `searchConversations({ userId, projectId })` all resolve correctly per documented precedence.
-  - [ ] **Path (c):** recipe-equivalence unit test — `searcher.sql` with the recipe's raw-SQL string returns row-equivalent results to the legacy `searchConversations` for at least 3 representative inputs (different keyword, different project, empty result). Pass condition: deep-equality of result sets after sorting by `id`.
+  - [ ] Recipe-equivalence unit test (only runs if Story 2 documented `extended`; otherwise marked `it.skip` with a comment pointing to the deferred follow-up sprint that ships `messages_fts_public`) — `searcher.sql` with the recipe's raw-SQL string returns row-equivalent results to the legacy `searchConversations` for at least 3 representative inputs (different keyword, different project, empty result). Pass condition: deep-equality of result sets after sorting by `id`.
+  - [ ] Public-surface removal verified — `grep -nE "\bsearchConversations\b" src/client.ts` returns 0 hits OR only doc-comment references pointing to the migration recipe. Pass condition: `client.searchConversations` is no longer present on the public type.
 - **Regression verification:**
-  - [ ] `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration` — all clean for whichever path was taken.
-  - [ ] **Path (a) only:** bidirectional JSDoc cross-references confirmed — pass condition: each of the six per-file per-name checks below prints `≥ 1` to stdout (READ THE PRINTED INTEGER — `grep -c` exits with code 1 on zero matches, so `... && echo PASS` would silently chain-break on a missing reference; verify the printed count is ≥1, not the exit code):
-    - `grep -c "searchConversations" src/client.ts` ≥ 1
-    - `grep -c "searcher\\.ftsSearch" src/client.ts` ≥ 1
-    - `grep -c "searcher\\.sql" src/client.ts` ≥ 1
-    - `grep -c "searchConversations" src/memory/searcher/index.ts` ≥ 1
-    - `grep -c "searcher\\.ftsSearch" src/memory/searcher/index.ts` ≥ 1
-    - `grep -c "searcher\\.sql" src/memory/searcher/index.ts` ≥ 1
-    Equivalent exit-code-safe form: `for f in src/client.ts src/memory/searcher/index.ts; do for s in searchConversations 'searcher\.ftsSearch' 'searcher\.sql'; do n=$(grep -c "$s" "$f"); echo "$f $s $n"; [ "$n" -ge 1 ] || echo FAIL; done; done` — pass condition: zero `FAIL` lines. (Patterns are single-quoted with single backslashes — `\.` reaches grep BRE as `\.` matching a literal dot. Double backslashes would pass `\\.` to BRE which matches backslash + any char and would FAIL on legitimate `searcher.ftsSearch` references — this is the consistency fix for the six `grep -c` checks above which use double-quoted `"searcher\\.ftsSearch"` because shell-double-quoted `\\.` ALSO reaches BRE as `\.`; same target regex, different shell-quoting paths.)
-  - [ ] **Path (b) only:** existing `searchConversations({ userId })` callsites still pass — pass condition: `grep -rn "searchConversations(" src/ tests/ scripts/` shows no breakage in any existing call.
-  - [ ] **Path (c) only:** removed-method audit — `grep -rn "searchConversations" src/ tests/` returns zero hits in production code (only in spec / migration-recipe docs).
+  - [ ] `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:integration` — all clean after removal.
+  - [ ] Removed-method audit — `grep -rn "searchConversations" src/ tests/` returns zero hits in production code (only spec / migration-recipe / sprint-doc references remain).
   - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:**
-  - **Path (c) only:** if `scripts/search-conversations.ts` is migrated rather than removed, run it once locally against a small corpus to confirm the migration produces equivalent results. Tag this `@manual`. Pass condition: output rows match a baseline captured from the legacy script before migration.
-  - Other paths: N/A.
-- **Planned commits (path-conditional — pick the matching list at story start):**
-  - **Common:**
-    1. `docs(sprint): record searchConversations investigation + chosen path in the PR body`
-  - **Path (a) — Keep with doc clarification (commits 2-3):**
-    2. `docs(client): JSDoc on PristineLocal.searchConversations cross-referencing searcher.ftsSearch + searcher.sql`
-    3. `docs(searcher): JSDoc on Searcher.ftsSearch + Searcher.sql cross-referencing client.searchConversations`
-  - **Path (b) — Align with projectId (commits 2-5):**
-    2. `feat(conversations): searchConversations accepts projectId additively — userId becomes optional`
-    3. `refactor(scripts): update scripts/search-conversations.ts to use the new param shape`
-    4. `test(conversations): unit + integration tests for the new param resolution + precedence`
-    5. `docs(client): JSDoc on the new param shape`
-  - **Path (c) — Remove + recipe (commits 2-5):**
-    2. `refactor(client): remove PristineLocal.searchConversations + ConversationStore.searchConversations`
-    3. `refactor(scripts): migrate scripts/search-conversations.ts to compose searcher.sql per the documented recipe (or remove the script with rationale)`
-    4. `test(searcher-sql): recipe-equivalence unit test — searcher.sql with the raw-SQL recipe produces equivalent rows to the legacy searchConversations on 3+ inputs`
-    5. `docs(spec): add migration recipe to implementation-spec-005.md §5.2 reference-implementations — concrete searcher.sql raw-SQL form`
+  - If `scripts/search-conversations.ts` is migrated rather than removed, run it once locally against a small corpus to confirm the migration produces equivalent results. Tag this `@manual`. Pass condition: output rows match a baseline captured from the legacy script before migration. Skip this item if the script is removed outright.
+- **Planned commits:**
+  1. `docs(sprint): record searchConversations removal investigation in PR body`
+  2. `refactor(client): remove PristineLocal.searchConversations + ConversationStore.searchConversations`
+  3. `refactor(scripts): migrate scripts/search-conversations.ts to compose searcher.sql per the documented recipe (or remove the script with rationale)`
+  4. `test(searcher-sql): recipe-equivalence unit test — searcher.sql with the raw-SQL recipe produces equivalent rows to the legacy searchConversations on 3+ inputs`
+  5. `docs(spec): add migration recipe to implementation-spec-005.md §5.2 reference-implementations — concrete searcher.sql raw-SQL form`
 - **Technical notes:**
   - **Concrete impl differences (validate at story start):** `searchConversations` (a) requires `userId` as primary scope; (b) returns `ConversationSearchResult[]` — one row per conversation with a `snippet` string; (c) uses `escapeFts5Query` defensively; (d) does NOT take a projectId. `searcher.ftsSearch` (a) requires `projectId`; (b) returns `MessageHit[]` — one per matching message; (c) propagates FTS5-query syntax errors as `InvalidArgumentError`. `searcher.sql` (Stories 1-3 of this sprint) (a) accepts raw SQL against `messages_public` / `conversations_public` (and `messages_fts` if Story 2's allowlist decision extends it); (b) returns `Row[]` opaque shape; (c) lets a consumer build the exact JOIN + snippet that `searchConversations` produces today. All three ride `messages_fts` underneath.
-  - **Bias reset by user input.** Original sprint-018 draft biased toward (a) Keep — because no concrete `searcher.sql` alternative existed. Now that Stories 1-3 of THIS sprint ship `searcher.sql`, (c) Remove + recipe becomes the cleanest path: one less leaky-by-user-scoping API on the public surface, one explicit recipe in the spec. Investigation should re-evaluate from a (c)-friendly default. If the recipe-equivalence unit test reveals an irreducible gap (e.g., FTS5 snippet rendering can't be reproduced equivalently), fall back to (a) with a documented "stays for ergonomic snippet rendering" rationale.
-  - **If decision is (c) — recipe shape.** The recipe must be a copy-pasteable raw-SQL string in the JSDoc and spec, NOT a prose description. Example shape (validate at story start; assumes Story 2 extended allowlist to include `messages_fts`):
+  - **Decision locked at sprint planning.** User direction during sprint-019 planning locked the Remove + recipe path unconditionally. Original sprint-018 draft biased toward Keep because no concrete `searcher.sql` alternative existed; sprint-019 ships that alternative in Stories 1-3, so the SDK no longer needs to carry the legacy method. Removing it does NOT preclude a future skill or Phase-6 reference tool from re-exposing keyword-search composition externally — the SDK just stops carrying it on the public surface.
+  - **Recipe shape (locked).** The recipe must be a copy-pasteable raw-SQL string in the JSDoc and spec, NOT a prose description. Example shape (validate at story start; assumes Story 2 extended allowlist to include `messages_fts`):
     ```ts
     // Recipe: keyword search across a project's conversations, returning per-message snippets ordered by relevance.
     // NOTES (all enforced as caller-side preconditions; document in JSDoc when this recipe ships in spec §5.2):
@@ -385,7 +359,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
       { params: [escapeFts5Query(keyword), projectId, limit] },
     );
     ```
-    **Story-start verification (locked):** read Story 2's PR body for the `## messages_fts allowlist decision` heading. If Story 2 documented `extended` → path-(c) is reachable; proceed with the recipe + recipe-equivalence test. If Story 2 documented `not extended` → path-(c) is unreachable in this sprint; decision MUST be (a) Keep (with JSDoc cross-references) and the spec touchup notes that the path-(c) recipe lands once `messages_fts_public` view ships in a follow-up sprint.
+    **Story-start verification (locked):** read Story 2's PR body for the `## messages_fts allowlist decision` heading. If Story 2 documented `extended` → ship the recipe in the FTS5-backed form above AND run the recipe-equivalence test. If Story 2 documented `not extended` → the SDK method removal still proceeds unconditionally, but the recipe ships in spec §5.2 with a documented note that the FTS5-backed form lands once a `messages_fts_public` view ships in a follow-up sprint; the recipe-equivalence test is `it.skip`-ed with a comment pointing at the deferred follow-up.
 
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -417,7 +391,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
     - `npm run test:e2e` — pass condition: exit 0, all e2e suites pass.
     - `npx tsx scripts/smoke-indexer.ts` — pass condition: script exits 0; stdout contains no `FAILED` / `Error` / `assertion failed` lines.
     - `bash .checks/pre-merge.sh` — pass condition: exit 0, lint + typecheck + unit gate all pass.
-- **Manual-only verification:** Story 5 path-(c) `@manual` script verification IF that path was taken (otherwise N/A).
+- **Manual-only verification:** Story 5's `@manual` script verification IF `scripts/search-conversations.ts` was migrated rather than removed outright (otherwise N/A).
 - **Planned commits:**
   1. `docs(sprint-019): final verification evidence + Status → 🟢 Complete + ## Final Review section`
 - **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape — `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc.

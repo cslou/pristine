@@ -74,7 +74,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Acceptance criteria:**
   - [ ] New module `src/memory/searcher/sql-backend.ts` (or co-located with `searcher/index.ts` if size warrants) exposes `executeReadOnly(sql: string, params: readonly unknown[], opts: { rowCap: number; timeoutMs: number }): Promise<readonly Row[]>`.
   - [ ] Each `executeReadOnly` call opens a connection in `SQLITE_OPEN_READONLY` mode against the same DB file as the writable connection. Connection lifecycle: open → execute → close (no shared read-only connection across calls — keeps the row cap + timeout per-call).
-  - [ ] Read-only connection aborts queries exceeding `timeoutMs` (default 5000) via `progress_handler` if exposed by the better-sqlite3 binding, OR via `setTimeout` + `db.interrupt()` fallback if not. Either mechanism throws `QueryTimeoutError` (new error class extending `AppError`); the exact mechanism chosen is documented in a Story-2 commit comment (co-located with the code so future `git blame` traces preserve the rationale — NOT just in the PR body, which is ephemeral).
+  - [ ] Read-only connection aborts queries exceeding `timeoutMs` (default 5000) via `progress_handler` if exposed by the better-sqlite3 binding, OR via `setTimeout` + `db.interrupt()` fallback if not. Either mechanism throws `QueryTimeoutError` (new error class extending `AppError`); the exact mechanism chosen is documented in the Story 1 commit that lands `executeReadOnly` (planned commit #1 below — co-located with the code so future `git blame` traces preserve the rationale, NOT just in the PR body which is ephemeral).
   - [ ] Cursor wrapper enforces row cap: cursor is iterated up to `rowCap` (default 1000), then closed; any rows beyond the cap are silently dropped (NOT an error — caller chose the cap or accepted default). **Document this silent-drop behavior in the JSDoc on `executeReadOnly`** (checkable AC, not just a tech note).
   - [ ] Per-call options: `rowCap` (1 ≤ cap ≤ 10000 — `MAX_ROW_CAP`), `timeoutMs` (100 ≤ ms ≤ 10000 — `MAX_TIMEOUT_MS`). Out-of-range values throw `InvalidArgumentError`.
   - [ ] **`executeReadOnly` does NOT inspect the SQL string for a `LIMIT` clause that exceeds `rowCap`** — the row-cap cursor will silently truncate at `rowCap` regardless. Document in JSDoc that callers MUST keep their SQL `LIMIT` ≤ `rowCap`; mismatch is a caller bug, not an SDK error.
@@ -204,7 +204,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Unit test: order-of-operations — spy on `validateSqlAccess` and `executeReadOnly` (vitest `vi.spyOn` on the imported module), call `searcher.sql(...)`, assert `validateSqlAccess.mock.invocationCallOrder[0] < executeReadOnly.mock.invocationCallOrder[0]`. Pass condition: validate runs strictly before execute on every code path.
   - [ ] Unit test: default-opt application — `searcher.sql('SELECT 1')` with no opts uses `rowCap=1000` + `timeoutMs=5000` defaults. Pass condition: defaults observed via the spied `executeReadOnly` call args.
   - [ ] JSDoc placement check: `grep -nE "vectorSearch|ftsSearch|hybridSearch|sessionVectorSearch|\\bsql\\b" src/memory/searcher/index.ts` shows all five methods named in the same JSDoc-comment block above the `Searcher` interface. Pass condition: a single contiguous JSDoc block contains references to all five names.
-  - [ ] All 5 happy-path + 2 smoke-rejection integration tests (per AC above) pass — `npm run test:integration -- tests/integration/searcher-sql.test.ts` reports `7 passed` with zero failures.
+  - [ ] All 5 happy-path + 2 safety-envelope smoke tests (per AC above) pass — `npm run test:integration -- tests/integration/searcher-sql.test.ts` reports `7 passed` with zero failures.
 - **Regression verification:**
   - [ ] **Baseline-capture step (run BEFORE writing `tests/integration/searcher-sql.test.ts`):** `npm run test:integration -- --reporter=verbose 2>&1 | grep -cE "^[[:space:]]*✓"` and record the count in the Story 3 PR body under a `## pre-Story-3 integration-test baseline` heading.
   - [ ] `npm run test:integration` (full suite, including the new 7 tests) — pass condition: post-Story-3 pass count equals the recorded baseline + 7 (the new tests). Existing integration tests unaffected by the new test file.
@@ -278,7 +278,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `test(searcher-sql): adversarial DML attempts — INSERT / UPDATE / DELETE / DROP / ALTER`
-  2. `test(searcher-sql): adversarial internal-table SELECT — messages / conversations / vec_* / messages_fts (or substitute per Story 3 allowlist decision)`
+  2. `test(searcher-sql): adversarial internal-table SELECT — messages / conversations / vec_* / messages_fts (or substitute per Story 2 allowlist decision)`
   3. `test(searcher-sql): adversarial vault-table SELECT — every privacy-module table (with empty-vault fallback)`
   4. `test(searcher-sql): adversarial DoS — cartesian join + CTE bomb (row cap + timeout fire) bounded to ≤12s`
   5. `test(searcher-sql): adversarial identifier-encoding tricks — quoting / schema prefix / comments / nested CTE`

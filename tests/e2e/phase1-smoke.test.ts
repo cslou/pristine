@@ -2,8 +2,7 @@
  * Public-API smoke test — verifies `PristineLocal.create()` boots cleanly
  * without contacting any live model or filesystem path, and that the
  * public API round-trips end-to-end within a single process: `storeAsync`
- * enqueues; `searchConversations` + `getConversation` return the enqueued
- * conversation by keyword and by id.
+ * enqueues; `getConversation` returns the enqueued conversation by id.
  */
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';

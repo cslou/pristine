@@ -309,7 +309,13 @@ describe('searcher.sql adversarial suite', () => {
     ];
     for (const t of internalTables) {
       it(`rejects SELECT * FROM ${t} with InvalidSqlError naming the table`, async () => {
-        await expectInvalidSqlNaming(client.searcher.sql(`SELECT * FROM ${t}`), new RegExp(t));
+        // Word-boundary regex so `messages` does not satisfy a message
+        // naming `window_messages` or `messages_fts_data` — the test
+        // must name the exact offending table, not a substring superset.
+        await expectInvalidSqlNaming(
+          client.searcher.sql(`SELECT * FROM ${t}`),
+          new RegExp(`\\b${t}\\b`),
+        );
       });
     }
   });
@@ -318,7 +324,13 @@ describe('searcher.sql adversarial suite', () => {
     const vaultTables: readonly string[] = ['vault_entries', 'user_public_keys', 'user_keks'];
     for (const t of vaultTables) {
       it(`rejects SELECT * FROM ${t} with InvalidSqlError naming the table`, async () => {
-        await expectInvalidSqlNaming(client.searcher.sql(`SELECT * FROM ${t}`), new RegExp(t));
+        // Word-boundary regex so `messages` does not satisfy a message
+        // naming `window_messages` or `messages_fts_data` — the test
+        // must name the exact offending table, not a substring superset.
+        await expectInvalidSqlNaming(
+          client.searcher.sql(`SELECT * FROM ${t}`),
+          new RegExp(`\\b${t}\\b`),
+        );
       });
     }
   });

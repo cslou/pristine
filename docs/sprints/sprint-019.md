@@ -143,9 +143,9 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Unit test: `withTimeout(prepareStmt, ms)` is exported and callable — pass condition: `import { withTimeout } from '../../src/memory/searcher/sql-backend.js'` resolves; `withTimeout(db.prepare('SELECT 1'), 200)` returns rows without throwing on a fast query AND throws `QueryTimeoutError` on a deliberately-slow query.
   - [ ] **Story 1's row-cap and timeout integration tests still fail after this story** (they invoke `client.searcher.sql(...)` which is only wired in Story 4; Story 2 ships the `executeReadOnly` backend in isolation). Functional coverage of row-cap + timeout for THIS story is via the unit tests above; the integration tests transition to passing in Story 4.
 - **Regression verification:**
-  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green.
+  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all pass.
   - [ ] `npm run test:integration` — pass condition: existing integration tests unaffected by the new module; Story 1's harness tests for unrelated stories (Story 3/4/5) still fail with the stub-throw.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `feat(searcher): sql-backend module — executeReadOnly with read-only conn + progress handler + row-cap cursor`
@@ -203,9 +203,9 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Story 1's non-SELECT rejection + internal-table rejection harness tests transition to passing.
   - [ ] **Story 1's raw-SELECT harness tests still fail after this story** (they need Story 4 wiring); Story 1's row-cap + timeout harness tests also still fail (Story 4).
 - **Regression verification:**
-  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green.
+  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all pass.
   - [ ] `npm run test:integration` — pass condition: Story 1 row-cap + timeout harness tests still fail (they belong to Story 4 wiring); Story 1 non-SELECT + internal-table tests now pass.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `feat(searcher): parseSqlAccess + validateSqlAccess + DEFAULT_PUBLIC_VIEW_ALLOWLIST`
@@ -248,10 +248,10 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] JSDoc placement check: `grep -nE "vectorSearch|ftsSearch|hybridSearch|sessionVectorSearch|\\bsql\\b" src/memory/searcher/index.ts` shows all five methods named in the same JSDoc-comment block above the `Searcher` interface. Pass condition: a single contiguous JSDoc block contains references to all five names.
   - [ ] Story 1's harness tests transition to passing after this story merges. Specifically: all 5 happy-path tests (raw SELECT against `messages_public`, raw SELECT with `?` params against `conversations_public`, compound JOIN/aggregate/GROUP BY/ORDER BY/LIMIT, `summaries_public` SELECT, non-`=` `WHERE` operators) AND the row-cap + timeout rejection tests (Story 2 backend wired through `searcher.sql`). Story 5's vault-adversarial test still fails until Story 5; Story 3's non-SELECT + internal-table rejection tests are already passing post-Story-3.
 - **Regression verification:**
-  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green; the four existing search methods (`vectorSearch`/`ftsSearch`/`hybridSearch`/`sessionVectorSearch`) unaffected.
+  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all pass; the four existing search methods (`vectorSearch`/`ftsSearch`/`hybridSearch`/`sessionVectorSearch`) unaffected.
   - [ ] `npm run test:integration` — pass condition: Story 5's vault-adversarial harness test still fails (it belongs to Story 5); all other Story 1 harness tests now pass.
-  - [ ] `npm run test:e2e` — pass condition: existing e2e suite green; no regression from the new `Searcher.sql` method.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `npm run test:e2e` — pass condition: existing e2e suite passes; no regression from the new `Searcher.sql` method.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
   - [ ] Public barrel diff: `git diff main..HEAD -- src/index.ts` shows ONLY the four new exports; nothing previously-exported was changed or removed.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
@@ -308,8 +308,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Regression verification:**
   - [ ] `npm run test:unit` — pass condition: unit suite unaffected by adversarial suite addition.
   - [ ] `npm run test:integration` — pass condition: existing integration tests still pass at exact pre-Story-5 count + ≥20 new adversarial tests.
-  - [ ] `npm run test:e2e` — pass condition: e2e suite green.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `npm run test:e2e` — pass condition: e2e suite passes.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `test(searcher-sql): adversarial DML attempts — INSERT / UPDATE / DELETE / DROP / ALTER`
@@ -364,7 +364,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
     Equivalent exit-code-safe form: `for f in src/client.ts src/memory/searcher/index.ts; do for s in searchConversations 'searcher\.ftsSearch' 'searcher\.sql'; do n=$(grep -c "$s" "$f"); echo "$f $s $n"; [ "$n" -ge 1 ] || echo FAIL; done; done` — pass condition: zero `FAIL` lines. (Patterns are single-quoted with single backslashes — `\.` reaches grep BRE as `\.` matching a literal dot. Double backslashes would pass `\\.` to BRE which matches backslash + any char and would FAIL on legitimate `searcher.ftsSearch` references — this is the consistency fix for the six `grep -c` checks above which use double-quoted `"searcher\\.ftsSearch"` because shell-double-quoted `\\.` ALSO reaches BRE as `\.`; same target regex, different shell-quoting paths.)
   - [ ] **Path (b) only:** existing `searchConversations({ userId })` callsites still pass — pass condition: `grep -rn "searchConversations(" src/ tests/ scripts/` shows no breakage in any existing call.
   - [ ] **Path (c) only:** removed-method audit — `grep -rn "searchConversations" src/ tests/` returns zero hits in production code (only in spec / migration-recipe docs).
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:**
   - **Path (c) only:** if `scripts/search-conversations.ts` is migrated rather than removed, run it once locally against a small corpus to confirm the migration produces equivalent results. Tag this `@manual`. Pass condition: output rows match a baseline captured from the legacy script before migration.
   - Other paths: N/A.

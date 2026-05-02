@@ -69,38 +69,6 @@ describe('PristineLocal', () => {
   });
 
   describe('conversation API', () => {
-    it('searchConversations() returns matching conversations after storeAsync', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        embedder: deps.embedder,
-      });
-
-      client.storeAsync([{ role: 'user', content: 'I love espresso coffee' }], 'test-user');
-
-      const results = client.searchConversations({
-        userId: 'test-user',
-        keyword: 'espresso',
-      });
-
-      expect(results).toHaveLength(1);
-      expect(results[0].snippet).toContain('<b>espresso</b>');
-      expect(results[0].messageCount).toBe(1);
-    });
-
-    it('searchConversations() returns empty for no matches', async () => {
-      const client = await PristineLocal.create({
-        db: deps.db,
-        embedder: deps.embedder,
-      });
-
-      const results = client.searchConversations({
-        userId: 'test-user',
-        keyword: 'nonexistent',
-      });
-
-      expect(results).toHaveLength(0);
-    });
-
     it('getConversation() returns full conversation with messages', async () => {
       const client = await PristineLocal.create({
         db: deps.db,
@@ -111,12 +79,9 @@ describe('PristineLocal', () => {
         { role: 'user' as const, content: 'Hello' },
         { role: 'assistant' as const, content: 'Hi there' },
       ];
-      client.storeAsync(messages, 'test-user');
+      const conversationId = client.storeAsync(messages, 'test-user');
 
-      const searchResults = client.searchConversations({ userId: 'test-user' });
-      expect(searchResults.length).toBeGreaterThan(0);
-
-      const detail = client.getConversation(searchResults[0].id);
+      const detail = client.getConversation(conversationId);
       expect(detail).not.toBeNull();
       expect(detail?.userId).toBe('test-user');
       expect(detail?.messages).toHaveLength(2);

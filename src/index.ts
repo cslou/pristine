@@ -94,7 +94,6 @@ export type { PristineLocalConfig } from './client.js';
 
 export type {
   ConversationDetail,
-  ConversationSearchResult,
   Message,
   MessageRole,
   SecureAndRedactResult,

@@ -110,14 +110,6 @@ describe('storeAsync — end-to-end corpus population', () => {
       failed: 0,
     });
 
-    // searchConversations returns the populated FTS hit by keyword.
-    const hits = client.searchConversations({
-      userId: 'test-user-a',
-      keyword: 'sliding',
-    });
-    expect(hits).toHaveLength(1);
-    expect(hits[0].id).toBe(conversationId);
-
     // getConversation returns all 6 messages.
     const detail = client.getConversation(conversationId);
     expect(detail).not.toBeNull();

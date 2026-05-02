@@ -225,49 +225,75 @@ describe('searcher.sql primitive', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Adversarial suite (sprint-019 Story 4 — privacy-boundary contract)
+// Adversarial suite — privacy-boundary contract
 // ---------------------------------------------------------------------------
 //
-// Story-start probes for class (b) and (c) reflect repo state at sprint-019
-// HEAD:
+// Class (b) Internal-table SELECT: `embed_jobs` and `migrations` do NOT
+// exist in src/conversations/store.ts (no CREATE TABLE for either), so
+// neither is appended. `messages_fts` IS in the default allowlist, so it
+// is dropped from this class and the FTS5 shadow tables are substituted
+// in. The full shadow set is asserted unconditionally — string-exact
+// allowlist comparison rejects them whether the binding currently exposes
+// them or not, protecting against a future binding that adds
+// `messages_fts_content` or `messages_fts_vocab`.
 //
-// - Class (b) Internal-table SELECT: `embed_jobs` and `migrations` do NOT
-//   exist in src/conversations/store.ts (no CREATE TABLE for either), so
-//   neither is appended. messages_fts IS in the default allowlist (Story 2
-//   extended it; see Story 2 PR body's `## messages_fts allowlist decision`
-//   heading for verbatim rationale), so messages_fts is dropped from this
-//   class and the FTS5 shadow tables are substituted in. The full shadow
-//   set per AC line 249 is asserted unconditionally — string-exact
-//   allowlist comparison rejects them whether the binding currently
-//   exposes them or not, protecting against a future binding that adds
-//   `messages_fts_content` or `messages_fts_vocab`.
-//
-// - Class (c) Vault / privacy surface SELECT: probe
-//   `grep -rn "CREATE TABLE.*vault\|CREATE TABLE.*key" src/privacy/`
-//   returns three tables: `vault_entries` (src/privacy/vault/sqlite/),
-//   `user_public_keys` (same file), and `user_keks`
-//   (src/privacy/kek/kek-manager.ts). All three SELECT attempts must
-//   reject. The fallback for empty privacy modules is unused.
+// Class (c) Vault / privacy surface SELECT: probe
+// `grep -rn "CREATE TABLE.*vault\|CREATE TABLE.*key" src/privacy/`
+// returns three tables: `vault_entries` and `user_public_keys`
+// (src/privacy/vault/sqlite/index.ts), and `user_keks`
+// (src/privacy/kek/kek-manager.ts). All three SELECT attempts reject.
+// expectInvalidSqlNaming asserts the rejection is an InvalidSqlError AND
+// the error message contains every literal substring in `nameRegex`-able
+// form — implementing AC-line-264's "names the offending construct"
+// pass condition. Each adversarial test passes the offending keyword
+// (DML class) or table identifier so a future parser-message rewrite
+// that loses the offending construct would fail loudly.
+const expectInvalidSqlNaming = async (
+  promise: Promise<unknown>,
+  nameRegex: RegExp,
+): Promise<void> => {
+  let caught: unknown;
+  try {
+    await promise;
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught).toBeInstanceOf(InvalidSqlError);
+  expect((caught as Error).message).toMatch(nameRegex);
+};
+
 describe('searcher.sql adversarial suite', () => {
   describe('(a) DML attempts', () => {
-    const dmlCases: ReadonlyArray<{ label: string; sql: string }> = [
-      { label: 'INSERT', sql: "INSERT INTO messages_public (id) VALUES ('x')" },
-      { label: 'UPDATE', sql: "UPDATE messages_public SET content = 'x'" },
-      { label: 'DELETE', sql: 'DELETE FROM messages_public' },
-      { label: 'DROP TABLE', sql: 'DROP TABLE messages_public' },
-      { label: 'ALTER TABLE', sql: 'ALTER TABLE messages_public ADD COLUMN x INT' },
+    const dmlCases: ReadonlyArray<{ label: string; sql: string; name: RegExp }> = [
+      {
+        label: 'INSERT',
+        sql: "INSERT INTO messages_public (id) VALUES ('x')",
+        name: /INSERT/,
+      },
+      {
+        label: 'UPDATE',
+        sql: "UPDATE messages_public SET content = 'x'",
+        name: /UPDATE/,
+      },
+      { label: 'DELETE', sql: 'DELETE FROM messages_public', name: /DELETE/ },
+      { label: 'DROP TABLE', sql: 'DROP TABLE messages_public', name: /DROP/ },
+      {
+        label: 'ALTER TABLE',
+        sql: 'ALTER TABLE messages_public ADD COLUMN x INT',
+        name: /ALTER/,
+      },
     ];
     for (const c of dmlCases) {
-      it(`rejects ${c.label} with InvalidSqlError`, async () => {
-        await expect(client.searcher.sql(c.sql)).rejects.toBeInstanceOf(InvalidSqlError);
+      it(`rejects ${c.label} with InvalidSqlError naming the keyword`, async () => {
+        await expectInvalidSqlNaming(client.searcher.sql(c.sql), c.name);
       });
     }
   });
 
   describe('(b) Internal-table SELECT', () => {
-    // messages_fts is in the allowlist (Story 2 extended). The shadow
-    // tables enumerate the FTS5 shadow set; string-exact allowlist
-    // comparison rejects them all.
+    // messages_fts is in the default allowlist; the shadow tables
+    // enumerate the FTS5 shadow set; string-exact allowlist comparison
+    // rejects them all.
     const internalTables: readonly string[] = [
       'messages',
       'conversations',
@@ -282,24 +308,17 @@ describe('searcher.sql adversarial suite', () => {
       'messages_fts_vocab',
     ];
     for (const t of internalTables) {
-      it(`rejects SELECT * FROM ${t} with InvalidSqlError`, async () => {
-        await expect(client.searcher.sql(`SELECT * FROM ${t}`)).rejects.toBeInstanceOf(
-          InvalidSqlError,
-        );
+      it(`rejects SELECT * FROM ${t} with InvalidSqlError naming the table`, async () => {
+        await expectInvalidSqlNaming(client.searcher.sql(`SELECT * FROM ${t}`), new RegExp(t));
       });
     }
   });
 
   describe('(c) Vault / privacy surface SELECT', () => {
-    // Probe grep `CREATE TABLE.*vault\|CREATE TABLE.*key` in src/privacy/
-    // returned vault_entries, user_public_keys, user_keks. Each must
-    // reject with InvalidSqlError.
     const vaultTables: readonly string[] = ['vault_entries', 'user_public_keys', 'user_keks'];
     for (const t of vaultTables) {
-      it(`rejects SELECT * FROM ${t} with InvalidSqlError`, async () => {
-        await expect(client.searcher.sql(`SELECT * FROM ${t}`)).rejects.toBeInstanceOf(
-          InvalidSqlError,
-        );
+      it(`rejects SELECT * FROM ${t} with InvalidSqlError naming the table`, async () => {
+        await expectInvalidSqlNaming(client.searcher.sql(`SELECT * FROM ${t}`), new RegExp(t));
       });
     }
   });
@@ -326,7 +345,14 @@ describe('searcher.sql adversarial suite', () => {
           const rows = await client.searcher.sql(sql, { rowCap: 1000, timeoutMs: 10_000 });
           rowCapHit = rows.length === 1000;
         } catch (err) {
-          timeoutHit = err instanceof QueryTimeoutError;
+          if (err instanceof QueryTimeoutError) {
+            timeoutHit = true;
+          } else {
+            // Re-throw any unexpected error so it surfaces in the test
+            // failure rather than being silently swallowed into a
+            // misleading `expect(false).toBe(true)` assertion.
+            throw err;
+          }
         }
         const elapsed = Date.now() - start;
         expect(rowCapHit || timeoutHit).toBe(true);
@@ -365,6 +391,44 @@ describe('searcher.sql adversarial suite', () => {
         await expect(
           client.searcher.sql(sql, { timeoutMs: 200, rowCap: 10_000 }),
         ).rejects.toBeInstanceOf(QueryTimeoutError);
+        const elapsed = Date.now() - start;
+        expect(elapsed).toBeLessThan(12_000);
+      },
+    );
+
+    it(
+      'minimum-budget timeout: timeoutMs=100 fires fast on a CTE bomb',
+      { timeout: 12_000 },
+      async () => {
+        const start = Date.now();
+        const sql = `
+          WITH RECURSIVE big(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM big WHERE i < 1000000)
+          SELECT a.id, length(randomblob(100000)) AS rb FROM messages_public a CROSS JOIN big
+        `;
+        await expect(
+          client.searcher.sql(sql, { timeoutMs: 100, rowCap: 10_000 }),
+        ).rejects.toBeInstanceOf(QueryTimeoutError);
+        const elapsed = Date.now() - start;
+        expect(elapsed).toBeLessThan(12_000);
+      },
+    );
+
+    it(
+      'row-cap-only escape: rowCap=10 truncates a fast 18×18×18 cartesian without timing out',
+      { timeout: 12_000 },
+      async () => {
+        // Pure row-cap exercise — cartesian over a tiny corpus with no
+        // randomblob amplification yields rows fast; the row-cap cursor
+        // truncates well before timeoutMs. Asserts the cap mechanism
+        // works end-to-end through the public surface independent of
+        // the timeout path.
+        const start = Date.now();
+        const sql = `
+          SELECT a.id, b.id AS b_id, c.id AS c_id
+          FROM messages_public a CROSS JOIN messages_public b CROSS JOIN messages_public c
+        `;
+        const rows = await client.searcher.sql(sql, { rowCap: 10, timeoutMs: 5000 });
+        expect(rows).toHaveLength(10);
         const elapsed = Date.now() - start;
         expect(elapsed).toBeLessThan(12_000);
       },

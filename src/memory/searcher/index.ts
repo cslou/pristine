@@ -313,6 +313,29 @@ export interface Searcher {
    * Parameter binding is positional via `?` placeholders. Out-of-range
    * `rowCap` or `timeoutMs` throws `InvalidArgumentError` before any DB
    * work begins.
+   *
+   * Migration recipe — keyword search across a project's conversations
+   * (replaces the removed `searchConversations` method; full
+   * preconditions in spec §5.2):
+   *
+   * ```ts
+   * const rows = await client.searcher.sql(
+   *   `SELECT m.id, m.conversation_id, m.role, m.timestamp,
+   *           snippet(messages_fts, 0, '<b>', '</b>', '...', 32) AS snippet
+   *    FROM messages_fts
+   *    JOIN messages_public m ON m.id = messages_fts.rowid
+   *    WHERE messages_fts MATCH ? AND m.project_id = ?
+   *    ORDER BY rank
+   *    LIMIT ?`,
+   *   { params: [escapeFts5Query(keyword), projectId, limit] },
+   * );
+   * ```
+   *
+   * Returns one row per matching message (ordered by FTS5 rank); is
+   * project-scoped (not user-scoped); caller-side preconditions on
+   * `limit` clamping and HTML-escaping of the `snippet` output are
+   * mandatory — see spec §5.2 reference implementations for the full
+   * recipe contract.
    */
   sql(sql: string, opts?: SqlOpts): Promise<readonly Row[]>;
 }

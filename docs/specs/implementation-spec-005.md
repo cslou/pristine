@@ -322,6 +322,52 @@ Each reference lives in `docs/examples/` (or as a separately-versioned package).
 
 None are required for Pristine to function as an SDK. A consumer can build any of them from the primitives with a weekend of work.
 
+#### Migration recipe — keyword search across a project's conversations
+
+Pristine v0.x exposed `client.searchConversations({ userId, keyword, ... })` as a built-in. v1 removes that method (sprint-019 Story 5) — keyword-search composition belongs at the consumer / reference-tool layer, not on the SDK surface. The canonical replacement is a project-scoped raw SQL query against the public-view allowlist:
+
+```ts
+import { PristineLocal } from 'pristine';
+
+// Caller-supplied helper that wraps each whitespace-separated term in
+// double quotes so FTS5 doesn't interpret `-` as NOT or other syntax.
+const escapeFts5Query = (keyword: string): string =>
+  keyword
+    .split(/\s+/)
+    .filter((t) => t.length > 0)
+    .map((t) => `"${t.replace(/"/g, '""')}"`)
+    .join(' ');
+
+const client = await PristineLocal.create({ ... });
+
+// Caller MUST validate / clamp `limit` before calling — see precondition
+// notes below; pass the clamped value as the third positional parameter.
+const limit = Math.min(Math.max(callerLimit | 0, 1), 1000);
+
+const rows = await client.searcher.sql(
+  `SELECT m.id, m.conversation_id, m.role, m.timestamp,
+          snippet(messages_fts, 0, '<b>', '</b>', '...', 32) AS snippet
+   FROM messages_fts
+   JOIN messages_public m ON m.id = messages_fts.rowid
+   WHERE messages_fts MATCH ? AND m.project_id = ?
+   ORDER BY rank
+   LIMIT ?`,
+  { params: [escapeFts5Query(keyword), projectId, limit] },
+);
+```
+
+**Returned shape:** one row per matching message — the legacy method returned one row per conversation, so consumers that need conversation-grouped output should aggregate by `conversation_id` after the call.
+
+**Scope difference:** the recipe is scoped by `project_id` (exposed on `messages_public`), not by `user_id` (the underlying `conversations.user_id` is not exposed on `conversations_public`). Consumers whose user-to-project mapping is 1-to-many can compose multiple per-project recipe calls.
+
+**Caller-side preconditions** (caller MUST enforce; the SDK does not):
+
+1. **`limit` is a positive integer in `[1, rowCap]`** (`rowCap` defaults to 1000). Validate / clamp before calling — reject `limit = 0` and `limit < 0` rather than passing them through. SQLite's behavior on non-positive `LIMIT` is surprising: `LIMIT 0` returns zero rows silently (valid SQL); `LIMIT -1` is treated as "unlimited" so the SDK's row-cap cursor becomes the only bound (still bounded but degraded UX).
+2. **HTML-escape the `snippet` column before browser insertion.** The body is user-supplied content stored in `messages_public.content`, so the snippet string can contain `<script>`, HTML entities, or other browser-active payloads independent of the `<b>` / `</b>` markers or the `keyword` argument. Escape the entire snippet string before insertion into the DOM (escape first, then re-substitute neutral wrapper tokens for the bold markers if the UI wants emphasis). XSS risk applies to the body content, not just the markers.
+3. **Watch the row-cap-truncation interaction on multi-project corpora.** The FTS5 MATCH executes BEFORE the `project_id` filter narrows results. If the cross-project FTS hit set exceeds `rowCap`, the row-cap cursor truncates BEFORE the project filter narrows results, producing silently-incomplete project-scoped output. Mitigation: increase `rowCap` proportional to corpus cross-project breadth, or scope to single-project use until a `messages_fts_per_project` view ships.
+
+The recipe-equivalence integration tests at `tests/integration/searcher-sql-recipe.test.ts` cover three representative inputs (different keyword, different project, empty result) plus a project-scoped-leakage check.
+
 ### 5.3 Removal of the extractor and consolidator
 
 `src/memory/extractor/` and `src/memory/consolidator/` are removed entirely from the SDK along with their tests and public-index exports. No opt-in flag, no dormant module, no alternative pipeline. The corpus-based primitives in §5.1 replace them. Consumers who need fact-ledger semantics can build on top of the primitives or fork a historical commit; it is not Pristine's surface.

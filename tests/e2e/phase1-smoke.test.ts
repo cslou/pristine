@@ -2,8 +2,7 @@
  * Public-API smoke test — verifies `PristineLocal.create()` boots cleanly
  * without contacting any live model or filesystem path, and that the
  * public API round-trips end-to-end within a single process: `storeAsync`
- * enqueues; `searchConversations` + `getConversation` return the enqueued
- * conversation by keyword and by id.
+ * enqueues; `getConversation` returns the enqueued conversation by id.
  */
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -89,7 +88,7 @@ describe('public-API smoke — PristineLocal boots and the public API round-trip
     ]);
   });
 
-  it('public surface round-trips a conversation (storeAsync → searchConversations → getConversation)', async () => {
+  it('public surface round-trips a conversation (storeAsync → getConversation)', async () => {
     const db = createDatabase(':memory:');
     // storeAsync requires Pristine.create() (the indexer pipeline needs an
     // embedder). Use the stub embedder to keep the smoke fast and offline.
@@ -106,11 +105,7 @@ describe('public-API smoke — PristineLocal boots and the public API round-trip
       const conversationId = client.storeAsync(messages, 'user-phase1');
       expect(conversationId).toMatch(/^[0-9a-f-]{36}$/);
 
-      const hits = client.searchConversations({ userId: 'user-phase1', keyword: 'cardamom' });
-      expect(hits).toHaveLength(1);
-      expect(hits[0].id).toBe(conversationId);
-
-      const detail = client.getConversation(hits[0].id);
+      const detail = client.getConversation(conversationId);
       expect(detail).not.toBeNull();
       expect(detail!.messages).toHaveLength(2);
       expect(detail!.messages[0].content).toContain('cardamom');

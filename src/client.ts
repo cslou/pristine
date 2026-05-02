@@ -2,7 +2,6 @@ import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
 import type {
   ConversationDetail,
-  ConversationSearchResult,
   Message,
   RevealResult,
   SecureAndRedactResult,
@@ -359,16 +358,6 @@ export class PristineLocal {
   // -------------------------------------------------------------------------
   // Conversation API
   // -------------------------------------------------------------------------
-
-  public searchConversations(params: {
-    userId: string;
-    keyword?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    limit?: number;
-  }): ConversationSearchResult[] {
-    return this.conversationStore.searchConversations(params);
-  }
 
   public getConversation(conversationId: string): ConversationDetail | null {
     const stored = this.conversationStore.getConversation(conversationId);

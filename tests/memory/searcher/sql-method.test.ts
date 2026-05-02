@@ -1,4 +1,8 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ConversationStore } from '../../../src/conversations/store.js';
 import { createDatabase } from '../../../src/core/database.js';
@@ -7,6 +11,7 @@ import { createSearcher } from '../../../src/memory/searcher/index.js';
 import * as sqlBackendModule from '../../../src/memory/searcher/sql-backend.js';
 import * as sqlParserModule from '../../../src/memory/searcher/sql-parser.js';
 
+let tmpDir: string;
 let db: ReturnType<typeof createDatabase>;
 let stubExecuteReadOnly: ReturnType<typeof vi.fn>;
 let stubWithTimeout: ReturnType<typeof vi.fn>;
@@ -18,12 +23,26 @@ const stubEmbedder: Embedder = {
 };
 
 beforeAll(() => {
-  db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+  // searcher.sql now rejects `:memory:` db.name at the public surface
+  // (the per-call RO connection cannot share state with an in-memory
+  // writable DB). Use a tmpdir-backed file DB so the new guard does
+  // not trip on tests that stub the sql-backend below.
+  tmpDir = mkdtempSync(join(tmpdir(), 'sql-method-test-'));
+  db = createDatabase({
+    path: join(tmpDir, 'test.db'),
+    loadSqliteVec: true,
+    runIntegrityCheck: false,
+  });
   // ConversationStore initialises the corpus tables (messages, conversations,
   // window_messages, ...) that createSearcher prepares statements against at
   // construction time. We don't seed any rows — every test below stubs the
   // sql-backend, so no real query runs.
   new ConversationStore(db);
+});
+
+afterAll(() => {
+  db.close();
+  rmSync(tmpDir, { recursive: true, force: true });
 });
 
 beforeEach(() => {

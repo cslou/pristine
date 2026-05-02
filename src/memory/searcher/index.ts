@@ -991,7 +991,7 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
   };
 
   // ---------------------------------------------------------------------------
-  // searcher.sql — public read-only SQL primitive (sprint-019 Story 3)
+  // searcher.sql — public read-only SQL primitive
   // ---------------------------------------------------------------------------
 
   // Defaults applied when SqlOpts fields are omitted. Held at the wiring
@@ -1008,6 +1008,18 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
   const sqlBackend = createSqlBackend({ dbPath: db.name });
 
   const sql = async (rawSql: string, opts?: SqlOpts): Promise<readonly Row[]> => {
+    // Reject in-memory DBs at the public surface. better-sqlite3's
+    // `:memory:` databases are not shared across connections — opening a
+    // second connection at `:memory:` produces a fresh empty DB rather
+    // than sharing state with the writable connection. Without this
+    // guard, every searcher.sql call would silently see an empty schema
+    // and surface SQLite's "no such table" error from the public
+    // view, which is far worse UX than an explicit rejection.
+    if (db.name === ':memory:') {
+      throw new InvalidArgumentError(
+        'searcher.sql requires a file-backed DB; in-memory DBs cannot be opened read-only from a second connection',
+      );
+    }
     // Validate-then-execute. The parser is the privacy-boundary gate; the
     // read-only connection is defence-in-depth. Order is non-negotiable.
     validateSqlAccess(rawSql, DEFAULT_PUBLIC_VIEW_ALLOWLIST);

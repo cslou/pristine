@@ -102,3 +102,10 @@ export class InvalidArgumentError extends AppError {
     this.name = 'InvalidArgumentError';
   }
 }
+
+export class QueryTimeoutError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'QueryTimeoutError';
+  }
+}

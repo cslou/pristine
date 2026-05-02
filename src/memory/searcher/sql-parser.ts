@@ -345,6 +345,50 @@ function parseWithPreamble(
   return i;
 }
 
+/**
+ * Parses a caller-supplied SQL string and reports the table identifiers it
+ * references plus whether the top-level statement is a SELECT.
+ *
+ * The parser is intentionally narrow: it is NOT a full SQL parser, only a
+ * privacy-boundary gate. It accepts the locked SQL feature surface required
+ * by the public Searcher.sql contract (see the AC's "Parser MUST ACCEPT"
+ * matrix) and rejects everything else with `InvalidSqlError`.
+ *
+ * Pipeline:
+ *
+ *   1. Strip line (`-- ... \n`) and block (`/* ... *\/`) comments — quoted
+ *      strings and quoted identifiers are preserved verbatim so an embedded
+ *      `--` or `/*` inside a literal does not corrupt the strip pass.
+ *   2. Tokenise into bare words, quoted identifiers (`"x"` / `[x]` / `` `x` ``),
+ *      string literals, numbers, parens, commas, semicolons, dots, and
+ *      single-character punctuation.
+ *   3. Reject any non-trailing semicolon as a multi-statement input
+ *      (defence against `SELECT ... ; DROP TABLE ...` injection).
+ *   4. Reject the locked non-SELECT keyword set (`EXPLAIN`, `PRAGMA`,
+ *      `ATTACH`, `DETACH`, `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`,
+ *      `CREATE`, `REINDEX`, `VACUUM`, `BEGIN`, `COMMIT`, `ROLLBACK`,
+ *      `SAVEPOINT`, `RELEASE`, `ANALYZE`, `REPLACE`) — both at the top of
+ *      the input and after a `WITH` preamble.
+ *   5. For `WITH`-fronted inputs, walk each CTE definition collecting the
+ *      CTE-local name and recursively extracting the underlying tables in
+ *      the body; reject malformed CTE shapes (missing `AS`, missing `(`,
+ *      unbalanced parens, no main SELECT after the preamble).
+ *   6. In the main SELECT, locate the first `FROM` at depth 0; if its
+ *      target is a `(` (subquery, derived table, or `VALUES`), throw
+ *      `InvalidSqlError` with `parse uncertainty` in the message — this
+ *      is the deny-on-parse-uncertainty rule.
+ *   7. Walk the entire main SELECT body (recursively descending into
+ *      parenthesised subexpressions) and extract every `FROM` and `JOIN`
+ *      target identifier. CTE-local names are skipped; only underlying
+ *      tables surface in `tables`. Schema-prefixed identifiers strip a
+ *      leading `main.` for allowlist comparison; any other prefix throws
+ *      `InvalidSqlError`.
+ *
+ * Deny on parse uncertainty: a permissive parser that lets unknown syntax
+ * through is a privacy-boundary risk. This parser rejects any input it
+ * cannot resolve to a clear identifier list — callers can rephrase or
+ * extend the parser, but unrecognised shapes never silently leak access.
+ */
 export function parseSqlAccess(sql: string): ParseSqlAccessResult {
   const stripped = stripComments(sql);
   const trimmed = stripped.trim();
@@ -436,6 +480,24 @@ export function parseSqlAccess(sql: string): ParseSqlAccessResult {
   return { tables, isSelect: true };
 }
 
+/**
+ * Validates a caller-supplied SQL string against `allowlist` by composing
+ * {@link parseSqlAccess} with a string-exact membership check.
+ *
+ * Throws {@link InvalidSqlError} if (a) the top-level statement is not a
+ * SELECT, OR (b) any extracted table identifier is not in `allowlist`.
+ * The error message names the offending table (or non-SELECT keyword) for
+ * debuggability.
+ *
+ * Allowlist comparison is string-exact — `messages_fts_data` is never
+ * matched as `messages_fts`. Schema prefixes are stripped before comparison
+ * only when they equal the literal `main`; any other prefix is rejected at
+ * the parse layer before the allowlist check runs.
+ *
+ * Use {@link DEFAULT_PUBLIC_VIEW_ALLOWLIST} for the canonical Pristine SDK
+ * surface (`messages_public`, `conversations_public`, `summaries_public`,
+ * `messages_fts`).
+ */
 export function validateSqlAccess(sql: string, allowlist: ReadonlySet<string>): void {
   const { tables, isSelect } = parseSqlAccess(sql);
   if (!isSelect) {

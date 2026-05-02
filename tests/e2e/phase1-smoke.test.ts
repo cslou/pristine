@@ -82,7 +82,9 @@ describe('public-API smoke — PristineLocal boots and the public API round-trip
       'EmbedderError',
       'IngestQueueError',
       'InvalidArgumentError',
+      'InvalidSqlError',
       'PristineLocal',
+      'QueryTimeoutError',
       'createDatabase',
     ]);
   });

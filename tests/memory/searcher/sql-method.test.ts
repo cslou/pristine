@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { ConversationStore } from '../../../src/conversations/store.js';
 import { createDatabase } from '../../../src/core/database.js';
+import { InvalidArgumentError } from '../../../src/core/errors.js';
 import type { Embedder } from '../../../src/core/interfaces.js';
 import { createSearcher } from '../../../src/memory/searcher/index.js';
 import * as sqlBackendModule from '../../../src/memory/searcher/sql-backend.js';
@@ -115,6 +116,31 @@ describe('searcher.sql — default-opt application', () => {
 
     const call = stubExecuteReadOnly.mock.calls[0];
     expect(call[1]).toEqual(['proj-A']);
+  });
+});
+
+describe('searcher.sql — :memory: guard', () => {
+  it('rejects in-memory DB with InvalidArgumentError when sql is called', async () => {
+    // Construct a fresh searcher backed by an in-memory DB. The four
+    // search methods work fine against :memory:; only sql is gated
+    // because it opens a separate read-only connection that cannot share
+    // the writable DB's pages. The guard fires at first call, not at
+    // factory time, so existing tests that use :memory: for vector/FTS
+    // are unaffected.
+    const memDb = createDatabase({
+      path: ':memory:',
+      loadSqliteVec: true,
+      runIntegrityCheck: false,
+    });
+    new ConversationStore(memDb);
+    const searcher = createSearcher({ db: memDb, embedder: stubEmbedder });
+    try {
+      await expect(searcher.sql('SELECT * FROM messages_public')).rejects.toThrow(
+        InvalidArgumentError,
+      );
+    } finally {
+      memDb.close();
+    }
   });
 });
 

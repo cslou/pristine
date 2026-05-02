@@ -306,7 +306,9 @@ export interface Searcher {
    * `executeReadOnly` (per-call `SQLITE_OPEN_READONLY` connection,
    * row-cap-bounded cursor, per-iteration timeout). Validate-then-execute
    * ordering is non-negotiable — the parser is the privacy-boundary
-   * gate, the read-only connection is defence-in-depth.
+   * gate, the read-only connection is defence-in-depth. See spec
+   * §15 Flow 3 for the dataflow diagram and spec §8.6 for the locked
+   * adversarial attack-class set this primitive defends against.
    *
    * Parameter binding is positional via `?` placeholders. Out-of-range
    * `rowCap` or `timeoutMs` throws `InvalidArgumentError` before any DB

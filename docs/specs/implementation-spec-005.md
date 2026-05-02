@@ -59,8 +59,8 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 | **Reference** (documented example, replaceable) | `search_memory` tool that wraps it for Claude tool-use |
 | **Primitive** | `store.addSummary(sessionId, text, timestamp)` |
 | **Reference** | Session-summary-generation script using the host LLM |
-| **Primitive** | `searcher.sql(query, params)` (read-only, row-capped, timeout-guarded) |
-| **Reference** | SQL/DSL query tool for agent tool-calling |
+| **Primitive** | `searcher.sql(rawSql, opts?)` (read-only, row-capped, timeout-guarded; allowlist-validated) |
+| **Reference** | Raw-SQL query tool for agent tool-calling |
 | **Primitive** | `indexer.ingest(turns)` |
 | **Reference** | PostToolUse hook script that calls it |
 
@@ -287,7 +287,7 @@ searcher.vectorSearch(query, filters, limit): Hit[]
 searcher.ftsSearch(query, filters, limit): Hit[]
 searcher.hybridSearch(query, filters, limit): Hit[]     // reciprocal rank fusion over
                                                          //   vec_windows + vec_sessions + FTS5
-searcher.sql(queryDsl | rawSql, params): Row[]          // read-only, scoped view
+searcher.sql(rawSql, opts?): Promise<readonly Row[]>    // read-only, allowlist-scoped view
 ```
 
 `Filters` support project, timestamp range, conversation id, role. A window hit returns the window's `conversation_id` and constituent `message_ids`; callers resolve to full message content via `searcher.sql` against `messages_public`. A session hit returns the whole conversation via the same path.
@@ -314,7 +314,7 @@ Each reference lives in `docs/examples/` (or as a separately-versioned package).
 - **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + neighbor-expansion helper. Returns formatted text with timestamps and conversation refs.
 - **Neighbor-expansion helper (`expandHit`)** — ergonomic wrapper over `searcher.sql`: given a hit and a window size `N`, returns the hit's message plus the ±N surrounding turns within the same conversation. ~10 LOC. Opinions baked in (default `N`, conversation-boundary behavior, whether to respect `parent_message_id` for oversize-split messages) — hence reference-only. Often bundled into the `search_memory` tool.
 - **`SessionStart` hook for Claude Code** — script that on `startup` matcher calls `store.getRecentSummaries(projectId, 5)`, formats as markdown, emits via `hookSpecificOutput.additionalContext`. Timestamps every entry, ≤500 lines, fires on `startup` only (per research: re-injecting on `resume`/`compact` wastes tokens).
-- **SQL/DSL query tool** — tool wrapper over `searcher.sql`, scoped filter DSL as the default surface and raw-SQL as escape hatch.
+- **Raw-SQL query tool** — tool wrapper over `searcher.sql` against the public-view allowlist. The LLM emits raw SELECT; the handler validates + executes via `client.searcher.sql(rawSql, { params })`. No DSL or translator step.
 - **`MEMORY.md` maintainer** — script that writes timestamped session summaries to a project-scoped markdown file, with decay. Composes `store.getRecentSummaries` + filesystem write.
 - **Session-summary generator** — script that, on `Stop` hook, calls the host LLM with a condensation prompt, then stores via `store.addSummary`. Entirely prompt + format choice — LLM, prompt, and schema are all consumer opinions.
 - **Session-vector lifecycle wiring** — script that calls `indexer.buildSessionVector(conversationId)` on a session-close signal. Opinion: when to trigger (session end vs. first retrieval vs. nightly batch).

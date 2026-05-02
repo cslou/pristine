@@ -19,7 +19,7 @@
 - **Shared context:**
   - **Phase 5 ships the THIRD of three primitives.** Sprint-015 shipped `indexer`; sprint-016 shipped `searcher.{vector,fts,hybrid,session}Search`; this sprint completes `searcher` with `searcher.sql`. After this sprint, the spec-005 §5.1 primitive surface is functionally complete.
   - **Single SQL surface, one code path.** Per spec §15 Flow 3 (rebased pre-sprint), every query — whether composed by the integrator's app code or emitted by an LLM through a future Phase 6 reference tool — is a raw SQL string with positional `?` parameters. The DSL originally drafted at spec creation was dropped at sprint-doc rebase: LLMs are competent at SQL, and an additional query grammar adds surface area (extra parser, extra type system, extra failure modes) without commensurate value. Story 3 ships the parser + allowlist; Stories 2 + 4 wire the read-only execution path.
-  - **Privacy boundary is the load-bearing concern.** Story 5's adversarial test suite (matching spec §8.6) is non-negotiable: every adversarial query — DML, internal-table SELECT, vault SELECT, DoS via cartesian join — must be rejected with a typed error or row-capped before completion. **A privacy-boundary regression here is a P0 finding.** Story 1's harness ships RED outer-loop tests for these adversarial cases; Stories 2-4 turn them GREEN; Story 5 adds the full adversarial battery.
+  - **Privacy boundary is the load-bearing concern.** Story 5's adversarial test suite (matching spec §8.6) is non-negotiable: every adversarial query — DML, internal-table SELECT, vault SELECT, DoS via cartesian join — must be rejected with a typed error or row-capped before completion. **A privacy-boundary regression here is a P0 finding.** Story 1's harness ships failing integration tests for these adversarial cases; Stories 2-4 turn them passing as the underlying behavior lands; Story 5 adds the full adversarial battery.
   - **No DDL changes (with one allowlist-extension exception).** The public views and underlying tables already exist. This sprint only ships the SQL-execution path on top of them. **Exception:** Story 3 may extend the default allowlist to include the existing `messages_fts` shadow table (no DDL change — just allowing it through the parser) IF its column footprint is private-safe; see Story 3 AC and Story 6 path-(c) recipe. If a missing view surface comes up (e.g., `vec_windows_public`, `messages_fts_public`), defer to a follow-up sprint.
   - **`searchConversations` decision lives in this sprint as Story 6.** Originally drafted as Story 5 of sprint-018, the decision (keep / align / remove the sprint-009-era `searchConversations`) was relocated here because `searcher.sql` (Stories 2-4 of THIS sprint) is the recipe-alternative for the "remove" path. Bundling the decision with the alternative makes the investigation honest instead of pre-decided.
 - **Non-goals:**
@@ -69,24 +69,24 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** Pristine SDK maintainer shipping the read-only SQL primitive, **I want** an integration harness that exercises every AC of every later story end-to-end (raw-SQL happy path + adversarial paths), **so that** Stories 2-4 can be turned GREEN incrementally and Story 5's adversarial suite slots in without re-scaffolding the harness.
+- **As a** Pristine SDK maintainer shipping the read-only SQL primitive, **I want** an integration harness that exercises every AC of every later story end-to-end (raw-SQL happy path + adversarial paths), **so that** Stories 2-4 can be turned passing incrementally and Story 5's adversarial suite slots in without re-scaffolding the harness.
 - **Dependencies:** None (Story 1 always ships first)
 - **Acceptance criteria:**
   - [ ] `tests/integration/searcher-sql.test.ts` exists, imports `Pristine` from `src/index.js` only (no internal-path imports), and is wired into `npm run test:integration`. Pass condition: `npm run test:integration -- --reporter=verbose` lists `tests/integration/searcher-sql.test.ts` in its file roster.
-  - [ ] Harness ships **RED outer-loop tests** for each downstream-story AC. Two test groups:
-    - **Happy-path tests (prove the SDK delivers the SQL feature surface — closes the safety-envelope-only gap; transition GREEN after Story 4 wires `searcher.sql`):**
+  - [ ] Harness ships **failing integration tests** for each downstream-story AC. Two test groups:
+    - **Happy-path tests (prove the SDK delivers the SQL feature surface — closes the safety-envelope-only gap; transition to passing after Story 4 wires `searcher.sql`):**
       1. Raw SELECT against `messages_public` scoped by project (Story 4).
       2. Raw SELECT with `?` params against `conversations_public` (Story 4). MUST exercise positional parameter binding: pass `'; DROP TABLE messages; --` as a `?`-bound value AND assert the query both succeeds AND `messages` table is intact afterwards (recovers the SQL-injection coverage the dropped DSL injection-round-trip test was providing).
       3. **Compound query covering JOIN + aggregate + GROUP BY + ORDER BY + LIMIT + WHERE-`=` + `?` binding in one realistic query (Story 4):** `SELECT conv.id AS conv_id, COUNT(m.id) AS msg_count FROM conversations_public AS conv JOIN messages_public AS m ON m.conversation_id = conv.id WHERE conv.project_id = ? GROUP BY conv.id ORDER BY msg_count DESC LIMIT 10` with `params: ['<seeded-project-id>']`. Pass condition: returns 3 rows (one per seeded conversation in the chosen project) each with `msg_count = 3` per the seedSqlCorpus 2×3×3 shape; rows are sorted by msg_count descending. This single integration test exercises JOIN, COUNT, GROUP BY, ORDER BY, LIMIT, and WHERE-`=` + `?` binding simultaneously — closing all SQL-feature happy-path gaps in one realistic compound query rather than via a grammar-grid of isolated smoke tests.
       4. SELECT against `summaries_public` (Story 4): seeds one summary via the writable `addSummary`-equivalent path, then runs `SELECT id, session_id, project_id, text, timestamp FROM summaries_public WHERE project_id = ?`. Pass condition: returns the seeded summary with the correct columns. Closes the third-allowlist-view gap (without this test, only `messages_public` and `conversations_public` are exercised).
       5. Non-`=` `WHERE` operators (Story 4): `SELECT id, role FROM messages_public WHERE project_id = ? AND role IN (?, ?) AND timestamp BETWEEN ? AND ? AND content LIKE ?` with `params` exercising `IN`, `BETWEEN`, and `LIKE` simultaneously. Pass condition: returns at least one row matching the seeded corpus — confirms the parser does NOT reject these standard SQL operators via deny-on-uncertainty.
-    - **Rejection-path tests (prove the safety envelope; transition GREEN as their owning story merges):**
+    - **Rejection-path tests (prove the safety envelope; transition to passing as their owning story merges):**
       6. Non-SELECT rejection (Story 3 — `INSERT`/`UPDATE`/`DELETE`/`DROP` throw `InvalidSqlError`).
       7. Internal-table rejection (Story 3 — `SELECT * FROM messages` throws `InvalidSqlError`).
       8. Row cap (Story 2 — wired through Story 4; default 1000, configurable to 200).
       9. Timeout (Story 2 — wired through Story 4; default 5s, fires `QueryTimeoutError`).
       10. Vault-access adversarial test using the canonical probe + fallback documented in this story's Tech Notes (used verbatim by Story 5 (c) so the two stories can't drift) (Story 5).
-  - [ ] **RED-by-stub mechanism (locked, uniform across all 10 harness test cases — 5 happy-path + 5 rejection-path):** Story 1 ships a stub `searcher.sql = async () => { throw new Error('searcher.sql: not implemented (Story N pending)'); }` so each test fails at the runtime stub-throw — NOT at TS-level "Property does not exist" and NOT at module-resolution. This matches the canonical sprint-template guidance for compiled stacks (RED-by-stub, not RED-by-missing-symbol).
+  - [ ] **Stub-throw failure mechanism (locked, uniform across all 10 harness test cases — 5 happy-path + 5 rejection-path):** Story 1 ships a stub `searcher.sql = async () => { throw new Error('searcher.sql: not implemented (Story N pending)'); }` so each test fails at the runtime stub-throw — NOT at TS-level "Property does not exist" and NOT at module-resolution. This matches the canonical sprint-template guidance for compiled stacks (fail-by-stub, not fail-by-missing-symbol).
   - [ ] Harness uses real Nomic v1.5 only where embed is needed for setup (most SQL tests don't need embedding; seeding writes a few rows directly via `client.storeAsync` + `client.drainEmbedQueue`). Per-hook + per-it timeouts set to `SLOW_TEST_TIMEOUT_MS = 120_000` matching the sprint-016 hookTimeout pattern.
   - [ ] Harness includes a `seedSqlCorpus()` helper that creates 2 projects × 3 conversations × 3 messages — small, deterministic, dim-stable (no random IDs in assertions).
 - **Functional verification:**
@@ -94,21 +94,21 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] `seedSqlCorpus()` validated by an inline `expect()` block at the top of the harness `describe()` that asserts seeding via `client.storeAsync` + `client.drainEmbedQueue` produced exactly 18 rows total across the 2 projects × 3 conversations × 3 messages (NOT calling `searcher.sql`, which only exists as a stub at this story). Pass condition: post-seeding `SELECT COUNT(*) FROM messages` (via the writable connection used by `storeAsync`) returns 18; the inline check throws if seeding produced a different row count.
 - **Regression verification:**
   - [ ] **Baseline-capture step (run BEFORE writing the harness file):** `npm run test:integration -- --reporter=verbose 2>&1 | grep -cE "^[[:space:]]*✓"` and record the count in the Story 1 PR body under a `## pre-Story-1 integration-test baseline` heading.
-  - [ ] `npm run test:integration` (excluding the new RED tests) — pass condition: post-Story-1 pass count equals the recorded baseline (existing integration tests unaffected by harness scaffolding).
+  - [ ] `npm run test:integration` (excluding the 10 new harness tests, which fail with the stub-throw) — pass condition: post-Story-1 pass count equals the recorded baseline (existing integration tests unaffected by harness scaffolding).
   - [ ] `npm run test:unit` — pass condition: unit suite unaffected by harness scaffolding.
 - **Manual-only verification:** N/A (backend test harness, fully automated).
 - **Planned commits:**
   1. `chore(test): scaffold tests/integration/searcher-sql.test.ts + seedSqlCorpus helper`
-  2. `test(searcher-sql): RED happy-path outer-loop tests — messages_public, conversations_public + ? binding, compound JOIN/aggregate/GROUP BY/ORDER BY/LIMIT (Story 4)`
-  3. `test(searcher-sql): RED happy-path outer-loop tests — summaries_public, non-= WHERE operators (IN/BETWEEN/LIKE) (Story 4)`
-  4. `test(searcher-sql): RED rejection-path outer-loop tests — non-SELECT + internal-table (Story 3)`
-  5. `test(searcher-sql): RED rejection-path outer-loop tests — row cap + progress-handler timeout (Story 2)`
-  6. `test(searcher-sql): RED rejection-path outer-loop test — vault-access (Story 5 adversarial)`
+  2. `test(searcher-sql): happy-path integration tests — messages_public, conversations_public + ? binding, compound JOIN/aggregate/GROUP BY/ORDER BY/LIMIT (Story 4)`
+  3. `test(searcher-sql): happy-path integration tests — summaries_public, non-= WHERE operators (IN/BETWEEN/LIKE) (Story 4)`
+  4. `test(searcher-sql): rejection-path integration tests — non-SELECT + internal-table (Story 3)`
+  5. `test(searcher-sql): rejection-path integration tests — row cap + progress-handler timeout (Story 2)`
+  6. `test(searcher-sql): rejection-path integration test — vault-access (Story 5 adversarial)`
 - **Technical notes:**
   - **Harness shape parallels `searcher.test.ts`.** The existing sprint-016 cross-cutting harness at `tests/integration/searcher.test.ts` is the reference shape — same hookTimeout pattern, same seeded-corpus pattern, same per-method describe blocks. Don't reinvent.
-  - **Vault-access adversarial probe (canonical, used by Stories 1 + 5 verbatim):** `grep -rn "CREATE TABLE.*vault\\|CREATE TABLE.*key" src/privacy/`. The Story 1 RED test verifies `client.searcher.sql(...)` rejects a raw `SELECT * FROM <first-discovered-table>` with `InvalidSqlError`. If the probe returns zero hits (post-sprint-020 the vault footprint may have shrunk), swap in `messages` (an internal corpus table not in the public-view allowlist) and document the swap in the test-file header — Story 5's adversarial suite uses the same fallback so the two stories can't drift.
+  - **Vault-access adversarial probe (canonical, used by Stories 1 + 5 verbatim):** `grep -rn "CREATE TABLE.*vault\\|CREATE TABLE.*key" src/privacy/`. The Story 1 integration test verifies `client.searcher.sql(...)` rejects a raw `SELECT * FROM <first-discovered-table>` with `InvalidSqlError`. If the probe returns zero hits (post-sprint-020 the vault footprint may have shrunk), swap in `messages` (an internal corpus table not in the public-view allowlist) and document the swap in the test-file header — Story 5's adversarial suite uses the same fallback so the two stories can't drift.
   - **Row-cap test corpus.** Seed 1500 rows for the row-cap test (default cap 1000). One test asserts default-cap behavior; another asserts a custom-cap-200 call returns 200 rows.
-  - **Outer-loop test plan reference (illustrative, NOT prescriptive verbatim text):** the ten `it(...)` titles should encode the AC anchor (e.g. `@AC-Story4-1`, `@AC-Story3-1`, `@AC-Story2-1`, `@AC-Story5-1`) so failures map back to the sourcing story.
+  - **Test plan reference (illustrative, NOT prescriptive verbatim text):** the ten `it(...)` titles should encode the AC anchor (e.g. `@AC-Story4-1`, `@AC-Story3-1`, `@AC-Story2-1`, `@AC-Story5-1`) so failures map back to the sourcing story.
 
 #### Story 2: Read-only connection + progress-handler timeout + row-cap cursor
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -124,7 +124,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
 - **As a** Pristine SDK maintainer building the SQL primitive's safety envelope, **I want** a shared backend that opens a read-only SQLite connection, attaches a per-query timeout, and wraps the result cursor with a row cap, **so that** Story 3 (parser/allowlist) + Story 4 (wiring) can route validated raw SQL through one execution path.
-- **Dependencies:** Story 1 (outer-loop tests exist)
+- **Dependencies:** Story 1 (the integration-test harness exists)
 - **Acceptance criteria:**
   - [ ] New module `src/memory/searcher/sql-backend.ts` (or co-located with `searcher/index.ts` if size warrants) exposes `executeReadOnly(sql: string, params: readonly unknown[], opts: { rowCap: number; timeoutMs: number }): Promise<readonly Row[]>`.
   - [ ] Each `executeReadOnly` call opens a connection in `SQLITE_OPEN_READONLY` mode against the same DB file as the writable connection. Connection lifecycle: open → execute → close (no shared read-only connection across calls — keeps the row cap + timeout per-call).
@@ -135,17 +135,17 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] `Row` type is `Readonly<Record<string, unknown>>` — opaque to the backend; downstream typing happens at the consumer layer.
   - [ ] **Timeout helper export.** Story 2 exports a `withTimeout(prepareStmt, ms)` primitive (or equivalent shape) that wraps prepared-statement execution with the same `setTimeout` + `db.interrupt()` envelope. Both `executeReadOnly` and Story 3's validation phase consume this helper directly so the timeout mechanism isn't duplicated across modules.
 - **Functional verification:**
-  - [ ] Inner-loop unit test: `executeReadOnly` honors row-cap with a deterministic 2000-row inline corpus — pass condition: `rowCap=500` returns exactly 500 rows; `rowCap=2000` returns 2000.
-  - [ ] Inner-loop unit test: timeout fires with a deliberately-slow query (`SELECT * FROM <large-table> CROSS JOIN <large-table>` against a small temp table; cap the test wall-time at `timeoutMs + 2s` ≈ 7s at default `timeoutMs=5000` — NOT the pipeline-level ≤12s DoS budget, which is too loose for a unit test) — pass condition: `QueryTimeoutError` thrown within `timeoutMs + 2000ms`.
-  - [ ] Inner-loop unit test: out-of-range `rowCap` and `timeoutMs` throw `InvalidArgumentError` — pass condition: error class match for `rowCap=0`, `rowCap=10001`, `timeoutMs=99`, `timeoutMs=10001`.
-  - [ ] Inner-loop unit test: connection close on success AND on error — pass condition: leaked-connection counter (or `db.open` flag observation) returns to zero after both paths.
-  - [ ] Inner-loop unit test: read-only connection rejects DML at the SQLite layer (sanity check — even if a future bug lets DML through the parser, the connection blocks it) — pass condition: `INSERT INTO messages ...` throws better-sqlite3 read-only error from the connection.
-  - [ ] Inner-loop unit test: `withTimeout(prepareStmt, ms)` is exported and callable — pass condition: `import { withTimeout } from '../../src/memory/searcher/sql-backend.js'` resolves; `withTimeout(db.prepare('SELECT 1'), 200)` returns rows without throwing on a fast query AND throws `QueryTimeoutError` on a deliberately-slow query.
-  - [ ] **Story 1's row-cap and timeout outer-loop RED tests remain RED after this story** (they invoke `client.searcher.sql(...)` which is only wired in Story 4; Story 2 ships the `executeReadOnly` backend in isolation). Functional coverage of row-cap + timeout for THIS story is via the inner-loop unit tests above; outer-loop transitions GREEN in Story 4.
+  - [ ] Unit test: `executeReadOnly` honors row-cap with a deterministic 2000-row inline corpus — pass condition: `rowCap=500` returns exactly 500 rows; `rowCap=2000` returns 2000.
+  - [ ] Unit test: timeout fires with a deliberately-slow query (`SELECT * FROM <large-table> CROSS JOIN <large-table>` against a small temp table; cap the test wall-time at `timeoutMs + 2s` ≈ 7s at default `timeoutMs=5000` — NOT the pipeline-level ≤12s DoS budget, which is too loose for a unit test) — pass condition: `QueryTimeoutError` thrown within `timeoutMs + 2000ms`.
+  - [ ] Unit test: out-of-range `rowCap` and `timeoutMs` throw `InvalidArgumentError` — pass condition: error class match for `rowCap=0`, `rowCap=10001`, `timeoutMs=99`, `timeoutMs=10001`.
+  - [ ] Unit test: connection close on success AND on error — pass condition: leaked-connection counter (or `db.open` flag observation) returns to zero after both paths.
+  - [ ] Unit test: read-only connection rejects DML at the SQLite layer (sanity check — even if a future bug lets DML through the parser, the connection blocks it) — pass condition: `INSERT INTO messages ...` throws better-sqlite3 read-only error from the connection.
+  - [ ] Unit test: `withTimeout(prepareStmt, ms)` is exported and callable — pass condition: `import { withTimeout } from '../../src/memory/searcher/sql-backend.js'` resolves; `withTimeout(db.prepare('SELECT 1'), 200)` returns rows without throwing on a fast query AND throws `QueryTimeoutError` on a deliberately-slow query.
+  - [ ] **Story 1's row-cap and timeout integration tests still fail after this story** (they invoke `client.searcher.sql(...)` which is only wired in Story 4; Story 2 ships the `executeReadOnly` backend in isolation). Functional coverage of row-cap + timeout for THIS story is via the unit tests above; the integration tests transition to passing in Story 4.
 - **Regression verification:**
-  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green.
-  - [ ] `npm run test:integration` — pass condition: existing integration tests unaffected by the new module; Story 1 RED tests for unrelated stories (Story 3/4/5) remain RED.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all pass.
+  - [ ] `npm run test:integration` — pass condition: existing integration tests unaffected by the new module; Story 1's harness tests for unrelated stories (Story 3/4/5) still fail with the stub-throw.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `feat(searcher): sql-backend module — executeReadOnly with read-only conn + progress handler + row-cap cursor`
@@ -173,7 +173,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
 - **As a** Pristine SDK maintainer enforcing the privacy boundary at the SQL surface, **I want** a parser that extracts referenced tables from a SQL string and rejects any query touching tables outside the allowlist, **so that** raw-SQL consumers cannot reach internal tables, vault surfaces, or any future sensitive table by accident or by attack.
-- **Dependencies:** Story 1 (outer-loop tests exist), Story 2 (the parser feeds `executeReadOnly` and may consume `withTimeout` for EXPLAIN-based parsing)
+- **Dependencies:** Story 1 (the integration-test harness exists; this story turns the non-SELECT + internal-table tests passing), Story 2 (the parser feeds `executeReadOnly` and may consume `withTimeout` for EXPLAIN-based parsing)
 - **Acceptance criteria:**
   - [ ] `parseSqlAccess(sql: string): { tables: string[]; isSelect: boolean }` extracts every table reference from a SQL string and reports whether the top-level statement is a SELECT (including `SELECT ... UNION ...` and CTE-fronted `WITH ... SELECT` forms).
   - [ ] `validateSqlAccess(sql: string, allowlist: ReadonlySet<string>): void` calls `parseSqlAccess` and throws `InvalidSqlError` if (a) `isSelect` is false, OR (b) any table in `tables` is NOT in `allowlist`. The error message names the offending table or non-SELECT keyword for debuggability.
@@ -194,18 +194,18 @@ The Final Verification Story runs all sprint functional verification plus the fu
     - `ORDER BY` over any allowlist-view column with `ASC` / `DESC`.
     - Column aliases (`AS`) and table aliases (`messages_public m`).
 - **Functional verification:**
-  - [ ] Inner-loop unit tests: table-driven test list of 30+ SQL strings labeled `(input, expected: 'allow' | 'reject', reason)` — pass condition: every case matches expectation including the 12+ adversarial cases (SQL-injection-style payloads, identifier-encoding tricks, CTE attacks, `EXPLAIN QUERY PLAN` prefix, `PRAGMA` access).
-  - [ ] Inner-loop unit test: schema-prefix `main.messages_public` → resolves to `messages_public` (allow); `temp.messages_public` → reject; `aux.messages` → reject.
-  - [ ] Inner-loop unit test: `messages_fts_data` is rejected even if `messages_fts` is in the allowlist (string-exact match) — pass condition: `InvalidSqlError` thrown with the offending table name in the message.
-  - [ ] Inner-loop unit test: nested CTE `WITH a AS (WITH b AS (SELECT * FROM messages) SELECT * FROM b) SELECT * FROM a` is rejected (parser recurses into inner CTE). **Note:** this is the inner-loop (unit) layer; Story 5 adversarial class (e) exercises the same case at the outer-loop (integration) layer — both layers required, not redundant.
-  - [ ] Inner-loop unit test: **happy-path acceptance matrix** — for every form in the "Parser MUST ACCEPT" AC bullet above, a table-driven test asserts `validateSqlAccess(form, DEFAULT_PUBLIC_VIEW_ALLOWLIST)` does NOT throw. Pass condition: every locked form runs to completion without raising. This is the counter-test to deny-on-uncertainty — proves the parser is permissive of standard SQL on allowlist tables, restrictive only on off-allowlist references and non-SELECT statements.
-  - [ ] Inner-loop unit test: deny-on-parse-uncertainty — `validateSqlAccess` on inputs whose TOP-LEVEL `FROM` clause has NO resolvable identifier for the static parser to extract (NOT inputs that hit the non-SELECT keyword set first AND NOT inputs that look like a table identifier the parser then rejects via allowlist — those exercise different branches). Locked example inputs: `'SELECT * FROM (VALUES (1, 2)) AS t(a, b)'` (top-level FROM is an inline VALUES subquery — no identifier); `'SELECT * FROM (SELECT 1 UNION SELECT 2) AS sub'` (top-level FROM is an inline derived-table subquery — no identifier); `'SELECT 1 FROM (VALUES (1)) AS x WHERE EXISTS (SELECT 1)'` (top-level FROM is a VALUES subquery; the EXISTS sub-clause has no FROM that names a table). Each must throw `InvalidSqlError`. Pass condition: error class is `InvalidSqlError` AND error message contains the offending input substring or the literal phrase "parse uncertainty" (the parser surfaces one of the two — locked at story start). **Out of scope for this FV item (would exercise the wrong branch):** any input whose top-level FROM names an identifier (whether a real table, a CTE, or a table-valued function like `generate_series(...)`) — those route through the allowlist-mismatch branch, not parse-uncertainty.
-  - [ ] Story 1's non-SELECT rejection + internal-table rejection RED tests go GREEN.
-  - [ ] **Story 1's raw-SELECT outer-loop RED tests remain RED after this story** (they need Story 4 wiring); Story 1's row-cap + timeout outer-loop tests also remain RED (Story 4).
+  - [ ] Unit tests: table-driven test list of 30+ SQL strings labeled `(input, expected: 'allow' | 'reject', reason)` — pass condition: every case matches expectation including the 12+ adversarial cases (SQL-injection-style payloads, identifier-encoding tricks, CTE attacks, `EXPLAIN QUERY PLAN` prefix, `PRAGMA` access).
+  - [ ] Unit test: schema-prefix `main.messages_public` → resolves to `messages_public` (allow); `temp.messages_public` → reject; `aux.messages` → reject.
+  - [ ] Unit test: `messages_fts_data` is rejected even if `messages_fts` is in the allowlist (string-exact match) — pass condition: `InvalidSqlError` thrown with the offending table name in the message.
+  - [ ] Unit test: nested CTE `WITH a AS (WITH b AS (SELECT * FROM messages) SELECT * FROM b) SELECT * FROM a` is rejected (parser recurses into inner CTE). **Note:** this covers the unit layer; Story 5 adversarial class (e) exercises the same case at the integration layer — both layers required, not redundant.
+  - [ ] Unit test: **happy-path acceptance matrix** — for every form in the "Parser MUST ACCEPT" AC bullet above, a table-driven test asserts `validateSqlAccess(form, DEFAULT_PUBLIC_VIEW_ALLOWLIST)` does NOT throw. Pass condition: every locked form runs to completion without raising. This is the counter-test to deny-on-uncertainty — proves the parser is permissive of standard SQL on allowlist tables, restrictive only on off-allowlist references and non-SELECT statements.
+  - [ ] Unit test: deny-on-parse-uncertainty — `validateSqlAccess` on inputs whose TOP-LEVEL `FROM` clause has NO resolvable identifier for the static parser to extract (NOT inputs that hit the non-SELECT keyword set first AND NOT inputs that look like a table identifier the parser then rejects via allowlist — those exercise different branches). Locked example inputs: `'SELECT * FROM (VALUES (1, 2)) AS t(a, b)'` (top-level FROM is an inline VALUES subquery — no identifier); `'SELECT * FROM (SELECT 1 UNION SELECT 2) AS sub'` (top-level FROM is an inline derived-table subquery — no identifier); `'SELECT 1 FROM (VALUES (1)) AS x WHERE EXISTS (SELECT 1)'` (top-level FROM is a VALUES subquery; the EXISTS sub-clause has no FROM that names a table). Each must throw `InvalidSqlError`. Pass condition: error class is `InvalidSqlError` AND error message contains the offending input substring or the literal phrase "parse uncertainty" (the parser surfaces one of the two — locked at story start). **Out of scope for this FV item (would exercise the wrong branch):** any input whose top-level FROM names an identifier (whether a real table, a CTE, or a table-valued function like `generate_series(...)`) — those route through the allowlist-mismatch branch, not parse-uncertainty.
+  - [ ] Story 1's non-SELECT rejection + internal-table rejection harness tests transition to passing.
+  - [ ] **Story 1's raw-SELECT harness tests still fail after this story** (they need Story 4 wiring); Story 1's row-cap + timeout harness tests also still fail (Story 4).
 - **Regression verification:**
-  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green.
-  - [ ] `npm run test:integration` — pass condition: Story 1 row-cap + timeout RED tests still RED (they belong to Story 4 wiring); Story 1 non-SELECT + internal-table tests now GREEN.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all pass.
+  - [ ] `npm run test:integration` — pass condition: Story 1 row-cap + timeout harness tests still fail (they belong to Story 4 wiring); Story 1 non-SELECT + internal-table tests now pass.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `feat(searcher): parseSqlAccess + validateSqlAccess + DEFAULT_PUBLIC_VIEW_ALLOWLIST`
@@ -243,15 +243,15 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] `searcher.sql` types are exported from `src/index.ts`: `SqlOpts` (this story), `Row` (Story 2), `InvalidSqlError` (Story 3), `QueryTimeoutError` (Story 2). No DSL types — the primitive accepts raw SQL only.
   - [ ] Pristine doc-comment block on the `Searcher` interface mentions `sql` alongside the four search methods (`vectorSearch`, `ftsSearch`, `hybridSearch`, `sessionVectorSearch`).
 - **Functional verification:**
-  - [ ] Inner-loop unit test: order-of-operations — spy on `validateSqlAccess` and `executeReadOnly` (vitest `vi.spyOn` on the imported module), call `searcher.sql(...)`, assert `validateSqlAccess.mock.invocationCallOrder[0] < executeReadOnly.mock.invocationCallOrder[0]`. Pass condition: validate runs strictly before execute on every code path.
-  - [ ] Inner-loop unit test: default-opt application — `searcher.sql('SELECT 1')` with no opts uses `rowCap=1000` + `timeoutMs=5000` defaults. Pass condition: defaults observed via the spied `executeReadOnly` call args.
+  - [ ] Unit test: order-of-operations — spy on `validateSqlAccess` and `executeReadOnly` (vitest `vi.spyOn` on the imported module), call `searcher.sql(...)`, assert `validateSqlAccess.mock.invocationCallOrder[0] < executeReadOnly.mock.invocationCallOrder[0]`. Pass condition: validate runs strictly before execute on every code path.
+  - [ ] Unit test: default-opt application — `searcher.sql('SELECT 1')` with no opts uses `rowCap=1000` + `timeoutMs=5000` defaults. Pass condition: defaults observed via the spied `executeReadOnly` call args.
   - [ ] JSDoc placement check: `grep -nE "vectorSearch|ftsSearch|hybridSearch|sessionVectorSearch|\\bsql\\b" src/memory/searcher/index.ts` shows all five methods named in the same JSDoc-comment block above the `Searcher` interface. Pass condition: a single contiguous JSDoc block contains references to all five names.
-  - [ ] Story 1's outer-loop tests transition GREEN after this story merges. Specifically: all 5 happy-path tests (raw SELECT against `messages_public`, raw SELECT with `?` params against `conversations_public`, compound JOIN/aggregate/GROUP BY/ORDER BY/LIMIT, `summaries_public` SELECT, non-`=` `WHERE` operators) AND the row-cap + timeout rejection tests (Story 2 backend wired through `searcher.sql`). Story 5's vault-adversarial test stays RED until Story 5; Story 3's non-SELECT + internal-table rejection tests are already GREEN by Story 3.
+  - [ ] Story 1's harness tests transition to passing after this story merges. Specifically: all 5 happy-path tests (raw SELECT against `messages_public`, raw SELECT with `?` params against `conversations_public`, compound JOIN/aggregate/GROUP BY/ORDER BY/LIMIT, `summaries_public` SELECT, non-`=` `WHERE` operators) AND the row-cap + timeout rejection tests (Story 2 backend wired through `searcher.sql`). Story 5's vault-adversarial test still fails until Story 5; Story 3's non-SELECT + internal-table rejection tests are already passing post-Story-3.
 - **Regression verification:**
-  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all green; the four existing search methods (`vectorSearch`/`ftsSearch`/`hybridSearch`/`sessionVectorSearch`) unaffected.
-  - [ ] `npm run test:integration` — pass condition: Story 5 adversarial RED tests still RED (they belong to Story 5); all other Story 1 RED tests now GREEN.
-  - [ ] `npm run test:e2e` — pass condition: existing e2e suite green; no regression from the new `Searcher.sql` method.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `npm run test:unit` — pass condition: existing unit count + new tests, all pass; the four existing search methods (`vectorSearch`/`ftsSearch`/`hybridSearch`/`sessionVectorSearch`) unaffected.
+  - [ ] `npm run test:integration` — pass condition: Story 5's vault-adversarial harness test still fails (it belongs to Story 5); all other Story 1 harness tests now pass.
+  - [ ] `npm run test:e2e` — pass condition: existing e2e suite passes; no regression from the new `Searcher.sql` method.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
   - [ ] Public barrel diff: `git diff main..HEAD -- src/index.ts` shows ONLY the four new exports; nothing previously-exported was changed or removed.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
@@ -295,7 +295,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] §16 Phase 5 Done-when checkboxes are all flipped to `[x]`. Pass condition: `awk '/^### Phase 5/,/^### Phase 6/' docs/specs/implementation-spec-005.md | grep -c '^- \[ \]'` returns `0` (no unchecked Phase-5 done-when items).
   - [ ] JSDoc on `searcher.sql` references §15 Flow 3 and §8.6 for the privacy contract.
 - **Functional verification:**
-  - [ ] `npm run test:integration` — pass condition: ≥20 adversarial test cases all GREEN; Story 1's vault-access RED test now GREEN.
+  - [ ] `npm run test:integration` — pass condition: all ≥20 adversarial test cases pass; Story 1's vault-access harness test transitions to passing.
   - [ ] `npm run test:integration` with deliberate-injection — pass condition: each DML / internal-table / vault / DoS / identifier-encoding case throws the expected error class with a message that names the offending construct (regex-pattern assertion).
   - [ ] DoS test wall-time check: `time npx vitest run tests/integration/searcher-sql.test.ts -t '\(d\) DoS'` (single-quoted single-backslash escaping — see Story 5 AC for the shell-quoting note; `\(` becomes the JS regex `\(` which matches a literal `(` in the locked describe title `'(d) DoS / row-cap escape'`). Pass condition: each DoS test completes within ≤12s wall time AND vitest's reporter shows `5 passed` (or higher) for the (d) sub-class — NOT `0 tests` (which would indicate the filter matched nothing — re-check the shell-escape).
   - [ ] Spec touchups verified by `grep` (multi-anchor, robust against DSL example formatting):
@@ -308,8 +308,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Regression verification:**
   - [ ] `npm run test:unit` — pass condition: unit suite unaffected by adversarial suite addition.
   - [ ] `npm run test:integration` — pass condition: existing integration tests still pass at exact pre-Story-5 count + ≥20 new adversarial tests.
-  - [ ] `npm run test:e2e` — pass condition: e2e suite green.
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `npm run test:e2e` — pass condition: e2e suite passes.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `test(searcher-sql): adversarial DML attempts — INSERT / UPDATE / DELETE / DROP / ALTER`
@@ -364,7 +364,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
     Equivalent exit-code-safe form: `for f in src/client.ts src/memory/searcher/index.ts; do for s in searchConversations 'searcher\.ftsSearch' 'searcher\.sql'; do n=$(grep -c "$s" "$f"); echo "$f $s $n"; [ "$n" -ge 1 ] || echo FAIL; done; done` — pass condition: zero `FAIL` lines. (Patterns are single-quoted with single backslashes — `\.` reaches grep BRE as `\.` matching a literal dot. Double backslashes would pass `\\.` to BRE which matches backslash + any char and would FAIL on legitimate `searcher.ftsSearch` references — this is the consistency fix for the six `grep -c` checks above which use double-quoted `"searcher\\.ftsSearch"` because shell-double-quoted `\\.` ALSO reaches BRE as `\.`; same target regex, different shell-quoting paths.)
   - [ ] **Path (b) only:** existing `searchConversations({ userId })` callsites still pass — pass condition: `grep -rn "searchConversations(" src/ tests/ scripts/` shows no breakage in any existing call.
   - [ ] **Path (c) only:** removed-method audit — `grep -rn "searchConversations" src/ tests/` returns zero hits in production code (only in spec / migration-recipe docs).
-  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all green.
+  - [ ] `bash .checks/pre-merge.sh` — pass condition: lint + typecheck + unit suite all pass.
 - **Manual-only verification:**
   - **Path (c) only:** if `scripts/search-conversations.ts` is migrated rather than removed, run it once locally against a small corpus to confirm the migration produces equivalent results. Tag this `@manual`. Pass condition: output rows match a baseline captured from the legacy script before migration.
   - Other paths: N/A.
@@ -446,10 +446,10 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Regression verification:**
   - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
   - [ ] Run the full available regression verification suite and record pass/fail evidence (each command's pass condition is `exit 0` AND no `FAILED` / `Error` lines in stdout/stderr unless the command prefixes its summary differently):
-    - `npm run test:unit` — pass condition: exit 0, all unit suites GREEN.
+    - `npm run test:unit` — pass condition: exit 0, all unit suites pass.
     - `SKIP_SLOW=1 npm run test:integration` — pass condition: exit 0, no FAILED reporter line.
-    - `SKIP_SLOW=0 npm run test:integration` — pass condition: exit 0, all integration suites GREEN with real Nomic v1.5 (gates sprint completion on full coverage).
-    - `npm run test:e2e` — pass condition: exit 0, all e2e suites GREEN.
+    - `SKIP_SLOW=0 npm run test:integration` — pass condition: exit 0, all integration suites pass with real Nomic v1.5 (gates sprint completion on full coverage).
+    - `npm run test:e2e` — pass condition: exit 0, all e2e suites pass.
     - `npx tsx scripts/smoke-indexer.ts` — pass condition: script exits 0; stdout contains no `FAILED` / `Error` / `assertion failed` lines.
     - `bash .checks/pre-merge.sh` — pass condition: exit 0, lint + typecheck + unit gate all pass.
 - **Manual-only verification:** Story 6 path-(c) `@manual` script verification IF that path was taken (otherwise N/A).

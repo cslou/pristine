@@ -108,7 +108,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - **Harness shape parallels `searcher.test.ts`.** The existing sprint-016 cross-cutting harness at `tests/integration/searcher.test.ts` is the reference shape — same hookTimeout pattern, same seeded-corpus pattern, same per-method describe blocks. Don't reinvent.
   - **Vault-access adversarial probe (canonical, used by Stories 1 + 5 verbatim):** `grep -rn "CREATE TABLE.*vault\\|CREATE TABLE.*key" src/privacy/`. The Story 1 integration test verifies `client.searcher.sql(...)` rejects a raw `SELECT * FROM <first-discovered-table>` with `InvalidSqlError`. If the probe returns zero hits (post-sprint-020 the vault footprint may have shrunk), swap in `messages` (an internal corpus table not in the public-view allowlist) and document the swap in the test-file header — Story 5's adversarial suite uses the same fallback so the two stories can't drift.
   - **Row-cap test corpus.** Seed 1500 rows for the row-cap test (default cap 1000). One test asserts default-cap behavior; another asserts a custom-cap-200 call returns 200 rows.
-  - **Outer-loop test plan reference (illustrative, NOT prescriptive verbatim text):** the ten `it(...)` titles should encode the AC anchor (e.g. `@AC-Story4-1`, `@AC-Story3-1`, `@AC-Story2-1`, `@AC-Story5-1`) so failures map back to the sourcing story.
+  - **Test plan reference (illustrative, NOT prescriptive verbatim text):** the ten `it(...)` titles should encode the AC anchor (e.g. `@AC-Story4-1`, `@AC-Story3-1`, `@AC-Story2-1`, `@AC-Story5-1`) so failures map back to the sourcing story.
 
 #### Story 2: Read-only connection + progress-handler timeout + row-cap cursor
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

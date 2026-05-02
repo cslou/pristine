@@ -294,7 +294,7 @@ searcher.sql(queryDsl | rawSql, params): Row[]          // read-only, scoped vie
 
 Neighbor expansion (`"give me the N turns before and after this hit"`) is not a primitive — it's a ~10-line consumer composition over `searcher.sql` with `WHERE conversation_id = ? AND turn_index BETWEEN ? AND ?`. See §5.2 reference implementations.
 
-`searcher.sql` accepts a scoped DSL (preferred) or raw SQL (escape hatch). Both run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public view** (`messages_public`, `conversations_public`, `summaries_public`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the view even when internal tables change.
+`searcher.sql` accepts raw SQL with positional `?` parameter binding. Queries run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public-view allowlist** (`messages_public`, `conversations_public`, `summaries_public`, `messages_fts`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the views even when internal tables change.
 
 #### 5.1.4 Embedding
 
@@ -915,16 +915,17 @@ Consumer calls: searcher.hybridSearch(query, filters, limit)
 **Composes:** `searcher.sql` → validate → read-only connection → public view → row cap + timeout
 
 ```
-Consumer calls: searcher.sql(dsl | rawSql, params)
+Consumer calls: searcher.sql(rawSql, opts?)
                     │
                     ▼
        Validate access surface
-       - DSL mode: translate {view, where, orderBy, limit} → SQL
-       - rawSql mode: parse; reject if (a) non-SELECT, (b) references tables not in public-view allowlist
+       - parse SQL; reject if (a) non-SELECT, (b) references tables
+         not in public-view allowlist (messages_public,
+         conversations_public, summaries_public, messages_fts)
                     │
                     ▼
        Open read-only connection (SQLITE_OPEN_READONLY)
-       Attach progress_handler (timeout, default 5s)
+       Attach per-iteration elapsed-time timeout (default 5s)
        Wrap cursor with row cap (default 1000)
                     │
                     ▼
@@ -938,16 +939,7 @@ Consumer calls: searcher.sql(dsl | rawSql, params)
 - **Row cap + timeout** → DoS prevention (§8.6)
 - **Views hide internal columns** (`parent_message_id`, `metadata`) → consumer contract stable even when internals evolve
 
-**DSL example:**
-
-```typescript
-searcher.sql({
-  view: 'messages_public',
-  where: { project_id: 'pristine', role: 'assistant', timestamp: { gte: t } },
-  orderBy: { timestamp: 'desc' },
-  limit: 50,
-});
-```
+**Public surface:** the primitive accepts raw SQL only — no DSL escape hatch. Positional `?` parameter binding is forwarded to better-sqlite3 for safe quoting; consumers compose JOINs / aggregates / CTEs against the allowlist directly.
 
 ### Flow 4 — `search_memory` tool (reference implementation)
 
@@ -1000,7 +992,7 @@ Agent emits tool_use: query_memory({
 Harness dispatches to reference handler
                     │
                     ▼
-Handler calls: searcher.sql(dsl, [])
+Handler composes raw SQL: client.searcher.sql(rawSql, { params })
                     │
                     ▼
 Format rows as JSON table or markdown
@@ -1009,7 +1001,7 @@ Format rows as JSON table or markdown
 Tool returns to agent
 ```
 
-**Raw SQL variant:** same flow, DSL replaced with raw SQL string + params. Handler passes through after schema validation.
+**Reference impl shape:** the LLM emits a raw SELECT against the public-view allowlist (`messages_public`, `conversations_public`, `summaries_public`, `messages_fts`); the handler validates + executes via `client.searcher.sql(rawSql, { params })`. No DSL or translator step in between — the SDK's parser-level allowlist gate (sprint-019 Story 2) is the single privacy boundary; LLMs are competent at SQL, so a second grammar adds no value.
 
 **Reference impl size target:** ≤ 150 LOC.
 
@@ -1146,27 +1138,27 @@ Filter-first vector + FTS + hybrid + expansion. Repurposes `src/memory/retriever
 
 ---
 
-### Phase 5: SQL primitive — scoped read-only surface
+### Phase 5: SQL primitive — raw read-only surface
 
-Read-only SQL over public views with row-cap + timeout.
+Read-only raw SQL over public views with row-cap + timeout.
 
 #### Modules
 
-- **Add:** `src/memory/searcher/sql.ts`
-- **Add:** DSL parser + SQL translator
+- **Add:** `src/memory/searcher/sql-backend.ts` — `SQLITE_OPEN_READONLY` connection + per-iteration elapsed-time timeout + row-cap cursor + `withTimeout` primitive (sprint-019 Story 1).
+- **Add:** `src/memory/searcher/sql-parser.ts` — `parseSqlAccess` + `validateSqlAccess` + `DEFAULT_PUBLIC_VIEW_ALLOWLIST` (sprint-019 Story 2).
+- **Modify:** `src/memory/searcher/index.ts` — wire `Searcher.sql(sql, opts?)` linearly: `validateSqlAccess` → `executeReadOnly` (sprint-019 Story 3).
 
-#### Stories
+#### Stories (sprint-019)
 
-- **P5-S1:** Open a read-only SQLite connection (`SQLITE_OPEN_READONLY`). Attach `progress_handler` for timeout; cursor wrapper for row cap.
-- **P5-S2:** Public-view allowlist — parse referenced tables from SQL; reject queries touching non-allowlisted tables (including all privacy/vault surfaces).
-- **P5-S3:** DSL surface — `{view, where, orderBy, limit, projection}` → parameterized SQL. Injection tests.
-- **P5-S4:** Adversarial privacy tests (matches §8.6) — attempt DML, internal-table access, vault access, DoS queries. All must be rejected or row-capped.
+- **P5-S1:** Open a read-only SQLite connection (`SQLITE_OPEN_READONLY`) per call. Per-iteration elapsed-time timeout between row yields (better-sqlite3 v12 has no JS-callable `db.interrupt()`); cursor wrapper for row cap. `withTimeout` primitive exported for cross-module reuse.
+- **P5-S2:** Public-view allowlist — static parser extracts referenced tables; rejects queries touching non-allowlisted tables (including all privacy/vault surfaces) and any non-SELECT keyword. Default allowlist: `messages_public`, `conversations_public`, `summaries_public`, `messages_fts`.
+- **P5-S3:** Wire `searcher.sql(sql, opts?)` on the public Searcher interface. Validate-then-execute ordering is non-negotiable. Adversarial privacy tests (matches §8.6) — DML, internal-table access, vault access, DoS queries — all rejected or row-capped.
 
 #### Done when
 
-- [ ] SQL primitive safe + useful — DSL covers common queries, raw SQL works for escape cases
-- [ ] All adversarial tests pass
-- [ ] Privacy boundary validated
+- [x] SQL primitive safe + useful — raw SQL with positional `?` parameter binding covers all consumer queries against the public-view allowlist
+- [x] All adversarial tests pass — DML / internal-table / vault / DoS / identifier-encoding classes each rejected or row-capped
+- [x] Privacy boundary validated — `validateSqlAccess` is the parser-level gate, `SQLITE_OPEN_READONLY` is defence-in-depth
 
 ---
 

@@ -3,16 +3,14 @@ import Database from 'better-sqlite3';
 import { InvalidArgumentError, QueryTimeoutError } from '../../core/errors.js';
 
 export const MAX_ROW_CAP = 10000;
-export const DEFAULT_ROW_CAP = 1000;
 export const MAX_TIMEOUT_MS = 10000;
 export const MIN_TIMEOUT_MS = 100;
-export const DEFAULT_TIMEOUT_MS = 5000;
 
 /**
  * A single row returned by {@link SqlBackend.executeReadOnly}. The shape is
  * deliberately opaque at this layer: column names and value types are whatever
- * SQLite produces for the caller-supplied SQL. Story-3 wiring may narrow the
- * surface for specific public-view shapes.
+ * SQLite produces for the caller-supplied SQL. Consumers narrow the surface
+ * for specific public-view shapes at their own boundary.
  */
 export type Row = Readonly<Record<string, unknown>>;
 
@@ -35,8 +33,63 @@ export interface SqlBackend {
   ): IterableIterator<T>;
 }
 
+/**
+ * Configuration for {@link createSqlBackend}.
+ *
+ * Lifecycle note: `dbPath` is read once per `executeReadOnly` call and used to
+ * open a fresh `SQLITE_OPEN_READONLY` connection that is closed in `finally`
+ * when the call returns or throws. This is intentionally different from the
+ * sibling `createSearcher` factory, which holds a single long-lived
+ * `Database.Database`: per-call connections keep `rowCap` and `timeoutMs`
+ * scoped to one query at a time, prevent slow queries from blocking
+ * subsequent reads, and avoid sharing cursor or transaction state between
+ * unrelated callers.
+ */
 export interface SqlBackendDeps {
   readonly dbPath: string;
+}
+
+/**
+ * Wraps a prepared {@link Database.Statement}'s row cursor with a
+ * per-iteration elapsed-time budget. Yields each row until either the
+ * underlying statement completes or `Date.now() - startMs > ms` is true at a
+ * yield boundary, in which case it throws {@link QueryTimeoutError}.
+ *
+ * Cleanup. The cursor returned by `Statement.iterate(...)` is finalized in a
+ * `finally` block via `iter.return?.()` so cursor handles are released on
+ * every exit path: natural completion, timeout-throw, caller `break`, or any
+ * other thrown error. The explicit `finally` also documents the
+ * resource-cleanup contract independent of `for-of` `IteratorClose` semantics.
+ *
+ * Limitation. better-sqlite3 v12 does not expose a JS-callable
+ * `db.interrupt()` and the per-iteration check only fires between row
+ * yields. A statement that runs to completion entirely in C without yielding
+ * (a pure aggregate or sort that materialises its full result before
+ * producing the first row) cannot be interrupted mid-flight; the row-cap on
+ * {@link SqlBackend.executeReadOnly} remains the primary safety net for
+ * cursor-based queries.
+ *
+ * Exposed at module scope so callers that already hold a prepared statement
+ * can reuse the timeout primitive directly without taking on the per-call
+ * connection lifecycle that {@link SqlBackend.executeReadOnly} owns.
+ */
+export function* withTimeout<T>(
+  stmt: Database.Statement<unknown[], T>,
+  params: readonly unknown[],
+  ms: number,
+): IterableIterator<T> {
+  const startMs = Date.now();
+  const iter = stmt.iterate(...params);
+  try {
+    for (const row of iter) {
+      if (Date.now() - startMs > ms) {
+        throw new QueryTimeoutError(`Query exceeded timeoutMs=${String(ms)}`);
+      }
+      yield row;
+    }
+  } finally {
+    iter.return?.();
+  }
 }
 
 export function createSqlBackend(deps: SqlBackendDeps): SqlBackend {
@@ -60,48 +113,16 @@ export function createSqlBackend(deps: SqlBackendDeps): SqlBackend {
   }
 
   /**
-   * Wraps a prepared {@link Database.Statement}'s row cursor with a
-   * per-iteration elapsed-time budget. Yields each row until either the
-   * underlying statement completes or `Date.now() - startMs > ms` is true at
-   * a yield boundary, in which case it throws {@link QueryTimeoutError}.
-   *
-   * Limitation: better-sqlite3 v12 does not expose a JS-callable
-   * `db.interrupt()` and the per-iteration check only fires between row
-   * yields. A statement that runs to completion entirely in C without
-   * yielding (a pure aggregate or sort that materialises its full result
-   * before producing the first row) cannot be interrupted mid-flight; the
-   * row-cap on {@link executeReadOnly} remains the primary safety net for
-   * cursor-based queries.
-   *
-   * Exposed on {@link SqlBackend} so Story-2's parser-driven path can reuse
-   * the same primitive.
-   */
-  function* withTimeout<T>(
-    stmt: Database.Statement<unknown[], T>,
-    params: readonly unknown[],
-    ms: number,
-  ): IterableIterator<T> {
-    const startMs = Date.now();
-    const iter = stmt.iterate(...params);
-    for (const row of iter) {
-      if (Date.now() - startMs > ms) {
-        throw new QueryTimeoutError(`Query exceeded timeoutMs=${String(ms)}`);
-      }
-      yield row;
-    }
-  }
-
-  /**
    * Executes a SQL statement against a fresh `SQLITE_OPEN_READONLY` connection
-   * opened at `deps.dbPath`, returning rows up to `opts.rowCap` and bounded by
-   * `opts.timeoutMs` per-iteration elapsed time.
+   * opened at `deps.dbPath`, returning rows up to `opts.rowCap` and bounded
+   * by `opts.timeoutMs` per-iteration elapsed time.
    *
    * Lifecycle. A new connection is opened per call and closed in a `finally`
-   * block on both success and error paths. The statement is prepared, rows are
-   * pulled through {@link withTimeout}, and the cursor is broken at `rowCap`.
-   * Connection cleanup runs whether the cursor completed naturally, threw
-   * {@link QueryTimeoutError}, hit the rowCap break, or surfaced an underlying
-   * SQLite error.
+   * block on both success and error paths. The statement is prepared, rows
+   * are pulled through {@link withTimeout}, and the cursor is broken at
+   * `rowCap`. Connection cleanup runs whether the cursor completed naturally,
+   * threw {@link QueryTimeoutError}, hit the rowCap break, or surfaced an
+   * underlying SQLite error.
    *
    * Read-only at the SQLite level. The connection is opened with
    * `{ readonly: true }`, so DML attempts (`INSERT`, `UPDATE`, `DELETE`,
@@ -121,9 +142,9 @@ export function createSqlBackend(deps: SqlBackendDeps): SqlBackend {
    * Synchronous-blocking constraint. better-sqlite3 executes synchronously,
    * so a runaway query can block the Node event loop for up to
    * {@link MAX_TIMEOUT_MS} (~10s) before the per-iteration check aborts it.
-   * The async signature is intentional: it lets the public Story-3 surface
-   * (`searcher.sql`) return a `Promise` without further wrapping, even though
-   * no asynchronous work happens inside.
+   * The async signature is intentional: it lets a `Promise`-returning public
+   * surface adopt this primitive without further wrapping, even though no
+   * asynchronous work happens inside.
    *
    * Timeout mechanism. The timeout is enforced by a per-iteration elapsed-time
    * check in {@link withTimeout}; see that function's docstring for the

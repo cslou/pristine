@@ -89,6 +89,7 @@ function stripComments(sql: string): string {
     if (c === "'") {
       const start = i;
       i += 1;
+      let closed = false;
       while (i < sql.length) {
         if (sql[i] === "'") {
           if (sql[i + 1] === "'") {
@@ -96,9 +97,13 @@ function stripComments(sql: string): string {
             continue;
           }
           i += 1;
+          closed = true;
           break;
         }
         i += 1;
+      }
+      if (!closed) {
+        throw new InvalidSqlError('parse uncertainty: unterminated string literal');
       }
       out += sql.slice(start, i);
       continue;
@@ -107,6 +112,7 @@ function stripComments(sql: string): string {
       const end = c;
       const start = i;
       i += 1;
+      let closed = false;
       while (i < sql.length) {
         if (sql[i] === end) {
           if (sql[i + 1] === end) {
@@ -114,9 +120,13 @@ function stripComments(sql: string): string {
             continue;
           }
           i += 1;
+          closed = true;
           break;
         }
         i += 1;
+      }
+      if (!closed) {
+        throw new InvalidSqlError('parse uncertainty: unterminated quoted identifier');
       }
       out += sql.slice(start, i);
       continue;
@@ -124,6 +134,7 @@ function stripComments(sql: string): string {
     if (c === '[') {
       const start = i;
       i += 1;
+      let closed = false;
       while (i < sql.length) {
         if (sql[i] === ']') {
           if (sql[i + 1] === ']') {
@@ -131,9 +142,13 @@ function stripComments(sql: string): string {
             continue;
           }
           i += 1;
+          closed = true;
           break;
         }
         i += 1;
+      }
+      if (!closed) {
+        throw new InvalidSqlError('parse uncertainty: unterminated bracket identifier');
       }
       out += sql.slice(start, i);
       continue;

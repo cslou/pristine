@@ -96,6 +96,76 @@ The package convention proposed in PR #153 (`docs/specs/implementation-spec-006.
 
 **Both conventions share the primitive/adapter boundary** (engine in `src/`, adapters never in `src/`). The naming schemes differ because the surfaces differ: PR #153's privacy convention only needs to disambiguate harnesses (its tool segment is implicitly `privacy`), while this convention needs to disambiguate both harnesses and tools. The two conventions can ship simultaneously without conflict because they target different artifacts; if PR #153 lands, a privacy adapter ships as `@pristine/pi-privacy` and a search reference for the same harness ships as `@pristine/pi-dev-search-memory` — both names are unambiguous and self-describing within their own conventions.
 
+## Inner layout (skills, extensions, hooks, scripts)
+
+A reference impl in practice almost always spans **multiple harness primitives**. A `search-memory` reference for pi.dev might consist of a skill the LLM invokes, an extension that registers the tool handler, and a CLI script the skill calls. A Claude Code `session-start-hook` reference might combine a hook script, a skill, and an MCP server. The `<tool>` directory is the **bundle for one concern** — not for one file type.
+
+Decompose by harness primitive **inside** the `<tool>` dir:
+
+```
+examples/<harness>/<tool>/
+├── README.md               # "this is one way..." + bundle overview, wiring story
+├── package.json            # depends on @pristine/shield-local
+├── skills/                 # markdown skill files the harness loads
+├── extensions/             # extension code (if the harness has extensions)
+├── hooks/                  # hook handlers (event-triggered scripts)
+├── commands/               # slash commands or CLI commands the harness exposes
+├── mcp-servers/            # local MCP servers (if applicable)
+├── sub-agents/             # sub-agent definitions (Claude Code, etc.)
+├── scripts/                # CLI entry points the skills/hooks call
+├── config/                 # example configs, settings, JSON-schema
+└── tests/                  # smoke / integration tests
+```
+
+The **recognised inner subdir vocabulary** is `skills | extensions | hooks | commands | mcp-servers | sub-agents | scripts | config | tests`. Use only the subdirs that apply — a tool that's just a skill + a script doesn't need an empty `extensions/` dir.
+
+### Example: `examples/pi-dev/search-memory/`
+
+A pi.dev search-memory bundle composing a skill + extension + script:
+
+```
+examples/pi-dev/search-memory/
+├── README.md
+├── package.json
+├── skills/
+│   └── search-memory.md            # the skill the LLM invokes
+├── extensions/
+│   └── search-memory-extension.ts  # registers the tool handler with pi
+└── scripts/
+    └── search-memory.ts            # CLI the extension calls; wraps client.searcher.hybridSearch
+```
+
+### Example: `examples/claude-code/session-start-hook/`
+
+A Claude Code SessionStart bundle that's just a hook + a skill:
+
+```
+examples/claude-code/session-start-hook/
+├── README.md
+├── package.json
+└── hooks/
+    └── session-start.ts            # called on `startup` matcher; wraps client.searcher.sql to pull recent summaries
+```
+
+### Why bundle by tool, not by primitive type
+
+Two layouts were considered:
+
+- **(A) chosen:** `<tool>` is the unit; `skills/` / `extensions/` / `hooks/` decompose inside. Result: one concern lives in one directory; consumers copy-paste the dir to get the full feature; the inner structure mirrors the harness's own primitive types so it feels native.
+- **(B) rejected:** decompose by primitive at the top level (`examples/<harness>/skills/<tool>.md`, `examples/<harness>/extensions/<tool>.ts`, ...). Result: a single concern fragments across three dirs; "what is the search-memory reference impl?" no longer has a single home; consumers must hunt across three trees.
+
+(A) is preferred because the unit of distribution and the unit of comprehension are the same — one tool, one dir. The harness-primitive split is an implementation detail of the bundle, not a top-level axis.
+
+### README contents
+
+Every `<tool>/README.md` opens with *"This is one way to use Pristine primitives. You can write your own."* and includes:
+
+- **What this bundle does** (one sentence).
+- **Which Pristine primitives it composes** (`searcher.sql`, `searcher.hybridSearch`, `storeAsync`, etc.).
+- **Wiring story:** how the skill / extension / hook / script wire together at runtime — a 4-6 line description, ideally with a diagram fence if the wiring is non-obvious.
+- **Install & config:** what to copy where (e.g., copy `skills/` into `~/.pi/skills/`), what env vars or config files to set.
+- **Caveats / opinions baked in** (default limits, date formats, snippet escaping behaviour, etc.) — these are the parts a fork would adjust.
+
 ## When you write a new reference impl
 
 Checklist:
@@ -103,7 +173,7 @@ Checklist:
 1. **Is the work runtime-specific?** Does it know about pi hooks, Claude Code session lifecycle, Cursor command surface, or any other host-environment detail? → Yes: it's a reference impl, follow this convention.
 2. **Pick the `<harness>` segment.** Use the canonical name the host uses for itself (`pi-dev`, `claude-code`, `cursor`).
 3. **Pick the `<tool>` segment.** Use a verb-or-noun that describes the composition (`search-memory`, `session-start-hook`, `post-tool-use-ingest`). Hyphen-separated.
-4. **Land in `examples/<harness>/<tool>/`** as the entry shape. Include a README that opens with *"This is one way to use Pristine primitives. You can write your own."*
+4. **Land in `examples/<harness>/<tool>/`** as the entry shape. Decompose internally by harness primitive (`skills/` / `extensions/` / `hooks/` / `commands/` / `mcp-servers/` / `sub-agents/` / `scripts/` / `config/` / `tests/`) — see "Inner layout" above for the recognised subdir vocabulary and examples. Include a README that opens with *"This is one way to use Pristine primitives. You can write your own."* and covers the wiring story, install steps, and baked-in opinions.
 5. **Declare dependencies in a local `package.json`.** Depend on `@pristine/shield-local` (or whichever successor package the SDK ships under at the time) as a regular npm dep — never via relative path into `src/`.
 6. **Promote to `@pristine/<harness>-<tool>` later.** Only when a downstream consumer wants `npm install`, OR when the example is stable enough that semver-managed release notes start mattering.
 

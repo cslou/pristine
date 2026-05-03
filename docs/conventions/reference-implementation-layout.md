@@ -3,7 +3,7 @@
 **Status:** active convention
 **First codified:** sprint-019 (PR #169)
 
-This document is the canonical reference for how Pristine separates **SDK primitives** from **reference implementations**. Both `docs/specs/implementation-spec-005.md` §5.2 (general reference impls) and `docs/specs/implementation-spec-006.md` §13 (privacy / tool-wrapper) point here for the boundary rules.
+This document is the canonical reference for how Pristine separates **SDK primitives** from **reference implementations**. `docs/specs/implementation-spec-005.md` §5.2 cross-references this doc for the layout convention; `implementation-spec-006.md` §13 (currently a Draft in PR #153) is a related but independent convention covering the privacy / tool-wrapper surface — the two share the primitive/adapter axis but use different naming schemes (see "Relation to the privacy / tool-wrapper convention" below).
 
 ---
 
@@ -83,18 +83,18 @@ A reference impl is NOT allowed to:
 - **Clean dep graph.** A pi-dev consumer who wants only the search-memory adapter does not have to install Claude Code's hook script or the SessionStart wrapper. Each `(harness, tool)` is independent.
 - **Multiple harnesses, one primitive.** The SDK ships one `searcher.sql`; pi-dev, Claude Code, and Cursor each compose it differently in their respective `<harness>/search-memory/` dirs without forking the primitive.
 
-## Relation to the privacy / tool-wrapper convention (spec-006 §13)
+## Relation to the privacy / tool-wrapper convention (PR #153 / Draft spec-006 §13)
 
-The package convention proposed in `docs/specs/implementation-spec-006.md` §13 (PR #153) for the privacy / tool-wrapper surface is the **same axis** applied to a different concern:
+The package convention proposed in PR #153 (`docs/specs/implementation-spec-006.md` §13, currently a Draft) for the privacy / tool-wrapper surface shares the **primitive/adapter axis** with this convention but uses a **different naming scheme**, scoped to a different concern:
 
-| Aspect | Spec-006 privacy/tool-wrapper convention | This convention |
+| Aspect | PR #153 privacy/tool-wrapper convention | This convention |
 |---|---|---|
-| Engine | `@pristine/privacy-core` (focused privacy engine) | `src/` SDK primitives |
-| Adapter | `@pristine/pi-privacy` (thin pi adapter) | `@pristine/<harness>-<tool>` reference impls |
-| Naming axis | `<harness>` (one segment, single concern: privacy) | `<harness>-<tool>` (two segments, multiple tool concerns per harness) |
-| Source shape | (Spec-006 doesn't name a source-tree shape; adapters live as separate packages) | `examples/<harness>/<tool>/` is the entry shape, with package promotion later |
+| Engine | `@pristine/privacy-core` (focused privacy engine, intentionally extracted to avoid `sqlite-vec` / embedder deps) | `src/` SDK primitives, surfaced via `@pristine/shield-local` |
+| Adapter | `@pristine/pi-privacy` (single-segment: harness only — the surface is privacy-only, so no second segment is needed to disambiguate tools) | `@pristine/<harness>-<tool>` (two segments: multiple tool concerns per harness, so both axes are named) |
+| Source shape | PR #153 §13 names the package shape but does not propose a source-tree incubation layout; adapters live as separate packages | `examples/<harness>/<tool>/` is the entry shape, with package promotion later |
+| Engine package split | Wants `@pristine/privacy-core` extracted from the full SDK so the privacy adapter doesn't pull in unrelated deps | This convention does not propose further SDK splits — references depend on `@pristine/shield-local` as it ships today |
 
-**Same primitive/adapter boundary**; different surface and naming granularity. Where spec-006 splits the SDK itself further (extracting `@pristine/privacy-core` so the privacy adapter doesn't pull in `sqlite-vec`/embedder deps), this convention doesn't propose further SDK splits — that decision lives in spec-006 and can be picked up if/when it actually matters for a reference impl. Both conventions can ship simultaneously without conflict because they target different artifacts.
+**Both conventions share the primitive/adapter boundary** (engine in `src/`, adapters never in `src/`). The naming schemes differ because the surfaces differ: PR #153's privacy convention only needs to disambiguate harnesses (its tool segment is implicitly `privacy`), while this convention needs to disambiguate both harnesses and tools. The two conventions can ship simultaneously without conflict because they target different artifacts; if PR #153 lands, a privacy adapter ships as `@pristine/pi-privacy` and a search reference for the same harness ships as `@pristine/pi-dev-search-memory` — both names are unambiguous and self-describing within their own conventions.
 
 ## When you write a new reference impl
 

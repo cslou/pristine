@@ -59,8 +59,8 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 | **Reference** (documented example, replaceable) | `search_memory` tool that wraps it for Claude tool-use |
 | **Primitive** | `store.addSummary(sessionId, text, timestamp)` |
 | **Reference** | Session-summary-generation script using the host LLM |
-| **Primitive** | `searcher.sql(query, params)` (read-only, row-capped, timeout-guarded) |
-| **Reference** | SQL/DSL query tool for agent tool-calling |
+| **Primitive** | `searcher.sql(rawSql, opts?)` (read-only, row-capped, timeout-guarded; allowlist-validated) |
+| **Reference** | Raw-SQL query tool for agent tool-calling |
 | **Primitive** | `indexer.ingest(turns)` |
 | **Reference** | PostToolUse hook script that calls it |
 
@@ -240,6 +240,8 @@ This section splits into primitives (what the core SDK exposes) and reference im
 
 ### 5.1 Core SDK primitives
 
+Primitives live in `src/`. Anything that wraps them for a specific host environment (a tool-calling agent, a harness hook, a CLI) is a **reference implementation**, not a primitive — see §5.2 for the layout convention (`examples/<harness>/<tool>/` source dirs, `@pristine/<harness>-<tool>` published packages).
+
 #### 5.1.1 Storage
 
 ```
@@ -287,14 +289,14 @@ searcher.vectorSearch(query, filters, limit): Hit[]
 searcher.ftsSearch(query, filters, limit): Hit[]
 searcher.hybridSearch(query, filters, limit): Hit[]     // reciprocal rank fusion over
                                                          //   vec_windows + vec_sessions + FTS5
-searcher.sql(queryDsl | rawSql, params): Row[]          // read-only, scoped view
+searcher.sql(rawSql, opts?): Promise<readonly Row[]>    // read-only, allowlist-scoped view
 ```
 
 `Filters` support project, timestamp range, conversation id, role. A window hit returns the window's `conversation_id` and constituent `message_ids`; callers resolve to full message content via `searcher.sql` against `messages_public`. A session hit returns the whole conversation via the same path.
 
 Neighbor expansion (`"give me the N turns before and after this hit"`) is not a primitive — it's a ~10-line consumer composition over `searcher.sql` with `WHERE conversation_id = ? AND turn_index BETWEEN ? AND ?`. See §5.2 reference implementations.
 
-`searcher.sql` accepts a scoped DSL (preferred) or raw SQL (escape hatch). Both run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public view** (`messages_public`, `conversations_public`, `summaries_public`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the view even when internal tables change.
+`searcher.sql` accepts raw SQL with positional `?` parameter binding. Queries run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public-view allowlist** (`messages_public`, `conversations_public`, `summaries_public`, `messages_fts`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the views even when internal tables change.
 
 #### 5.1.4 Embedding
 
@@ -307,20 +309,83 @@ Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-
 
 ### 5.2 Reference implementations
 
-Each reference lives in `docs/examples/` (or as a separately-versioned package). Each is optional. Each opens with *"This is one way to use Pristine primitives. You can write your own."*
+Each reference lives **outside `src/`** so it is structurally distinct from the SDK primitives it composes. Two artifact shapes are supported:
+
+1. **Source-tree examples (initial form):** `examples/<harness>/<tool>/` — one directory per `(harness, tool)` pair. The `<harness>` segment names the host environment the reference targets (`pi-dev`, `claude-code`, `cursor`, ...). The `<tool>` segment names the reference itself (`search-memory`, `query-memory`, `session-start-hook`, `post-tool-use-ingest`, ...). Source examples are the entry shape — fastest to iterate, easiest to fork.
+2. **Published adapter packages (mature form):** `@pristine/<harness>-<tool>` — promoted from the source-tree example once the reference stabilises and a downstream consumer wants `npm install` rather than copy-paste. The promotion preserves the `(harness, tool)` axes from the source layout so the package boundary mirrors the directory boundary.
+
+The two shapes coexist: a reference can live as `examples/pi-dev/search-memory/` while still incubating, and graduate to `@pristine/pi-dev-search-memory` once it ships externally. Either way, the **boundary against the primitives is the same**: a reference depends on `@pristine/shield-local` (or its successors) the way any external consumer would, and never reaches into `src/` internals.
+
+This split mirrors the package convention proposed in PR #153 (Draft `implementation-spec-006.md` §13) for the privacy / tool-wrapper surface (`@pristine/privacy-core` engine + `@pristine/pi-privacy` adapter): primitives are runtime-agnostic; adapters are runtime-specific. The same axis applies to reference search/query tools — they are runtime-specific and never become canon for the SDK.
+
+Why split by `(harness, tool)`:
+- **No conflation.** A reviewer (or a `git log`) sees immediately whether a change belongs to a primitive or to a harness adapter; primitives stay in `src/`, adapters never do.
+- **Per-harness lifecycle.** Each harness adapter can adopt or pin a specific SDK version, ship its own README/CI/release notes, and be owned by a different person from the SDK core.
+- **Clean dep graph.** A pi-dev consumer who wants only the search-memory adapter does not have to install Claude Code's hook script or the SessionStart wrapper.
+
+Each reference opens with *"This is one way to use Pristine primitives. You can write your own."*
 
 #### Candidate reference set (each may or may not ship)
 
 - **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + neighbor-expansion helper. Returns formatted text with timestamps and conversation refs.
 - **Neighbor-expansion helper (`expandHit`)** — ergonomic wrapper over `searcher.sql`: given a hit and a window size `N`, returns the hit's message plus the ±N surrounding turns within the same conversation. ~10 LOC. Opinions baked in (default `N`, conversation-boundary behavior, whether to respect `parent_message_id` for oversize-split messages) — hence reference-only. Often bundled into the `search_memory` tool.
 - **`SessionStart` hook for Claude Code** — script that on `startup` matcher calls `store.getRecentSummaries(projectId, 5)`, formats as markdown, emits via `hookSpecificOutput.additionalContext`. Timestamps every entry, ≤500 lines, fires on `startup` only (per research: re-injecting on `resume`/`compact` wastes tokens).
-- **SQL/DSL query tool** — tool wrapper over `searcher.sql`, scoped filter DSL as the default surface and raw-SQL as escape hatch.
+- **Raw-SQL query tool** — tool wrapper over `searcher.sql` against the public-view allowlist. The LLM emits raw SELECT; the handler validates + executes via `client.searcher.sql(rawSql, { params })`. No DSL or translator step.
 - **`MEMORY.md` maintainer** — script that writes timestamped session summaries to a project-scoped markdown file, with decay. Composes `store.getRecentSummaries` + filesystem write.
 - **Session-summary generator** — script that, on `Stop` hook, calls the host LLM with a condensation prompt, then stores via `store.addSummary`. Entirely prompt + format choice — LLM, prompt, and schema are all consumer opinions.
 - **Session-vector lifecycle wiring** — script that calls `indexer.buildSessionVector(conversationId)` on a session-close signal. Opinion: when to trigger (session end vs. first retrieval vs. nightly batch).
 - **PostToolUse ingestion script** — reframed `scripts/store.ts`.
 
 None are required for Pristine to function as an SDK. A consumer can build any of them from the primitives with a weekend of work.
+
+#### Migration recipe — keyword search across a project's conversations
+
+Pristine v0.x exposed `client.searchConversations({ userId, keyword, ... })` as a built-in. v1 removes that method (sprint-019 Story 5) — keyword-search composition belongs at the consumer / reference-tool layer, not on the SDK surface. The canonical replacement is a project-scoped raw SQL query against the public-view allowlist:
+
+```ts
+import { PristineLocal } from 'pristine';
+
+// Caller-supplied helper that wraps each whitespace-separated term in
+// double quotes so FTS5 doesn't interpret `-` as NOT or other syntax.
+const escapeFts5Query = (keyword: string): string =>
+  keyword
+    .split(/\s+/)
+    .filter((t) => t.length > 0)
+    .map((t) => `"${t.replace(/"/g, '""')}"`)
+    .join(' ');
+
+const client = await PristineLocal.create({ ... });
+
+// Caller MUST validate / clamp `limit` before calling — see precondition
+// notes below; pass the clamped value as the third positional parameter.
+// `Math.trunc(Number(...))` is used instead of `| 0` because the bitwise
+// OR wraps to a negative 32-bit integer for inputs ≥ 2^31, which would
+// then clamp to 1 and silently underdeliver results.
+const limit = Math.min(Math.max(Math.trunc(Number(callerLimit)) || 0, 1), 1000);
+
+const rows = await client.searcher.sql(
+  `SELECT m.id, m.conversation_id, m.role, m.timestamp,
+          snippet(messages_fts, 0, '<b>', '</b>', '...', 32) AS snippet
+   FROM messages_fts
+   JOIN messages_public m ON m.id = messages_fts.rowid
+   WHERE messages_fts MATCH ? AND m.project_id = ?
+   ORDER BY rank
+   LIMIT ?`,
+  { params: [escapeFts5Query(keyword), projectId, limit] },
+);
+```
+
+**Returned shape:** one row per matching message — the legacy method returned one row per conversation, so consumers that need conversation-grouped output should aggregate by `conversation_id` after the call.
+
+**Scope difference:** the recipe is scoped by `project_id` (exposed on `messages_public`), not by `user_id` (the underlying `conversations.user_id` is not exposed on `conversations_public`). Consumers whose user-to-project mapping is 1-to-many can compose multiple per-project recipe calls.
+
+**Caller-side preconditions** (caller MUST enforce; the SDK does not):
+
+1. **`limit` is a positive integer in `[1, rowCap]`** (`rowCap` defaults to 1000). Validate / clamp before calling — reject `limit = 0` and `limit < 0` rather than passing them through. SQLite's behavior on non-positive `LIMIT` is surprising: `LIMIT 0` returns zero rows silently (valid SQL); `LIMIT -1` is treated as "unlimited" so the SDK's row-cap cursor becomes the only bound (still bounded but degraded UX).
+2. **HTML-escape the `snippet` column before browser insertion.** The body is user-supplied content stored in `messages_public.content`, so the snippet string can contain `<script>`, HTML entities, or other browser-active payloads independent of the `<b>` / `</b>` markers or the `keyword` argument. Escape the entire snippet string before insertion into the DOM (escape first, then re-substitute neutral wrapper tokens for the bold markers if the UI wants emphasis). XSS risk applies to the body content, not just the markers.
+3. **Watch the row-cap-truncation interaction on multi-project corpora.** The FTS5 MATCH executes BEFORE the `project_id` filter narrows results. If the cross-project FTS hit set exceeds `rowCap`, the row-cap cursor truncates BEFORE the project filter narrows results, producing silently-incomplete project-scoped output. Mitigation: increase `rowCap` proportional to corpus cross-project breadth, or scope to single-project use until a `messages_fts_per_project` view ships.
+
+The recipe-equivalence integration tests at `tests/integration/searcher-sql-recipe.test.ts` cover three representative inputs (different keyword, different project, empty result) plus a project-scoped-leakage check.
 
 ### 5.3 Removal of the extractor and consolidator
 
@@ -915,16 +980,17 @@ Consumer calls: searcher.hybridSearch(query, filters, limit)
 **Composes:** `searcher.sql` → validate → read-only connection → public view → row cap + timeout
 
 ```
-Consumer calls: searcher.sql(dsl | rawSql, params)
+Consumer calls: searcher.sql(rawSql, opts?)
                     │
                     ▼
        Validate access surface
-       - DSL mode: translate {view, where, orderBy, limit} → SQL
-       - rawSql mode: parse; reject if (a) non-SELECT, (b) references tables not in public-view allowlist
+       - parse SQL; reject if (a) non-SELECT, (b) references tables
+         not in public-view allowlist (messages_public,
+         conversations_public, summaries_public, messages_fts)
                     │
                     ▼
        Open read-only connection (SQLITE_OPEN_READONLY)
-       Attach progress_handler (timeout, default 5s)
+       Attach per-iteration elapsed-time timeout (default 5s)
        Wrap cursor with row cap (default 1000)
                     │
                     ▼
@@ -938,16 +1004,7 @@ Consumer calls: searcher.sql(dsl | rawSql, params)
 - **Row cap + timeout** → DoS prevention (§8.6)
 - **Views hide internal columns** (`parent_message_id`, `metadata`) → consumer contract stable even when internals evolve
 
-**DSL example:**
-
-```typescript
-searcher.sql({
-  view: 'messages_public',
-  where: { project_id: 'pristine', role: 'assistant', timestamp: { gte: t } },
-  orderBy: { timestamp: 'desc' },
-  limit: 50,
-});
-```
+**Public surface:** the primitive accepts raw SQL only — no DSL escape hatch. Positional `?` parameter binding is forwarded to better-sqlite3 for safe quoting; consumers compose JOINs / aggregates / CTEs against the allowlist directly.
 
 ### Flow 4 — `search_memory` tool (reference implementation)
 
@@ -1000,7 +1057,7 @@ Agent emits tool_use: query_memory({
 Harness dispatches to reference handler
                     │
                     ▼
-Handler calls: searcher.sql(dsl, [])
+Handler composes raw SQL: client.searcher.sql(rawSql, { params })
                     │
                     ▼
 Format rows as JSON table or markdown
@@ -1009,7 +1066,7 @@ Format rows as JSON table or markdown
 Tool returns to agent
 ```
 
-**Raw SQL variant:** same flow, DSL replaced with raw SQL string + params. Handler passes through after schema validation.
+**Reference impl shape:** the LLM emits a raw SELECT against the public-view allowlist (`messages_public`, `conversations_public`, `summaries_public`, `messages_fts`); the handler validates + executes via `client.searcher.sql(rawSql, { params })`. No DSL or translator step in between — the SDK's parser-level allowlist gate (sprint-019 Story 2) is the single privacy boundary; LLMs are competent at SQL, so a second grammar adds no value.
 
 **Reference impl size target:** ≤ 150 LOC.
 
@@ -1146,27 +1203,27 @@ Filter-first vector + FTS + hybrid + expansion. Repurposes `src/memory/retriever
 
 ---
 
-### Phase 5: SQL primitive — scoped read-only surface
+### Phase 5: SQL primitive — raw read-only surface
 
-Read-only SQL over public views with row-cap + timeout.
+Read-only raw SQL over public views with row-cap + timeout.
 
 #### Modules
 
-- **Add:** `src/memory/searcher/sql.ts`
-- **Add:** DSL parser + SQL translator
+- **Add:** `src/memory/searcher/sql-backend.ts` — `SQLITE_OPEN_READONLY` connection + per-iteration elapsed-time timeout + row-cap cursor + `withTimeout` primitive (sprint-019 Story 1).
+- **Add:** `src/memory/searcher/sql-parser.ts` — `parseSqlAccess` + `validateSqlAccess` + `DEFAULT_PUBLIC_VIEW_ALLOWLIST` (sprint-019 Story 2).
+- **Modify:** `src/memory/searcher/index.ts` — wire `Searcher.sql(sql, opts?)` linearly: `validateSqlAccess` → `executeReadOnly` (sprint-019 Story 3).
 
-#### Stories
+#### Stories (sprint-019)
 
-- **P5-S1:** Open a read-only SQLite connection (`SQLITE_OPEN_READONLY`). Attach `progress_handler` for timeout; cursor wrapper for row cap.
-- **P5-S2:** Public-view allowlist — parse referenced tables from SQL; reject queries touching non-allowlisted tables (including all privacy/vault surfaces).
-- **P5-S3:** DSL surface — `{view, where, orderBy, limit, projection}` → parameterized SQL. Injection tests.
-- **P5-S4:** Adversarial privacy tests (matches §8.6) — attempt DML, internal-table access, vault access, DoS queries. All must be rejected or row-capped.
+- **P5-S1:** Open a read-only SQLite connection (`SQLITE_OPEN_READONLY`) per call. Per-iteration elapsed-time timeout between row yields (better-sqlite3 v12 has no JS-callable `db.interrupt()`); cursor wrapper for row cap. `withTimeout` primitive exported for cross-module reuse.
+- **P5-S2:** Public-view allowlist — static parser extracts referenced tables; rejects queries touching non-allowlisted tables (including all privacy/vault surfaces) and any non-SELECT keyword. Default allowlist: `messages_public`, `conversations_public`, `summaries_public`, `messages_fts`.
+- **P5-S3:** Wire `searcher.sql(sql, opts?)` on the public Searcher interface. Validate-then-execute ordering is non-negotiable. Adversarial privacy tests (matches §8.6) — DML, internal-table access, vault access, DoS queries — all rejected or row-capped.
 
 #### Done when
 
-- [ ] SQL primitive safe + useful — DSL covers common queries, raw SQL works for escape cases
-- [ ] All adversarial tests pass
-- [ ] Privacy boundary validated
+- [x] SQL primitive safe + useful — raw SQL with positional `?` parameter binding covers all consumer queries against the public-view allowlist
+- [x] All adversarial tests pass — DML / internal-table / vault / DoS / identifier-encoding classes each rejected or row-capped
+- [x] Privacy boundary validated — `validateSqlAccess` is the parser-level gate, `SQLITE_OPEN_READONLY` is defence-in-depth
 
 ---
 

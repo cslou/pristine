@@ -94,7 +94,6 @@ export type { PristineLocalConfig } from './client.js';
 
 export type {
   ConversationDetail,
-  ConversationSearchResult,
   Message,
   MessageRole,
   SecureAndRedactResult,
@@ -119,6 +118,8 @@ export {
   EmbedderError,
   IngestQueueError,
   InvalidArgumentError,
+  InvalidSqlError,
+  QueryTimeoutError,
 } from './core/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -154,4 +155,6 @@ export type {
   HybridHit,
   HybridSource,
   Role,
+  Row,
+  SqlOpts,
 } from './memory/searcher/index.js';

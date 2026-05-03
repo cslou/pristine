@@ -13,6 +13,10 @@ import type Database from 'better-sqlite3';
 import type { Embedder } from '../../core/interfaces.js';
 import { InvalidArgumentError } from '../../core/errors.js';
 import { reciprocalRankFusion, RRF_DEFAULT_K } from '../retriever/ranking.js';
+import { createSqlBackend, type Row } from './sql-backend.js';
+import { DEFAULT_PUBLIC_VIEW_ALLOWLIST, validateSqlAccess } from './sql-parser.js';
+
+export type { Row } from './sql-backend.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -174,6 +178,51 @@ export interface MessageHit {
   readonly snippet?: string;
 }
 
+/**
+ * Per-call options for {@link Searcher.sql}. Every field is optional;
+ * unset fields fall back to the searcher's defaults (`rowCap = 1000`,
+ * `timeoutMs = 5000`).
+ */
+export interface SqlOpts {
+  /**
+   * Positional `?` parameter values, bound left-to-right against the SQL
+   * string. SQLite quotes them safely so an injection-style payload like
+   * `'; DROP TABLE messages; --'` passed as a `?` value is treated as a
+   * literal string, not statement-merged into the SQL.
+   */
+  readonly params?: readonly unknown[];
+  /**
+   * Maximum rows returned. Defaults to `1000`. Bound: `[1, 10000]`. Out
+   * of range throws `InvalidArgumentError`. The cursor stops at
+   * `rowCap`; rows beyond the cap are silently dropped (callers MUST
+   * keep their own `LIMIT` ≤ `rowCap`).
+   */
+  readonly rowCap?: number;
+  /**
+   * Per-iteration elapsed-time budget in ms. Defaults to `5000`.
+   * Bound: `[100, 10000]`. Out of range throws `InvalidArgumentError`.
+   * Throws `QueryTimeoutError` when exceeded.
+   */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * Read-only retrieval primitive. Five methods cover the Pristine SDK's
+ * search surface:
+ *
+ * - {@link Searcher.vectorSearch} — KNN over `vec_windows`, project-scoped.
+ * - {@link Searcher.ftsSearch} — FTS5 keyword search over `messages_fts`.
+ * - {@link Searcher.hybridSearch} — RRF fusion of vector + FTS + session.
+ * - {@link Searcher.sessionVectorSearch} — KNN over `vec_sessions`.
+ * - {@link Searcher.sql} — raw read-only SQL against the public-view
+ *   allowlist (`messages_public`, `conversations_public`,
+ *   `summaries_public`, `messages_fts`).
+ *
+ * Every method returns a `Promise` and is read-only at the SQLite level —
+ * no method writes corpus tables. `sql` enforces the read-only contract
+ * via a `SQLITE_OPEN_READONLY` connection per call (DML is rejected by
+ * the engine before any rows are produced).
+ */
 export interface Searcher {
   vectorSearch(query: string, filters: SearchFilters, limit: number): Promise<readonly WindowHit[]>;
   /**
@@ -246,6 +295,49 @@ export interface Searcher {
     filters: SearchFilters,
     limit: number,
   ): Promise<readonly SessionHit[]>;
+  /**
+   * Raw read-only SQL against the public-view allowlist
+   * (`messages_public`, `conversations_public`, `summaries_public`,
+   * `messages_fts`). The single public entry point for ad-hoc analytical
+   * queries the four search methods above don't cover.
+   *
+   * Pipeline: input SQL → {@link validateSqlAccess} (parser-level gate
+   * against off-allowlist tables and non-SELECT statements) →
+   * `executeReadOnly` (per-call `SQLITE_OPEN_READONLY` connection,
+   * row-cap-bounded cursor, per-iteration timeout). Validate-then-execute
+   * ordering is non-negotiable — the parser is the privacy-boundary
+   * gate, the read-only connection is defence-in-depth. See spec
+   * §15 Flow 3 for the dataflow diagram and spec §8.6 for the locked
+   * adversarial attack-class set this primitive defends against.
+   *
+   * Parameter binding is positional via `?` placeholders. Out-of-range
+   * `rowCap` or `timeoutMs` throws `InvalidArgumentError` before any DB
+   * work begins.
+   *
+   * Migration recipe — keyword search across a project's conversations
+   * (replaces the removed `searchConversations` method; full
+   * preconditions in spec §5.2):
+   *
+   * ```ts
+   * const rows = await client.searcher.sql(
+   *   `SELECT m.id, m.conversation_id, m.role, m.timestamp,
+   *           snippet(messages_fts, 0, '<b>', '</b>', '...', 32) AS snippet
+   *    FROM messages_fts
+   *    JOIN messages_public m ON m.id = messages_fts.rowid
+   *    WHERE messages_fts MATCH ? AND m.project_id = ?
+   *    ORDER BY rank
+   *    LIMIT ?`,
+   *   { params: [escapeFts5Query(keyword), projectId, limit] },
+   * );
+   * ```
+   *
+   * Returns one row per matching message (ordered by FTS5 rank); is
+   * project-scoped (not user-scoped); caller-side preconditions on
+   * `limit` clamping and HTML-escaping of the `snippet` output are
+   * mandatory — see spec §5.2 reference implementations for the full
+   * recipe contract.
+   */
+  sql(sql: string, opts?: SqlOpts): Promise<readonly Row[]>;
 }
 
 export interface SearcherDeps {
@@ -923,5 +1015,44 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     });
   };
 
-  return { vectorSearch, ftsSearch, hybridSearch, sessionVectorSearch };
+  // ---------------------------------------------------------------------------
+  // searcher.sql — public read-only SQL primitive
+  // ---------------------------------------------------------------------------
+
+  // Defaults applied when SqlOpts fields are omitted. Held at the wiring
+  // layer rather than in sql-backend.ts because they are public-surface
+  // policy, not internal-backend invariants. Bounds-checking is delegated
+  // to executeReadOnly's validateOpts (1 ≤ rowCap ≤ 10000;
+  // 100 ≤ timeoutMs ≤ 10000).
+  const SQL_DEFAULT_ROW_CAP = 1000;
+  const SQL_DEFAULT_TIMEOUT_MS = 5000;
+
+  // The sql-backend opens a fresh SQLITE_OPEN_READONLY connection per
+  // executeReadOnly call against `db.name` (the writable connection's
+  // file path). The factory itself is cheap; bound once per Searcher.
+  const sqlBackend = createSqlBackend({ dbPath: db.name });
+
+  const sql = async (rawSql: string, opts?: SqlOpts): Promise<readonly Row[]> => {
+    // Reject in-memory DBs at the public surface. better-sqlite3's
+    // `:memory:` databases are not shared across connections — opening a
+    // second connection at `:memory:` produces a fresh empty DB rather
+    // than sharing state with the writable connection. Without this
+    // guard, every searcher.sql call would silently see an empty schema
+    // and surface SQLite's "no such table" error from the public
+    // view, which is far worse UX than an explicit rejection.
+    if (db.name === ':memory:') {
+      throw new InvalidArgumentError(
+        'searcher.sql requires a file-backed DB; in-memory DBs cannot be opened read-only from a second connection',
+      );
+    }
+    // Validate-then-execute. The parser is the privacy-boundary gate; the
+    // read-only connection is defence-in-depth. Order is non-negotiable.
+    validateSqlAccess(rawSql, DEFAULT_PUBLIC_VIEW_ALLOWLIST);
+    return sqlBackend.executeReadOnly(rawSql, opts?.params ?? [], {
+      rowCap: opts?.rowCap ?? SQL_DEFAULT_ROW_CAP,
+      timeoutMs: opts?.timeoutMs ?? SQL_DEFAULT_TIMEOUT_MS,
+    });
+  };
+
+  return { vectorSearch, ftsSearch, hybridSearch, sessionVectorSearch, sql };
 };

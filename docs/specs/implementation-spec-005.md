@@ -240,6 +240,8 @@ This section splits into primitives (what the core SDK exposes) and reference im
 
 ### 5.1 Core SDK primitives
 
+Primitives live in `src/`. Anything that wraps them for a specific host environment (a tool-calling agent, a harness hook, a CLI) is a **reference implementation**, not a primitive — see §5.2 for the layout convention (`examples/<harness>/<tool>/` source dirs, `@pristine/<harness>-<tool>` published packages).
+
 #### 5.1.1 Storage
 
 ```
@@ -307,7 +309,21 @@ Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-
 
 ### 5.2 Reference implementations
 
-Each reference lives in `docs/examples/` (or as a separately-versioned package). Each is optional. Each opens with *"This is one way to use Pristine primitives. You can write your own."*
+Each reference lives **outside `src/`** so it is structurally distinct from the SDK primitives it composes. Two artifact shapes are supported:
+
+1. **Source-tree examples (initial form):** `examples/<harness>/<tool>/` — one directory per `(harness, tool)` pair. The `<harness>` segment names the host environment the reference targets (`pi-dev`, `claude-code`, `cursor`, ...). The `<tool>` segment names the reference itself (`search-memory`, `query-memory`, `session-start-hook`, `post-tool-use-ingest`, ...). Source examples are the entry shape — fastest to iterate, easiest to fork.
+2. **Published adapter packages (mature form):** `@pristine/<harness>-<tool>` — promoted from the source-tree example once the reference stabilises and a downstream consumer wants `npm install` rather than copy-paste. The promotion preserves the `(harness, tool)` axes from the source layout so the package boundary mirrors the directory boundary.
+
+The two shapes coexist: a reference can live as `examples/pi-dev/search-memory/` while still incubating, and graduate to `@pristine/pi-dev-search-memory` once it ships externally. Either way, the **boundary against the primitives is the same**: a reference depends on `@pristine/shield-local` (or its successors) the way any external consumer would, and never reaches into `src/` internals.
+
+This split mirrors the package convention proposed in PR #153 (Draft `implementation-spec-006.md` §13) for the privacy / tool-wrapper surface (`@pristine/privacy-core` engine + `@pristine/pi-privacy` adapter): primitives are runtime-agnostic; adapters are runtime-specific. The same axis applies to reference search/query tools — they are runtime-specific and never become canon for the SDK.
+
+Why split by `(harness, tool)`:
+- **No conflation.** A reviewer (or a `git log`) sees immediately whether a change belongs to a primitive or to a harness adapter; primitives stay in `src/`, adapters never do.
+- **Per-harness lifecycle.** Each harness adapter can adopt or pin a specific SDK version, ship its own README/CI/release notes, and be owned by a different person from the SDK core.
+- **Clean dep graph.** A pi-dev consumer who wants only the search-memory adapter does not have to install Claude Code's hook script or the SessionStart wrapper.
+
+Each reference opens with *"This is one way to use Pristine primitives. You can write your own."*
 
 #### Candidate reference set (each may or may not ship)
 

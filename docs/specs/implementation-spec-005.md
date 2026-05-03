@@ -64,7 +64,7 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 | **Primitive** | `indexer.ingest(turns)` |
 | **Reference** | PostToolUse hook script that calls it |
 
-Reference implementations live in `docs/examples/` (or as separately-versioned packages). Each opens with: *"This is one way to use Pristine primitives. You can write your own."*
+Reference implementations live in `examples/<harness>/<tool>/` (or as separately-versioned `@pristine/<harness>-<tool>` packages); see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). Each opens with: *"This is one way to use Pristine primitives. You can write your own."*
 
 This principle has teeth: if a feature requires an opinion (a file format, a hook matcher, a prompt shape, a tool schema), it is not a primitive. It is either a reference implementation or out of scope. Pristine may choose to ship any given reference or none; consumers are never blocked by the absence of one.
 
@@ -309,6 +309,8 @@ Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-
 
 ### 5.2 Reference implementations
 
+The canonical layout convention lives at [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). The summary below restates the rules; the conventions doc is the source of truth.
+
 Each reference lives **outside `src/`** so it is structurally distinct from the SDK primitives it composes. Two artifact shapes are supported:
 
 1. **Source-tree examples (initial form):** `examples/<harness>/<tool>/` — one directory per `(harness, tool)` pair. The `<harness>` segment names the host environment the reference targets (`pi-dev`, `claude-code`, `cursor`, ...). The `<tool>` segment names the reference itself (`search-memory`, `query-memory`, `session-start-hook`, `post-tool-use-ingest`, ...). Source examples are the entry shape — fastest to iterate, easiest to fork.
@@ -467,7 +469,7 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
 - **Embedder Layer** (`src/embedder/`) — Nomic Embed v1.5 default via `@huggingface/transformers`; swappable `Embedder` interface
 - **Engine Layer** (`src/engine/`) — LLM clients used only by reference implementations that need an LLM (summary generator, etc.); **not** a core primitive
 - **Privacy Layer** (`src/privacy/`) — unchanged per spec-004 (secret redaction for developer use)
-- **Reference Implementations** (`docs/examples/` or a separate `@pristine/examples` package) — `search_memory` tool, `SessionStart` hook for Claude Code, `MEMORY.md` maintainer, session-summary generator, PostToolUse ingestion script
+- **Reference Implementations** (`examples/<harness>/<tool>/` or `@pristine/<harness>-<tool>` packages — see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md)) — `search_memory` tool, `SessionStart` hook for Claude Code, `MEMORY.md` maintainer, session-summary generator, PostToolUse ingestion script
 
 ### 5.8 Repo structure (target)
 

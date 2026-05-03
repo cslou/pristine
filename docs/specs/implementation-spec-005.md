@@ -309,6 +309,8 @@ Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-
 
 ### 5.2 Reference implementations
 
+The canonical layout convention lives at [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). The summary below restates the rules; the conventions doc is the source of truth.
+
 Each reference lives **outside `src/`** so it is structurally distinct from the SDK primitives it composes. Two artifact shapes are supported:
 
 1. **Source-tree examples (initial form):** `examples/<harness>/<tool>/` — one directory per `(harness, tool)` pair. The `<harness>` segment names the host environment the reference targets (`pi-dev`, `claude-code`, `cursor`, ...). The `<tool>` segment names the reference itself (`search-memory`, `query-memory`, `session-start-hook`, `post-tool-use-ingest`, ...). Source examples are the entry shape — fastest to iterate, easiest to fork.

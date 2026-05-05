@@ -31,11 +31,15 @@ interface PackageJson {
 }
 
 const compareSemver = (a: string, b: string): number => {
+  // `|| 0` (not `?? 0`) so that both `undefined` (missing segment) AND
+  // `NaN` (Number.parseInt of a non-numeric segment) collapse to 0 —
+  // a 2-segment version like `"3.2"` then compares as `"3.2.0"` rather
+  // than producing `NaN` and silently failing the assertion.
   const [aMaj, aMin, aPatch] = a.split('.').map((s) => Number.parseInt(s, 10));
   const [bMaj, bMin, bPatch] = b.split('.').map((s) => Number.parseInt(s, 10));
-  if (aMaj !== bMaj) return (aMaj ?? 0) - (bMaj ?? 0);
-  if (aMin !== bMin) return (aMin ?? 0) - (bMin ?? 0);
-  return (aPatch ?? 0) - (bPatch ?? 0);
+  if ((aMaj || 0) !== (bMaj || 0)) return (aMaj || 0) - (bMaj || 0);
+  if ((aMin || 0) !== (bMin || 0)) return (aMin || 0) - (bMin || 0);
+  return (aPatch || 0) - (bPatch || 0);
 };
 
 describe('@huggingface/transformers capability', () => {

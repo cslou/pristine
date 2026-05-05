@@ -1,5 +1,10 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { OllamaEmbedder } from '../../src/embedder/ollama/index.js';
+import {
+  DEFAULT_OLLAMA_HOST,
+  isModelNotPulled,
+  isOllamaReachable,
+} from './_ollama-test-helpers.js';
 
 /**
  * Smoke-test for `embeddinggemma:300m` via the existing `OllamaEmbedder`
@@ -15,39 +20,22 @@ import { OllamaEmbedder } from '../../src/embedder/ollama/index.js';
  * than auto-pulling.
  */
 const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
-const OLLAMA_HOST = process.env.OLLAMA_HOST ?? 'http://localhost:11434';
 const MODEL = 'embeddinggemma:300m';
 
-const isOllamaReachable = async (): Promise<boolean> => {
-  try {
-    const res = await fetch(`${OLLAMA_HOST}/api/tags`, { method: 'GET' });
-    return res.ok;
-  } catch {
-    return false;
-  }
-};
-
-let ollamaUp = false;
-
-beforeAll(async () => {
-  ollamaUp = await isOllamaReachable();
-});
-
 describe.skipIf(skipSlow)('OllamaEmbedder smoke — embeddinggemma:300m', () => {
-  it('loads the model and produces a 768-d vector', async () => {
-    if (!ollamaUp) {
-      // eslint-disable-next-line no-console
-      console.warn(`[smoke] Ollama not reachable at ${OLLAMA_HOST}; skipping this test.`);
+  it('loads the model and produces a 768-d vector', async (ctx) => {
+    if (!(await isOllamaReachable())) {
+      ctx.skip();
       return;
     }
 
-    const embedder = new OllamaEmbedder({ model: MODEL, host: OLLAMA_HOST, dim: 768 });
+    const embedder = new OllamaEmbedder({ model: MODEL, host: DEFAULT_OLLAMA_HOST, dim: 768 });
     let vector: number[];
     try {
       vector = await embedder.embed('hello world');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (/model.*not.*found|404/i.test(msg)) {
+      if (isModelNotPulled(msg)) {
         throw new Error(
           `Ollama model not pulled locally. Run \`ollama pull ${MODEL}\` first, then re-run the smoke test. Original error: ${msg}`,
         );

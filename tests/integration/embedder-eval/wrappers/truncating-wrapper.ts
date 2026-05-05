@@ -27,9 +27,10 @@ export const truncateAndRenorm = (vec: readonly number[], targetDim: number): nu
  * output.
  *
  * Lives in the eval harness — outside `src/` — so the SDK's engine
- * classes stay candidate-agnostic. The modularization invariant
- * (Story 0 baseline: no per-candidate engine changes) is preserved by
- * doing the truncation here rather than inside `OllamaEmbedder`.
+ * classes stay candidate-agnostic. Doing the truncation here rather
+ * than inside `OllamaEmbedder` preserves the modularization invariant:
+ * a new candidate that needs a different truncation policy is one
+ * wrapper module, not a change to the engine class.
  *
  * Throws if `targetDim >= underlying.dim` (no work to do; almost
  * certainly a misconfiguration).

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Embedder } from '../../../../src/index.js';
-import { InvalidArgumentError } from '../../../../src/core/errors.js';
-import { createTruncatingEmbedder, truncateAndRenorm } from './truncating-wrapper.js';
+import type { Embedder } from '../../src/index.js';
+import { InvalidArgumentError } from '../../src/core/errors.js';
+import {
+  createTruncatingEmbedder,
+  truncateAndRenorm,
+} from '../integration/embedder-eval/wrappers/truncating-wrapper.js';
 
 describe('truncateAndRenorm', () => {
   it('produces a unit-norm vector of the target length', () => {

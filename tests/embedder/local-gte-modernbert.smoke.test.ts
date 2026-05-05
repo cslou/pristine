@@ -11,8 +11,8 @@ import { LocalEmbedder } from '../../src/embedder/local/index.js';
  * runs hit the local HF cache. Skip in CI by setting
  * `SKIP_SLOW_TESTS=1`. No production-code change here — the test
  * validates the existing `LocalEmbedder` works with the candidate
- * out-of-the-box; if it doesn't, the failure is FLAGGED for a
- * follow-up sprint, not fixed in this one.
+ * out-of-the-box; if it doesn't, the failure is FLAGGED in the
+ * candidate-eval doc, not fixed in this engine.
  */
 const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
 

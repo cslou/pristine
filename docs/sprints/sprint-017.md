@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-28 – TBD
 **Goal:** Pick a defensible **default + alternates** for Pristine's local embedder by (a) building a domain-custom measurement harness, (b) running it head-to-head on the candidate trio surfaced in PR #172's research, (c) shipping user-facing recommendations docs that name the default + alts with benchmark numbers backing them. Replaces the prior spike framing — research is closed; this sprint is implementation + eval.
-**Status:** 🟡 Planning
+**Status:** ❌ Rejected — Story 0 extracted to PR #N (this PR); Stories 2A and 3 implemented on the abandoned `sprint-017` branch but not merged; Stories 2B, 4, 5, and Final Verification not pursued. See PR description for rationale.
 
 ---
 

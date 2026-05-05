@@ -1,10 +1,10 @@
 import type { Embedder } from '../core/interfaces.js';
 import { ConfigError } from '../core/errors.js';
-import { assertValidDim, DEFAULT_EMBEDDING_DIM } from './dim.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../core/vector-dim.js';
 import { OllamaEmbedder } from './ollama/index.js';
 import { LocalEmbedder } from './local/index.js';
 
-export { assertValidDim, DEFAULT_EMBEDDING_DIM } from './dim.js';
+export { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../core/vector-dim.js';
 
 export interface OllamaEmbedderEntry {
   readonly engine: 'ollama';

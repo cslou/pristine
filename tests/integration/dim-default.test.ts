@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type Database from 'better-sqlite3';
 import { ConversationStore } from '../../src/conversations/store.js';
 import { createDatabase } from '../../src/core/database.js';
-import { DEFAULT_EMBEDDING_DIM } from '../../src/embedder/dim.js';
+import { DEFAULT_EMBEDDING_DIM } from '../../src/core/vector-dim.js';
 
 // ---------------------------------------------------------------------------
 // Default-dim DDL observable

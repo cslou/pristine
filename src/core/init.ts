@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError } from './errors.js';
 import { createDefaultDatabase } from './database.js';
-import { assertValidDim } from '../embedder/dim.js';
+import { assertValidDim } from './vector-dim.js';
 import type { EmbedderConfig } from '../embedder/index.js';
 
 // ---------------------------------------------------------------------------

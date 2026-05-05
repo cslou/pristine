@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
-import { assertValidDim } from '../embedder/dim.js';
+import { assertValidDim } from '../core/vector-dim.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -290,6 +290,7 @@ CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, ti
 // `PristineLocal.create`; direct callers (tests, scripts) supply it
 // explicitly. The canonical SDK-default site is `src/client.ts`.
 export function initConversationTables(db: Database.Database, dim: number): void {
+  assertValidDim(dim);
   db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
   db.exec(RETRIEVAL_INDEXES_DDL);
@@ -331,12 +332,38 @@ export function computeConversationContentHash(
     .digest('hex');
 }
 
+function readVecTableDim(db: Database.Database, tableName: string): number | null {
+  const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName) as
+    | { sql: string | null }
+    | undefined;
+  if (!row || row.sql === null) return null;
+  const match = /\bembedding\s+float\[(\d+)\]/i.exec(row.sql);
+  if (!match) {
+    throw new InvalidArgumentError(
+      `ConversationStore: ${tableName} DDL does not match expected vec0 schema (no \`embedding float[N]\` column found); refusing to use an unrecognised vector-table layout`,
+    );
+  }
+  return Number.parseInt(match[1]!, 10);
+}
+
+function assertVecTableDimMatches(db: Database.Database, tableName: string, dim: number): void {
+  const onDisk = readVecTableDim(db, tableName);
+  if (onDisk === null) return;
+  if (onDisk !== dim) {
+    throw new InvalidArgumentError(
+      `ConversationStore: configured embedder dim=${dim} but on-disk ${tableName} is float[${onDisk}] — cross-dim migration is unsupported (vec0 has no ALTER; drop and rebuild the corpus to change dim)`,
+    );
+  }
+}
+
 export class ConversationStore {
   private readonly db: Database.Database;
 
   public constructor(db: Database.Database, dim: number) {
     this.db = db;
     initConversationTables(db, dim);
+    assertVecTableDimMatches(db, 'vec_windows', dim);
+    assertVecTableDimMatches(db, 'vec_sessions', dim);
   }
 
   /**

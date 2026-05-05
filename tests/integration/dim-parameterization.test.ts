@@ -90,4 +90,22 @@ describe('PristineLocal.create — custom dim threading', () => {
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]!.conversationId).toBe(conversationId);
   });
+
+  it('buildSessionVector → searcher.sessionVectorSearch round-trips at dim=1024', async () => {
+    const turns = [
+      { role: 'user' as const, content: 'session vector question about retrieval' },
+      { role: 'assistant' as const, content: 'session vector answer about retrieval' },
+    ];
+
+    const conversationId = client.storeAsync(turns, 'test-user', 'test-project');
+    await client.buildSessionVector(conversationId);
+
+    const hits = await client.searcher.sessionVectorSearch(
+      'retrieval session',
+      { projectId: 'test-project' },
+      5,
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]!.conversationId).toBe(conversationId);
+  });
 });

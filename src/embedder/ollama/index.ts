@@ -1,6 +1,6 @@
 import type { Embedder } from '../../core/interfaces.js';
 import { AppError, EmbedderError, InvalidArgumentError } from '../../core/errors.js';
-import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../dim.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../../core/vector-dim.js';
 
 const DEFAULT_MODEL = 'nomic-embed-text';
 const DEFAULT_HOST = 'http://localhost:11434';

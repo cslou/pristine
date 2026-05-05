@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../embedder/index.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -111,9 +112,13 @@ CREATE INDEX IF NOT EXISTS ix_messages_parent
 `;
 
 // vec_windows — sliding-window primary semantic index. vec0 stores
-// 768-d Nomic Embed v1.5 vectors keyed by (conversation_id, window_index). The
-// `float[768]` is the sqlite-vec typed-column syntax; vec0 handles the BLOB
-// representation internally. Requires sqlite-vec loaded on the connection.
+// configured-dim vectors (default 768) keyed by (conversation_id,
+// window_index). The `float[N]` is the sqlite-vec typed-column syntax; vec0
+// handles the BLOB representation internally. Requires sqlite-vec loaded on
+// the connection. The dim is bounds-validated via `assertValidDim` before
+// being interpolated into the DDL string — only validated integers reach
+// the SQL, which doubles as the SQL-injection guard for the templated
+// `float[${dim}]` syntax.
 //
 // **Write idiom note**: vec0 does NOT support INSERT OR REPLACE — duplicate
 // inserts on the composite key just add a second row (this table has no
@@ -125,13 +130,16 @@ CREATE INDEX IF NOT EXISTS ix_messages_parent
 // db.transaction() is not guaranteed to roll back cleanly on transaction
 // abort in standard SQLite; the IF NOT EXISTS guard makes a subsequent
 // re-run idempotent on the success path, which is what we rely on.
-const VEC_WINDOWS_DDL = `
+function buildVecWindowsDdl(dim: number): string {
+  assertValidDim(dim);
+  return `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_windows USING vec0(
   conversation_id TEXT,
   window_index INTEGER,
-  embedding float[768]
+  embedding float[${dim}]
 );
 `;
+}
 
 // window_messages — join table resolving the messages that comprise each
 // window. Composite PK mirrors the vec_windows key + message_id, so the
@@ -166,13 +174,19 @@ CREATE INDEX IF NOT EXISTS ix_window_messages_message_id
 //
 // Same INSERT OR REPLACE caveat as vec_windows: duplicate PK inserts throw
 // UNIQUE constraint failed; use DELETE + INSERT for the replace idiom.
-const VEC_SESSIONS_DDL = `
+//
+// Same `assertValidDim` guard as buildVecWindowsDdl above protects the
+// `float[${dim}]` interpolation.
+function buildVecSessionsDdl(dim: number): string {
+  assertValidDim(dim);
+  return `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_sessions USING vec0(
   conversation_id TEXT PRIMARY KEY,
-  embedding float[768],
+  embedding float[${dim}],
   +updated_at INTEGER
 );
 `;
+}
 
 // messages_public — read-only view exposing the safe message surface for
 // the SQL primitive. Aliases internal column names (sort_order →
@@ -269,13 +283,21 @@ CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, ti
 // siblings); `ConversationStore` reinitializes from the DDL constants on
 // next construction. Every relation uses `IF NOT EXISTS` so idempotent
 // re-construction against an already-initialized DB is a no-op.
-export function initConversationTables(db: Database.Database): void {
+//
+// `dim` templates `vec_windows` / `vec_sessions` `float[N]`. Default
+// `DEFAULT_EMBEDDING_DIM` is provided as a transition shim during commit 2;
+// commit 3 of Story 0 removes it so all callers thread the configured dim
+// from `EmbedderConfig` (canonical default site is `src/client.ts`).
+export function initConversationTables(
+  db: Database.Database,
+  dim: number = DEFAULT_EMBEDDING_DIM,
+): void {
   db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
   db.exec(RETRIEVAL_INDEXES_DDL);
-  db.exec(VEC_WINDOWS_DDL);
+  db.exec(buildVecWindowsDdl(dim));
   db.exec(WINDOW_MESSAGES_DDL);
-  db.exec(VEC_SESSIONS_DDL);
+  db.exec(buildVecSessionsDdl(dim));
   db.exec(MESSAGES_PUBLIC_DDL);
   db.exec(CONVERSATIONS_PUBLIC_DDL);
   db.exec(SUMMARIES_DDL);
@@ -314,9 +336,9 @@ export function computeConversationContentHash(
 export class ConversationStore {
   private readonly db: Database.Database;
 
-  public constructor(db: Database.Database) {
+  public constructor(db: Database.Database, dim: number = DEFAULT_EMBEDDING_DIM) {
     this.db = db;
-    initConversationTables(db);
+    initConversationTables(db, dim);
   }
 
   /**

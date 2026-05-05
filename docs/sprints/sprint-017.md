@@ -27,13 +27,35 @@
 
 ### Story 0 baseline sha
 
-*(Filled in by the maintainer on Story 0 PR merge into `sprint-017`. Owner: whoever merges Story 0's PR.)*
-
-- **Story 0 merge-commit sha:** `<TBD — record `git rev-parse origin/sprint-017` immediately after the Story 0 PR merges, before opening the Story 1 branch>`
-- **`EmbedderConfig` post-Story-0 type signature snapshot** (paste verbatim from `src/embedder/index.ts` after the dim-field addition):
+- **Story 0 merge-commit sha:** `aa2b44180339919abed7d6479cf3c66885842243` (recorded `git rev-parse origin/sprint-017` immediately after PR #174 merged into `sprint-017` on 2026-05-05).
+- **`EmbedderConfig` post-Story-0 type signature snapshot** (verbatim from `src/embedder/index.ts`):
   ```ts
-  // <fill in: the TS type-alias / discriminated-union as it lands in Story 0>
+  export interface OllamaEmbedderEntry {
+    readonly engine: 'ollama';
+    readonly model?: string;
+    readonly host?: string;
+    readonly dim?: number;
+  }
+
+  export interface LocalEmbedderEntry {
+    readonly engine: 'local';
+    readonly model?: string;
+    readonly dim?: number;
+  }
+
+  export type EmbedderConfig = OllamaEmbedderEntry | LocalEmbedderEntry;
   ```
+
+  Plus the new `Embedder.dim` invariant on `src/core/interfaces.ts`:
+  ```ts
+  export interface Embedder {
+    readonly dim: number;
+    embed(text: string): Promise<number[]>;
+    embedBatch(texts: readonly string[]): Promise<number[][]>;
+  }
+  ```
+
+  And the `assertValidDim` + `DEFAULT_EMBEDDING_DIM` leaf module at `src/embedder/dim.ts` (re-exported from the embedder barrel). Bounds: integer in `[64, 4096]`.
 
 Story 5's modularization-invariant audit (AC-9) uses this sha + this snapshot as its diff baseline. The Final Verification Story re-records both in `## Final Review` for the durable audit copy.
 

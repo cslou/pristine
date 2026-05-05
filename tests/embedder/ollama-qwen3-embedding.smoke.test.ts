@@ -5,7 +5,7 @@ import {
   DEFAULT_OLLAMA_HOST,
   isModelNotPulled,
   isOllamaReachable,
-} from './_ollama-test-helpers.js';
+} from '../helpers/ollama-test-helpers.js';
 
 /**
  * Smoke-test for `qwen3-embedding:0.6b` via the existing `OllamaEmbedder`
@@ -51,8 +51,8 @@ describe.skipIf(skipSlow)(
   () => {
     it('Ollama returns a 1024-d vector for the model', async (ctx) => {
       if (!(await isOllamaReachable())) {
+        // ctx.skip() throws a PendingError unconditionally; no return needed.
         ctx.skip();
-        return;
       }
 
       // Configure OllamaEmbedder with the model's native dim so the
@@ -72,8 +72,8 @@ describe.skipIf(skipSlow)(
 
     it('truncating-wrapper produces a 768-d unit-norm vector from the 1024-d underlying embedder', async (ctx) => {
       if (!(await isOllamaReachable())) {
+        // ctx.skip() throws a PendingError unconditionally; no return needed.
         ctx.skip();
-        return;
       }
 
       const native = new OllamaEmbedder({

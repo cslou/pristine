@@ -4,7 +4,7 @@ import {
   DEFAULT_OLLAMA_HOST,
   isModelNotPulled,
   isOllamaReachable,
-} from './_ollama-test-helpers.js';
+} from '../helpers/ollama-test-helpers.js';
 
 /**
  * Smoke-test for `embeddinggemma:300m` via the existing `OllamaEmbedder`
@@ -25,8 +25,11 @@ const MODEL = 'embeddinggemma:300m';
 describe.skipIf(skipSlow)('OllamaEmbedder smoke — embeddinggemma:300m', () => {
   it('loads the model and produces a 768-d vector', async (ctx) => {
     if (!(await isOllamaReachable())) {
+      // ctx.skip() throws a PendingError unconditionally — vitest's
+      // way of marking the current test as skipped from inside the
+      // body. No `return` needed (and adding one would be unreachable
+      // dead code).
       ctx.skip();
-      return;
     }
 
     const embedder = new OllamaEmbedder({ model: MODEL, host: DEFAULT_OLLAMA_HOST, dim: 768 });

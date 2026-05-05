@@ -1,7 +1,9 @@
 /**
- * Shared helpers for the Ollama smoke tests. Underscore-prefixed so the
- * test runner doesn't pick this file up as a test (`*.test.ts` glob); the
- * smoke files import from here.
+ * Shared helpers for the Ollama smoke tests. Lives under `tests/helpers/`
+ * (the established convention for cross-test utilities, alongside
+ * `in-memory-key-manager.ts`) so it isn't picked up by the `*.test.ts`
+ * glob and stays a stable import target across both unit and
+ * integration trees.
  */
 
 export const DEFAULT_OLLAMA_HOST = process.env.OLLAMA_HOST ?? 'http://localhost:11434';

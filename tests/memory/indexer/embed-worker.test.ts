@@ -50,6 +50,7 @@ const makeMessages = (contents: string[]) =>
 const makeStubEmbedder = () => {
   const calls: string[] = [];
   const embedder: Embedder = {
+    dim: 768,
     embed: async (text: string): Promise<number[]> => {
       calls.push(text);
       const seed = text.length / 1000;

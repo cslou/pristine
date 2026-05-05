@@ -19,6 +19,7 @@ import type { Embedder } from '../../src/core/interfaces.js';
 // tests/integration/indexer.test.ts so output stays stable across runs
 // without paying the real Nomic load cost.
 const makeStubEmbedder = (): Embedder => ({
+  dim: 768,
   embed: async (text: string): Promise<number[]> => {
     const seed = text.length / 1000;
     return Array.from({ length: 768 }, (_, i) => seed + i * 1e-4);

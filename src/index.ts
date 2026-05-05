@@ -5,7 +5,8 @@
  * relevant context (windows, messages, sessions) for LLM agents. No API
  * calls, no server, no data leaving the device. The corpus lives in a
  * single SQLite file (`better-sqlite3` + `sqlite-vec`); embeddings are
- * computed in-process via Nomic Embed v1.5 (768-d).
+ * computed in-process via Nomic Embed v1.5 at the configured dim (default
+ * 768).
  *
  * ## Primary entry point
  *

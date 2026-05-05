@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { EmbedderError } from '../../src/core/errors.js';
+import { EmbedderError, InvalidArgumentError } from '../../src/core/errors.js';
 
 const mockPipeline = vi.fn();
 
@@ -102,16 +102,17 @@ describe('LocalEmbedder', () => {
     await expect(embedder.embed('test')).rejects.toThrow(/Failed to load embedding model/);
   });
 
-  it('truncates output to 768 dimensions if model returns more', async () => {
+  it('throws InvalidArgumentError when model output length differs from configured dim', async () => {
     const extractor = vi.fn().mockResolvedValue({
       data: new Float32Array(1024).fill(0.5),
     });
     mockPipeline.mockResolvedValue(extractor);
 
     const embedder = new LocalEmbedder();
-    const vector = await embedder.embed('test');
 
-    expect(vector).toHaveLength(768);
+    await expect(embedder.embed('test')).rejects.toBeInstanceOf(InvalidArgumentError);
+    await expect(embedder.embed('test')).rejects.toThrow(/configured dim=768/);
+    await expect(embedder.embed('test')).rejects.toThrow(/produced 1024-d/);
   });
 
   it('dispose() clears pipeline state', async () => {

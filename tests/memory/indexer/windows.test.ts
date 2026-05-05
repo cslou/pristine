@@ -144,6 +144,7 @@ describe('formatMessageForEmbed', () => {
 const makeStubEmbedder = (vector: number[] = Array.from({ length: 768 }, (_, i) => i * 1e-4)) => {
   const calls: string[] = [];
   const embedder: Embedder = {
+    dim: 768,
     embed: async (text: string): Promise<number[]> => {
       calls.push(text);
       return vector;

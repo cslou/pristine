@@ -34,6 +34,7 @@ import { IngestQueue } from '../../src/queue/ingest-queue.js';
 // and project B to embed to similar vectors so that the project filter
 // is doing the work, not the distance ranking.
 const makeStubEmbedder = (): Embedder => ({
+  dim: 768,
   embed: async (text: string): Promise<number[]> => {
     // Encode each char's code at index i so the vector is deterministic per
     // text. Pad/truncate to 768 dims with a fixed scalar.
@@ -360,6 +361,7 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
   it('rejects NaN-containing query embedding', async () => {
     await seedConversation(p, 'alice', 'project-a', ['hi', 'there', 'foo', 'bar']);
     const nanEmbedder: Embedder = {
+      dim: 768,
       embed: async () => {
         const out = Array<number>(768).fill(0.01);
         out[0] = Number.NaN;
@@ -378,6 +380,7 @@ describe('searcher.vectorSearch — end-to-end (filter-first KNN)', () => {
   it('rejects wrong-dimension query embedding', async () => {
     await seedConversation(p, 'alice', 'project-a', ['hi', 'there', 'foo', 'bar']);
     const wrongDimEmbedder: Embedder = {
+      dim: 768,
       embed: async () => Array<number>(512).fill(0.01),
       embedBatch: async () => {
         throw new InvalidArgumentError('not used');

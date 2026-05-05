@@ -85,9 +85,10 @@ export interface Indexer {
    */
   ingest(turns: readonly IndexTurn[], opts: IndexOptions): IndexResult;
   /**
-   * Embed an entire conversation as a single 768-d vector and write it
-   * to `vec_sessions`. The session vector is the hybrid retriever's
-   * coarse-grained signal alongside the fine-grained `vec_windows`.
+   * Embed an entire conversation as a single configured-dim vector
+   * (default 768) and write it to `vec_sessions`. The session vector is
+   * the hybrid retriever's coarse-grained signal alongside the
+   * fine-grained `vec_windows`.
    *
    * Called only on explicit consumer demand — NOT auto-invoked by
    * `ingest()`. Auto-build-on-ingest hooks can land later once retrieval

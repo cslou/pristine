@@ -1,7 +1,7 @@
 import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import type { Embedder } from '../../core/interfaces.js';
 import { EmbedderError, InvalidArgumentError } from '../../core/errors.js';
-import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../index.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../dim.js';
 
 const DEFAULT_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 

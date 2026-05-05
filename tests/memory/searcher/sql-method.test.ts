@@ -39,7 +39,7 @@ beforeAll(() => {
   // window_messages, ...) that createSearcher prepares statements against at
   // construction time. We don't seed any rows — every test below stubs the
   // sql-backend, so no real query runs.
-  new ConversationStore(db);
+  new ConversationStore(db, 768);
 });
 
 afterAll(() => {
@@ -133,7 +133,7 @@ describe('searcher.sql — :memory: guard', () => {
       loadSqliteVec: true,
       runIntegrityCheck: false,
     });
-    new ConversationStore(memDb);
+    new ConversationStore(memDb, 768);
     const searcher = createSearcher({ db: memDb, embedder: stubEmbedder });
     try {
       await expect(searcher.sql('SELECT * FROM messages_public')).rejects.toThrow(

@@ -5,7 +5,7 @@ import { createDatabase } from '../../src/core/database.js';
 import type { Embedder } from '../../src/core/interfaces.js';
 
 // ---------------------------------------------------------------------------
-// Story 0 / sprint-017 — custom-dim happy path (AC-FV-2)
+// Custom-dim integration — happy path
 // ---------------------------------------------------------------------------
 //
 // Pins:
@@ -13,8 +13,8 @@ import type { Embedder } from '../../src/core/interfaces.js';
 //      `PristineLocal.create` to `ConversationStore`, so the resulting
 //      `vec_windows` and `vec_sessions` DDL contains `float[1024]`.
 //   2. A full `storeAsync` → drain → `searcher.vectorSearch` round-trip
-//      succeeds with 1024-d vectors. This proves the searcher path reads
-//      `embedder.dim` correctly (no leftover `VEC_DIM = 768` constant).
+//      succeeds with 1024-d vectors, proving the searcher reads dim from
+//      `embedder.dim` rather than a hardcoded constant.
 
 const CUSTOM_DIM = 1024;
 
@@ -31,7 +31,7 @@ const makeStubEmbedderAtDim = (dim: number): Embedder => ({
     }),
 });
 
-describe('PristineLocal.create — custom dim threading (AC-FV-2)', () => {
+describe('PristineLocal.create — custom dim threading', () => {
   let db: Database.Database;
   let client: PristineLocal;
 

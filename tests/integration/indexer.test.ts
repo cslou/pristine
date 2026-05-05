@@ -54,7 +54,7 @@ interface PipelineDeps {
 
 const buildPipeline = (embedder: Embedder): PipelineDeps => {
   const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  const store = new ConversationStore(db);
+  const store = new ConversationStore(db, 768);
   const windowWriter = createWindowWriter(db);
   const config = { windowSize: 3, windowOverlap: 1 };
 

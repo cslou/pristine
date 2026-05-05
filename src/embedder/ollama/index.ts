@@ -1,6 +1,6 @@
 import type { Embedder } from '../../core/interfaces.js';
-import { EmbedderError, InvalidArgumentError } from '../../core/errors.js';
-import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../index.js';
+import { AppError, EmbedderError, InvalidArgumentError } from '../../core/errors.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../dim.js';
 
 const DEFAULT_MODEL = 'nomic-embed-text';
 const DEFAULT_HOST = 'http://localhost:11434';
@@ -89,7 +89,12 @@ export class OllamaEmbedder implements Embedder {
         }
         return raw as unknown as OllamaEmbedResponse;
       } catch (error: unknown) {
-        if (error instanceof EmbedderError) {
+        // Re-throw any structured Pristine error (EmbedderError,
+        // InvalidArgumentError, etc.) verbatim — only opaque network/runtime
+        // errors get the "is Ollama running" wrap. AppError is the common
+        // base; checking it preserves error-type information for callers
+        // that catch on a specific subclass.
+        if (error instanceof AppError) {
           throw error;
         }
         // Network error (connection refused, DNS failure) -- fail immediately, no retries

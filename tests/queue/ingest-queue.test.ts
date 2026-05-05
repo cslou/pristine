@@ -41,7 +41,7 @@ describe('IngestQueue', () => {
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    conversationStore = new ConversationStore(db);
+    conversationStore = new ConversationStore(db, 768);
     queue = new IngestQueue({ db });
   });
 
@@ -346,7 +346,7 @@ describe('IngestQueue', () => {
       const db1 = createDatabase(dbPath);
       const db2 = createDatabase(dbPath);
       try {
-        const convStore1 = new ConversationStore(db1);
+        const convStore1 = new ConversationStore(db1, 768);
         const queue1 = new IngestQueue({ db: db1 });
         const queue2 = new IngestQueue({ db: db2 });
 
@@ -382,8 +382,8 @@ describe('IngestQueue', () => {
       const db1 = createDatabase(dbPath);
       const db2 = createDatabase(dbPath);
       try {
-        const convStore1 = new ConversationStore(db1);
-        const convStore2 = new ConversationStore(db2);
+        const convStore1 = new ConversationStore(db1, 768);
+        const convStore2 = new ConversationStore(db2, 768);
         const queue1 = new IngestQueue({ db: db1 });
         const queue2 = new IngestQueue({ db: db2 });
 

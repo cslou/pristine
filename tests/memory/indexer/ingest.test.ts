@@ -17,7 +17,7 @@ const makeMessages = (contents: string[]) =>
 
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  store = new ConversationStore(db);
+  store = new ConversationStore(db, 768);
   queue = new IngestQueue({ db });
 });
 

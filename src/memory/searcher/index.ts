@@ -384,36 +384,47 @@ const bm25ToScore = (bm25: number): number => {
 export const createSearcher = (deps: SearcherDeps): Searcher => {
   const { db, embedder } = deps;
 
-  // Cross-disk dim guard. A consumer who seeds a DB at one dim (e.g. the
-  // default 768) and later reopens it with a different-dim embedder
-  // (e.g. 1024) would silently bind a 1024-d query vector against a
-  // float[768] vec0 column and get an opaque sqlite-vec error. Story 0
-  // makes that case fail loudly: at first vectorSearch / sessionVector-
-  // Search call, parse the on-disk DDL's `float[N]` token and compare
-  // to embedder.dim. Cross-dim migration is unsupported (vec0 has no
-  // ALTER), so a mismatch means the consumer must drop+rebuild the
-  // corpus or re-pin the embedder dim. Memoized per table so the
-  // sqlite_master read is paid once per searcher lifetime.
-  const tableDimCache = new Map<string, number | null>();
+  // Cross-disk dim guard. A consumer who seeds a DB at one dim and later
+  // reopens it with a different-dim embedder would otherwise silently bind
+  // a wrong-length query vector against the existing vec0 column and get
+  // an opaque sqlite-vec MATCH error. The guard makes that case fail
+  // loudly: at first vectorSearch / sessionVectorSearch call, parse the
+  // on-disk DDL's `float[N]` token and compare to embedder.dim. Cross-dim
+  // migration is unsupported (vec0 has no ALTER), so a mismatch means
+  // the consumer must drop+rebuild the corpus or re-pin the embedder dim.
+  //
+  // Caching: only successfully-parsed dims are cached. A missing-table or
+  // unparseable-DDL result is NOT cached, so a searcher created against
+  // a pre-init DB still picks up the correct dim once the table exists.
+  // The set of vec0 table names is small (vec_windows, vec_sessions), so
+  // the post-init re-query is negligible and bounded.
+  const tableDimCache = new Map<string, number>();
   const readTableDim = (tableName: string): number | null => {
-    if (tableDimCache.has(tableName)) {
-      return tableDimCache.get(tableName) ?? null;
-    }
+    const cached = tableDimCache.get(tableName);
+    if (cached !== undefined) return cached;
     const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName) as
       | { sql: string | null }
       | undefined;
-    if (!row || row.sql === null) {
-      tableDimCache.set(tableName, null);
-      return null;
+    if (!row || row.sql === null) return null;
+    // Anchor on `embedding float[N]` — vec0's column-definition syntax.
+    // Tighter than a bare `/float\[(\d+)\]/` so a future column with a
+    // different name wouldn't silently shadow the dim parse.
+    const match = /\bembedding\s+float\[(\d+)\]/.exec(row.sql);
+    if (!match) {
+      // DDL exists but doesn't match the expected shape — surface as a
+      // loud error rather than letting it fall through to an opaque
+      // sqlite-vec MATCH error (the whole point of this guard).
+      throw new InvalidArgumentError(
+        `searcher: ${tableName} DDL does not match expected vec0 schema (no \`embedding float[N]\` column found); refusing to query against an unrecognised vector-table layout`,
+      );
     }
-    const match = /float\[(\d+)\]/.exec(row.sql);
-    const parsed = match ? Number.parseInt(match[1]!, 10) : null;
+    const parsed = Number.parseInt(match[1]!, 10);
     tableDimCache.set(tableName, parsed);
     return parsed;
   };
   const assertOnDiskDimMatchesEmbedder = (tableName: string, methodName: string): void => {
     const onDisk = readTableDim(tableName);
-    if (onDisk === null) return; // Table not present (or DDL not parseable) — let the downstream query surface the issue.
+    if (onDisk === null) return; // Table not yet created — empty corpus; downstream candidate query short-circuits.
     if (onDisk !== embedder.dim) {
       throw new InvalidArgumentError(
         `searcher.${methodName}: configured embedder dim=${embedder.dim} but on-disk ${tableName} is float[${onDisk}] — cross-dim migration is unsupported (vec0 has no ALTER; drop and rebuild the corpus to change dim)`,

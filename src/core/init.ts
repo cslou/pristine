@@ -3,7 +3,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError } from './errors.js';
 import { createDefaultDatabase } from './database.js';
-import { assertValidDim, DEFAULT_EMBEDDING_DIM, type EmbedderConfig } from '../embedder/index.js';
+import { assertValidDim } from '../embedder/dim.js';
+import type { EmbedderConfig } from '../embedder/index.js';
 
 // ---------------------------------------------------------------------------
 // PristineConfig — init-time SDK config (currently embedder-only)
@@ -13,8 +14,12 @@ export interface PristineConfig {
   readonly embedder?: EmbedderConfig;
 }
 
+// `dim` is intentionally omitted from the default-config template. The
+// canonical SDK default lives in `src/client.ts`; persisting `dim` here
+// would create a second default site and lock consumers onto whatever
+// value shipped at the time `models.json` was first written.
 export const DEFAULT_PRISTINE_CONFIG: PristineConfig = {
-  embedder: { engine: 'local', dim: DEFAULT_EMBEDDING_DIM },
+  embedder: { engine: 'local' },
 };
 
 // ---------------------------------------------------------------------------

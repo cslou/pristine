@@ -384,6 +384,43 @@ const bm25ToScore = (bm25: number): number => {
 export const createSearcher = (deps: SearcherDeps): Searcher => {
   const { db, embedder } = deps;
 
+  // Cross-disk dim guard. A consumer who seeds a DB at one dim (e.g. the
+  // default 768) and later reopens it with a different-dim embedder
+  // (e.g. 1024) would silently bind a 1024-d query vector against a
+  // float[768] vec0 column and get an opaque sqlite-vec error. Story 0
+  // makes that case fail loudly: at first vectorSearch / sessionVector-
+  // Search call, parse the on-disk DDL's `float[N]` token and compare
+  // to embedder.dim. Cross-dim migration is unsupported (vec0 has no
+  // ALTER), so a mismatch means the consumer must drop+rebuild the
+  // corpus or re-pin the embedder dim. Memoized per table so the
+  // sqlite_master read is paid once per searcher lifetime.
+  const tableDimCache = new Map<string, number | null>();
+  const readTableDim = (tableName: string): number | null => {
+    if (tableDimCache.has(tableName)) {
+      return tableDimCache.get(tableName) ?? null;
+    }
+    const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName) as
+      | { sql: string | null }
+      | undefined;
+    if (!row || row.sql === null) {
+      tableDimCache.set(tableName, null);
+      return null;
+    }
+    const match = /float\[(\d+)\]/.exec(row.sql);
+    const parsed = match ? Number.parseInt(match[1]!, 10) : null;
+    tableDimCache.set(tableName, parsed);
+    return parsed;
+  };
+  const assertOnDiskDimMatchesEmbedder = (tableName: string, methodName: string): void => {
+    const onDisk = readTableDim(tableName);
+    if (onDisk === null) return; // Table not present (or DDL not parseable) — let the downstream query surface the issue.
+    if (onDisk !== embedder.dim) {
+      throw new InvalidArgumentError(
+        `searcher.${methodName}: configured embedder dim=${embedder.dim} but on-disk ${tableName} is float[${onDisk}] — cross-dim migration is unsupported (vec0 has no ALTER; drop and rebuild the corpus to change dim)`,
+      );
+    }
+  };
+
   // Statements with FIXED shape — hoisted to factory scope so the SQL
   // compiles once per searcher lifetime, not once per vectorSearch call.
   // Both use json_each(?) to bind the IN-list as a single JSON-string
@@ -475,6 +512,11 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
         `searcher.vectorSearch: limit must be <= ${MAX_LIMIT}, got ${limit}`,
       );
     }
+
+    // Cross-disk dim guard fires before the candidate query so a
+    // pre-existing-corpus mismatch surfaces a clear `InvalidArgumentError`
+    // rather than an opaque sqlite-vec MATCH error later.
+    assertOnDiskDimMatchesEmbedder('vec_windows', 'vectorSearch');
 
     // Step 1 — narrow conversation candidates via filter SQL.
     const { sql: candSql, params: candParams } = buildCandidateSql(filters);
@@ -764,6 +806,9 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
         `searcher.sessionVectorSearch: limit must be <= ${MAX_LIMIT}, got ${limit}`,
       );
     }
+
+    // Cross-disk dim guard — same rationale as vectorSearch.
+    assertOnDiskDimMatchesEmbedder('vec_sessions', 'sessionVectorSearch');
 
     // Step 1 — narrow conversation candidates. Same shape as vectorSearch
     // but role filter is intentionally ignored (session-level granularity

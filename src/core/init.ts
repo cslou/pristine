@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ConfigError } from './errors.js';
 import { createDefaultDatabase } from './database.js';
 import { assertValidDim } from './vector-dim.js';
-import type { EmbedderConfig } from '../embedder/index.js';
+import type { EmbedderConfig } from './embedder-config.js';
 
 // ---------------------------------------------------------------------------
 // PristineConfig — init-time SDK config (currently embedder-only)

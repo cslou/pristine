@@ -188,6 +188,11 @@ export const assembleWindowEmbedding = async (
   }
   const text = messageRows.map(formatMessageForEmbed).join('\n');
   const vec = await embedder.embed(text);
+  if (vec.length !== embedder.dim) {
+    throw new InvalidArgumentError(
+      `assembleWindowEmbedding: embedder returned ${vec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
+    );
+  }
   // Embedder returns number[]; convert to Float32 for vec0 storage. Float64
   // → Float32 narrowing is lossy, but vec0 stores Float32, so this is the
   // canonical representation of "what gets persisted".

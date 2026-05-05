@@ -133,6 +133,15 @@ describe('buildSessionVector (helper)', () => {
     );
   });
 
+  it('throws InvalidArgumentError when embedder output length differs from configured dim', async () => {
+    const conversationId = store.addConversation(makeMessages(['hi']), 'user-wrong-dim');
+    const { embedder } = makeStubEmbedder(Array.from({ length: 512 }, () => 0.1));
+
+    await expect(buildSessionVector(db, embedder, conversationId)).rejects.toThrow(
+      /returned 512-d vector, expected 768/,
+    );
+  });
+
   it('is a no-op on a conversation with zero messages (no vec_sessions row written)', async () => {
     // Construct a conversation with no messages — addConversation requires
     // at least one, so we INSERT directly.

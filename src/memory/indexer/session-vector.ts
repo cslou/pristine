@@ -109,6 +109,11 @@ export const buildSessionVector = async (
   }
 
   const vec = await embedder.embed(text);
+  if (vec.length !== embedder.dim) {
+    throw new InvalidArgumentError(
+      `buildSessionVector: embedder returned ${vec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
+    );
+  }
   const embedding = Float32Array.from(vec);
   const embeddingBuf = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
   const updatedAt = BigInt(Date.now());

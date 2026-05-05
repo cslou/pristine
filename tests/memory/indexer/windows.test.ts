@@ -191,6 +191,14 @@ describe('assembleWindowEmbedding', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('throws InvalidArgumentError when embedder output length differs from configured dim', async () => {
+    const { embedder } = makeStubEmbedder(Array.from({ length: 512 }, () => 0.1));
+
+    await expect(
+      assembleWindowEmbedding([{ id: 1, role: 'user', content: 'x' }], embedder),
+    ).rejects.toThrow(/returned 512-d vector, expected 768/);
+  });
+
   it('returns the embedder vector cast to Float32Array', async () => {
     const knownVec = Array.from({ length: 768 }, (_, i) => 0.5 + i * 1e-4);
     const { embedder } = makeStubEmbedder(knownVec);

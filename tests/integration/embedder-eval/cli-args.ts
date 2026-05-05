@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -76,7 +76,11 @@ const realpathOfNearestAncestor = (input: string): string => {
       // path even if the existsSync somehow missed it (defensive).
       return absolute;
     }
-    tail.unshift(cur.slice(parent.length + 1));
+    // Use `basename` rather than `cur.slice(parent.length + 1)` because the
+    // slice form is off-by-one when the parent is filesystem root (parent
+    // is `/`, length 1, so slice(2) on `/foo` would yield `oo` instead of
+    // `foo`). `basename` handles every parent-length case correctly.
+    tail.unshift(basename(cur));
     cur = parent;
   }
   return join(realpathSync(cur), ...tail);

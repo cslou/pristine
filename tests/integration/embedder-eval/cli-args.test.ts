@@ -70,4 +70,15 @@ describe('confineReportsDir', () => {
   it('rejects /', () => {
     expect(() => confineReportsDir('/')).toThrow(/must resolve under the repo tree/);
   });
+
+  it('rejects a non-existent direct child of root (regression: prior slice-based tail extraction was off-by-one)', () => {
+    // `/nonexistent-eval-target` does not exist, so the realpath helper
+    // walks up to `/`, then reattaches the tail. Prior implementation
+    // sliced `parent.length + 1` characters which dropped the leading
+    // 'n' (parent is '/', length 1, so slice(2) → 'onexistent...').
+    // The corrected `basename(cur)` handles this case.
+    expect(() => confineReportsDir('/nonexistent-eval-target')).toThrow(
+      /must resolve under the repo tree/,
+    );
+  });
 });

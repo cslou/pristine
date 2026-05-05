@@ -43,13 +43,20 @@ const mean = (xs: readonly number[]): number => {
 };
 
 /**
- * 95% percentile interval [2.5th, 97.5th]. Sorts a copy of the input
- * (does not mutate). For n=1000, the indices are 25 and 975.
+ * 95% percentile interval [2.5th, 97.5th] using the nearest-rank
+ * convention: rank = ceil(p * n), 0-indexed = rank - 1. For n=1000
+ * this gives indices 24 and 974 (so the CI spans the 25th..975th
+ * sorted values, matching the standard definition; using the prior
+ * `floor(p * n)` shifted both bounds up by one slot, biasing the CI
+ * asymmetrically — a real defect at small n).
+ *
+ * Sorts a copy of the input (does not mutate).
  */
 const percentile95CI = (sortedSamples: readonly number[], point: number): BootstrapCI => {
   if (sortedSamples.length === 0) return { point, lower: point, upper: point };
-  const lowerIdx = Math.floor(0.025 * sortedSamples.length);
-  const upperIdx = Math.min(sortedSamples.length - 1, Math.floor(0.975 * sortedSamples.length));
+  const n = sortedSamples.length;
+  const lowerIdx = Math.max(0, Math.ceil(0.025 * n) - 1);
+  const upperIdx = Math.min(n - 1, Math.ceil(0.975 * n) - 1);
   return {
     point,
     lower: sortedSamples[lowerIdx]!,
@@ -130,8 +137,11 @@ export const pairedBootstrapDeltaCI = (
 };
 
 /**
- * Convenience: compute paired-bootstrap deltas for the 5 retrieval
- * metrics in one call (used by Story 4's report writer).
+ * Compute paired-bootstrap deltas for the 5 retrieval metrics in one
+ * call. Each metric advances the seed by 1 so the resample sequence
+ * is deterministic and metric-specific (otherwise every metric would
+ * use the same resample indices, which is technically valid but wastes
+ * the seed-space and is more confusing to debug).
  */
 export const pairedBootstrapAllMetrics = (
   pairsByMetric: {
@@ -144,8 +154,12 @@ export const pairedBootstrapAllMetrics = (
   options: { readonly resamples?: number; readonly seed?: number } = {},
 ): readonly PairedDelta[] => {
   const metrics = ['ndcg10', 'recall5', 'recall10', 'recall20', 'mrr'] as const;
-  return metrics.map((metric) => ({
+  const baseSeed = options.seed ?? 0xc0ffee;
+  return metrics.map((metric, i) => ({
     metric,
-    delta: pairedBootstrapDeltaCI(pairsByMetric[metric].a, pairsByMetric[metric].b, options),
+    delta: pairedBootstrapDeltaCI(pairsByMetric[metric].a, pairsByMetric[metric].b, {
+      ...options,
+      seed: baseSeed + i,
+    }),
   }));
 };

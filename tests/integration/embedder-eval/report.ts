@@ -1,15 +1,12 @@
 import type { BootstrapCI, EvalResult, PairedDelta } from './types.js';
 
 /**
- * Markdown report writer for `npm run eval:embedder`. Produces the
- * canonical Story 4 deliverable: a single markdown file at
- * `docs/research/embedder-eval-runs/<timestamp>-<candidate>-vs-<baseline>.md`
- * with both retrieval configurations' numbers, deltas with CIs, and a
- * one-paragraph summary.
- *
- * Pure function — takes EvalResults + paired deltas, returns the
- * markdown string. The CLI is responsible for filesystem writes.
+ * Markdown report writer for `npm run eval:embedder`. Pure function —
+ * takes EvalResults + paired deltas, returns the markdown string. The
+ * CLI is responsible for filesystem writes.
  */
+
+type MetricKey = 'ndcg10' | 'recall5' | 'recall10' | 'recall20' | 'mrr';
 
 const fmt = (n: number, decimals = 4): string => n.toFixed(decimals);
 
@@ -27,6 +24,41 @@ const fmtDelta = (delta: BootstrapCI, decimals = 4): string => {
  * inconclusive at the 95% level.
  */
 const isSignificant = (delta: BootstrapCI): boolean => delta.lower > 0 || delta.upper < 0;
+
+/**
+ * Index an EvalResult's BootstrapCI fields by `MetricKey`. Replaces a
+ * 5-deep nested ternary that silently fell through to MRR for any
+ * unrecognised key. With the keyed table, an unknown key is a TS
+ * error rather than a hidden wrong number.
+ */
+const metricCI = (r: EvalResult, key: MetricKey): BootstrapCI => {
+  switch (key) {
+    case 'ndcg10':
+      return r.ndcg10;
+    case 'recall5':
+      return r.recall5;
+    case 'recall10':
+      return r.recall10;
+    case 'recall20':
+      return r.recall20;
+    case 'mrr':
+      return r.mrr;
+  }
+};
+
+/**
+ * Find a metric's PairedDelta in a deltas array. Throws a descriptive
+ * error if the metric is missing — replaces a bare non-null assertion
+ * that would otherwise produce an opaque TypeError on a future filtered
+ * deltas array.
+ */
+const findMetric = (deltas: readonly PairedDelta[], key: MetricKey): PairedDelta => {
+  const found = deltas.find((d) => d.metric === key);
+  if (!found) {
+    throw new Error(`renderEvalReport: deltas array is missing the '${key}' metric`);
+  }
+  return found;
+};
 
 interface RenderInput {
   readonly candidate: { readonly denseOnly: EvalResult; readonly hybrid: EvalResult };
@@ -57,33 +89,15 @@ const renderConfigSection = (
   );
   rows.push(`|---|---|---|---|`);
   for (const m of deltas) {
-    const baseCI =
-      m.metric === 'ndcg10'
-        ? baseline.ndcg10
-        : m.metric === 'recall5'
-          ? baseline.recall5
-          : m.metric === 'recall10'
-            ? baseline.recall10
-            : m.metric === 'recall20'
-              ? baseline.recall20
-              : baseline.mrr;
-    const candCI =
-      m.metric === 'ndcg10'
-        ? candidate.ndcg10
-        : m.metric === 'recall5'
-          ? candidate.recall5
-          : m.metric === 'recall10'
-            ? candidate.recall10
-            : m.metric === 'recall20'
-              ? candidate.recall20
-              : candidate.mrr;
+    const baseCI = metricCI(baseline, m.metric);
+    const candCI = metricCI(candidate, m.metric);
     const sigMark = isSignificant(m.delta) ? ' **\\***' : '';
     rows.push(
       `| ${m.metric} | ${fmtCI(baseCI)} | ${fmtCI(candCI)} | ${fmtDelta(m.delta)}${sigMark} |`,
     );
   }
   rows.push('');
-  rows.push(`Latency (embed-call wall time):`);
+  rows.push(`Latency (retrieval round-trip wall time):`);
   rows.push(
     `- Baseline: p50 ${fmt(baseline.p50LatencyMs, 1)}ms, p95 ${fmt(baseline.p95LatencyMs, 1)}ms`,
   );
@@ -99,13 +113,13 @@ const summaryParagraph = (
   baselineName: string,
   deltas: { readonly denseOnly: readonly PairedDelta[]; readonly hybrid: readonly PairedDelta[] },
 ): string => {
-  const denseN = deltas.denseOnly.find((d) => d.metric === 'ndcg10')!.delta;
-  const hybridN = deltas.hybrid.find((d) => d.metric === 'ndcg10')!.delta;
+  const denseN = findMetric(deltas.denseOnly, 'ndcg10').delta;
+  const hybridN = findMetric(deltas.hybrid, 'ndcg10').delta;
   const denseSig = isSignificant(denseN);
   const hybridSig = isSignificant(hybridN);
 
   if (denseSig && denseN.point > 0 && hybridSig && hybridN.point > 0) {
-    return `**Verdict:** ${candidateName} beats ${baselineName} on NDCG@10 in both retrieval modes (95% CI excludes zero); recommend a follow-up Story 5 default-config swap.`;
+    return `**Verdict:** ${candidateName} beats ${baselineName} on NDCG@10 in both retrieval modes (95% CI excludes zero); recommend re-evaluating the default embedder configuration.`;
   }
   if ((denseSig && denseN.point < 0) || (hybridSig && hybridN.point < 0)) {
     return `**Verdict:** ${candidateName} underperforms ${baselineName} on NDCG@10 in at least one retrieval mode (95% CI excludes zero, sign negative); keep ${baselineName} as the default.`;

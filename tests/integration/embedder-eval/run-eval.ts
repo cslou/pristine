@@ -1,17 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ConversationStore } from '../../../src/conversations/store.js';
+import { PristineLocal } from '../../../src/client.js';
 import { createDatabase } from '../../../src/core/database.js';
+import type { Embedder } from '../../../src/core/interfaces.js';
 import { createEmbedder, type EmbedderConfig } from '../../../src/embedder/index.js';
-import {
-  createEmbedTaskHandler,
-  runEmbedWorker,
-} from '../../../src/memory/indexer/embed-worker.js';
-import { createIndexer } from '../../../src/memory/indexer/index.js';
-import { createWindowWriter } from '../../../src/memory/indexer/windows.js';
-import { createSearcher, type Searcher } from '../../../src/memory/searcher/index.js';
-import { IngestQueue } from '../../../src/queue/ingest-queue.js';
+import type {
+  Searcher,
+  WindowHit,
+  MessageHit,
+  SessionHit,
+  HybridHit,
+} from '../../../src/memory/searcher/index.js';
 import { bootstrapMeanCI } from './bootstrap.js';
 import { ndcgAtK, percentile, recallAtK, reciprocalRank } from './metrics.js';
 import type {
@@ -30,9 +30,8 @@ const DEFAULT_CORPUS_PATH = join(HERE, 'corpus.jsonl');
 const DEFAULT_TOP_K = 20;
 
 /**
- * Read a JSON-Lines file into a list of typed records. Skips empty
- * lines + lines starting with `#` so the data files can carry a
- * doc-block header.
+ * Read a JSON-Lines file into a list of typed records. Skips empty lines
+ * and `#`-prefixed lines so data files can carry a doc-block header.
  */
 const readJsonl = <T>(path: string): readonly T[] => {
   const raw = readFileSync(path, 'utf-8');
@@ -47,132 +46,149 @@ const readJsonl = <T>(path: string): readonly T[] => {
 
 /**
  * Pipeline wiring for the eval. Builds an in-memory SQLite + sqlite-vec
- * DB, an indexer, and a searcher — same composition as
- * `PristineLocal.create` but bypassing `initPristine` (no filesystem
- * keys / config dir) since the eval is read-only against a synthetic
- * corpus.
+ * DB and a `PristineLocal` client (the same composition any consumer
+ * would use), ingests the corpus, optionally builds session vectors,
+ * and returns a searcher whose hit `conversationId` field is translated
+ * back to the corpus's external `conversationId` (so eval metrics can
+ * compare against the labelled set's `relevantDocIds` directly).
+ *
+ * The harness uses only `PristineLocal.create({ db, embedder })` and the
+ * client's public methods (`storeAsync`, `drainEmbedQueue`,
+ * `buildSessionVector`) — no reach into SDK-internal modules.
  */
 interface EvalPipeline {
   readonly searcher: Searcher;
-  readonly close: () => void;
+  readonly close: () => Promise<void>;
   readonly dimUsed: number;
 }
 
 const buildPipeline = async (
-  config: EmbedderConfig,
+  embedder: Embedder,
   corpus: readonly EvalDoc[],
   needsSessionVectors: boolean,
 ): Promise<EvalPipeline> => {
-  const embedder = createEmbedder(config);
   const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  const store = new ConversationStore(db, embedder.dim);
-  const windowWriter = createWindowWriter(db);
-  const indexerConfig = { windowSize: 3, windowOverlap: 1 };
 
-  const queue = new IngestQueue({
-    db,
-    embedTaskHandler: createEmbedTaskHandler({
-      db,
-      embedder,
-      windowWriter,
-      config: indexerConfig,
-    }),
-  });
+  let client: PristineLocal | null = null;
+  try {
+    client = await PristineLocal.create({ db, embedder });
 
-  const indexer = createIndexer({
-    db,
-    conversationStore: store,
-    ingestQueue: queue,
-    embedder,
-    config: indexerConfig,
-  });
-
-  // Group corpus by conversationId. Each corpus row is a single
-  // message; multiple rows sharing a conversationId become a
-  // multi-message conversation. The corpus-supplied `conversationId`
-  // is an opaque external key — the SDK assigns its own UUID per
-  // conversation, so we maintain a translation map for retrieval-time
-  // hit normalisation.
-  const byConversation = new Map<string, EvalDoc[]>();
-  for (const doc of corpus) {
-    const list = byConversation.get(doc.conversationId);
-    if (list) list.push(doc);
-    else byConversation.set(doc.conversationId, [doc]);
-  }
-
-  const corpusIdToConversationId = new Map<string, string>();
-  for (const [origConvId, docs] of byConversation) {
-    const projectId = docs[0]!.projectId;
-    const messages = docs.map((d) => ({ role: d.role, content: d.content }));
-    const sdkConvId = store.addEmptyConversation(`eval-${origConvId}`, messages, projectId);
-    corpusIdToConversationId.set(origConvId, sdkConvId);
-    indexer.ingest(messages, { projectId, conversationId: sdkConvId });
-  }
-
-  await runEmbedWorker(queue);
-
-  if (needsSessionVectors) {
-    for (const sdkConvId of corpusIdToConversationId.values()) {
-      await indexer.buildSessionVector(sdkConvId);
+    // Group corpus by conversationId. Each corpus row is a single message;
+    // multiple rows sharing a conversationId become a multi-message
+    // conversation. The corpus's `conversationId` is an opaque external
+    // key; the SDK assigns its own UUID per conversation, so we maintain
+    // a translation map for retrieval-time hit normalisation. The eval
+    // metric scorer compares against the corpus's external IDs (matching
+    // the labelled set's `relevantDocIds`).
+    const byConversation = new Map<string, EvalDoc[]>();
+    for (const doc of corpus) {
+      const list = byConversation.get(doc.conversationId);
+      if (list) list.push(doc);
+      else byConversation.set(doc.conversationId, [doc]);
     }
-  }
 
-  // Cache the original-id ↔ sdk-id mapping on the pipeline so the
-  // caller can translate retrieval hits back to corpus IDs. We attach
-  // it to the searcher closure indirectly by exposing translateHit.
-  const sdkIdToCorpusId = new Map<string, string>();
-  for (const [corpusId, sdkId] of corpusIdToConversationId) sdkIdToCorpusId.set(sdkId, corpusId);
+    const sdkIdToCorpusId = new Map<string, string>();
+    for (const [origConvId, docs] of byConversation) {
+      const projectId = docs[0]!.projectId;
+      const messages = docs.map((d) => ({ role: d.role, content: d.content }) as const);
+      const sdkConvId = client.storeAsync(messages, `eval-${origConvId}`, projectId);
+      sdkIdToCorpusId.set(sdkConvId, origConvId);
+    }
 
-  const baseSearcher = createSearcher({ db, embedder });
+    await client.drainEmbedQueue();
 
-  // Wrap the searcher so callers see corpus IDs (matching the EvalDoc.id
-  // field) rather than the SDK's UUID-shaped conversationIds. Eval
-  // metrics are computed against corpus IDs.
-  const searcher: Searcher = {
-    vectorSearch: async (q, f, l) => {
-      const hits = await baseSearcher.vectorSearch(q, f, l);
-      return hits.map((h) => ({
-        ...h,
-        conversationId: sdkIdToCorpusId.get(h.conversationId) ?? h.conversationId,
-      }));
-    },
-    ftsSearch: async (q, f, l) => {
-      const hits = await baseSearcher.ftsSearch(q, f, l);
-      return hits.map((h) => ({
-        ...h,
-        conversationId: sdkIdToCorpusId.get(h.conversationId) ?? h.conversationId,
-      }));
-    },
-    sessionVectorSearch: async (q, f, l) => {
-      const hits = await baseSearcher.sessionVectorSearch(q, f, l);
-      return hits.map((h) => ({
-        ...h,
-        conversationId: sdkIdToCorpusId.get(h.conversationId) ?? h.conversationId,
-      }));
-    },
-    hybridSearch: async (q, f, l) => {
-      const hits = await baseSearcher.hybridSearch(q, f, l);
-      return hits.map((h) => ({
-        ...h,
-        conversationId: sdkIdToCorpusId.get(h.conversationId) ?? h.conversationId,
-      }));
-    },
-    sql: baseSearcher.sql,
-  };
+    if (needsSessionVectors) {
+      for (const sdkConvId of sdkIdToCorpusId.keys()) {
+        await client.buildSessionVector(sdkConvId);
+      }
+    }
 
-  return {
-    searcher,
-    close: () => {
+    const baseSearcher = client.searcher;
+
+    // Translate hits' SDK conversationId → corpus conversationId. A
+    // missing entry means a hit surfaced for a conversation the harness
+    // didn't ingest — that's a harness invariant violation, fail loud
+    // rather than silently mis-attributing the hit.
+    const translateConvId = (sdkConvId: string): string => {
+      const corpusId = sdkIdToCorpusId.get(sdkConvId);
+      if (corpusId === undefined) {
+        throw new Error(
+          `eval: searcher hit referenced unknown conversationId ${sdkConvId} — harness invariant violated (was the corpus re-ingested out-of-band?)`,
+        );
+      }
+      return corpusId;
+    };
+
+    const translateWindowHit = (h: WindowHit): WindowHit => ({
+      ...h,
+      conversationId: translateConvId(h.conversationId),
+    });
+    const translateMessageHit = (h: MessageHit): MessageHit => ({
+      ...h,
+      conversationId: translateConvId(h.conversationId),
+    });
+    const translateSessionHit = (h: SessionHit): SessionHit => ({
+      ...h,
+      conversationId: translateConvId(h.conversationId),
+    });
+    const translateHybridHit = (h: HybridHit): HybridHit => ({
+      ...h,
+      conversationId: translateConvId(h.conversationId),
+    });
+
+    const searcher: Searcher = {
+      vectorSearch: async (q, f, l) => {
+        const hits = await baseSearcher.vectorSearch(q, f, l);
+        return hits.map(translateWindowHit);
+      },
+      ftsSearch: async (q, f, l) => {
+        const hits = await baseSearcher.ftsSearch(q, f, l);
+        return hits.map(translateMessageHit);
+      },
+      sessionVectorSearch: async (q, f, l) => {
+        const hits = await baseSearcher.sessionVectorSearch(q, f, l);
+        return hits.map(translateSessionHit);
+      },
+      hybridSearch: async (q, f, l) => {
+        const hits = await baseSearcher.hybridSearch(q, f, l);
+        return hits.map(translateHybridHit);
+      },
+      sql: baseSearcher.sql,
+    };
+
+    const ownedClient = client;
+    return {
+      searcher,
+      close: async () => {
+        await ownedClient.dispose();
+      },
+      dimUsed: embedder.dim,
+    };
+  } catch (err) {
+    // Partial-construction cleanup. If we got far enough to build a
+    // client, `dispose()` closes the DB and drains in-flight tasks.
+    // Otherwise close the raw DB directly so the in-memory handle is
+    // released (otherwise a pipeline-construction failure would leak
+    // the handle until process exit — fine for a one-shot CLI but a
+    // problem for a test that builds many pipelines).
+    if (client !== null) {
+      await client.dispose();
+    } else {
       db.close();
-    },
-    dimUsed: embedder.dim,
-  };
+    }
+    throw err;
+  }
 };
 
 /**
  * Run a single query against the configured retrieval mode. Returns
- * the ordered list of corpus IDs (de-duplicated, since hybrid can
- * surface the same conversation from multiple sources).
+ * the ordered list of corpus conversationIds (de-duplicated, since
+ * hybrid can surface the same conversation from multiple sources) +
+ * the wall-clock time spent inside the retrieval call. The latency
+ * here is `searcher.{vectorSearch,hybridSearch}` round-trip — embed
+ * call + KNN/FTS lookup + filter-set query + dedup. It is intentionally
+ * NOT just the `embed()` call, because the harness measures end-to-end
+ * retrieval time as the consumer-facing SLO.
  */
 const runQuery = async (
   searcher: Searcher,
@@ -180,7 +196,7 @@ const runQuery = async (
   configKind: EvalConfigKind,
   projectId: string,
   topK: number,
-): Promise<{ readonly rankedIds: readonly string[]; readonly latencyMs: number }> => {
+): Promise<{ readonly rankedIds: readonly string[]; readonly retrievalLatencyMs: number }> => {
   const start = performance.now();
   const seen = new Set<string>();
   const ranked: string[] = [];
@@ -203,17 +219,14 @@ const runQuery = async (
     }
   }
 
-  const latencyMs = performance.now() - start;
-  return { rankedIds: ranked, latencyMs };
+  const retrievalLatencyMs = performance.now() - start;
+  return { rankedIds: ranked, retrievalLatencyMs };
 };
 
-/**
- * Score a single query: compute NDCG@10, Recall@K (5,10,20), MRR.
- */
 const scoreQuery = (
   query: EvalQuery,
   rankedIds: readonly string[],
-  embedLatencyMs: number,
+  retrievalLatencyMs: number,
 ): PerQueryMetric => ({
   queryId: query.id,
   ndcg10: ndcgAtK(rankedIds, query.relevantDocIds, 10),
@@ -221,7 +234,7 @@ const scoreQuery = (
   recall10: recallAtK(rankedIds, query.relevantDocIds, 10),
   recall20: recallAtK(rankedIds, query.relevantDocIds, 20),
   mrr: reciprocalRank(rankedIds, query.relevantDocIds),
-  embedLatencyMs,
+  retrievalLatencyMs,
 });
 
 /**
@@ -257,19 +270,20 @@ export const runEval = async (
     : allQueries;
 
   const needsSessionVectors = options.config === 'hybrid';
-  const pipeline = await buildPipeline(embedderConfig, corpus, needsSessionVectors);
+  const embedder = options.embedderOverride ?? createEmbedder(embedderConfig);
+  const pipeline = await buildPipeline(embedder, corpus, needsSessionVectors);
 
   try {
     const perQuery: PerQueryMetric[] = [];
     for (const query of queries) {
-      const { rankedIds, latencyMs } = await runQuery(
+      const { rankedIds, retrievalLatencyMs } = await runQuery(
         pipeline.searcher,
         query,
         options.config,
         projectId,
         topK,
       );
-      perQuery.push(scoreQuery(query, rankedIds, latencyMs));
+      perQuery.push(scoreQuery(query, rankedIds, retrievalLatencyMs));
     }
 
     const bootstrapOpts = {
@@ -277,45 +291,29 @@ export const runEval = async (
       seed: options.seed ?? 0xc0ffee,
     };
 
-    const ndcg10 = bootstrapMeanCI(
-      perQuery.map((m) => m.ndcg10),
-      bootstrapOpts,
-    );
-    const recall5 = bootstrapMeanCI(
-      perQuery.map((m) => m.recall5),
-      bootstrapOpts,
-    );
-    const recall10 = bootstrapMeanCI(
-      perQuery.map((m) => m.recall10),
-      bootstrapOpts,
-    );
-    const recall20 = bootstrapMeanCI(
-      perQuery.map((m) => m.recall20),
-      bootstrapOpts,
-    );
-    const mrr = bootstrapMeanCI(
-      perQuery.map((m) => m.mrr),
-      bootstrapOpts,
-    );
-
-    const latencies = perQuery.map((m) => m.embedLatencyMs);
-    const p50LatencyMs = percentile(latencies, 50);
-    const p95LatencyMs = percentile(latencies, 95);
+    // Extract per-metric arrays once; each is reused below for bootstrap
+    // CI computation (replaces 6 repeated `.map(...)` passes).
+    const ndcg10Values = perQuery.map((m) => m.ndcg10);
+    const recall5Values = perQuery.map((m) => m.recall5);
+    const recall10Values = perQuery.map((m) => m.recall10);
+    const recall20Values = perQuery.map((m) => m.recall20);
+    const mrrValues = perQuery.map((m) => m.mrr);
+    const latencies = perQuery.map((m) => m.retrievalLatencyMs);
 
     return {
       config: options.config,
       candidateName,
       dimUsed: pipeline.dimUsed,
       perQuery,
-      ndcg10,
-      recall5,
-      recall10,
-      recall20,
-      mrr,
-      p50LatencyMs,
-      p95LatencyMs,
+      ndcg10: bootstrapMeanCI(ndcg10Values, bootstrapOpts),
+      recall5: bootstrapMeanCI(recall5Values, bootstrapOpts),
+      recall10: bootstrapMeanCI(recall10Values, bootstrapOpts),
+      recall20: bootstrapMeanCI(recall20Values, bootstrapOpts),
+      mrr: bootstrapMeanCI(mrrValues, bootstrapOpts),
+      p50LatencyMs: percentile(latencies, 50),
+      p95LatencyMs: percentile(latencies, 95),
     };
   } finally {
-    pipeline.close();
+    await pipeline.close();
   }
 };

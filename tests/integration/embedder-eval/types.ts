@@ -11,8 +11,7 @@
 
 /**
  * Grade buckets for query difficulty. Each query is tagged with one of
- * three buckets so the eval can report metric stratification (Story 4
- * uses these to detect candidate strengths against query difficulty).
+ * three buckets so the eval can report metric stratification.
  *
  * - `pessimistic` — lexically dissimilar, semantically related. The
  *   hard cases where dense retrieval should outperform pure BM25.
@@ -24,11 +23,14 @@
 export type QueryGrade = 'pessimistic' | 'typical' | 'optimistic';
 
 /**
- * One labelled query in the eval set. `relevantDocIds` are the
- * IDs of corpus entries judged relevant (binary relevance — graded
- * relevance is out of scope this sprint). The retrieval-metric scorers
- * treat any non-listed corpus ID returned by the embedder as
- * non-relevant.
+ * One labelled query in the eval set. `relevantDocIds` lists the
+ * `EvalDoc.conversationId` values that are considered a relevant
+ * retrieval target — the harness's retrieval primitives surface hits
+ * keyed by conversationId, so the relevance comparison is at the
+ * conversation level. (When the corpus uses one-message-per-conversation
+ * the conversationId equals the doc's `id` field, so callers can think
+ * of these as doc IDs.) Binary relevance only — graded relevance is
+ * out of scope this sprint.
  */
 export interface EvalQuery {
   readonly id: string;
@@ -52,11 +54,12 @@ export interface EvalDoc {
 }
 
 /**
- * Per-query metric record. Latency is wall-clock for the single
- * `embed()` call that produced the query vector — does NOT include
- * candidate-set query time or KNN time, since those are SDK-level
- * concerns the eval is not measuring. Retrieval metrics are computed
- * against the embedder's returned ranked list.
+ * Per-query metric record. `retrievalLatencyMs` is wall-clock for the
+ * full retrieval round-trip — `embed()` + filter-set query + KNN/FTS
+ * lookup + dedup. The harness measures end-to-end retrieval time
+ * because that is the consumer-facing SLO; isolating just the embed
+ * cost would require reaching into searcher internals and would not
+ * reflect what an SDK consumer experiences.
  */
 export interface PerQueryMetric {
   readonly queryId: string;
@@ -65,7 +68,7 @@ export interface PerQueryMetric {
   readonly recall10: number;
   readonly recall20: number;
   readonly mrr: number;
-  readonly embedLatencyMs: number;
+  readonly retrievalLatencyMs: number;
 }
 
 /**
@@ -83,7 +86,7 @@ export interface BootstrapCI {
 /**
  * Full eval result for one configuration (dense-only OR hybrid).
  * Aggregate metrics include their bootstrap CIs; per-query records
- * are kept so Story 4's report can stratify by grade bucket.
+ * are kept so reports can stratify by grade bucket.
  */
 export interface EvalResult {
   readonly config: EvalConfigKind;
@@ -125,11 +128,18 @@ export interface RunEvalOptions {
    * set. Useful for dev iteration / spot-checking a single bucket.
    */
   readonly queryIdAllowlist?: ReadonlySet<string>;
+  /**
+   * If provided, the harness uses this `Embedder` instance directly
+   * instead of constructing one from the `EmbedderConfig` first
+   * argument. Test-only escape hatch — production CLI flow always
+   * goes through `createEmbedder(config)` so the candidate-trio
+   * mapping in `candidates.ts` stays canonical.
+   */
+  readonly embedderOverride?: import('../../../src/core/interfaces.js').Embedder;
 }
 
 /**
- * Paired-bootstrap delta between two eval results. Used by Story 4 to
- * report candidate-vs-baseline differences with CIs. The pairing is
+ * Paired-bootstrap delta between two eval results. The pairing is
  * per-query: each resample picks the same query indices for both
  * runs, so query-difficulty noise cancels.
  */

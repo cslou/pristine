@@ -24,9 +24,10 @@ export interface BuildSessionVectorOptions {
 }
 
 /**
- * Embed an entire conversation as a single 768-d vector and store it in
- * `vec_sessions`. The hybrid retriever reads this row as the
- * coarse-grained session signal alongside the fine-grained `vec_windows`.
+ * Embed an entire conversation as a single configured-dim vector (default
+ * 768) and store it in `vec_sessions`. The hybrid retriever reads this row
+ * as the coarse-grained session signal alongside the fine-grained
+ * `vec_windows`.
  *
  * Flow:
  *   1. Verify the conversation exists; throw `ConversationNotFoundError`

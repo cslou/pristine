@@ -1,21 +1,26 @@
 import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import type { Embedder } from '../../core/interfaces.js';
-import { EmbedderError } from '../../core/errors.js';
+import { EmbedderError, InvalidArgumentError } from '../../core/errors.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../dim.js';
 
 const DEFAULT_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
-const EXPECTED_DIMENSION = 768;
 
 export interface LocalEmbedderConfig {
   readonly model?: string;
+  readonly dim?: number;
 }
 
 export class LocalEmbedder implements Embedder {
   private readonly modelName: string;
+  public readonly dim: number;
   private pipe: FeatureExtractionPipeline | null = null;
   private pipePromise: Promise<FeatureExtractionPipeline> | null = null;
 
   public constructor(config: LocalEmbedderConfig = {}) {
     this.modelName = config.model ?? DEFAULT_MODEL;
+    const dim = config.dim ?? DEFAULT_EMBEDDING_DIM;
+    assertValidDim(dim);
+    this.dim = dim;
   }
 
   public async embed(text: string): Promise<number[]> {
@@ -40,7 +45,12 @@ export class LocalEmbedder implements Embedder {
     // Sequential processing ensures correct 1:1 mapping.
     for (const text of texts) {
       const output = await extractor(text, { pooling: 'mean', normalize: true });
-      const embedding = Array.from(output.data as Float32Array).slice(0, EXPECTED_DIMENSION);
+      const embedding = Array.from(output.data as Float32Array);
+      if (embedding.length !== this.dim) {
+        throw new InvalidArgumentError(
+          `LocalEmbedder configured dim=${this.dim} but model '${this.modelName}' produced ${embedding.length}-d output`,
+        );
+      }
       results.push(embedding);
     }
 

@@ -233,7 +233,8 @@ export interface WindowWriter {
  * Caller responsibilities (upsertWindow):
  *   - `messageIds.length` must be > 0; the array's order determines
  *     `window_messages.position` (0-indexed).
- *   - `embedding` must be a 768-d Float32Array (Nomic v1.5).
+ *   - `embedding` must be a Float32Array whose length equals the
+ *     configured embedder dim (default 768).
  *   - Calling outside an outer transaction is fine; upsertWindow has its
  *     own atomic boundary. Calling INSIDE an outer transaction also works
  *     (the inner db.transaction becomes a savepoint).

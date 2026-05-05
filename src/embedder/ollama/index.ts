@@ -1,5 +1,6 @@
 import type { Embedder } from '../../core/interfaces.js';
-import { EmbedderError } from '../../core/errors.js';
+import { AppError, EmbedderError, InvalidArgumentError } from '../../core/errors.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../dim.js';
 
 const DEFAULT_MODEL = 'nomic-embed-text';
 const DEFAULT_HOST = 'http://localhost:11434';
@@ -9,6 +10,7 @@ const BASE_DELAY_MS = 500;
 export interface OllamaEmbedderConfig {
   readonly model?: string;
   readonly host?: string;
+  readonly dim?: number;
 }
 
 interface OllamaEmbedResponse {
@@ -18,10 +20,14 @@ interface OllamaEmbedResponse {
 export class OllamaEmbedder implements Embedder {
   private readonly model: string;
   private readonly host: string;
+  public readonly dim: number;
 
   public constructor(config: OllamaEmbedderConfig = {}) {
     this.model = config.model ?? DEFAULT_MODEL;
     this.host = config.host ?? process.env.OLLAMA_HOST ?? DEFAULT_HOST;
+    const dim = config.dim ?? DEFAULT_EMBEDDING_DIM;
+    assertValidDim(dim);
+    this.dim = dim;
   }
 
   public async embed(text: string): Promise<number[]> {
@@ -42,6 +48,14 @@ export class OllamaEmbedder implements Embedder {
       model: this.model,
       input: texts,
     });
+
+    for (const embedding of response.embeddings) {
+      if (embedding.length !== this.dim) {
+        throw new InvalidArgumentError(
+          `OllamaEmbedder configured dim=${this.dim} but model '${this.model}' produced ${embedding.length}-d output`,
+        );
+      }
+    }
 
     return response.embeddings;
   }
@@ -75,7 +89,12 @@ export class OllamaEmbedder implements Embedder {
         }
         return raw as unknown as OllamaEmbedResponse;
       } catch (error: unknown) {
-        if (error instanceof EmbedderError) {
+        // Re-throw any structured Pristine error (EmbedderError,
+        // InvalidArgumentError, etc.) verbatim — only opaque network/runtime
+        // errors get the "is Ollama running" wrap. AppError is the common
+        // base; checking it preserves error-type information for callers
+        // that catch on a specific subclass.
+        if (error instanceof AppError) {
           throw error;
         }
         // Network error (connection refused, DNS failure) -- fail immediately, no retries

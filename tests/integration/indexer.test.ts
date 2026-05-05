@@ -35,6 +35,7 @@ const makeMessages = (contents: string[]) =>
 // Deterministic stub embedder that returns a 768-d vector keyed off the
 // joined text length. Faster than the real model + suitable for CI.
 const makeStubEmbedder = (): Embedder => ({
+  dim: 768,
   embed: async (text: string): Promise<number[]> => {
     const seed = text.length / 1000;
     return Array.from({ length: 768 }, (_, i) => seed + i * 1e-4);
@@ -53,7 +54,7 @@ interface PipelineDeps {
 
 const buildPipeline = (embedder: Embedder): PipelineDeps => {
   const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  const store = new ConversationStore(db);
+  const store = new ConversationStore(db, 768);
   const windowWriter = createWindowWriter(db);
   const config = { windowSize: 3, windowOverlap: 1 };
 

@@ -19,6 +19,7 @@ import {
 import type { Embedder } from '../../src/core/interfaces.js';
 
 const makeEmbedderStub = (): Embedder => ({
+  dim: 768,
   embed: vi.fn(async () => Array.from({ length: 768 }, () => 0)),
   embedBatch: vi.fn(async (texts: readonly string[]) =>
     texts.map(() => Array.from({ length: 768 }, () => 0)),

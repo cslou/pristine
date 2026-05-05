@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError } from './errors.js';
 import { createDefaultDatabase } from './database.js';
+import { assertValidDim } from '../embedder/dim.js';
 import type { EmbedderConfig } from '../embedder/index.js';
 
 // ---------------------------------------------------------------------------
@@ -13,6 +14,10 @@ export interface PristineConfig {
   readonly embedder?: EmbedderConfig;
 }
 
+// `dim` is intentionally omitted from the default-config template. The
+// canonical SDK default lives in `src/client.ts`; persisting `dim` here
+// would create a second default site and lock consumers onto whatever
+// value shipped at the time `models.json` was first written.
 export const DEFAULT_PRISTINE_CONFIG: PristineConfig = {
   embedder: { engine: 'local' },
 };
@@ -40,6 +45,15 @@ function validateEmbedderEntry(value: unknown): EmbedderConfig {
     );
   }
 
+  if (obj.dim !== undefined) {
+    try {
+      assertValidDim(obj.dim);
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      throw new ConfigError(`"embedder.dim" rejected: ${msg}`);
+    }
+  }
+
   if (obj.engine === 'ollama') {
     if (obj.model !== undefined && (typeof obj.model !== 'string' || obj.model.length === 0)) {
       throw new ConfigError(`"embedder.model" must be a non-empty string if provided`);
@@ -51,6 +65,7 @@ function validateEmbedderEntry(value: unknown): EmbedderConfig {
       engine: 'ollama',
       ...(obj.model !== undefined ? { model: obj.model as string } : {}),
       ...(obj.host !== undefined ? { host: obj.host as string } : {}),
+      ...(obj.dim !== undefined ? { dim: obj.dim as number } : {}),
     };
   }
 
@@ -61,6 +76,7 @@ function validateEmbedderEntry(value: unknown): EmbedderConfig {
   return {
     engine: 'local',
     ...(obj.model !== undefined ? { model: obj.model as string } : {}),
+    ...(obj.dim !== undefined ? { dim: obj.dim as number } : {}),
   };
 }
 

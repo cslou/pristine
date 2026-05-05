@@ -23,6 +23,7 @@ let db: ReturnType<typeof createDatabase>;
 let client: PristineLocal;
 
 const stubEmbedder = {
+  dim: 768,
   embed: async (): Promise<number[]> => Array.from({ length: 768 }, () => 0.01),
   embedBatch: async (texts: readonly string[]): Promise<number[][]> =>
     texts.map(() => Array.from({ length: 768 }, () => 0.01)),

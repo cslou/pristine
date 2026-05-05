@@ -25,7 +25,8 @@
     "test:e2e": "vitest run --passWithNoTests --config vitest.e2e.config.ts",
     "test:watch": "vitest",
     "build": "tsc -p tsconfig.build.json",
-    "db:reset": "rm -f ~/.pristine/data/pristine.db*"
+    "db:reset": "rm -f ~/.pristine/data/pristine.db*",
+    "eval:embedder": "tsx tests/integration/embedder-eval/cli.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",

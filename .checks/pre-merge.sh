@@ -9,7 +9,13 @@ echo "-> typecheck"
 npm run typecheck
 
 echo "-> unit tests"
-npm run test:unit
+# Skip slow tests in the synchronous merge gate. Smoke tests that load
+# real models (HuggingFace gte-modernbert-base, Ollama embeddinggemma /
+# qwen3) gate themselves on SKIP_SLOW_TESTS=1; setting it here keeps the
+# gate fast and consistent with the integration / e2e exclusions below.
+# Maintainers run smoke tests manually via `npm run test:unit` (without
+# the env var) when validating engine/embedder changes.
+SKIP_SLOW_TESTS=1 npm run test:unit
 
 # Integration and e2e tests are intentionally excluded from the pre-merge gate.
 # Both require live external processes (Ollama, llamacpp with GGUF models

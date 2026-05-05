@@ -116,10 +116,21 @@ export class PristineLocal {
       config.db ?? createDefaultDatabase(init?.baseDir ? `${init.baseDir}/data` : undefined);
 
     const ownsEmbedder = config.embedder === undefined;
+    // Default `EmbedderConfig` is `{ engine: 'local' }` with `dim`
+    // resolved by `createEmbedder` to `DEFAULT_EMBEDDING_DIM` (768). 768 is
+    // chosen because the highest CoIR scorer in the sprint-017 candidate
+    // trio (`gte-modernbert-base`) is fixed at 768 (not MRL-trained), and
+    // the two MRL-trained Ollama candidates truncate to 768 with ~1-3%
+    // NDCG loss (within bootstrap CI noise). 33% cheaper per cosine on
+    // consumer hardware vs 1024. Story 5 may swap the model identity but
+    // the dim stays 768 unless a follow-up migration sprint runs (cross-
+    // dim migration is out of scope — `vec0` doesn't support `ALTER`).
+    // This is the canonical default site (per sprint-017 Story 0 AC-5);
+    // do not introduce a second default elsewhere.
     const embedder =
       config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
 
-    const conversationStore = new ConversationStore(db);
+    const conversationStore = new ConversationStore(db, embedder.dim);
 
     // Indexer + embed-worker wiring. Mirrors scripts/embed-worker.ts:
     // build a temp queue solely to read the indexer's resolved config,

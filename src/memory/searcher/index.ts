@@ -355,8 +355,6 @@ export interface SearcherDeps {
 // top-50 in the hybrid-RRF flow).
 const MAX_LIMIT = 1000;
 
-const VEC_DIM = 768;
-
 // Convert vec0 L2 distance to a similarity score in (0, 1]. Monotonically
 // decreasing in distance, so KNN's distance-ascending order maps to
 // score-descending order without any re-sort. Higher = more similar; this
@@ -488,9 +486,9 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     // so an empty-scope query short-circuits without paying the embed
     // cost (Nomic CPU embedding ~50-100ms per call).
     const queryVec = await embedder.embed(query);
-    if (queryVec.length !== VEC_DIM) {
+    if (queryVec.length !== embedder.dim) {
       throw new InvalidArgumentError(
-        `searcher.vectorSearch: embedder returned ${queryVec.length}-d vector, expected ${VEC_DIM}`,
+        `searcher.vectorSearch: embedder returned ${queryVec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
       );
     }
     // Use a for-loop instead of .some so an early-exit on the first NaN
@@ -778,9 +776,9 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     // Step 2 — embed the query (same lazy ordering as vectorSearch:
     // cheap candidate check first, expensive embed second).
     const queryVec = await embedder.embed(query);
-    if (queryVec.length !== VEC_DIM) {
+    if (queryVec.length !== embedder.dim) {
       throw new InvalidArgumentError(
-        `searcher.sessionVectorSearch: embedder returned ${queryVec.length}-d vector, expected ${VEC_DIM}`,
+        `searcher.sessionVectorSearch: embedder returned ${queryVec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
       );
     }
     for (let i = 0; i < queryVec.length; i++) {

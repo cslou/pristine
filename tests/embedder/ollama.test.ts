@@ -249,7 +249,6 @@ describe('OllamaEmbedder', () => {
     });
   });
 
-  // Story 0 / sprint-017 — strict dim validation (AC-FV-3)
   describe('strict dim validation', () => {
     it('throws InvalidArgumentError naming both dims when model output length differs from configured dim', async () => {
       vi.mocked(globalThis.fetch).mockResolvedValue(

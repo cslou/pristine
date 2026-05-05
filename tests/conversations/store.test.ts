@@ -21,7 +21,7 @@ const contentHash = (messages: { role: string; content: string }[]): string =>
 
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  store = new ConversationStore(db);
+  store = new ConversationStore(db, 768);
   // Construct an IngestQueue alongside the store so pending_ingest_tasks
   // exists for deleteById's cascade DELETE. Production always wires both
   // (client.ts constructs IngestQueue when ConversationStore is created),
@@ -237,7 +237,7 @@ describe('ConversationStore', () => {
   });
   describe('DDL idempotency', () => {
     it('constructing a second ConversationStore on same db does not throw', () => {
-      expect(() => new ConversationStore(db)).not.toThrow();
+      expect(() => new ConversationStore(db, 768)).not.toThrow();
     });
   });
 
@@ -351,7 +351,7 @@ describe('ConversationStore', () => {
       // messages.id without this cascade. Pinned with a fresh DB so
       // leftover vec rows from other tests don't pollute the assertion.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-      const s = new ConversationStore(d);
+      const s = new ConversationStore(d, 768);
       // deleteById cascades to pending_ingest_tasks; construct an
       // IngestQueue so the table exists.
       new IngestQueue({ db: d });
@@ -412,7 +412,7 @@ describe('ConversationStore', () => {
       // exactly the partial-ingest recovery scenario deleteById exists
       // for.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-      const s = new ConversationStore(d);
+      const s = new ConversationStore(d, 768);
       // IngestQueue's constructor creates the pending_ingest_tasks table.
       new IngestQueue({ db: d });
 
@@ -440,7 +440,7 @@ describe('ConversationStore', () => {
       // window_messages / vec_windows / vec_sessions rows) must still delete
       // cleanly — the four extra DELETEs are no-ops in that case.
       const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-      const s = new ConversationStore(d);
+      const s = new ConversationStore(d, 768);
       new IngestQueue({ db: d });
 
       const id = s.addConversation(makeMessages(['Solo turn']), 'user-noindex');
@@ -497,7 +497,7 @@ describe('vec tables', () => {
 
   it('round-trips a 768-d embedding through vec_windows (bit-identical)', () => {
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-    new ConversationStore(d);
+    new ConversationStore(d, 768);
 
     // Bit-identical round-trip check: compare against the same Float32 source
     // that was written, not the JS Float64 literal — otherwise precision loss
@@ -523,7 +523,7 @@ describe('vec tables', () => {
 
   it('rejects a non-768-dimension embedding on vec_windows', () => {
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-    new ConversationStore(d);
+    new ConversationStore(d, 768);
 
     const wrong = Buffer.from(new Float32Array(512).buffer);
     expect(() =>
@@ -538,7 +538,7 @@ describe('vec tables', () => {
 
   it('round-trips a 768-d embedding + updated_at through vec_sessions', () => {
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-    new ConversationStore(d);
+    new ConversationStore(d, 768);
 
     const source = new Float32Array(768);
     for (let i = 0; i < 768; i++) source[i] = 0.75 + i * 1e-4;
@@ -574,7 +574,7 @@ describe('vec tables', () => {
     // contract at the schema level so the write-helper lands on the
     // right primitive.
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-    new ConversationStore(d);
+    new ConversationStore(d, 768);
 
     const emb1 = makeEmbedding(0.1);
     const emb2 = makeEmbedding(0.2);
@@ -609,7 +609,7 @@ describe('vec tables', () => {
 
   it('window_messages FK rejects an insert with non-existent message_id', () => {
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-    new ConversationStore(d);
+    new ConversationStore(d, 768);
 
     // Pre-condition: PRAGMA foreign_keys = ON. Confirm it here so this
     // test's failure mode is clear — if the pragma ever regresses, the
@@ -632,7 +632,7 @@ describe('vec tables', () => {
     // Pair-test for the FK rejection above: prove the FK is not over-
     // restrictive — a valid message_id lands cleanly.
     const d = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-    const s = new ConversationStore(d);
+    const s = new ConversationStore(d, 768);
 
     const convId = s.addConversation(makeMessages(['hi', 'hello']), 'user-fk');
     const mid = d

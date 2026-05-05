@@ -5,19 +5,34 @@ import { LocalEmbedder } from '../../src/embedder/local/index.js';
 import { OllamaEmbedder } from '../../src/embedder/ollama/index.js';
 
 // ---------------------------------------------------------------------------
-// Story 0 / sprint-017 — dim parameterization unit tests
+// Embedder dim parameterization — unit tests
 // ---------------------------------------------------------------------------
 //
 // Pins:
-//   1. AC-FV-2 — factory routes the configured `dim` to both engine
-//      constructors; resulting instances expose `dim` via `Embedder.dim`.
-//      (Per-engine strict-validate at embed time — AC-FV-3 — is covered
+//   1. Both engine constructors store the configured `dim` and expose
+//      it via the `Embedder.dim` getter.
+//   2. `createEmbedder` routes the configured `dim` to both engines.
+//      (Per-engine strict-validate at embed time is covered separately
 //      in tests/embedder/local.test.ts and tests/embedder/ollama.test.ts.)
-//   2. AC-FV-5 — `assertValidDim` rejects the SQL-injection-shaped
-//      string before any DDL is built.
-//   3. AC-FV-6 — bounds check (`64 <= dim <= 4096`, integer-only).
+//   3. `assertValidDim` is the bounds + injection guard for `float[${dim}]`
+//      DDL templating: rejects non-integers, out-of-range values, NaN /
+//      Infinity, and SQL-injection-shaped strings before any DDL is built.
 
-describe('createEmbedder — dim routing (AC-FV-2)', () => {
+describe('Embedder constructors — direct dim configuration', () => {
+  it('LocalEmbedder constructor stores dim from config', () => {
+    expect(new LocalEmbedder().dim).toBe(DEFAULT_EMBEDDING_DIM);
+    expect(new LocalEmbedder({ dim: 1024 }).dim).toBe(1024);
+    expect(new LocalEmbedder({ dim: 256 }).dim).toBe(256);
+  });
+
+  it('OllamaEmbedder constructor stores dim from config', () => {
+    expect(new OllamaEmbedder().dim).toBe(DEFAULT_EMBEDDING_DIM);
+    expect(new OllamaEmbedder({ dim: 1024 }).dim).toBe(1024);
+    expect(new OllamaEmbedder({ dim: 256 }).dim).toBe(256);
+  });
+});
+
+describe('createEmbedder — dim routing', () => {
   it('routes default dim (768) to LocalEmbedder when omitted', () => {
     const embedder = createEmbedder({ engine: 'local' });
     expect(embedder).toBeInstanceOf(LocalEmbedder);
@@ -49,7 +64,7 @@ describe('createEmbedder — dim routing (AC-FV-2)', () => {
   });
 });
 
-describe('assertValidDim — bounds + injection guard (AC-FV-5, AC-FV-6)', () => {
+describe('assertValidDim — bounds + injection guard', () => {
   it('accepts the documented default 768', () => {
     expect(() => {
       assertValidDim(768);
@@ -97,7 +112,7 @@ describe('assertValidDim — bounds + injection guard (AC-FV-5, AC-FV-6)', () =>
     }).toThrow(InvalidArgumentError);
   });
 
-  it('rejects SQL-injection-shaped string before any DDL is built (AC-FV-5)', () => {
+  it('rejects SQL-injection-shaped string before any DDL is built', () => {
     expect(() => {
       assertValidDim('768; DROP TABLE messages;--' as unknown);
     }).toThrow(InvalidArgumentError);

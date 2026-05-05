@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { createHash, randomUUID } from 'node:crypto';
 import { ConversationNotFoundError, InvalidArgumentError } from '../core/errors.js';
-import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../embedder/index.js';
+import { assertValidDim } from '../embedder/dim.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -284,14 +284,12 @@ CREATE VIEW IF NOT EXISTS summaries_public (id, session_id, project_id, text, ti
 // next construction. Every relation uses `IF NOT EXISTS` so idempotent
 // re-construction against an already-initialized DB is a no-op.
 //
-// `dim` templates `vec_windows` / `vec_sessions` `float[N]`. Default
-// `DEFAULT_EMBEDDING_DIM` is provided as a transition shim during commit 2;
-// commit 3 of Story 0 removes it so all callers thread the configured dim
-// from `EmbedderConfig` (canonical default site is `src/client.ts`).
-export function initConversationTables(
-  db: Database.Database,
-  dim: number = DEFAULT_EMBEDDING_DIM,
-): void {
+// `dim` templates the `float[N]` typed-column on `vec_windows` /
+// `vec_sessions`. The caller is responsible for resolving the dim — the
+// SDK threads it from `EmbedderConfig` via `embedder.dim` in
+// `PristineLocal.create`; direct callers (tests, scripts) supply it
+// explicitly. The canonical SDK-default site is `src/client.ts`.
+export function initConversationTables(db: Database.Database, dim: number): void {
   db.pragma('foreign_keys = ON');
   db.exec(CONVERSATION_STORE_DDL);
   db.exec(RETRIEVAL_INDEXES_DDL);
@@ -336,7 +334,7 @@ export function computeConversationContentHash(
 export class ConversationStore {
   private readonly db: Database.Database;
 
-  public constructor(db: Database.Database, dim: number = DEFAULT_EMBEDDING_DIM) {
+  public constructor(db: Database.Database, dim: number) {
     this.db = db;
     initConversationTables(db, dim);
   }

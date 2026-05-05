@@ -9,17 +9,17 @@ import { InvalidArgumentError } from '../../src/core/errors.js';
 import type { Embedder } from '../../src/core/interfaces.js';
 
 // ---------------------------------------------------------------------------
-// Story 0 / sprint-017 — cross-dim error path (AC-FV-4 / AC-6 load-bearing)
+// Cross-dim error path (load-bearing)
 // ---------------------------------------------------------------------------
 //
 // Pins:
-//   1. A DB seeded at the default `dim=768` retains `float[768]` typed
-//      vec_windows / vec_sessions even after the file is reopened with
-//      a `dim=1024` embedder (vec0 has no `ALTER` and `CREATE ... IF NOT
-//      EXISTS` is a no-op against the existing tables).
-//   2. Calling `searcher.vectorSearch` against the cross-dim DB throws
-//      `InvalidArgumentError` and the message names both dims (1024
-//      configured vs 768 on-disk) — proves the documented "consumer who
+//   1. A DB seeded at one dim retains its `float[N]` typed vec_windows /
+//      vec_sessions even after the file is reopened with a different-dim
+//      embedder (vec0 has no `ALTER` and `CREATE ... IF NOT EXISTS` is a
+//      no-op against the existing tables).
+//   2. Both `searcher.vectorSearch` and `searcher.sessionVectorSearch`
+//      throw `InvalidArgumentError` against the cross-dim DB with both
+//      dims named in the message — proves the documented "consumer who
 //      later changes dim must hit a clear runtime error" behavior.
 
 const TMP_DIRS: string[] = [];
@@ -37,7 +37,7 @@ const makeStubAtDim = (dim: number): Embedder => ({
     }),
 });
 
-describe('cross-dim mismatch (AC-FV-4)', () => {
+describe('cross-dim mismatch', () => {
   afterEach(() => {
     for (const dir of TMP_DIRS.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
@@ -102,17 +102,35 @@ describe('cross-dim mismatch (AC-FV-4)', () => {
     expect(reopenDdl.sql).toContain('float[768]');
     expect(reopenDdl.sql).not.toContain('float[1024]');
 
-    let captured: unknown = null;
+    let capturedVector: unknown = null;
     try {
       await reopenClient.searcher.vectorSearch('first message', { projectId: 'test-project' }, 5);
     } catch (err) {
-      captured = err;
+      capturedVector = err;
     }
 
-    expect(captured).toBeInstanceOf(InvalidArgumentError);
-    const message = (captured as Error).message;
-    expect(message).toMatch(/1024/);
-    expect(message).toMatch(/768/);
+    expect(capturedVector).toBeInstanceOf(InvalidArgumentError);
+    const vectorMessage = (capturedVector as Error).message;
+    expect(vectorMessage).toMatch(/1024/);
+    expect(vectorMessage).toMatch(/768/);
+    expect(vectorMessage).toMatch(/vec_windows/);
+
+    let capturedSession: unknown = null;
+    try {
+      await reopenClient.searcher.sessionVectorSearch(
+        'first message',
+        { projectId: 'test-project' },
+        5,
+      );
+    } catch (err) {
+      capturedSession = err;
+    }
+
+    expect(capturedSession).toBeInstanceOf(InvalidArgumentError);
+    const sessionMessage = (capturedSession as Error).message;
+    expect(sessionMessage).toMatch(/1024/);
+    expect(sessionMessage).toMatch(/768/);
+    expect(sessionMessage).toMatch(/vec_sessions/);
 
     await reopenClient.dispose();
     dbReopen.close();

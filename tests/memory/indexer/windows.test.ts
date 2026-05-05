@@ -227,7 +227,7 @@ const readEmbedding = (buf: Buffer): Float32Array =>
 
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  store = new ConversationStore(db);
+  store = new ConversationStore(db, 768);
 });
 
 beforeEach(() => {

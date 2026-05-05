@@ -46,8 +46,10 @@ const main = async (): Promise<void> => {
     loadSqliteVec: true,
   });
 
-  const conversationStore = new ConversationStore(db);
+  // Construct embedder first so its `dim` can thread into ConversationStore;
+  // the store's vec0 DDL must match the embedder's vector dimension.
   const embedder = new LocalEmbedder();
+  const conversationStore = new ConversationStore(db, embedder.dim);
   const windowWriter = createWindowWriter(db);
 
   // Indexer's resolved config (defaults: windowSize=3, windowOverlap=1).

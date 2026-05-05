@@ -51,6 +51,7 @@ import { IngestQueue } from '../../src/queue/ingest-queue.js';
 const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
 
 const makeStubEmbedder = (): Embedder => ({
+  dim: 768,
   embed: async (text: string): Promise<number[]> => {
     const out = new Array<number>(768).fill(0.01);
     for (let i = 0; i < Math.min(text.length, 768); i++) {
@@ -73,7 +74,7 @@ interface PipelineDeps {
 
 const buildPipeline = (embedder: Embedder): PipelineDeps => {
   const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  const store = new ConversationStore(db);
+  const store = new ConversationStore(db, 768);
   const windowWriter = createWindowWriter(db);
   const config = { windowSize: 3, windowOverlap: 1 };
 

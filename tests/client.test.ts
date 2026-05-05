@@ -13,6 +13,7 @@ import type { Embedder } from '../src/core/interfaces.js';
 // ---------------------------------------------------------------------------
 
 const createMockEmbedder = (): Embedder & { dispose: ReturnType<typeof vi.fn> } => ({
+  dim: 768,
   embed: vi.fn(async () => Array.from({ length: 768 }, () => Math.random())),
   embedBatch: vi.fn(async (texts: readonly string[]) =>
     texts.map(() => Array.from({ length: 768 }, () => Math.random())),

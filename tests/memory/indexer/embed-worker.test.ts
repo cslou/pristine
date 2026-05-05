@@ -18,7 +18,7 @@ let store: ConversationStore;
 
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  store = new ConversationStore(db);
+  store = new ConversationStore(db, 768);
   // One IngestQueue instance constructed up-front so the
   // pending_ingest_tasks table exists for the beforeEach DELETE pass.
   // Tests construct their own queue with embedTaskHandler injected.
@@ -50,6 +50,7 @@ const makeMessages = (contents: string[]) =>
 const makeStubEmbedder = () => {
   const calls: string[] = [];
   const embedder: Embedder = {
+    dim: 768,
     embed: async (text: string): Promise<number[]> => {
       calls.push(text);
       const seed = text.length / 1000;

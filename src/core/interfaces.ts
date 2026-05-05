@@ -11,6 +11,15 @@ import type {
 // ---------------------------------------------------------------------------
 
 export interface Embedder {
+  /**
+   * Vector dimensionality this embedder produces. Pinned at construction —
+   * a single SDK instance writes at exactly this dim, and `vec_windows` /
+   * `vec_sessions` DDL is templated to match. Cross-dim migration of an
+   * existing on-disk corpus is unsupported: `vec0` virtual tables don't
+   * support `ALTER`, so changing dim after writes have landed requires
+   * `DROP + CREATE` + corpus re-embedding (out of scope for the SDK).
+   */
+  readonly dim: number;
   embed(text: string): Promise<number[]>;
   embedBatch(texts: readonly string[]): Promise<number[][]>;
 }

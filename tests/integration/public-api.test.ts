@@ -27,6 +27,7 @@ const skipSlow = process.env.SKIP_SLOW_TESTS === '1';
 const SLOW_TEST_TIMEOUT_MS = 120_000;
 
 const makeStubEmbedder = (): Embedder => ({
+  dim: 768,
   embed: async (text: string): Promise<number[]> => {
     const seed = text.length / 1000;
     return Array.from({ length: 768 }, (_, i) => seed + i * 1e-4);

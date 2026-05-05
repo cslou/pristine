@@ -129,6 +129,41 @@ describe('loadPristineConfig', () => {
     expect(result.embedder).toBeUndefined();
   });
 
+  it('preserves valid dim in local embedder config', () => {
+    const dir = makeTmpDir('cfg-embedder-local-dim');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({ embedder: { engine: 'local', dim: 1024 } }),
+    );
+
+    const result = loadPristineConfig(dir);
+
+    expect(result.embedder).toEqual({ engine: 'local', dim: 1024 });
+  });
+
+  it('preserves valid dim in ollama embedder config', () => {
+    const dir = makeTmpDir('cfg-embedder-ollama-dim');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({ embedder: { engine: 'ollama', model: 'qwen3', dim: 1024 } }),
+    );
+
+    const result = loadPristineConfig(dir);
+
+    expect(result.embedder).toEqual({ engine: 'ollama', model: 'qwen3', dim: 1024 });
+  });
+
+  it('wraps invalid embedder dim as ConfigError', () => {
+    const dir = makeTmpDir('cfg-embedder-bad-dim');
+    writeFileSync(
+      join(dir, 'models.json'),
+      JSON.stringify({ embedder: { engine: 'local', dim: 32 } }),
+    );
+
+    expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+    expect(() => loadPristineConfig(dir)).toThrow(/"embedder.dim" rejected/);
+  });
+
   it('accepts optional host in ollama embedder config', () => {
     const dir = makeTmpDir('cfg-embedder-host');
     writeFileSync(

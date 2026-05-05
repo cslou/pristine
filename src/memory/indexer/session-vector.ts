@@ -24,9 +24,10 @@ export interface BuildSessionVectorOptions {
 }
 
 /**
- * Embed an entire conversation as a single 768-d vector and store it in
- * `vec_sessions`. The hybrid retriever reads this row as the
- * coarse-grained session signal alongside the fine-grained `vec_windows`.
+ * Embed an entire conversation as a single configured-dim vector (default
+ * 768) and store it in `vec_sessions`. The hybrid retriever reads this row
+ * as the coarse-grained session signal alongside the fine-grained
+ * `vec_windows`.
  *
  * Flow:
  *   1. Verify the conversation exists; throw `ConversationNotFoundError`
@@ -108,6 +109,11 @@ export const buildSessionVector = async (
   }
 
   const vec = await embedder.embed(text);
+  if (vec.length !== embedder.dim) {
+    throw new InvalidArgumentError(
+      `buildSessionVector: embedder returned ${vec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
+    );
+  }
   const embedding = Float32Array.from(vec);
   const embeddingBuf = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
   const updatedAt = BigInt(Date.now());

@@ -13,7 +13,7 @@ let queue: IngestQueue;
 
 beforeAll(() => {
   db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
-  store = new ConversationStore(db);
+  store = new ConversationStore(db, 768);
   queue = new IngestQueue({ db });
 });
 
@@ -42,6 +42,7 @@ const makeStubEmbedder = (
 ) => {
   const calls: string[] = [];
   const embedder: Embedder = {
+    dim: 768,
     embed: async (text: string): Promise<number[]> => {
       calls.push(text);
       return vector;
@@ -132,6 +133,15 @@ describe('buildSessionVector (helper)', () => {
     );
   });
 
+  it('throws InvalidArgumentError when embedder output length differs from configured dim', async () => {
+    const conversationId = store.addConversation(makeMessages(['hi']), 'user-wrong-dim');
+    const { embedder } = makeStubEmbedder(Array.from({ length: 512 }, () => 0.1));
+
+    await expect(buildSessionVector(db, embedder, conversationId)).rejects.toThrow(
+      /returned 512-d vector, expected 768/,
+    );
+  });
+
   it('is a no-op on a conversation with zero messages (no vec_sessions row written)', async () => {
     // Construct a conversation with no messages — addConversation requires
     // at least one, so we INSERT directly.
@@ -170,6 +180,7 @@ describe('buildSessionVector (helper)', () => {
     const priorUpdatedAt = Number(priorRow.updated_at);
 
     const failingEmbedder: Embedder = {
+      dim: 768,
       embed: async (): Promise<number[]> => {
         throw new Error('rebuild failure');
       },
@@ -233,6 +244,7 @@ describe('buildSessionVector (helper)', () => {
   it('does not write a partial row if the embedder throws (transaction rollback)', async () => {
     const conversationId = store.addConversation(makeMessages(['hi']), 'user-fail');
     const failingEmbedder: Embedder = {
+      dim: 768,
       embed: async (): Promise<number[]> => {
         throw new Error('embedder simulated failure');
       },

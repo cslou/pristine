@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EmbedderError } from '../../src/core/errors.js';
+import { EmbedderError, InvalidArgumentError } from '../../src/core/errors.js';
 import { OllamaEmbedder } from '../../src/embedder/ollama/index.js';
 
 const TEST_CONFIG = {
@@ -16,7 +16,7 @@ function mockFetchResponse(body: unknown, status = 200): Response {
   } as Response;
 }
 
-function makeEmbeddings(count: number, dim = 3): number[][] {
+function makeEmbeddings(count: number, dim = 768): number[][] {
   return Array.from({ length: count }, (_, i) =>
     Array.from({ length: dim }, (__, j) => i + j * 0.1),
   );
@@ -246,6 +246,20 @@ describe('OllamaEmbedder', () => {
         expect(msg).toContain('Is Ollama running');
         expect(msg).toContain('http://my-host:5555');
       }
+    });
+  });
+
+  describe('strict dim validation', () => {
+    it('throws InvalidArgumentError naming both dims when model output length differs from configured dim', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        mockFetchResponse({ embeddings: makeEmbeddings(1, 1024) }),
+      );
+
+      const embedder = new OllamaEmbedder({ ...TEST_CONFIG, dim: 768 });
+
+      await expect(embedder.embed('hello')).rejects.toBeInstanceOf(InvalidArgumentError);
+      await expect(embedder.embed('hello')).rejects.toThrow(/configured dim=768/);
+      await expect(embedder.embed('hello')).rejects.toThrow(/produced 1024-d/);
     });
   });
 });

@@ -116,10 +116,20 @@ export class PristineLocal {
       config.db ?? createDefaultDatabase(init?.baseDir ? `${init.baseDir}/data` : undefined);
 
     const ownsEmbedder = config.embedder === undefined;
+    // Canonical SDK default-config site. The fallback `{ engine: 'local' }`
+    // resolves through `createEmbedder` to `DEFAULT_EMBEDDING_DIM` (768).
+    // 768 is chosen because gte-modernbert-base (the highest open-weight
+    // CoIR scorer at this size) is fixed-768 and not MRL-trained, while
+    // 1024-native MRL embedders truncate to 768 with ~1-3% NDCG loss
+    // (within bootstrap CI noise) and run 33% cheaper per cosine on
+    // consumer hardware. Cross-dim migration of an existing on-disk
+    // corpus is unsupported — `vec0` virtual tables have no ALTER.
+    // Do not introduce a second default elsewhere; consumers who need a
+    // different dim pass it explicitly via `EmbedderConfig.dim`.
     const embedder =
       config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
 
-    const conversationStore = new ConversationStore(db);
+    const conversationStore = new ConversationStore(db, embedder.dim);
 
     // Indexer + embed-worker wiring. Mirrors scripts/embed-worker.ts:
     // build a temp queue solely to read the indexer's resolved config,

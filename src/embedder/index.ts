@@ -1,30 +1,30 @@
 import type { Embedder } from '../core/interfaces.js';
 import { ConfigError } from '../core/errors.js';
+import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../core/vector-dim.js';
 import { OllamaEmbedder } from './ollama/index.js';
 import { LocalEmbedder } from './local/index.js';
+import type { EmbedderConfig } from '../core/embedder-config.js';
 
-export interface OllamaEmbedderEntry {
-  readonly engine: 'ollama';
-  readonly model?: string;
-  readonly host?: string;
-}
-
-export interface LocalEmbedderEntry {
-  readonly engine: 'local';
-  readonly model?: string;
-}
-
-export type EmbedderConfig = OllamaEmbedderEntry | LocalEmbedderEntry;
+export { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../core/vector-dim.js';
+export type {
+  EmbedderConfig,
+  LocalEmbedderEntry,
+  OllamaEmbedderEntry,
+} from '../core/embedder-config.js';
 
 export function createEmbedder(config: EmbedderConfig): Embedder {
+  const dim = config.dim ?? DEFAULT_EMBEDDING_DIM;
+  assertValidDim(dim);
+
   if (config.engine === 'ollama') {
     return new OllamaEmbedder({
       model: config.model,
       ...(config.host ? { host: config.host } : {}),
+      dim,
     });
   }
   if (config.engine === 'local') {
-    return new LocalEmbedder({ model: config.model });
+    return new LocalEmbedder({ model: config.model, dim });
   }
   throw new ConfigError(
     `Unsupported embedder engine: "${(config as { engine: string }).engine}". ` +

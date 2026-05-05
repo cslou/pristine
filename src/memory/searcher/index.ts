@@ -355,8 +355,6 @@ export interface SearcherDeps {
 // top-50 in the hybrid-RRF flow).
 const MAX_LIMIT = 1000;
 
-const VEC_DIM = 768;
-
 // Convert vec0 L2 distance to a similarity score in (0, 1]. Monotonically
 // decreasing in distance, so KNN's distance-ascending order maps to
 // score-descending order without any re-sort. Higher = more similar; this
@@ -385,6 +383,56 @@ const bm25ToScore = (bm25: number): number => {
 
 export const createSearcher = (deps: SearcherDeps): Searcher => {
   const { db, embedder } = deps;
+
+  // Cross-disk dim guard. A consumer who seeds a DB at one dim and later
+  // reopens it with a different-dim embedder would otherwise silently bind
+  // a wrong-length query vector against the existing vec0 column and get
+  // an opaque sqlite-vec MATCH error. The guard makes that case fail
+  // loudly: at first vectorSearch / sessionVectorSearch call, parse the
+  // on-disk DDL's `float[N]` token and compare to embedder.dim. Cross-dim
+  // migration is unsupported (vec0 has no ALTER), so a mismatch means
+  // the consumer must drop+rebuild the corpus or re-pin the embedder dim.
+  //
+  // Caching: only successfully-parsed dims are cached. A missing-table or
+  // unparseable-DDL result is NOT cached, so a searcher created against
+  // a pre-init DB still picks up the correct dim once the table exists.
+  // The set of vec0 table names is small (vec_windows, vec_sessions), so
+  // the post-init re-query is negligible and bounded.
+  const tableDimCache = new Map<string, number>();
+  const readTableDim = (tableName: string): number | null => {
+    const cached = tableDimCache.get(tableName);
+    if (cached !== undefined) return cached;
+    const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName) as
+      | { sql: string | null }
+      | undefined;
+    if (!row || row.sql === null) return null;
+    // Anchor on `embedding float[N]` — vec0's column-definition syntax.
+    // Tighter than a bare `/float\[(\d+)\]/` so a future column with a
+    // different name wouldn't silently shadow the dim parse. Case-
+    // insensitive in case sqlite-vec ever normalises the DDL echo to
+    // uppercase `FLOAT[N]`.
+    const match = /\bembedding\s+float\[(\d+)\]/i.exec(row.sql);
+    if (!match) {
+      // DDL exists but doesn't match the expected shape — surface as a
+      // loud error rather than letting it fall through to an opaque
+      // sqlite-vec MATCH error (the whole point of this guard).
+      throw new InvalidArgumentError(
+        `searcher: ${tableName} DDL does not match expected vec0 schema (no \`embedding float[N]\` column found); refusing to query against an unrecognised vector-table layout`,
+      );
+    }
+    const parsed = Number.parseInt(match[1]!, 10);
+    tableDimCache.set(tableName, parsed);
+    return parsed;
+  };
+  const assertOnDiskDimMatchesEmbedder = (tableName: string, methodName: string): void => {
+    const onDisk = readTableDim(tableName);
+    if (onDisk === null) return; // Table not yet created — empty corpus; downstream candidate query short-circuits.
+    if (onDisk !== embedder.dim) {
+      throw new InvalidArgumentError(
+        `searcher.${methodName}: configured embedder dim=${embedder.dim} but on-disk ${tableName} is float[${onDisk}] — cross-dim migration is unsupported (vec0 has no ALTER; drop and rebuild the corpus to change dim)`,
+      );
+    }
+  };
 
   // Statements with FIXED shape — hoisted to factory scope so the SQL
   // compiles once per searcher lifetime, not once per vectorSearch call.
@@ -478,6 +526,11 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       );
     }
 
+    // Cross-disk dim guard fires before the candidate query so a
+    // pre-existing-corpus mismatch surfaces a clear `InvalidArgumentError`
+    // rather than an opaque sqlite-vec MATCH error later.
+    assertOnDiskDimMatchesEmbedder('vec_windows', 'vectorSearch');
+
     // Step 1 — narrow conversation candidates via filter SQL.
     const { sql: candSql, params: candParams } = buildCandidateSql(filters);
     const candidateRows = db.prepare(candSql).all(...candParams) as { conversation_id: string }[];
@@ -488,9 +541,9 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     // so an empty-scope query short-circuits without paying the embed
     // cost (Nomic CPU embedding ~50-100ms per call).
     const queryVec = await embedder.embed(query);
-    if (queryVec.length !== VEC_DIM) {
+    if (queryVec.length !== embedder.dim) {
       throw new InvalidArgumentError(
-        `searcher.vectorSearch: embedder returned ${queryVec.length}-d vector, expected ${VEC_DIM}`,
+        `searcher.vectorSearch: embedder returned ${queryVec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
       );
     }
     // Use a for-loop instead of .some so an early-exit on the first NaN
@@ -767,6 +820,9 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
       );
     }
 
+    // Cross-disk dim guard — same rationale as vectorSearch.
+    assertOnDiskDimMatchesEmbedder('vec_sessions', 'sessionVectorSearch');
+
     // Step 1 — narrow conversation candidates. Same shape as vectorSearch
     // but role filter is intentionally ignored (session-level granularity
     // doesn't decompose by role; documented on the Searcher interface).
@@ -778,9 +834,9 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     // Step 2 — embed the query (same lazy ordering as vectorSearch:
     // cheap candidate check first, expensive embed second).
     const queryVec = await embedder.embed(query);
-    if (queryVec.length !== VEC_DIM) {
+    if (queryVec.length !== embedder.dim) {
       throw new InvalidArgumentError(
-        `searcher.sessionVectorSearch: embedder returned ${queryVec.length}-d vector, expected ${VEC_DIM}`,
+        `searcher.sessionVectorSearch: embedder returned ${queryVec.length}-d vector, expected ${embedder.dim} (configured embedder dim)`,
       );
     }
     for (let i = 0; i < queryVec.length; i++) {

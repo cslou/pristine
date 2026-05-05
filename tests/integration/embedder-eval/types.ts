@@ -9,6 +9,8 @@
  * point-rank claims.
  */
 
+import type { Embedder } from '../../../src/index.js';
+
 /**
  * Grade buckets for query difficulty. Each query is tagged with one of
  * three buckets so the eval can report metric stratification.
@@ -135,7 +137,7 @@ export interface RunEvalOptions {
    * goes through `createEmbedder(config)` so the candidate-trio
    * mapping in `candidates.ts` stays canonical.
    */
-  readonly embedderOverride?: import('../../../src/core/interfaces.js').Embedder;
+  readonly embedderOverride?: Embedder;
 }
 
 /**

@@ -1,17 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PristineLocal } from '../../../src/client.js';
-import { createDatabase } from '../../../src/core/database.js';
-import type { Embedder } from '../../../src/core/interfaces.js';
+import {
+  createDatabase,
+  PristineLocal,
+  type Embedder,
+  type Searcher,
+  type WindowHit,
+  type MessageHit,
+  type SessionHit,
+  type HybridHit,
+} from '../../../src/index.js';
+// `createEmbedder` and `EmbedderConfig` are not exposed by the public
+// barrel — the maintainer-only harness pulls them from the embedder
+// sub-barrel. Promoting these to the public surface would change the
+// SDK's exported API and is out of scope for the eval harness.
 import { createEmbedder, type EmbedderConfig } from '../../../src/embedder/index.js';
-import type {
-  Searcher,
-  WindowHit,
-  MessageHit,
-  SessionHit,
-  HybridHit,
-} from '../../../src/memory/searcher/index.js';
 import { bootstrapMeanCI } from './bootstrap.js';
 import { ndcgAtK, percentile, recallAtK, reciprocalRank } from './metrics.js';
 import type {

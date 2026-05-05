@@ -1,5 +1,5 @@
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { confineReportsDir, DEFAULT_REPORTS_DIR, parseArgs } from './cli-args.js';
 
@@ -46,12 +46,15 @@ describe('parseArgs', () => {
 
 describe('confineReportsDir', () => {
   it('accepts a path inside the OS tmpdir', () => {
-    const p = `${tmpdir()}/eval-reports`;
-    expect(confineReportsDir(p)).toBe(resolve(p));
+    const realTmp = realpathSync(tmpdir());
+    const p = `${realTmp}/eval-reports`;
+    // The eval-reports leaf doesn't exist; confineReportsDir resolves
+    // the nearest existing ancestor (realTmp) and reattaches the tail.
+    expect(confineReportsDir(p)).toBe(p);
   });
 
   it('accepts the OS tmpdir itself', () => {
-    expect(confineReportsDir(tmpdir())).toBe(resolve(tmpdir()));
+    expect(confineReportsDir(tmpdir())).toBe(realpathSync(tmpdir()));
   });
 
   it('rejects /etc/cron.d', () => {

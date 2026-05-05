@@ -1,6 +1,7 @@
 # Pristine — Sprint 017
+
 **Date:** 2026-04-28 – TBD
-**Goal:** Spike on switching the local embedder to a higher-dimension / higher-quality model — research the current landscape, build the measurement infrastructure, run a head-to-head, decide go/no-go.
+**Goal:** Pick a defensible **default + alternates** for Pristine's local embedder by (a) building a domain-custom measurement harness, (b) running it head-to-head on the candidate trio surfaced in PR #172's research, (c) shipping user-facing recommendations docs that name the default + alts with benchmark numbers backing them. Replaces the prior spike framing — research is closed; this sprint is implementation + eval.
 **Status:** 🟡 Planning
 
 ---
@@ -9,256 +10,342 @@
 
 ### Project Context
 - **Repo:** `/Users/lou/projects/pristine`
-- **Tech stack:** TypeScript (strict, ESM), Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` (Nomic Embed v1.5, 768-d), Vitest. Local-first — zero outbound network calls in production code.
-- **Current state:** spec-005 Phase 4 shipped in sprint-016. `Pristine.create({...}).storeAsync(...)` populates the corpus end-to-end; `pristine.searcher` exposes `vectorSearch`, `ftsSearch`, `hybridSearch`, and `sessionVectorSearch` with filter-first scoping + RRF fusion. Cross-cutting integration suite locks the contract. The Story 7 ad-hoc retrieval demo (`scripts/demo-search.ts`, real Nomic v1.5 against a 6-conversation × 2-project synthetic corpus) surfaced a real quality limitation: top-5 result lists consistently include 2-3 unrelated junk results, and the per-method score gap between "right answer" (~0.55) and noise (~0.49) is too narrow to use for thresholding. Root cause is the embedder's narrow score distribution — Nomic v1.5's 768-d compresses subtly-related concepts and unrelated concepts into near-adjacent regions of the embedding space.
-- **Implementation spec:** `docs/specs/implementation-spec-005.md` (§5.3 Embedding — currently pins Nomic v1.5; this sprint may revise that pin)
+- **Tech stack:** TypeScript (strict, ESM), Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` v3.x (in-process `LocalEmbedder`) + Ollama HTTP (`OllamaEmbedder`), Vitest. Local-first — zero outbound network calls in production code.
+- **Current state:** spec-005 Phase 4 + 5 shipped (sprints 016 + 019). `client.searcher` exposes `vectorSearch` / `ftsSearch` / `hybridSearch` / `sessionVectorSearch` / `sql`. Two embedder engines plug into `PristineLocal.create({ embedder: ... })`: `LocalEmbedder` (in-process, Nomic v1.5 default) + `OllamaEmbedder` (sidecar, model-by-name). Story 7 demo (sprint-016) surfaced a real quality limitation in Nomic v1.5: top-5 result lists include 2-3 unrelated junk results; per-method score gap between "right answer" (~0.55) and noise (~0.49) is too narrow for thresholding. **The candidate trio (per PR #172 research): `Alibaba-NLP/gte-modernbert-base` (in-process), `embeddinggemma:300m` (Ollama, default candidate), `qwen3-embedding:0.6b` (Ollama, license-clean alt).** Baseline: Nomic v1.5.
+- **Implementation spec:** `docs/specs/implementation-spec-005.md` §5.3 (Embedding) currently pins Nomic v1.5 as the documented default; this sprint may revise that pin based on Story 4's measurements.
 
 ### Sprint-Level Technical Context
 
-- **This sprint is a SPIKE, not a feature ship.** The goal is to gather data and make a decision, not to harden a new feature. Story 5's "ship the swap" is conditional on Story 4's measurement showing a clear winner. If no candidate beats Nomic v1.5 on the score-gap metric, Story 5 ships nothing — just a documented decision with the criteria for revisiting.
-- **Storage schema must become dim-parameterized.** `vec_windows` and `vec_sessions` currently hardcode `embedding float[768]` in DDL (`src/conversations/store.ts:154,196`); `LocalEmbedder` hardcodes `EXPECTED_DIMENSION = 768` (`src/embedder/local/index.ts:6`); `searcher.vectorSearch` validates `VEC_DIM = 768` (`src/memory/searcher/index.ts`). `vec0` does NOT support `ALTER` on the typed column — switching dim requires `DROP + CREATE` of the virtual tables plus a corpus rebuild. Story 3 builds the parameterization + a one-shot migration helper.
-- **Local-first contract is non-negotiable.** Any candidate must run via `@huggingface/transformers` (or equivalent in-process inference) — no remote inference services. Models must be downloadable on first use; no auth-gated weights. License must permit local commercial use (Apache 2.0 / MIT preferred; Llama-style "research-only" excluded).
-- **Model size budget.** Cap candidate model file size at ≤2GB on-disk. Nomic v1.5 is ~140MB; Stella v5 1.5B ~3GB (excluded by this rule); bge-large-en-v1.5 ~1.3GB; mxbai-embed-large ~670MB. Story 1's research output respects this.
-- **No new top-level dependencies in production code paths.** Candidate evaluation (Story 4) may install candidate models into `node_modules` via `@huggingface/transformers`; the production `LocalEmbedder` keeps the same single dep.
-- **The score-gap metric is the load-bearing measurement.** Recall@K and MRR require labeled relevance judgments; for a 1-week spike we use a leaner proxy: for each labeled query, measure (a) top-1 score against (b) score of the highest-ranked irrelevant hit in top-5. A wider gap = better noise rejection. Story 2 builds this; Story 4 runs it.
-- **Sprint-016 retro carry-over.** Sprint-016 close logged "FTS5 unicode61 → porter migration" and "storeAsync auto-invoke buildSessionVector" as deferred items. Both are OUT OF SCOPE for sprint-017 — embedder spike only.
+- **Blocking precondition:** PR #172 (`docs/research/embedder-landscape-2026.md` + `docs/research/embedder-evaluation-methodology-2026.md`) MUST be merged into `main` before the `sprint-017` branch is created. This sprint cannot start otherwise — Stories 1, 2, 3, and 5 all reference artifacts PR #172 produces (candidate trio, methodology / power-analysis, bootstrap recipes, license commentary). If PR #172 is not merged at sprint kickoff, the sprint is paused; no story executes.
+- **This sprint is implementation + eval, not a spike.** The research that the original sprint-017 framed as Story 1 is closed by PR #172 (`docs/research/embedder-landscape-2026.md` + `docs/research/embedder-evaluation-methodology-2026.md`). Story 1 below is a one-line acknowledgment + cross-reference; Stories 2-5 are the new work.
+- **Pristine's two-engine architecture supports model swaps without interface changes (after Story 0).** A consumer already picks an embedder via `PristineLocal.create({ embedder: { engine: 'local' | 'ollama', model: ... } })`. **Modularization invariant for Stories 1-5:** no change to `src/core/interfaces.ts:Embedder` (the embed contract), no new engine class, and after Story 0 lands, no change to `src/embedder/index.ts:EmbedderConfig` shape. Story 0 makes a **one-time additive change** to `EmbedderConfig` (adds optional `dim` field, default 768); after Story 0 merges into `sprint-017`, Stories 1-5 run under the strict invariant. Story 5's conditional default-swap then changes only the **default `EmbedderConfig` value** in `src/client.ts` — never the `EmbedderConfig` shape itself.
+- **Smaller-bootstrap measurement harness.** PR #172's methodology doc names two harness sizes: 200-query labelled set with 3-judge LLM ensemble (full rigor) or 50-100-query human-judged single-seed (smaller bootstrap). **This sprint locks the smaller bootstrap.** 50 queries is the floor that's still discriminative for the 0.02-0.05 in-domain Δ NDCG@10 expected between candidates; the harness is built to be extensible to the larger size in a follow-up sprint if needed.
+- **Storage schema becomes dim-parameterized in Story 0.** Pre-sprint: `vec_windows` and `vec_sessions` hardcode `embedding float[768]` in DDL (`src/conversations/store.ts`); `LocalEmbedder` hardcodes `EXPECTED_DIMENSION = 768`; `searcher.vectorSearch` validates `VEC_DIM = 768`. **Story 0 templates the DDL by `dim`, drops the `EXPECTED_DIMENSION` and `VEC_DIM` constants in favor of per-instance + per-deps config, and ships SDK default `dim: 768`** — chosen because the highest CoIR scorer in the candidate trio (`gte-modernbert-base`) is fixed at 768 and the two MRL-trained Ollama candidates truncate gracefully (1-3% NDCG loss at 768 vs native, below bootstrap CI noise). 33% lower per-query cosine cost vs 1024 is an additional win on consumer hardware. **Cross-dim migration of existing on-disk corpora is explicitly out of scope this sprint** — a consumer who later changes `dim` must create a fresh DB; document this in Story 5's selection doc.
+- **Local-first contract is non-negotiable.** Candidates must run via in-process `@huggingface/transformers` OR a local Ollama daemon — no remote inference services. Models must be downloadable / pullable on first use; no auth-gated weights. License must permit local use (Apache-2.0 preferred; Gemma TOS is Story 5's recommendation-doc trade-off, not a disqualification).
+- **Candidate trio is locked at sprint planning.** PR #172 produced the shortlist after two passes of the `general-research` sub-agent. **No re-litigating candidates inside the sprint.** If a Story 3 smoke-test reveals a candidate is unloadable (e.g., Ollama model-pull broken, transformers.js arch unsupported on current pinned version), the resolution is to flag-and-document, not swap in a fresh candidate.
+- **Sprint-016 retro carry-over.** "FTS5 unicode61 → porter migration" and "storeAsync auto-invoke buildSessionVector" remain deferred. Out of scope.
+
+### Story 0 baseline sha
+
+*(Filled in by the maintainer on Story 0 PR merge into `sprint-017`. Owner: whoever merges Story 0's PR.)*
+
+- **Story 0 merge-commit sha:** `<TBD — record `git rev-parse origin/sprint-017` immediately after the Story 0 PR merges, before opening the Story 1 branch>`
+- **`EmbedderConfig` post-Story-0 type signature snapshot** (paste verbatim from `src/embedder/index.ts` after the dim-field addition):
+  ```ts
+  // <fill in: the TS type-alias / discriminated-union as it lands in Story 0>
+  ```
+
+Story 5's modularization-invariant audit (AC-9) uses this sha + this snapshot as its diff baseline. The Final Verification Story re-records both in `## Final Review` for the durable audit copy.
 
 ### User Flows
 
-- **Affected (existing):** `storeAsync(...)` and `searcher.{vector,session}VectorSearch` and `searcher.hybridSearch` all run through `LocalEmbedder` and write/read to fixed-dim `vec_windows` / `vec_sessions`. If Story 5 ships a swap, every flow that touches those primitives gets the new model + dim under the hood. Filter behavior, API shape, and SDK contract all stay identical — only the embedding numbers change.
-- **New (this sprint):** None. Sprint is research + measurement + conditional swap; no new SDK-public surface.
+- **Affected (existing):** `storeAsync(...)` and `searcher.{vector,session}VectorSearch` and `searcher.hybridSearch` all run through whichever `Embedder` the consumer wired into `PristineLocal.create`. The `EmbedderConfig` shape gains an optional `dim: number` field in Story 0 (default 768; backward-compatible — omitting the field selects the default). The DDL for `vec_windows` and `vec_sessions` becomes templated by `dim` at table-create time. The `Embedder` interface (`embed` / `embedBatch` signatures) is unchanged.
+- **New (this sprint):** Story 0 ships dim-parameterized storage. Story 5 ships a new doc (`docs/conventions/embedder-selection.md`) with consumer-facing recommendations. Story 2's harness is invoked via a new CLI (`npm run eval:embedder`) — used by maintainers, not exposed to consumers.
 
 ### Stories
-**Constraints:** Target a maximum of 5-8 stories per sprint. Target a maximum of 5-8 commits per story. If a story needs more than 8 commits during planning, try to split it unless it makes sense for them to not be split.
+**Constraints:** Target 5-8 stories per sprint. Target ≤8 commits per story. Final Evaluation Story always last.
 
-#### Story 1: Embedder landscape research (post-2025 model survey)
+**Execution order:** Story 0 → Story 1 (alignment, no commits — pure cross-reference) → Story 2 → Story 3 → Story 4 → Story 5 → Final Verification Story. The file places Story 1 first because it documents the closure of the prior research framing (which is the conceptual entry point for the sprint); Story 0 is the foundational architectural change and runs first in execution. This deviates from strict file-order = execution-order convention; if you're an executing agent, follow the execution order above.
 
-- **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Follows sprint template (acceptance criteria, testing approach, automated QAs for agents, manual QAs for Lou, planned commits)
-  - [ ] Within size limits (5-8 commits; split if larger)
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed and have sub-agent review again until they state that it is ok (fixes applied or disagreements noted)
-  - [ ] Each AC verified against git diff and test output before marking done
-  - [ ] Ready for Lou
-- **Review:**
-  - Findings: *(summary of review feedback)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
-- **As a** maintainer evaluating an embedder swap, **I want** a current survey of post-2025 open-weights embedding models that meet our local-first + ≤2GB constraints, **so that** Story 4's spike has a defensible candidate shortlist instead of a vibe-driven pick.
-- **Dependencies:** None
-- **Acceptance criteria:**
-  - [ ] New file `docs/research/embedder-landscape-2026.md` documenting at minimum 5 candidate models published after 2025-01-01. Each entry includes: model name + Hugging Face path, parameter count, embedding dimension, max context window, model file size on disk (rounded to MB), `@huggingface/transformers` compatibility status (verified on a representative model — load via `pipeline('feature-extraction', ...)` and confirm `output.data` is a Float32Array), license, MTEB / leaderboard score (if reported by the publisher; cite source URL), and a one-paragraph "why we'd consider this" rationale.
-  - [ ] Doc explicitly addresses Nomic v2 if it exists (per user direction "many were recently released"). If Nomic v2 is published, include it as a candidate; if not, document the search and the most-recent Nomic-family release.
-  - [ ] Doc shortlists 3 finalist candidates that Story 4 will benchmark, with selection rationale per finalist (e.g., "highest MTEB score in the ≤1GB tier", "best context-window for long conversations", "smallest while still > 1024d").
-  - [ ] Doc lists explicit DEAL-BREAKERS for each candidate considered (license, runs-locally, weight-gated, model-size > 2GB) so the shortlist's exclusions are auditable.
-  - [ ] Confirms each finalist's tokenizer compatibility with `@huggingface/transformers` — some sentence-transformers models require tokenizer-config gymnastics; document if so.
-- **Testing approach:** Manual research artifact, not code. Reviewer reads the doc and verifies each candidate's claims map to a public Hugging Face model card or paper. No code tests.
-- **QA:**
-  - Manual: read `docs/research/embedder-landscape-2026.md` end-to-end. Click through each model's HF link. Verify the shortlist rationale.
-  - Automated: N/A — research output. **THIS IS IMPORTANT** the doc IS the artifact; downstream stories cite it.
-- **Planned commits:**
-  1. `docs(research): scaffold embedder-landscape-2026 with Nomic v1.5 baseline + criteria`
-  2. `docs(research): survey candidate models (≥5 entries, ≤2GB tier)`
-  3. `docs(research): shortlist 3 finalists for Story 4 spike`
-- **Technical notes:** The `@huggingface/transformers` README maintains a list of supported architectures. Cross-reference with MTEB English leaderboard (https://huggingface.co/spaces/mteb/leaderboard) for objective scoring. For models that exceed our constraints (e.g., gte-Qwen2-7B at >7GB), call them out as "considered, excluded by size" — don't silently omit them; the exclusion record is part of the audit trail. **Do NOT install any models in this story** — that's Story 4's job. Story 1 produces ONLY the doc.
-- **Priority:** Must-have
-
-#### Story 2: Measurement harness — labeled query set + score-gap metric
+#### Story 1: Close research + cross-reference
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
-  - [ ] Within size limits (5-8 commits)
+  - [ ] Acceptance criteria are specific and testable
+  - [ ] Functional verification items have pass/fail conditions
+  - [ ] Regression verification items have pass/fail conditions (N/A — doc-only story; no code paths exercised)
+  - [ ] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed
-  - [ ] Each AC verified
+  - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
-- **Review:**
-  - Findings: *(summary)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
-- **As a** spike runner, **I want** a small labeled query set + a measurement harness that takes any `Embedder` and returns score-gap metrics, **so that** Story 4's candidates are compared on the same yardstick instead of eyeballing demo output.
-- **Dependencies:** None (corpus reuses Story 7's `scripts/demo-search.ts` content; expand if needed)
+- **Planning review:**
+  - Findings: *(sprint-doc-reviewer findings, or `None`)*
+  - Resolution: *(changes made, accepted risk, or `N/A`)*
+- **As a** maintainer, **I want** the prior sprint-017 Story 1 (research) explicitly closed with a pointer to PR #172, **so that** Story 4's eval has an unambiguous candidate-list source-of-truth and reviewers don't re-litigate it.
+- **Dependencies:** Sprint-Level "Blocking precondition" — PR #172 must be merged into `main` before sprint kickoff (see top of Sprint-Level Technical Context).
 - **Acceptance criteria:**
-  - [ ] New file `tests/eval/embedder-spike-corpus.json` containing 8-12 conversations across 3 projects (extends the demo-search corpus). Hand-labeled `expected_top1_conversation` per query in `tests/eval/embedder-spike-queries.json` — 15-20 queries spanning literal-token recall, paraphrased semantic recall, cross-conversation thematic recall, and out-of-domain.
-  - [ ] New script `scripts/embedder-spike.ts` that takes an `Embedder` factory, runs the corpus + queries, and prints a results table per primitive (`vectorSearch`, `ftsSearch`, `hybridSearch`) including: recall@5 (top-1 conversation matches expected), score-gap (top-1 score minus highest-ranked-irrelevant-in-top-5), out-of-domain ceiling (max score for queries where expected = `none`).
-  - [ ] Harness verified against current Nomic v1.5 baseline — produces a results table; the baseline numbers go into the docs/research doc as the bar to beat.
-  - [ ] No production-code changes in this story — harness is purely under `scripts/` and `tests/eval/`.
-  - [ ] Score-gap metric documented in a JSDoc on the harness — what it measures, why it's a useful proxy, what its limitations are vs full Phase 7 recall@K with labeled relevance judgments.
-- **Testing approach:** The harness IS the test infrastructure. Verify it runs end-to-end against the current Nomic embedder and produces a coherent results table.
-- **QA:**
-  - Manual: `npx tsx scripts/embedder-spike.ts` against the default `LocalEmbedder` — confirm the results table prints, score-gap numbers are non-zero, recall@5 is reasonable for the labeled corpus.
-  - Automated: N/A — script + JSON, no test suite. **THIS IS IMPORTANT** but the harness IS Story 4's load-bearing measurement.
+  - [ ] PR #172 is merged on `main`. Verified at the moment `sprint-017` is branched from `main`: `git show main:docs/research/embedder-landscape-2026.md` and `git show main:docs/research/embedder-evaluation-methodology-2026.md` both succeed (exit 0, non-empty output). If either fails, sprint-017 does not start.
+  - [ ] Sprint-Level Technical Context lists exactly the three candidates: `Alibaba-NLP/gte-modernbert-base` (in-process), `embeddinggemma:300m` (Ollama, default candidate), `qwen3-embedding:0.6b` (Ollama, license-clean alt). Baseline: Nomic v1.5.
+  - [ ] No code work; this is an alignment / hand-off story.
+- **Functional verification:**
+  - [ ] `grep -nE "gte-modernbert-base|embeddinggemma:300m|qwen3-embedding:0.6b" docs/sprints/sprint-017.md` returns ≥3 hits across the candidate trio.
+- **Regression verification:** None — doc-only.
+- **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `feat(eval): hand-label embedder-spike corpus + query set`
-  2. `feat(scripts): embedder-spike harness — score-gap + recall@5 per primitive`
-  3. `feat(scripts): baseline Nomic v1.5 results table captured in research doc`
-- **Technical notes:** Hand-labeling 15-20 queries is the load-bearing manual step. For each query, the labeler picks ONE expected top-1 conversation (the one most relevant to the query) and optionally a list of "also-acceptable" conversations. Out-of-domain queries have `expected_top1_conversation: null`. Don't try to label individual messages or windows — conversation-level labeling is sufficient for the spike's purposes and avoids the per-window labeling quagmire. The harness's score-gap is a PROXY, not a benchmark — Phase 7 will replace it with proper recall@K against a labeled dataset (LOCOMO-style); this sprint just needs enough signal to differentiate candidates.
-- **Priority:** Must-have
+  1. (Already in this sprint-doc revision PR.) No further commits for Story 1.
+- **Technical notes:** Story 1 closes immediately on sprint kickoff; it exists to make the candidate-list lock explicit.
 
-#### Story 3: Embedder profile abstraction + dim-parameterized schema
+#### Story 0: Parameterize embedding dim across storage + retrieval
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
-  - [ ] Within size limits
+  - [ ] Acceptance criteria are specific and testable
+  - [ ] Functional verification items have pass/fail conditions
+  - [ ] Regression verification items have pass/fail conditions
+  - [ ] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed
-  - [ ] Each AC verified
+  - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
-- **Review:**
-  - Findings: *(summary)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
-- **As a** Story 4 spike runner, **I want** the embedder dimension to be a runtime parameter rather than a hardcoded `768` baked into DDL + validation, **so that** swapping to a 1024-d or 1536-d candidate doesn't require a manual schema rewrite per spike attempt.
-- **Dependencies:** None
+- **Planning review:**
+  - Findings: *(sprint-doc-reviewer findings, or `None`)*
+  - Resolution: *(changes made, accepted risk, or `N/A`)*
+- **As a** maintainer of a pre-launch local-first SDK, **I want** the embedding dim to be a configured value rather than a global constant, **so that** future model swaps that ship at non-768 native dims (or different Matryoshka truncation budgets) don't require a schema-migration sprint, AND **as a** Pristine consumer, **I want** the SDK default dim to remain 768 (no opt-in needed), **so that** existing example code and the documented `EmbedderConfig` shape don't break.
+- **Dependencies:** Sprint-Level Blocking Precondition (PR #172 merged on `main`). No story dependency. Story 0 is foundational and runs first; Stories 1-5 consume the parameterized surface.
 - **Acceptance criteria:**
-  - [ ] New `EmbedderProfile` interface in `src/core/interfaces.ts` with at minimum `dim: number`, `modelName: string`, `maxContextTokens: number`. Profile is exposed on the `Embedder` interface as a `readonly profile: EmbedderProfile` field; consumers read `embedder.profile.dim` to know what dim the embedder produces.
-  - [ ] `LocalEmbedder` exposes a static profile for Nomic v1.5 (`{dim: 768, modelName: 'nomic-ai/nomic-embed-text-v1.5', maxContextTokens: 8192}`). Constructor accepts an optional override `LocalEmbedderConfig.profile?: EmbedderProfile`; if absent, defaults to Nomic v1.5.
-  - [ ] `vec_windows` and `vec_sessions` DDL becomes a function of the embedder profile — `ConversationStore` constructor accepts an `EmbedderProfile` argument and injects `embedding float[${profile.dim}]` into the CREATE VIRTUAL TABLE statement. **Profile dim is treated as trusted internal config — the storage layer asserts it's a positive integer ≤ 4096 (vec0's reasonable upper bound) but does NOT defend against caller-controlled SQL injection (the dim isn't user-facing input).** Document the trust boundary in a JSDoc on the profile-accepting overload.
-  - [ ] `searcher.vectorSearch` and `searcher.sessionVectorSearch` validate the query embedding against `embedder.profile.dim` instead of the hardcoded `VEC_DIM = 768`.
-  - [ ] One-shot migration helper `migrateEmbedderDim(db, oldProfile, newProfile)` in a new `src/conversations/migrations.ts` (or appropriate location): drops + recreates `vec_windows` + `vec_sessions` virtual tables with the new dim, deletes existing rows, and resets `pending_ingest_tasks` to re-trigger embed work. Documented as DESTRUCTIVE — the existing corpus's vectors are gone after this; a re-embed pass via `runEmbedWorker` is required. Returns row counts pre/post for caller verification.
-  - [ ] All existing tests pass with `EmbedderProfile.dim = 768` (no behavior change for the default path).
-  - [ ] At least 2 new tests exercising `dim ≠ 768` — one with a stub `EmbedderProfile { dim: 1024 }` to confirm the schema parameterization works; one with the migration helper round-trip (768 → 1024 → re-ingest → searcher returns hits at the new dim).
-- **Testing approach:** Unit tests for the profile factory + migration helper. Integration test exercising the round-trip — ingest at 768, migrate to 1024, re-ingest, vectorSearch returns hits at 1024.
-- **QA:**
-  - Manual: `npx tsx scripts/smoke-indexer.ts` still passes with the default profile (no behavior regression).
-  - Automated: new tests above. **THIS IS IMPORTANT** — Story 4's spike script can't run without this parameterization.
+  - [ ] **`EmbedderConfig` gains an optional `dim` field** in `src/embedder/index.ts`. Type: `dim?: number`. The factory (`createEmbedder`) defaults to `768` when omitted. Adding the field is the **only** shape change to `EmbedderConfig` this sprint; both the `local` and `ollama` engine variants accept it.
+  - [ ] **DDL templated by `dim`.** `src/conversations/store.ts` builds the `CREATE VIRTUAL TABLE vec_windows USING vec0(embedding float[N])` and `vec_sessions` DDL strings from the configured `dim` (passed in via the `Database` deps or store init). Validation: `Number.isInteger(dim) && dim >= 64 && dim <= 4096`, throw `InvalidArgumentError` otherwise — protects against SQL-injection or absurd values being string-interpolated into DDL.
+  - [ ] **`LocalEmbedder` and `OllamaEmbedder` constructors accept the configured `dim`** and validate at first `embed()` call: model output length must equal configured dim. Throw `InvalidArgumentError` with a message naming both expected + actual dims on mismatch (e.g., `"LocalEmbedder configured dim=1024 but model 'gte-modernbert-base' produced 768"`).
+  - [ ] **`searcher.vectorSearch` reads dim from deps**, not from a top-level `VEC_DIM` constant. The `MAX_LIMIT = 1000` constant stays as-is; the dim constant is removed and replaced by `searcher.deps.dim`.
+  - [ ] **Default dim is 768.** The default is set in exactly one place — `src/client.ts` (the `EmbedderConfig` literal that `PristineLocal.create({})` falls back to). Document the default + the chosen-because-of-CoIR-scoring reason in a one-paragraph comment block at the default-config site.
+  - [ ] **Cross-dim migration is NOT supported.** A consumer who creates a DB with `dim=768` and later passes `dim=1024` must hit a clear runtime error from `searcher.vectorSearch` (dim-mismatch) on first query. Document the limitation in the `Embedder` interface JSDoc + Story 5's selection doc.
+  - [ ] **No public-API surface change beyond the optional `dim` field.** The `Embedder` interface (`embed`, `embedBatch` signatures) is byte-identical pre/post.
+- **Functional verification:**
+  - [ ] Default-dim regression: `npm run test:integration` with no test changes passes — every existing test that doesn't pass an explicit `dim` gets 768 and works exactly as before. Positive observable: a new integration assertion in `tests/integration/dim-default.test.ts` opens a default-config DB and queries `SELECT sql FROM sqlite_master WHERE name = 'vec_windows'`; the returned DDL string contains `float[768]` (proves the default-768 path was actually exercised, not a no-op pass-through).
+  - [ ] Custom-dim happy path: a new unit test at `tests/embedder/dim-parameterization.test.ts` creates `PristineLocal.create({ embedder: { engine: 'local', model: '<test-model>', dim: 1024 } })`, verifies the resulting `vec_windows` DDL contains `float[1024]` (via `SELECT sql FROM sqlite_master`), and a `storeAsync` → `searcher.vectorSearch` round-trip succeeds.
+  - [ ] Mismatch error path (embed): configure `dim=1024` with an embedder that produces 768; assert `embed()` throws `InvalidArgumentError` with both dims named in the message.
+  - [ ] **Mismatch error path (searcher across pre-existing corpus):** seed a DB with `vec_windows` created at `dim=768` (use the default-config path to seed real rows), then re-instantiate `PristineLocal.create({ embedder: { engine: 'local', model: '...', dim: 1024 } })` against the same DB file and call `searcher.vectorSearch`. Assert `InvalidArgumentError` (or a clearly-named subclass) is thrown with both expected (1024) and actual (768) dims named in the message — proves the documented "consumer who later changes dim must hit a clear runtime error" behavior from AC-6.
+  - [ ] DDL injection guard: configure `dim` as `'768; DROP TABLE messages;--' as any` (TS bypass); assert `InvalidArgumentError` is thrown before any DDL is built.
+  - [ ] Dim out-of-range: `dim=63` and `dim=4097` both throw `InvalidArgumentError`.
+- **Regression verification:**
+  - [ ] `npm run test:unit` — exit 0; no `Embedder`-interface or `searcher` tests broke.
+  - [ ] `npm run test:integration` — exit 0; `searcher-sql.test.ts`, `storeasync.test.ts`, `client.test.ts`, etc. all pass with the default-768 path.
+  - [ ] `bash .checks/pre-merge.sh` — exit 0.
+  - [ ] **Public-barrel diff:** `git diff main..HEAD -- src/index.ts` shows zero new exports and zero removed exports (the `dim` field is exposed via the existing `EmbedderConfig` re-export — no new symbol).
+- **Manual-only verification:** N/A — fully automatable.
 - **Planned commits:**
-  1. `feat(core): EmbedderProfile interface + Embedder.profile field`
-  2. `feat(embedder/local): expose Nomic v1.5 profile + accept profile override`
-  3. `refactor(store): vec_windows + vec_sessions DDL parameterized by EmbedderProfile.dim`
-  4. `refactor(searcher): validate query embedding against runtime profile.dim, not constant`
-  5. `feat(store): migrateEmbedderDim helper — drop+recreate vec0 tables, reset pending tasks`
-  6. `test(integration): dim-swap round-trip — 768 → 1024 → re-ingest → search`
-- **Technical notes:** The `dim` validation upper bound (4096) covers all candidates we care about — Stella v5 maxes at 8192d but is excluded by the size budget. `vec0` itself accepts arbitrary dims; the constraint is what the candidates need. The migration helper is intentionally destructive because preserving 768d vectors when migrating to 1024d is meaningless (the vectors aren't comparable). Re-embed cost on a real corpus is ~0.1s × N messages; for the spike corpus (~50 messages) it's negligible.
-- **Priority:** Must-have
+  1. `feat(embedder): add optional dim field to EmbedderConfig (default 768) + per-instance dim validation`
+  2. `feat(storage): template vec_windows + vec_sessions DDL by configured dim with bounds-validated integer guard`
+  3. `refactor(searcher): read dim from deps, drop VEC_DIM and EXPECTED_DIMENSION constants`
+  4. `test(embedder): unit + integration tests for dim parameterization (default 768, custom 1024, mismatch + injection-guard error paths)`
+- **Technical notes:** Story 0 is the foundational architectural change that unblocks the modularization invariant for Stories 1-5. Without it, Story 5's "default-swap" would be a string-constant edit on a hardcoded dim, and any future candidate at dim ≠ 768 would require a follow-up sprint. With it, default-swap becomes a config-default change and any future dim-aware candidate slots in via existing config. **Why 768 as default**: the highest CoIR scorer in the candidate trio (`gte-modernbert-base`) is fixed at 768 (not MRL-trained); the two MRL-trained Ollama candidates truncate to 768 with 1-3% loss (within bootstrap CI noise). Picking 1024 would exclude the best CoIR candidate; picking 768 keeps all three runnable and is 33% cheaper per cosine. Document this rationale in the default-config site comment (per AC-5). Cross-dim migration is explicitly deferred — `vec0` virtual tables do not support `ALTER`, so a dim change requires `DROP + CREATE` + corpus rebuild; a follow-up sprint will ship a migration tool when a real consumer needs it. **Bounds rationale (AC-2)**: 64 rejects single-byte-aligned absurdities (no practical embedder ships <64-d) and 4096 covers all current open-weight embedder native dims (`text-embedding-3-large` is 3072) plus headroom; revisit if a candidate ships >4096. **Story 0 baseline sha capture (cross-story dependency for Story 5 AC-9):** when this story's PR merges into `sprint-017`, the maintainer immediately runs `git rev-parse origin/sprint-017` and pastes the resulting sha into the `### Story 0 baseline sha` section of this sprint doc, along with a verbatim copy of the post-Story-0 `EmbedderConfig` TS signature from `src/embedder/index.ts`. Both must land before Story 1 opens, so Story 5's audit (which executes much later) has a stable baseline to diff against.
 
-#### Story 4: Run the spike — install + benchmark 3 candidates
+#### Story 2: Embedder eval harness — 50-query labelled bootstrap
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
-  - [ ] Within size limits
+  - [ ] Acceptance criteria are specific and testable
+  - [ ] Functional verification items have pass/fail conditions
+  - [ ] Regression verification items have pass/fail conditions
+  - [ ] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed
-  - [ ] Each AC verified
+  - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
-- **Review:**
-  - Findings: *(summary)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
-- **As a** maintainer making the embedder-swap decision, **I want** the 3 finalist candidates from Story 1 evaluated against the Story 2 harness with concrete numbers, **so that** Story 5's go/no-go has data to act on.
-- **Dependencies:** Stories 1 + 2 + 3
+- **Planning review:**
+  - Findings: *(sprint-doc-reviewer findings, or `None`)*
+  - Resolution: *(changes made, accepted risk, or `N/A`)*
+- **As a** maintainer running an embedder head-to-head, **I want** a TypeScript measurement harness that scores any `Embedder` implementation on a labelled query set with NDCG@10 + Recall@K + MRR + paired bootstrap CIs, **so that** Story 4 produces deltas-with-uncertainty rather than point-rank claims.
+- **Dependencies:** Stories 0 + 1. Story 0's parameterized `dim` is what `EmbedderConfig` consumers (including the harness) pass in for storage compatibility. **Truncation path for Qwen3 (locked):** the harness wrapper passes `dim=768` to `EmbedderConfig` (so `vec_windows` is created at 768) but the underlying Ollama `/api/embed` call returns the model's native 1024-d vector — Ollama's API does not accept a per-call truncation parameter. The wrapper performs the `[0:768]` slice and L2-renormalization on the 1024-d response **before** the vector reaches storage. This wrapper is the ONLY place the slice happens; neither `OllamaEmbedder` nor the storage layer mutates the vector.
 - **Acceptance criteria:**
-  - [ ] Each of Story 1's 3 finalist candidates loaded successfully via `@huggingface/transformers` (modulo any tokenizer config Story 1 flagged). Loading failure for any finalist is itself a result and gets documented.
-  - [ ] Each candidate run through `scripts/embedder-spike.ts` (Story 2's harness) at its native dim. Results captured in `docs/research/embedder-landscape-2026.md` as a comparative table: model name | dim | recall@5 | score-gap-mean | out-of-domain-ceiling | embed latency (ms/call) | first-load latency (s) | model file size MB | rank-1 winner count (queries where this candidate had the unambiguous best top-1).
-  - [ ] Each candidate's spike-run preserved as a separate artifact under `docs/research/embedder-spike-runs/` — JSON dump from the harness so the data can be re-analyzed later.
-  - [ ] **A "no clear winner" outcome is acceptable.** If Nomic v1.5 wins or ties on score-gap-mean, the story documents that and Story 5's decision is "no-swap, defer until next eval cycle" — not a failure mode.
-  - [ ] Latency observation included for each candidate — embedder swap with a 5x slower model materially changes the storeAsync wall-time on agent-integration; if a candidate is dramatically slower, that's a swap-blocker even if recall is better.
-  - [ ] Tests: existing 537-unit + 666-integration suite still passes (the spike runs DON'T modify production defaults — only Story 5 does that).
-- **Testing approach:** Spike script runs are the artifact. No new test code beyond what Story 2 added.
-- **QA:**
-  - Manual: run `npx tsx scripts/embedder-spike.ts --embedder=<each finalist>` (script gains a `--embedder` flag in Story 2 or here). Capture output. Read the comparative table.
-  - Automated: existing suite stays green. **THIS IS IMPORTANT** — production-default unchanged in Story 4.
+  - [ ] **Labelled set: 50 queries minimum** (smaller bootstrap chosen at sprint planning per PR #172 methodology doc; expandable to 200 in a follow-up sprint if needed). 50 is the floor at which a paired-bootstrap 95% CI is expected to resolve a Δ NDCG@10 of ≥0.03 (per `docs/research/embedder-evaluation-methodology-2026.md` §power-analysis); deltas <0.02 are expected to surface as overlapping CIs and route to inconclusive-result handling in Story 4. Stored as `tests/integration/embedder-eval/queries.jsonl` — one JSON object per line with `{ id, query, relevant_doc_ids: string[], grade: 'pessimistic'|'typical'|'optimistic' }`. ≥15 queries per grade-bucket.
+  - [ ] **Corpus: synthesized + sanitized.** `tests/integration/embedder-eval/corpus.jsonl` — one JSON object per line with `{ id, content, role, conversation_id, project_id }`. Seeded by replaying real Pristine session logs (the maintainer's own; not a colleague's), paraphrased into the 3 grade-buckets via LLM, **passed through `secureAndRedact` before commit** so PII / secrets do not land in the repo. Document in the doc header how the corpus was generated and how to regenerate it.
+  - [ ] **Single-judge labels with human-curated seed.** Maintainer (Lou) hand-judges exactly 18 query/document pairs as the human seed. An LLM judge (Claude Sonnet) scores the remaining 32 pairs against the same rubric; the maintainer spot-checks ≥10 LLM-judged labels (i.e., ~31% of the LLM set) and corrects disagreements. Pass condition: ≥80% raw agreement on the spot-check (Cohen's κ on n<10 has very wide CIs and can swing on a single label flip; raw agreement is more robust at this sample size). Record the spot-check sample, agreement %, and any corrections in `tests/integration/embedder-eval/labelling-notes.md`.
+  - [ ] **`runEval(embedderConfig, options)` TS function** at `tests/integration/embedder-eval/run-eval.ts` — takes an `EmbedderConfig` (the existing factory shape from `src/embedder/index.ts`), runs the labelled queries against the configured embedder, returns `{ ndcg10, recall5, recall10, recall20, mrr, p50LatencyMs, p95LatencyMs, dimUsed }` plus paired-bootstrap CIs (1000 resamples) for each retrieval metric.
+  - [ ] **Two configurations per candidate:** `dense-only` (embedder + cosine search, FTS5 disabled) and `hybrid` (embedder + FTS5 + RRF — Pristine's production retriever path). Report both.
+  - [ ] **CLI:** `npm run eval:embedder -- --candidate <name> --baseline nomic-v1.5` produces a markdown report at `docs/research/embedder-eval-runs/<timestamp>-<candidate>-vs-baseline.md` with both configurations' numbers, deltas with CIs, and a one-paragraph summary.
+  - [ ] **Sanity-check script:** `tests/integration/embedder-eval/mteb-sanity.ts` runs the harness on `BEIR/scifact` test split using `nomic-embed-text-v1.5` (the SDK's current default model — guaranteed loadable). Reference: a Python `mteb` v1.x snapshot of the same model + dataset's NDCG@10 captured to `tests/integration/embedder-eval/fixtures/mteb-reference.json` with **1000 bootstrap resamples** + the resulting paired-bootstrap 95% CI. The TS harness's NDCG@10 paired-bootstrap CI must overlap the reference CI; non-overlap surfaces a harness bug.
+  - [ ] **No PII / secrets in repo.** A pre-commit hook (or CI check) verifies queries.jsonl + corpus.jsonl pass through `secureAndRedact` cleanly with zero unresolved markers.
+- **Functional verification:**
+  - [ ] `npm run eval:embedder -- --candidate nomic-v1.5 --baseline nomic-v1.5` produces a self-vs-self report where deltas are within bootstrap noise (Δ NDCG@10 CI brackets 0). Validates the harness has no asymmetric bug.
+  - [ ] `npx tsx tests/integration/embedder-eval/mteb-sanity.ts` exits 0; reports NDCG@10 within ±CI of the reference Python `mteb` snapshot.
+  - [ ] `tests/integration/embedder-eval/queries.jsonl` has exactly the documented count (50 ± 2) and 3 grade-buckets each with ≥15 entries.
+  - [ ] κ-on-spot-check is ≥0.6, recorded in `tests/integration/embedder-eval/labelling-notes.md`.
+- **Regression verification:**
+  - [ ] `npm run test:unit` — exit 0, no FAILED reporter line.
+  - [ ] `npm run test:integration` — exit 0, all integration suites pass; new `embedder-eval` test files do NOT run by default in `test:integration` (they live as a separate `npm run eval:embedder` lane to avoid CI-time pull of model weights).
+  - [ ] `bash .checks/pre-merge.sh` — exit 0.
+- **Manual-only verification:** Maintainer reviews the labelled set + κ-spot-check sample for label sanity. Pass condition: maintainer signs off in PR body.
 - **Planned commits:**
-  1. `feat(scripts): embedder-spike --embedder flag for runtime model selection`
-  2. `chore(research): finalist 1 spike-run results`
-  3. `chore(research): finalist 2 spike-run results`
-  4. `chore(research): finalist 3 spike-run results`
-  5. `docs(research): comparative table + decision-grade observations`
-- **Technical notes:** First-call latency for some candidates can be 30-60s on a fresh machine while @huggingface/transformers downloads weights — budget for this. Run on a warm cache for repeat runs to isolate per-call latency. If a candidate's recall@5 is dramatically worse than Nomic v1.5 on the labeled corpus, document quickly and move on rather than tuning. **DO NOT modify production defaults in this story** — that's Story 5.
-- **Priority:** Must-have
+  1. `feat(eval): scaffold tests/integration/embedder-eval/ with corpus + queries jsonl + types`
+  2. `feat(eval): implement runEval — NDCG@10 + Recall@K + MRR + paired bootstrap CIs`
+  3. `feat(eval): dense-only + hybrid (RRF) configurations with shared retrieval-quality scorer`
+  4. `feat(eval): npm run eval:embedder CLI + markdown report writer`
+  5. `feat(eval): mteb-sanity script + reference NFCorpus fixture`
+  6. `test(eval): self-vs-self regression test for nomic-v1.5 baseline`
+  7. `docs(eval): labelling notes + corpus-regeneration recipe`
+- **Technical notes:** The harness lives in `tests/integration/embedder-eval/` not in `src/` because it is a maintainer tool, not a consumer-facing API. Treat it like `scripts/smoke-indexer.ts` — a local-run binary, not part of the SDK surface. The 50-query bootstrap is documented as the **floor**; if Story 4 surfaces inconclusive deltas (overlapping CIs), Story 5's recommendation may include "harness needs to be expanded to 200 queries before a stronger claim can be made" as the deliverable.
 
-#### Story 5: Ship the swap (or document no-swap decision)
+#### Story 3: Verify engine integration for the candidate trio
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
-  - [ ] Within size limits
+  - [ ] Acceptance criteria are specific and testable
+  - [ ] Functional verification items have pass/fail conditions
+  - [ ] Regression verification items have pass/fail conditions
+  - [ ] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed
-  - [ ] Each AC verified
+  - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
-- **Review:**
-  - Findings: *(summary)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
-- **As a** SDK consumer, **I want** the default embedder updated to the spike's winner — or, if no winner emerged, an explicit "still Nomic v1.5" decision with criteria for revisiting — **so that** retrieval quality improves where the data justifies it without the SDK silently switching models.
-- **Dependencies:** Story 4
+- **Planning review:**
+  - Findings: *(sprint-doc-reviewer findings, or `None`)*
+  - Resolution: *(changes made, accepted risk, or `N/A`)*
+- **As a** maintainer about to benchmark, **I want** a smoke-test that proves each candidate model loads + produces a 768-d embedding via the existing `Embedder` factory, **so that** Story 4 doesn't burn time discovering a candidate is unloadable on the current pinned `@huggingface/transformers` version or via a broken Ollama model-pull.
+- **Dependencies:** Story 2.
 - **Acceptance criteria:**
-  - [ ] **Conditional AC depending on Story 4 outcome:**
-    - **If a clear winner emerged** (≥10% improvement in score-gap-mean AND no >2x latency regression): default `EmbedderProfile` switched to the winner. Spec-005 §5.3 updated with the new model + dim. Migration guidance for existing corpora (`migrateEmbedderDim` + re-ingest) documented in spec-005 §15 Flow 1's "operational notes" subsection. Backward-compat: `LocalEmbedder` constructor still accepts a `profile` override so callers pinned to Nomic v1.5 can stay there.
-    - **If no clear winner emerged:** new file `docs/research/embedder-decision-2026.md` documenting the spike findings, the decision to keep Nomic v1.5, and the criteria that would trigger re-evaluation (e.g., "consider re-evaluating when a model with ≥1024d, ≤500MB, MTEB-en > X is published"). No production-code changes.
-  - [ ] Existing test suite (537 unit + 666 integration) passes regardless of branch taken.
-  - [ ] If swapping: `scripts/demo-search.ts` re-run on the new default, output captured as a sibling-dir artifact for the eval deck. Side-by-side comparison with the Nomic v1.5 baseline shows the score-gap improvement.
-  - [ ] If swapping: at least one integration test in `tests/integration/searcher.test.ts` exercises `LocalEmbedder` with the OLD profile to confirm the override path still works (downgrade safety).
-- **Testing approach:** Conditional. If swapping, full integration suite re-runs with the new default + an explicit profile-override test. If not swapping, the documentation IS the artifact.
-- **QA:**
-  - Manual: if swap, re-run smoke + demo + eval; capture for slide deck.
-  - Automated: existing suite + the new override test (if swap branch). **THIS IS IMPORTANT** — production-default change touches every retrieval flow.
-- **Planned commits (swap branch):**
-  1. `feat(embedder): switch default profile to <winner>`
-  2. `docs(spec): update spec-005 §5.3 to reflect new default embedder`
-  3. `docs(spec): migration guidance for existing 768d corpora in §15 Flow 1`
-  4. `test(integration): pin override path to old Nomic v1.5 profile`
-  5. `chore: re-run smoke + demo on new default; capture artifacts`
-- **Planned commits (no-swap branch):**
-  1. `docs(research): no-swap decision + re-evaluation criteria`
-- **Technical notes:** The "≥10% improvement in score-gap-mean" is a defensible threshold — smaller deltas don't justify the operational cost of an embedder change (consumer corpus re-ingest, doc updates, support burden). The ">2x latency regression" guard prevents shipping a slower-but-marginally-better model that hurts the agent-integration <0.5s startup path. If both candidates and Nomic land within the noise — that IS the no-swap branch. Do NOT tune the threshold post-hoc to force a swap.
-- **Priority:** Must-have
+  - [ ] `LocalEmbedder` smoke-test for `Alibaba-NLP/gte-modernbert-base`: loads via `pipeline('feature-extraction', ...)`, produces a Float32Array of length 768 for the input string `"hello world"`. Test lives at `tests/embedder/local-gte-modernbert.smoke.test.ts`. Skipped if `SKIP_SLOW_TESTS=1`.
+  - [ ] `OllamaEmbedder` smoke-test for `embeddinggemma:300m`: POSTs to `/api/embed`, validates response shape + length 768. Test header documents `ollama pull embeddinggemma:300m` as a manual prerequisite; the test does NOT auto-pull and exits with a clear error message ("model not found locally; run `ollama pull embeddinggemma:300m` first") if the model is absent. Test lives at `tests/embedder/ollama-embeddinggemma.smoke.test.ts`. Skipped if `SKIP_SLOW_TESTS=1` OR if Ollama is not running on `localhost:11434`.
+  - [ ] `OllamaEmbedder` smoke-test for `qwen3-embedding:0.6b`: same shape as above, asserts dim 1024 (Qwen3 native dim, NOT 768) — because `vec_windows.embedding` is `float[768]`, this candidate must be configured to truncate to 768 via Matryoshka. **Truncation lives in the Story 2 harness wrapper at `tests/integration/embedder-eval/wrappers/truncating-wrapper.ts`** (NOT inside `OllamaEmbedder`), to preserve the modularization invariant: no engine-class changes for new candidates. The wrapper takes the raw 1024-d vector from the `OllamaEmbedder.embed()` return, slices `[0:768]`, and L2-renormalizes per Matryoshka spec, then hands the 768-d vector to `runEval`'s storage path. The wrapper signature is documented in the harness recipe (`docs/research/embedder-eval-runs/recipes.md`); same `ollama pull qwen3-embedding:0.6b` manual-prerequisite pattern as above (test does NOT auto-pull).
+  - [ ] `LocalEmbedder` capability-check for ModernBERT support in pinned `@huggingface/transformers` version: a smoke at `tests/embedder/transformers-capability.smoke.test.ts` imports `@huggingface/transformers` and asserts (a) `pipeline` is exported as a function, (b) `'feature-extraction'` is accepted by `pipeline()` without throwing, (c) the package version (read from `node_modules/@huggingface/transformers/package.json`) is `>=3.2.1`. Document the minimum version (v3.2.1+) in `package.json` engines / docs.
+  - [ ] **No production-code change.** This story validates that the candidate trio works with the existing `LocalEmbedder` + `OllamaEmbedder` engines as-shipped. If any candidate fails the smoke, the failure is documented as a follow-up sprint — NOT a fix in this sprint.
+  - [ ] **Engine-config recipes (eval-team scratch):** add a recipe block at `docs/research/embedder-eval-runs/recipes.md` showing the exact `EmbedderConfig` for each candidate that Story 4 will consume. This is the eval-team scratch recipe — Story 5's `docs/conventions/embedder-selection.md` is the consumer-facing doc that *cites* this recipe; do not duplicate the recipes between the two docs.
+- **Functional verification:**
+  - [ ] All 3 smoke-tests pass when SKIP_SLOW_TESTS is unset and Ollama is running. Document the env-var + Ollama prerequisite in the test header.
+  - [ ] `npm run test:integration -- tests/embedder/*.smoke.test.ts` exits 0 (or skips cleanly with SKIP_SLOW_TESTS=1).
+- **Regression verification:**
+  - [ ] `npm run test:unit` — exit 0.
+  - [ ] `npm run test:integration` (with SKIP_SLOW_TESTS=1) — exit 0; smoke tests are skipped, no other regressions.
+  - [ ] `bash .checks/pre-merge.sh` — exit 0.
+- **Manual-only verification:**
+  - Pull both Ollama models locally (`ollama pull embeddinggemma:300m && ollama pull qwen3-embedding:0.6b`) and confirm `ollama list` shows them. Pass condition: both visible in `ollama list` output, sizes match research-doc estimates within ±10%.
+- **Planned commits:**
+  1. `test(embedder): smoke-test gte-modernbert-base via LocalEmbedder`
+  2. `test(embedder): smoke-test embeddinggemma:300m via OllamaEmbedder`
+  3. `test(embedder): smoke-test qwen3-embedding:0.6b via OllamaEmbedder + 1024→768 Matryoshka truncate`
+  4. `docs(eval): engine-config recipes for the candidate trio`
+- **Technical notes:** This story's failure modes (a candidate is unloadable / Ollama pull broken / version mismatch) are FLAGGED, not FIXED. If a candidate fails, Story 4 either (a) drops it from the eval and notes the omission, or (b) waits for an upstream fix. The candidate trio is locked from PR #172; substituting a new candidate inside this sprint is out of scope.
 
-#### Final Evaluation Story (mandatory, runs last)
-
-Produce visual proof that the sprint's deliverables are real. This sprint has no new user flows, so the eval emphasis shifts to documenting the research output + measurement results + decision rationale.
+#### Story 4: Run the eval
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
-  - [ ] Within size limits
+  - [ ] Acceptance criteria are specific and testable
+  - [ ] Functional verification items have pass/fail conditions
+  - [ ] Regression verification items have pass/fail conditions
+  - [ ] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed
-  - [ ] Each AC verified against git diff and the rendered HTML deck
+  - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
-- **Review:**
-  - Findings: *(summary)*
-  - Resolution: *(agreed + fixed / disagreed + reason)*
-- **As a** stakeholder, **I want** an at-a-glance summary of the spike's research, measurement, and decision, **so that** the swap-or-no-swap call is auditable without re-running anything.
-- **Dependencies:** All feature stories merged.
+- **Planning review:**
+  - Findings: *(sprint-doc-reviewer findings, or `None`)*
+  - Resolution: *(changes made, accepted risk, or `N/A`)*
+- **As a** maintainer making a defensible recommendation, **I want** the harness from Story 2 executed on the candidate trio + Nomic v1.5 baseline with deltas reported under paired bootstrap 95% CIs, **so that** Story 5's recommendations doc cites real Pristine-corpus numbers, not leaderboard transfers.
+- **Dependencies:** Stories 2 + 3.
 - **Acceptance criteria:**
-  - [ ] Slide deck at `docs/sprints/eval/sprint-017.html` follows the 5-slide structure. Total slide count ≤5.
-  - [ ] Slide 1 — **Sprint Summary**: goal, stories shipped, decision outcome (swap or no-swap)
-  - [ ] Slide 2 — **Research Output**: candidate-shortlist table from Story 1's research doc; finalist selection rationale
-  - [ ] Slide 3 — **Measurement Results**: comparative table from Story 4 (recall@5, score-gap, latency, model size); side-by-side smoke-output if swapped
-  - [ ] Slide 4 — **Decision**: go/no-go with the criteria that drove it; if swap, link to the migration guidance; if no-swap, link to the re-evaluation criteria
-  - [ ] Slide 5 — **Repo Hygiene + AC Matrix**: standard hygiene checklist + every story's AC pass/fail table
-  - [ ] Tool chosen per `~/projects/harness-config/templates/evaluation-matrix.md` — research artifact mapping is "documentation deliverable → markdown table embedded in HTML"; no screenshots/videos needed
-  - [ ] Bulky assets (per-candidate JSON dumps) live in `docs/sprints/eval/sprint-017/` or `docs/research/embedder-spike-runs/`
-- **Testing approach:** The deck is the artifact. Open in browser, walk every slide, confirm each links/embeds resolve.
-- **QA:**
-  - Manual: open `docs/sprints/eval/sprint-017.html` in a browser; confirm slides + tables render.
-  - Automated: N/A. **THIS IS IMPORTANT** — the artifact is read-by-eye.
+  - [ ] **4 runs total**, captured as markdown reports under `docs/research/embedder-eval-runs/` using the filename pattern from Story 2 AC-6: `<timestamp>-<candidate>-vs-baseline.md` (e.g., `2026-05-10T1500Z-gte-modernbert-base-vs-baseline.md`):
+    1. Nomic v1.5 baseline (self-vs-self sanity already covered in Story 2's regression test; this run is the named comparison anchor).
+    2. `gte-modernbert-base` vs Nomic v1.5.
+    3. `embeddinggemma:300m` vs Nomic v1.5.
+    4. `qwen3-embedding:0.6b` vs Nomic v1.5.
+  - [ ] Each run reports both `dense-only` and `hybrid` configurations, with paired bootstrap 95% CIs on every metric.
+  - [ ] Latency: p50/p95/p99 wall-clock per embed at batch=1 warm, captured per candidate. **Cold-start defined as: the first 10 `embed()` calls after the process starts and the model is loaded into memory (for `LocalEmbedder`) OR after the first successful `/api/embed` POST returns 200 (for `OllamaEmbedder`).** These 10 timing samples are recorded in the run log but excluded from p50/p95/p99 aggregation. For the Ollama candidates, BOTH "model compute" (subtract RPC baseline) AND "end-to-end" numbers reported. Sanity check: if the first 10 calls' p50 is within 10% of the post-warmup p50 (warmup didn't matter), record the observation in the run log — not a failure but flagged for harness tuning in a follow-up.
+  - [ ] **A summary table** at `docs/research/embedder-eval-runs/SUMMARY.md` collects all 4 runs into one comparison view: rows = candidates, columns = NDCG@10 (dense / hybrid), Recall@10 (dense / hybrid), MRR, p50 latency, p95 latency, dim used, license. License strings come verbatim from `docs/research/embedder-landscape-2026.md`'s license commentary, using the SPDX identifier where available (e.g., `Apache-2.0`, not `Apache 2.0`). CIs annotated where overlap with baseline.
+  - [ ] **Inconclusive-result handling.** If any pairwise comparison's NDCG@10 CI overlaps the baseline's CI, the SUMMARY.md row is annotated `inconclusive on quality — falls to latency/size/license` per the methodology doc.
+  - [ ] **No model-selection decision in this story.** Story 4 produces numbers; Story 5 turns them into recommendations.
+- **Functional verification:**
+  - [ ] All 4 markdown reports exist; each is reproducible by running `npm run eval:embedder -- --candidate <name>`.
+  - [ ] SUMMARY.md exists and renders cleanly (no broken tables, all rows populated, no `?` entries).
+  - [ ] Reports actually contain bootstrap CIs: `grep -nE '95%\s*CI|\[\s*-?[0-9]\.[0-9]+\s*,\s*-?[0-9]\.[0-9]+\s*\]' docs/research/embedder-eval-runs/*.md` returns ≥1 hit per metric per candidate report (catches half-baked reports that omit the CI annotation).
+  - [ ] Wall-time bound: end-to-end run for all 4 candidates ≤2 hours on a typical maintainer laptop. If exceeded, document the bottleneck (model-pull time / Ollama startup / embed throughput) so the future-200-query expansion has a realistic cost estimate.
+- **Regression verification:**
+  - [ ] `npm run test:unit` — exit 0; no embedder-related unit tests regressed.
+  - [ ] `npm run test:integration` (SKIP_SLOW_TESTS=1) — exit 0.
+  - [ ] `bash .checks/pre-merge.sh` — exit 0.
+- **Manual-only verification:** N/A — the harness produces deterministic markdown outputs that the next story consumes.
 - **Planned commits:**
-  1. `feat: capture evaluation artifacts for sprint-017` — research doc + spike-run JSONs + comparative table
-  2. `feat: build sprint-017 evaluation slide deck`
-- **Technical notes:** This sprint's eval is documentation-heavy by nature — the deliverable is the data + the decision, not a UI. Keep slides text + table heavy; no need for video.
-- **Priority:** Must-have
+  1. `eval: run nomic-v1.5 baseline + gte-modernbert-base on Pristine corpus`
+  2. `eval: run embeddinggemma:300m + qwen3-embedding:0.6b on Pristine corpus`
+  3. `eval: SUMMARY.md cross-candidate comparison + inconclusive-result annotations`
+- **Technical notes:** The candidate trio's expected in-domain Δ NDCG@10 from PR #172 research is 0.02-0.05; the 50-query bootstrap is sized for that range. If actual deltas are smaller (e.g., 0.01), CIs will overlap and the SUMMARY annotates inconclusive — that is the correct outcome, not a failure. Story 5 then makes a defensible recommendation on latency/size/license.
+
+#### Story 5: Ship user-facing recommendations doc + conditional SDK default swap
+
+- **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
+  - [ ] Follows sprint template
+  - [ ] Acceptance criteria are specific and testable
+  - [ ] Functional verification items have pass/fail conditions
+  - [ ] Regression verification items have pass/fail conditions
+  - [ ] Story is small enough to review and merge independently
+  - [ ] Reviewed by sub-agent
+  - [ ] Review findings addressed or explicitly recorded
+  - [ ] Ready for Lou
+- **Planning review:**
+  - Findings: *(sprint-doc-reviewer findings, or `None`)*
+  - Resolution: *(changes made, accepted risk, or `N/A`)*
+- **As a** Pristine consumer, **I want** a single doc that names the recommended embedder default + alternates with benchmark numbers backing each recommendation, AND **as a** maintainer, **I want** the SDK's no-config default to point at the empirically-best in-process model so consumers who don't pass a config get the best out-of-box quality, **so that** the recommendation in docs and the SDK behavior agree without diverging.
+- **Dependencies:** Story 4.
+- **Acceptance criteria:**
+  - **Recommendations doc deliverable:**
+    - [ ] **New doc:** `docs/conventions/embedder-selection.md`. Opens with a 4-tier recommendation table (impatient default / license-clean alt / zero-deps in-process alt / code-only escape hatch). Each tier names the exact `EmbedderConfig` shape a consumer copy-pastes into `PristineLocal.create({ embedder: ... })`. (The code-only tier names `nomic-embed-code` as the recommendation for >70% code corpora; this is recommendation-only — it is NOT one of the four candidates evaluated in Story 4.)
+    - [ ] **Backed by Story 4 numbers.** Each recommendation cites the relevant SUMMARY.md row + the bootstrap CI. If a recommendation rests on inconclusive-quality (CI overlap), the doc says so explicitly and explains which secondary axis (latency / size / license) tipped the decision.
+    - [ ] **License caveats surfaced.** EmbeddingGemma's Gemma TOS is documented as a deal-breaker for some downstream distribution models; the license-clean alt (`qwen3-embedding:0.6b`) is named for consumers who need strict Apache-2.0.
+    - [ ] **Cross-link from `docs/specs/implementation-spec-005.md` §5.3** — wording branches on the decision rule below:
+      - If the SDK default swapped: §5.3 reads "Pristine ships with the empirically-best in-process model as the no-config default (see [`docs/conventions/embedder-selection.md`](../conventions/embedder-selection.md)); consumers can override via `PristineLocal.create({ embedder: ... })`."
+      - If the SDK default did NOT swap (CIs overlapped, Nomic v1.5 retained as fallback): §5.3 reads "Pristine ships Nomic v1.5 as the no-config default for backward compat; see [`docs/conventions/embedder-selection.md`](../conventions/embedder-selection.md) for the recommended alternative consumers should opt into via `PristineLocal.create({ embedder: ... })`."
+  - **Conditional SDK default-config change deliverable (modularization invariant: shape unchanged from Story 0 baseline):**
+    - [ ] **Decision rule (locked):** the SDK default-config change fires iff (a) the candidate is **in-process** (excludes Ollama candidates from eligibility because the SDK no-config default must not require a sidecar daemon), AND (b) the candidate's **dense-only** NDCG@10 paired bootstrap 95% CI lower bound is **strictly greater than** Nomic v1.5's dense-only NDCG@10 paired bootstrap 95% CI upper bound (operational test: `candidate.ndcg10.dense.ci_lower > nomic.ndcg10.dense.ci_upper`). The operational input is the **pooled** (across grade-buckets) dense-only NDCG@10 reported in SUMMARY.md's headline column; per-grade-bucket CIs are informational only and do NOT trigger the rule. Tie or overlap → no change. The only Story 4 candidate that meets eligibility (a) is `gte-modernbert-base`; the two Ollama candidates (`embeddinggemma:300m`, `qwen3-embedding:0.6b`) are recommendation-only, never SDK default. If the rule fires, change the **default `EmbedderConfig` value** in `src/client.ts` from `{ engine: 'local', model: 'nomic-embed-text-v1.5', dim: 768 }` to `{ engine: 'local', model: 'gte-modernbert-base', dim: 768 }`. If the rule does NOT fire, keep Nomic v1.5 as the SDK fallback; the docs still recommend the candidate but consumers must opt in via explicit config. Document the decision + which arm of the rule fired in the Story 5 PR body.
+    - [ ] **Implementation constraint — config-value change only, no shape change.** The default-config change edits ONLY:
+      - the default `EmbedderConfig` literal in `src/client.ts` (the value `PristineLocal.create({})` falls back to)
+      - any per-engine default-model documentation comment that names the old default
+      - it MUST NOT touch `src/core/interfaces.ts:Embedder`, `src/embedder/index.ts:EmbedderConfig` *shape* (Story 0 already added `dim`; Story 5 only changes the *value*), the engine factory dispatch, or the public `Embedder.embed` / `embedBatch` signatures. A reviewer checks the diff against the **post-Story-0 baseline** (the merge-commit sha of Story 0 into `sprint-017`): a clean default-config change touches ≤2 files (`src/client.ts` + optional doc comment) and 0 lines of public-API surface.
+    - [ ] **Backward compat path documented.** If the SDK default-config changes, document in the Story 5 PR body: (a) consumers who explicitly passed `engine: 'local', model: 'nomic-embed-text-v1.5'` get unchanged behavior (Nomic still loads on request); (b) consumers with no `embedder` config in `PristineLocal.create` get the new default model on first run; (c) **existing on-disk corpora embedded with Nomic v1.5 are NOT auto-migrated** — switching the default does not silently re-embed historical messages with a different model. The `vec_windows` table will contain mixed-model embeddings if a consumer's old corpus was Nomic-embedded and new ingests use the new default. (Story 0 already documented that cross-`dim` migration is unsupported; Story 5 documents the cross-`model` mixed-embedding case.) Story 5 surfaces both compat notes in a `## Known compat notes` heading and points at a follow-up sprint for any consumer-facing migration tool.
+    - [ ] **Recommendations doc Tier 1 wording aligns with the SDK default decision.** If the rule fired, Tier 1 says "Pristine ships this as the no-config default; you don't need to pass an `embedder` config to get it." If the rule did NOT fire (CIs overlapped), Tier 1 says "We recommend this; pass it explicitly via `PristineLocal.create({ embedder: ... })`. The SDK fallback remains Nomic v1.5 for backward compat."
+- **Functional verification:**
+  - [ ] `grep -nE "embeddinggemma:300m|qwen3-embedding:0.6b|gte-modernbert-base" docs/conventions/embedder-selection.md` returns ≥3 hits across the candidate trio.
+  - [ ] `grep -n "docs/conventions/embedder-selection.md" docs/specs/implementation-spec-005.md` returns ≥1 hit (the cross-link from §5.3).
+  - [ ] Every recommendation row in the doc cites a SUMMARY.md anchor.
+  - [ ] If the SDK default-config changed: **modularization-invariant audit** — `STORY0_SHA` is read from the `### Story 0 baseline sha` section of this sprint doc (filled in by the maintainer when Story 0 PR merges into `sprint-017`; see Story 0 Tech notes). The audit asserts: `git log $STORY0_SHA..HEAD --oneline -- src/core/interfaces.ts src/embedder/index.ts src/index.ts` lists **zero commits attributable to Story 5's branch** (a benign doc-only commit on those files between Story 0's merge and Story 5's open is acceptable; what's prohibited is Story 5's own commits modifying these files). Additionally, the post-Story-5 `EmbedderConfig` TS signature in `src/embedder/index.ts` is byte-identical to the snapshot recorded in `### Story 0 baseline sha`. Together these prove Story 5 introduced no public-surface change.
+  - [ ] If the SDK default-config changed: a fresh `PristineLocal.create({})` call with no embedder config produces an embedding via the new default model end-to-end (smoke test added at `tests/integration/embedder-default-swap.test.ts`, gated on the rule firing).
+  - [ ] If the SDK default-config changed: **backward-compat behavioral test** at `tests/integration/embedder-mixed-model.test.ts` — open a DB with Nomic-v1.5-embedded `vec_windows` rows pre-seeded, instantiate `PristineLocal.create({})` with no embedder config (gets the new default), call `searcher.vectorSearch` for read and `storeAsync` for new ingest. Assert: (a) old rows' embedding bytes are byte-identical pre/post (no auto re-embed), (b) new rows are embedded with the new default model, (c) no migration log line / no schema change / no row rewrite occurs. Catches a future contributor sneaking in a "helpful" auto-migration that violates the documented compat contract.
+- **Regression verification:**
+  - [ ] `npm run test:unit` — exit 0; no Embedder-interface tests broke.
+  - [ ] `npm run test:integration` — exit 0; existing tests that explicitly pass an `embedder` config (most do, including all of `searcher-sql.test.ts`, `storeasync.test.ts`, etc.) are unaffected.
+  - [ ] `bash .checks/pre-merge.sh` — exit 0.
+- **Manual-only verification:**
+  - Maintainer reads the doc end-to-end as if they were a new consumer, validates the copy-pasteable `EmbedderConfig` recipes actually work via a 5-minute smoke (`storeAsync` → `searcher.hybridSearch` round-trip on a fresh DB). Pass condition: maintainer sign-off in PR body.
+- **Planned commits:**
+  1. `docs(conventions): embedder-selection.md — default + alts with benchmark numbers`
+  2. `docs(spec): cross-link implementation-spec-005 §5.3 to embedder-selection doc`
+  3. *(conditional, only if Story 4 decision rule fires)* `feat(client): change default EmbedderConfig from nomic-v1.5 to <winning-candidate>` — value-only change in `src/client.ts`; zero public-interface changes (Story 0 already absorbed the `dim` field addition)
+  4. *(conditional, only if SDK default-config changed)* `test(embedder): smoke + mixed-model behavioral tests for the new no-config default`
+- **Technical notes:** This story is the consumer-facing payoff for the whole sprint. Recommendation order: **(1) impatient default, (2) license-clean alt if Gemma TOS is a problem, (3) zero-deps in-process alt if no Ollama, (4) code-only escape hatch (`nomic-embed-code` for >70% code corpora).** The conditional SDK default-config change is the only production-code change in Stories 1-5 — and only fires if Story 4's CIs are non-overlapping. **Why it's a config-value change, not a string-constant edit:** Story 0 already templated the storage by `dim` and surfaced `EmbedderConfig` as the single source of truth for engine + model + dim; Story 5 only flips the default literal. The modularization invariant (no shape changes to `Embedder` or `EmbedderConfig` after Story 0 lands) is the load-bearing review check; the post-Story-0-baseline diff-stat constraint (`zero changes` to `interfaces.ts` + `embedder/index.ts` + `src/index.ts`) is what makes it auditable. Document any bumped `@huggingface/transformers` minimum version in `package.json` if the new default model requires it.
+
+#### Final Verification Story: Sprint Verification & Completion
+
+- **Story Checklist:**
+  - [ ] Uses the story sections above and the existing regression suite as the source of truth
+  - [ ] Defines where final verification evidence will be recorded
+  - [ ] Includes full regression verification, not only areas believed to be touched
+  - [ ] Ready for Lou
+- **As a** maintainer, **I want** all sprint functional verification + targeted regression + the full available regression suite run, **so that** sprint integration ships with evidence that new behavior works and existing behavior did not regress.
+- **Dependencies:** All implementation stories (0-5).
+- **Acceptance criteria:**
+  - [ ] Every story's AC is evaluated against implementation evidence.
+  - [ ] Every story's FV checkbox is run / checked / explicitly marked failed/ambiguous/unrun. **Conditional FV items** (Story 5's `embedder-default-swap.test.ts` + `embedder-mixed-model.test.ts`) are recorded as `fired / pass`, `fired / fail`, or `did-not-fire` — never silently skipped.
+  - [ ] **Targeted regression verification checkboxes** from each story's Regression verification section are run / checked / explicitly marked failed/ambiguous/unrun, separately from the full-suite run below.
+  - [ ] Full regression suite runs: `npm run test:unit`, `SKIP_SLOW=1 npm run test:integration`, `SKIP_SLOW=0 npm run test:integration` (real Nomic), `npm run test:e2e`, `npx tsx scripts/smoke-indexer.ts`, `bash .checks/pre-merge.sh` — all exit 0.
+  - [ ] Failed / ambiguous / unrun verification items documented in `## Final Review`.
+  - [ ] **The sprint's new functional verification is identified as future regression verification** — Story 0's dim-parameterization tests, Story 2's eval-harness regression test (self-vs-self), Story 3's three smoke-tests, and Story 5's conditional default-config-change + mixed-model integration tests are flagged in `## Final Review` for inclusion in the next sprint's regression suite.
+  - [ ] **Verification delta is reported by full canonical type** showing all 11 canonical rows (Unit / Integration-contract / E2E-smoke / Simulator-device / AI-model-evals / Static-local-checks / Performance-load / Security-dependency / Accessibility-visual / Manual-only / Other), with five columns each: before sprint, added this sprint, removed, pending/not yet run, after sprint totals. Zero-count rows are populated as `0 → 0` (e.g., Simulator/device, Accessibility/visual this sprint). Story 4's eval reports populate the **AI / model evals** row; Story 4's latency captures populate **Performance / load**.
+  - [ ] **Story 0 baseline sha re-recorded** in `## Final Review` for the durable audit copy (transcribed from the `### Story 0 baseline sha` section).
+  - [ ] Sprint-doc Status flipped to `🟢 Complete` only if completion criteria met.
+  - [ ] `## Final Review` section appended per `workflow-prompts/handle-sprint-completion.md` template (Mergeability + objective + accomplishments + verification delta table + why ready + open for decision + delivered + drift + dependencies).
+- **Functional verification:**
+  - [ ] All Story 1-5 FV items reported pass/fail in `## Final Review`.
+- **Regression verification:**
+  - [ ] All 6 commands above exit 0; logged in `## Final Review`.
+- **Manual-only verification:** Story 5's maintainer-read-as-consumer smoke (link to evidence in `## Final Review`).
+- **Planned commits:**
+  1. `docs(sprint-017): final verification evidence + Status → 🟢 Complete + ## Final Review section`
+- **Technical notes:** Use the story sections + existing regression suite as the source of truth. Do not duplicate AC/verification items here; run them, reference the evidence, compute the verification delta table, append `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. **Conditional-test handling:** Story 5's `embedder-default-swap.test.ts` and `embedder-mixed-model.test.ts` exist iff Story 4's decision rule fired. Mark each conditional item as "fired/not-fired" in `## Final Review` so the verification delta table is unambiguous (an item that didn't need to exist isn't the same as an item that was skipped). **Story 0 sha capture:** record the merge-commit sha of Story 0 into `sprint-017` in `## Final Review` — Story 5's modularization-invariant audit uses this sha as the diff baseline.
 
 ### Rules
-- **Sprint-branch setup (before Story 1):** create `sprint-017` off `main` after sprint-016 integration PR merges. Commit this sprint doc as the first commit on the branch. Story branches fork from `sprint-017`; story PRs target `sprint-017`. After eval merges, open sprint-integration PR (`sprint-017 → main`) as the final step. See AGENTS.md §3.
-- We sequentially do the stories. We do not do parallel work.
-- **Review loop:** Open PRs, run `/review`, address findings, re-verify via `/review-fix` (capped at 3 passes). Confirm local checks green + last review turn ≥ 4/5 with no open P0/P1. Merge into `sprint-017`, then next story.
-- Record new dependencies in the Completion section's New Dependencies field. **Story 4 is expected to add candidate model files via Hugging Face Hub auto-download — those are NOT new npm dependencies, just runtime weight downloads. Story 5's swap (if it ships) keeps the same `@huggingface/transformers` dep at the same version.**
-- For everything else — commits, PR process, code quality, testing — follow your system instructions.
+- **Sprint-branch setup:** create `sprint-017` off `main` after this sprint-doc revision PR (#TBD) merges. Commit this revised sprint doc as the first commit on the branch. Story branches fork from `sprint-017`; story PRs target `sprint-017`. After Final Verification merges, open the sprint-integration PR (`sprint-017 → main`).
+- Sequentially execute stories. No parallel work.
+- **Review loop:** open PRs, run `/review`, address findings, re-verify via `/review-fix` (capped at 3 passes). Confirm local checks green + last review turn ≥ 4/5 with no open P0/P1. Merge into `sprint-017`, then next story.
+- Record new dependencies in `## Final Review`. **Story 4 will pull candidate model files via Hugging Face Hub / Ollama on first use — those are NOT new npm dependencies, just runtime weight downloads. No new npm deps expected this sprint.**
+- For everything else — commits, PR process, code quality, testing — follow AGENTS.md.
 
 ### Definition of Done
-- All must-have stories pass acceptance criteria
-- System-instruction conventions satisfied (code quality, tests, PR process, conventional commits, local checks green, last review turn returned mergeability ≥ 4/5 with no open P0/P1)
-- **Final Evaluation Story complete** — `docs/sprints/eval/sprint-017.html` exists; decision documented; repo hygiene slide shows clean state
-- **Sprint-integration PR merged** (`sprint-017 → main`); `sprint-017` deleted from origin; local main fast-forwarded
-- **Spec-005 §5.3 updated** if Story 5 shipped a swap; otherwise unchanged
+- All implementation stories (0-5) pass acceptance criteria
+- AGENTS.md conventions satisfied (code quality, tests, PR process, conventional commits, local checks green, last review turn ≥4/5 with no open P0/P1)
+- Final Verification Story complete; `## Final Review` appended
+- Sprint-integration PR (`sprint-017 → main`) reviewed, gates passed, awaiting / merged on user command
+- `EmbedderConfig.dim` field exists with default 768; `vec_windows` + `vec_sessions` DDL templated by configured dim
+- `docs/conventions/embedder-selection.md` exists; cross-linked from `implementation-spec-005.md` §5.3
+- All 4 candidate eval-run reports exist under `docs/research/embedder-eval-runs/` plus the SUMMARY.md cross-comparison
+- `## Final Review` includes verification delta table by canonical type (unit / integration / e2e / smoke / static / manual) with all 5 columns populated, plus the Story 0 merge-commit sha (used as Story 5's modularization-invariant audit baseline)
 
 ---
 
-## Completion
+## Final Review
 
-*(Filled in at sprint close)*
-
-### Stories shipped
-*(List as merged)*
-
-### New dependencies
-*(None expected — surface during /sprint review if otherwise)*
-
-### Retro highlights
-*(Filled at close)*
+*(Filled in at sprint close per `workflow-prompts/handle-sprint-completion.md`.)*

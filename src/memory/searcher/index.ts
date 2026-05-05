@@ -408,8 +408,10 @@ export const createSearcher = (deps: SearcherDeps): Searcher => {
     if (!row || row.sql === null) return null;
     // Anchor on `embedding float[N]` — vec0's column-definition syntax.
     // Tighter than a bare `/float\[(\d+)\]/` so a future column with a
-    // different name wouldn't silently shadow the dim parse.
-    const match = /\bembedding\s+float\[(\d+)\]/.exec(row.sql);
+    // different name wouldn't silently shadow the dim parse. Case-
+    // insensitive in case sqlite-vec ever normalises the DDL echo to
+    // uppercase `FLOAT[N]`.
+    const match = /\bembedding\s+float\[(\d+)\]/i.exec(row.sql);
     if (!match) {
       // DDL exists but doesn't match the expected shape — surface as a
       // loud error rather than letting it fall through to an opaque

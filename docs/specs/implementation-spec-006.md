@@ -283,7 +283,11 @@ export interface ToolPrivacyPolicy {
     readonly fields?: readonly string[];
     readonly excludeFields?: readonly string[];
   };
-  readonly sanitizeResult?: boolean;
+  readonly sanitizeResult?: {
+    readonly minimum: true;
+    readonly classifierScan?: boolean;
+  };
+  readonly placeholderPassthrough?: boolean;
   readonly blockRawSecrets?: boolean;
 }
 ```
@@ -305,6 +309,7 @@ export interface ToolSanitizationContext {
   readonly revealedPaths: readonly string[];
   readonly revealedValues: readonly string[];
   readonly inputDigest: string;
+  readonly minimumScrubRequired: true;
 }
 ```
 
@@ -438,7 +443,10 @@ Behavior:
 - if raw secrets are detected and `blockRawSecrets !== false` → return `{ ok: false, reason: 'raw_secret_detected' }`
 - if `mode === 'deny'` → return `{ ok: false, reason: 'policy_denied' }`
 - if `mode === 'confirm'` and no valid confirmation token matches the input digest → return `{ ok: false, reason: 'policy_confirmation_required' }`
-- if reveal disabled → return original input unchanged with empty `revealedPaths`
+- if reveal disabled and placeholder-bearing strings are present:
+  - if `placeholderPassthrough === true`, return original input unchanged with empty `revealedPaths` and a sanitization context that still marks placeholders for result scrubbing
+  - otherwise return `{ ok: false, reason: 'unresolved_placeholders' }`
+- if reveal disabled and no placeholders are present → return original input unchanged with empty `revealedPaths`
 - if reveal enabled:
   - recursively walk strings in `input`
   - reveal any placeholder-bearing strings from local vault
@@ -451,6 +459,7 @@ Important:
 - unresolved placeholders are a wrapper concern even though plain `reveal(...)` today is best-effort
 - successful reveal returns a `ToolSanitizationContext` that must be passed to `sanitizeToolResult(...)` for the matching tool result
 - a valid confirmation token is bound to `toolName`, `inputDigest`, and a short expiry; it cannot be reused for a changed tool input
+- placeholder passthrough is explicit and rare; it is intended only for tools that store/display placeholders as inert text, not for tools expected to execute with plaintext
 
 ### 8.3 `sanitizeToolResult(...)`
 
@@ -459,9 +468,10 @@ Purpose:
 
 Behavior:
 - resolve policy
-- if a `ToolSanitizationContext` exists, sanitization is mandatory even if a policy attempts to set `sanitizeResult === false`
-- if no context exists and `sanitizeResult === false`, return original result unchanged only after checking that the result contains no placeholders and no deterministic raw-secret matches
-- otherwise recursively traverse strings and scrub using:
+- minimum sanitization is non-disableable for all model-visible tool results
+- if a `ToolSanitizationContext` exists, exact revealed values and placeholder cleanup are mandatory
+- policy may disable only optional classifier-based scanning through `sanitizeResult.classifierScan === false`
+- recursively traverse strings and scrub using:
   - exact-match removal of `context.revealedValues` and explicit `revealedValues`
   - placeholder cleanup
   - deterministic structured sensitive-pattern scan
@@ -560,28 +570,28 @@ Add a new optional config file:
   "defaultPolicy": {
     "mode": "confirm",
     "reveal": { "enabled": false },
-    "sanitizeResult": true
+    "sanitizeResult": { "minimum": true, "classifierScan": true }
   },
   "tools": {
     "write": {
       "mode": "confirm",
       "reveal": { "enabled": true },
-      "sanitizeResult": true
+      "sanitizeResult": { "minimum": true, "classifierScan": true }
     },
     "read": {
       "mode": "allow",
       "reveal": { "enabled": false },
-      "sanitizeResult": true
+      "sanitizeResult": { "minimum": true, "classifierScan": true }
     },
     "make_payment": {
       "mode": "confirm",
       "reveal": { "enabled": true },
-      "sanitizeResult": true
+      "sanitizeResult": { "minimum": true, "classifierScan": true }
     },
     "copy_to_clipboard": {
       "mode": "deny",
       "reveal": { "enabled": false },
-      "sanitizeResult": true
+      "sanitizeResult": { "minimum": true, "classifierScan": true }
     }
   }
 }
@@ -607,7 +617,8 @@ Adapters may merge:
 - reject unknown `mode`
 - reject empty tool names
 - reject conflicting `fields` / `excludeFields` shape if unsupported in v1
-- reject `sanitizeResult: false` for any policy with `reveal.enabled: true`
+- reject `sanitizeResult.minimum: false`; minimum placeholder/revealed-value scrubbing is not configurable
+- allow `sanitizeResult.classifierScan: false` only when the caller explicitly accepts weaker raw-secret detection for that tool
 - reject policies that set unknown tools to `allow` through wildcard/default config unless `reveal.enabled` is false
 - keep validation deterministic and strict
 
@@ -699,7 +710,43 @@ Use for UX only:
 
 Do not rely on this as the only enforcement point.
 
-### 11.3 `before_provider_request`
+### 11.3 Provider payload contract
+
+The adapter must pin and test the provider payload shapes it mutates. V1 supports these provider-bound shapes:
+
+```ts
+type PiProviderMessage =
+  | { role: string; content: string }
+  | { role: string; content: readonly PiContentPart[] };
+
+type PiContentPart =
+  | { type: 'text'; text: string }
+  | { type: string; [key: string]: unknown };
+
+interface PiProviderRequestLike {
+  readonly messages?: readonly PiProviderMessage[];
+  readonly system?: string | readonly PiContentPart[];
+  readonly prompt?: string;
+}
+```
+
+Mutable fields in v1:
+
+- `messages[*].content` when it is a string
+- `messages[*].content[*].text` when the part is `{ type: 'text' }`
+- `system` when it is a string
+- `system[*].text` when the part is `{ type: 'text' }`
+- `prompt` when present and string-valued
+
+Unsupported provider-bound fields:
+
+- binary/file/image payloads
+- unknown content part fields
+- streamed provider payload fragments
+
+If an unsupported provider-bound field contains a detected raw secret or cannot be safely inspected, the adapter blocks the provider request. It must not pass the raw field through on the assumption that a later hook will catch it.
+
+### 11.4 `before_provider_request`
 
 Hard enforcement point.
 
@@ -715,7 +762,32 @@ Rationale:
 - this is the final runtime boundary before provider send
 - earlier hooks may be bypassed by runtime-specific behaviors or internal prompt serialization differences
 
-### 11.4 `tool_call`
+### 11.5 Tool-call contract
+
+V1 assumes a pi tool-call event shape equivalent to:
+
+```ts
+interface PiToolCallEventLike {
+  readonly id?: string;
+  readonly toolName: string;
+  input: unknown;
+  block?: (message: string) => void | Promise<void>;
+}
+```
+
+Mutable fields:
+
+- `event.input` may be replaced with the prepared plaintext input returned by core.
+
+Blocking:
+
+- If pi exposes a `block(...)` helper, use it.
+- If pi expects a returned control object instead, return the runtime-specific block object documented by the pinned pi version.
+- If neither is available, the adapter must throw/return a local extension error that prevents tool execution; it must not continue with unresolved placeholders or raw secrets.
+
+User-visible block messages must be local-only and must not contain raw secrets or full tool input.
+
+### 11.6 `tool_call`
 
 Adapter responsibilities:
 - call `prepareToolInput(toolName, event.input, ...)`
@@ -734,7 +806,41 @@ Minimum block reasons the adapter must map into user-visible local messages:
 
 If pi does not provide a stable tool-call id, the adapter must derive one from tool name + input digest and clear it after the matching result or session shutdown.
 
-### 11.5 `tool_result`
+### 11.7 Tool-result contract
+
+V1 supports these result shapes:
+
+```ts
+type PiToolResultLike =
+  | string
+  | {
+      content?: string | readonly PiContentPart[];
+      details?: unknown;
+      isError?: boolean;
+      [key: string]: unknown;
+    };
+```
+
+Mutable/patchable fields:
+
+- string result: replace the whole string
+- `content` when string-valued
+- `content[*].text` when the part is `{ type: 'text' }`
+- `details` when it is plain JSON-like data
+- `isError` is preserved unless the adapter must replace an unsafe result with a local redacted error object
+
+If a result cannot be patched safely, the adapter returns:
+
+```json
+{
+  "content": "Pristine blocked unsanitized tool output.",
+  "isError": true
+}
+```
+
+The replacement object is intentionally bland. It must not include raw output snippets, raw exception messages, revealed values, or unresolved placeholders.
+
+### 11.8 `tool_result`
 
 Adapter responsibilities:
 - load the matching `ToolSanitizationContext` from process-local state when one exists
@@ -744,7 +850,7 @@ Adapter responsibilities:
 - if no matching context exists, still run deterministic result sanitization with policy defaults
 - if the result shape cannot be patched safely, block or replace it with a local redacted error object rather than returning unsanitized content
 
-### 11.6 `session_start` / `session_shutdown`
+### 11.9 `session_start` / `session_shutdown`
 
 Adapter responsibilities:
 - status line setup/cleanup
@@ -829,7 +935,7 @@ These must hold across core + adapter implementations.
 6. **System guidance must not instruct the model to print secrets into chat.**
 7. **Policy decisions must be deterministic and testable.**
 8. **New raw secrets in tool inputs must block, not become best-effort placeholders.**
-9. **`sanitizeResult: false` must never bypass scrubbing after a reveal occurred.**
+9. **Minimum result sanitization must never be disabled after a reveal occurred.**
 10. **Oversize or unpatchable provider-bound fields must block rather than pass through partially redacted content.**
 
 ---
@@ -872,7 +978,7 @@ Goal: move runtime-agnostic security semantics into core.
 - **Depends on:** P2-S1
 - **Work:** implement `ToolPrivacyPolicy`, `ToolWrapperConfig`, fallback policy, config validation, and `loadToolPrivacyConfig`.
 - **Acceptance criteria:** unknown tools default to confirm/no reveal; shell/network tools do not receive plaintext without explicit policy or confirmation; invalid configs fail closed.
-- **Verification:** unit tests for precedence, invalid config, fallback categories, and rejection of unsafe `sanitizeResult: false` policies.
+- **Verification:** unit tests for precedence, invalid config, fallback categories, rejection of unsafe `sanitizeResult.minimum: false`, and explicit placeholder passthrough.
 
 #### P2-S3: Strict tool-input preparation
 

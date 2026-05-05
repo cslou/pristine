@@ -18,6 +18,7 @@ let stubExecuteReadOnly: ReturnType<typeof vi.fn>;
 let stubWithTimeout: ReturnType<typeof vi.fn>;
 
 const stubEmbedder: Embedder = {
+  dim: 768,
   embed: async (): Promise<number[]> => Array.from({ length: 768 }, () => 0),
   embedBatch: async (texts: readonly string[]): Promise<number[][]> =>
     texts.map(() => Array.from({ length: 768 }, () => 0)),

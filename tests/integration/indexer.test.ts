@@ -35,6 +35,7 @@ const makeMessages = (contents: string[]) =>
 // Deterministic stub embedder that returns a 768-d vector keyed off the
 // joined text length. Faster than the real model + suitable for CI.
 const makeStubEmbedder = (): Embedder => ({
+  dim: 768,
   embed: async (text: string): Promise<number[]> => {
     const seed = text.length / 1000;
     return Array.from({ length: 768 }, (_, i) => seed + i * 1e-4);

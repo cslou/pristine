@@ -42,6 +42,7 @@ const makeStubEmbedder = (
 ) => {
   const calls: string[] = [];
   const embedder: Embedder = {
+    dim: 768,
     embed: async (text: string): Promise<number[]> => {
       calls.push(text);
       return vector;
@@ -170,6 +171,7 @@ describe('buildSessionVector (helper)', () => {
     const priorUpdatedAt = Number(priorRow.updated_at);
 
     const failingEmbedder: Embedder = {
+      dim: 768,
       embed: async (): Promise<number[]> => {
         throw new Error('rebuild failure');
       },
@@ -233,6 +235,7 @@ describe('buildSessionVector (helper)', () => {
   it('does not write a partial row if the embedder throws (transaction rollback)', async () => {
     const conversationId = store.addConversation(makeMessages(['hi']), 'user-fail');
     const failingEmbedder: Embedder = {
+      dim: 768,
       embed: async (): Promise<number[]> => {
         throw new Error('embedder simulated failure');
       },

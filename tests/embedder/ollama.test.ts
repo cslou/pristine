@@ -16,7 +16,7 @@ function mockFetchResponse(body: unknown, status = 200): Response {
   } as Response;
 }
 
-function makeEmbeddings(count: number, dim = 3): number[][] {
+function makeEmbeddings(count: number, dim = 768): number[][] {
   return Array.from({ length: count }, (_, i) =>
     Array.from({ length: dim }, (__, j) => i + j * 0.1),
   );

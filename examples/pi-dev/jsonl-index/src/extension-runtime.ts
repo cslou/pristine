@@ -50,7 +50,7 @@ const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | 
   for (const entry of branch) {
     if (typeof entry.id === 'string' && entry.id.length > 0) ids.add(entry.id);
   }
-  return ids.size > 0 ? ids : undefined;
+  return ids;
 };
 
 const notify = (
@@ -109,7 +109,7 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
 
     try {
       const activeEntryIds = activeEntryIdsFrom(ctx);
-      if (activeEntryIds !== undefined) {
+      if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
       }
       const parsed = await parsePiSessionJsonlFile(sessionFile, {

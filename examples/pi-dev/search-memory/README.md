@@ -9,9 +9,10 @@ This is one way to use Pristine primitives. You can write your own.
 Copy this directory into a repo-local `.pi` extension location, then install runtime dependencies:
 
 ```bash
-mkdir -p ~/projects/test-pristine/.pi
-rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/
-cd ~/projects/test-pristine/.pi/search-memory
+mkdir -p ~/projects/test-pristine/.pi/extensions
+rsync -a --delete examples/pi-dev/shared/. ~/projects/test-pristine/.pi/extensions/shared/
+rsync -a --delete examples/pi-dev/search-memory/. ~/projects/test-pristine/.pi/extensions/search-memory/
+cd ~/projects/test-pristine/.pi/extensions/search-memory
 npm install --omit=dev
 ```
 
@@ -62,5 +63,5 @@ Each result includes:
 Remove the local index DB and let `jsonl-index` rebuild it:
 
 ```bash
-rm -f ~/.pi/pristine/pristine.db ~/.pi/pristine/pristine.db-*
+rm -f "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"-*
 ```

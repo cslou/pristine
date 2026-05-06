@@ -9,18 +9,19 @@ This Pi extension indexes the active Pi session JSONL into a local Pristine-comp
 Copy the Pi dev reference into a repo-local `.pi` directory, including shared helpers used by the extension:
 
 ```bash
-mkdir -p .pi
-rsync -a --delete examples/pi-dev/. .pi/
+mkdir -p .pi/extensions
+rsync -a --delete examples/pi-dev/shared/. .pi/extensions/shared/
+rsync -a --delete examples/pi-dev/jsonl-index/. .pi/extensions/jsonl-index/
 ```
 
 Install runtime dependencies next to the copied extension:
 
 ```bash
-cd .pi/jsonl-index
+cd .pi/extensions/jsonl-index
 npm install --omit=dev
 ```
 
-The extension entry point is `jsonl-index/index.ts`. The local `package.json` declares the runtime dependencies Pi needs when the directory is copied outside the Pristine repo.
+The extension entry point is `.pi/extensions/jsonl-index/index.ts`. The local `package.json` declares the runtime dependencies Pi needs when the directory is copied outside the Pristine repo.
 
 ## Ingestion lifecycle
 
@@ -57,7 +58,7 @@ Each indexed row stores:
 ## Reset
 
 ```bash
-rm -f ~/.pi/pristine/pristine.db ~/.pi/pristine/pristine.db-wal ~/.pi/pristine/pristine.db-shm
+rm -f "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"-*
 ```
 
 ## Known phrase verification

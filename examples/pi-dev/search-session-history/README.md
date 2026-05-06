@@ -9,13 +9,13 @@ This is one way to use Pristine primitives. You can write your own.
 Copy all Pi dev examples so `search-memory` and this skill are installed together:
 
 ```bash
-mkdir -p ~/projects/test-pristine/.pi
-rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/
+mkdir -p ~/projects/test-pristine/.pi/skills
+rsync -a --delete examples/pi-dev/search-session-history/. ~/projects/test-pristine/.pi/skills/search-session-history/
 ```
 
 ## Reset
 
-No state is stored by this skill. It follows pointers returned from the semantic index at `~/.pi/pristine/pristine.db` or `PRISTINE_DB_PATH`. Reset the semantic index by deleting `~/.pi/pristine/pristine.db` if needed.
+No state is stored by this skill. It follows pointers returned from the semantic index at `~/.pi/pristine/pristine.db` or `PRISTINE_DB_PATH`. Reset the semantic index by deleting `~/.pi/pristine/pristine.db` if needed, or delete `PRISTINE_DB_PATH` and its SQLite sidecars when that override is set.
 
 ## Known phrase verification
 

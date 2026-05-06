@@ -81,10 +81,13 @@ This keeps raw context in Pi JSONL and uses Pristine for semantic recall only. T
 Copy the reference artifacts into a repo-local `.pi` directory and install each extension's runtime dependencies:
 
 ```bash
-mkdir -p ~/projects/test-pristine/.pi
-rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/
-(cd ~/projects/test-pristine/.pi/jsonl-index && npm install --omit=dev)
-(cd ~/projects/test-pristine/.pi/search-memory && npm install --omit=dev)
+mkdir -p ~/projects/test-pristine/.pi/extensions ~/projects/test-pristine/.pi/skills
+rsync -a --delete examples/pi-dev/shared/. ~/projects/test-pristine/.pi/extensions/shared/
+rsync -a --delete examples/pi-dev/jsonl-index/. ~/projects/test-pristine/.pi/extensions/jsonl-index/
+rsync -a --delete examples/pi-dev/search-memory/. ~/projects/test-pristine/.pi/extensions/search-memory/
+rsync -a --delete examples/pi-dev/search-session-history/. ~/projects/test-pristine/.pi/skills/search-session-history/
+(cd ~/projects/test-pristine/.pi/extensions/jsonl-index && npm install --omit=dev)
+(cd ~/projects/test-pristine/.pi/extensions/search-memory && npm install --omit=dev)
 ```
 
 The default DB path is `~/.pi/pristine/pristine.db`; set `PRISTINE_DB_PATH` to use a different local SQLite file.

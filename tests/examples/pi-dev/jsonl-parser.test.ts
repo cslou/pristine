@@ -104,15 +104,19 @@ describe('Pi JSONL parser reference', () => {
     ]);
   });
 
-  it('filters to active branch entry IDs when provided by the Pi extension', async () => {
+  it('filters text and file parsing to active branch entry IDs when provided by the Pi extension', async () => {
     const jsonl = await readFile(fixturePath, 'utf8');
-    const messages = parsePiSessionJsonlText(jsonl, {
+    const textMessages = parsePiSessionJsonlText(jsonl, {
       sourceUri: 'pi://fixture',
       activeEntryIds: new Set(['u0000004']),
     });
+    const fileMessages = await parsePiSessionJsonlFile(fixturePath, {
+      activeEntryIds: new Set(['u0000004']),
+    });
 
-    expect(messages.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
-    expect(messages).toHaveLength(1);
+    expect(textMessages.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
+    expect(fileMessages.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
+    expect(fileMessages[0]?.pointer.sourceUri).toBe(fixturePath);
   });
 
   it('skips message entries without stable entry IDs', () => {

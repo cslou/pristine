@@ -6,21 +6,21 @@ This Pi extension indexes the active Pi session JSONL into a local Pristine-comp
 
 ## Install shape
 
-Copy `examples/pi-dev/jsonl-index/` into a Pi auto-discovered extension location such as:
+Copy the Pi dev reference into a repo-local `.pi` directory, including shared helpers used by the extension:
 
 ```bash
-mkdir -p .pi/extensions/jsonl-index
-rsync -a examples/pi-dev/jsonl-index/. .pi/extensions/jsonl-index/
+mkdir -p .pi
+rsync -a --delete examples/pi-dev/. .pi/
 ```
 
 Install runtime dependencies next to the copied extension:
 
 ```bash
-cd .pi/extensions/jsonl-index
+cd .pi/jsonl-index
 npm install --omit=dev
 ```
 
-The extension entry point is `index.ts`. The local `package.json` declares the runtime dependencies Pi needs when the directory is copied outside the Pristine repo.
+The extension entry point is `jsonl-index/index.ts`. The local `package.json` declares the runtime dependencies Pi needs when the directory is copied outside the Pristine repo.
 
 ## Ingestion lifecycle
 

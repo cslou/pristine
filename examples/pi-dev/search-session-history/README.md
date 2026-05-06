@@ -15,7 +15,7 @@ rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/
 
 ## Reset
 
-No state is stored by this skill. Reset the semantic index by deleting `~/.pi/pristine/pristine.db` if needed.
+No state is stored by this skill. It follows pointers returned from the semantic index at `~/.pi/pristine/pristine.db` or `PRISTINE_DB_PATH`. Reset the semantic index by deleting `~/.pi/pristine/pristine.db` if needed.
 
 ## Known phrase verification
 

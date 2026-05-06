@@ -27,7 +27,9 @@ export interface PiJsonlSourceIndexer {
 
 const validateEmbeddingDim = (dim: number): number => {
   if (!Number.isInteger(dim) || dim <= 0 || dim > 8192) {
-    throw new Error(`Pi JSONL indexer: embedding dimension must be an integer in [1, 8192], got ${dim}`);
+    throw new Error(
+      `Pi JSONL indexer: embedding dimension must be an integer in [1, 8192], got ${dim}`,
+    );
   }
   return dim;
 };
@@ -51,6 +53,11 @@ const toEmbeddingBuffer = (vector: readonly number[]): Buffer => {
   return Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
 };
 
+interface PendingChunk {
+  readonly record: PiJsonlChunkRecord;
+  readonly embedding: Buffer;
+}
+
 export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
   private readonly db: Database.Database;
   private readonly embedder: PiJsonlEmbedder;
@@ -71,42 +78,57 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
   public async indexMessages(messages: readonly PiJsonlParsedMessage[]): Promise<PiJsonlIndexResult> {
     if (messages.length === 0) return { indexed: 0, skippedDuplicate: 0, chunks: [] };
 
-    const existing = this.loadExistingSourceKeys(messages);
-    const toWrite: { readonly record: PiJsonlChunkRecord; readonly embedding: Buffer }[] = [];
-    let skippedDuplicate = 0;
-
+    const firstSeen = new Set<string>();
+    const candidates: PiJsonlParsedMessage[] = [];
+    let duplicateInBatch = 0;
     for (const message of messages) {
       const sourceKey = `${message.pointer.sourceUri}\0${message.pointer.entryId}`;
-      if (existing.has(sourceKey)) {
-        skippedDuplicate++;
+      if (firstSeen.has(sourceKey)) {
+        duplicateInBatch++;
         continue;
       }
-
-      const vector = await this.embedder.embed(message.text);
-      this.ensureVectorTable(vector.length);
-      const record: PiJsonlChunkRecord = {
-        chunkId: chunkIdFor(message.pointer),
-        snippet: message.text,
-        pointer: message.pointer,
-        metadataJson: JSON.stringify({ role: message.role, sourcePointer: message.pointer }),
-      };
-      toWrite.push({ record, embedding: toEmbeddingBuffer(vector) });
-      existing.add(sourceKey);
+      firstSeen.add(sourceKey);
+      candidates.push(message);
     }
 
-    this.writeChunks(toWrite);
+    const vectors = await this.embedder.embedBatch(candidates.map((message) => message.text));
+    if (vectors.length !== candidates.length) {
+      throw new Error(
+        `Pi JSONL indexer expected ${candidates.length} embeddings, got ${vectors.length}`,
+      );
+    }
+
+    const pending: PendingChunk[] = [];
+    for (let index = 0; index < candidates.length; index++) {
+      const message = candidates[index];
+      const vector = vectors[index];
+      if (message === undefined || vector === undefined) continue;
+      this.ensureVectorTable(vector.length);
+      pending.push({
+        record: {
+          chunkId: chunkIdFor(message.pointer),
+          snippet: message.text,
+          pointer: message.pointer,
+          metadataJson: JSON.stringify({ role: message.role, sourcePointer: message.pointer }),
+        },
+        embedding: toEmbeddingBuffer(vector),
+      });
+    }
+
+    const written = this.writeChunks(pending);
     return {
-      indexed: toWrite.length,
-      skippedDuplicate,
-      chunks: toWrite.map((item) => item.record),
+      indexed: written.length,
+      skippedDuplicate: duplicateInBatch + pending.length - written.length,
+      chunks: written,
     };
   }
 
   public reconcileActiveEntries(sourceUri: string, activeEntryIds: ReadonlySet<string>): void {
-    const rows = this.db
+    if (activeEntryIds.size === 0) return;
+    const existing = this.db
       .prepare('SELECT chunk_id, entry_id FROM pi_jsonl_chunks WHERE source_uri = ?')
       .all(sourceUri) as { chunk_id: string; entry_id: string }[];
-    const staleChunkIds = rows
+    const staleChunkIds = existing
       .filter((row) => !activeEntryIds.has(row.entry_id))
       .map((row) => row.chunk_id);
     if (staleChunkIds.length === 0) return;
@@ -155,7 +177,9 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
     const safeDim = validateEmbeddingDim(dim);
     if (this.vectorDim !== null) {
       if (this.vectorDim !== safeDim) {
-        throw new Error(`Pi JSONL indexer: mixed embedding dimensions are unsupported (${this.vectorDim} then ${safeDim})`);
+        throw new Error(
+          `Pi JSONL indexer: mixed embedding dimensions are unsupported (${this.vectorDim} then ${safeDim})`,
+        );
       }
       return;
     }
@@ -165,50 +189,44 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
 
   private hasVectorTable(): boolean {
     const row = this.db
-      .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'vec_pi_jsonl_chunks'")
+      .prepare(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'vec_pi_jsonl_chunks'",
+      )
       .get() as { present: number } | undefined;
     return row !== undefined;
   }
 
-  private loadExistingSourceKeys(messages: readonly PiJsonlParsedMessage[]): Set<string> {
-    const sourceUris = [...new Set(messages.map((message) => message.pointer.sourceUri))];
-    if (sourceUris.length === 0) return new Set();
-    const placeholders = sourceUris.map(() => '?').join(', ');
-    const rows = this.db
-      .prepare(`SELECT source_uri, entry_id FROM pi_jsonl_chunks WHERE source_uri IN (${placeholders})`)
-      .all(...sourceUris) as { source_uri: string; entry_id: string }[];
-    return new Set(rows.map((row) => `${row.source_uri}\0${row.entry_id}`));
-  }
-
-  private writeChunks(items: readonly { readonly record: PiJsonlChunkRecord; readonly embedding: Buffer }[]): void {
-    if (items.length === 0) return;
+  private writeChunks(items: readonly PendingChunk[]): readonly PiJsonlChunkRecord[] {
+    if (items.length === 0) return [];
     const insertChunk = this.db.prepare(
-      `INSERT INTO pi_jsonl_chunks
+      `INSERT OR IGNORE INTO pi_jsonl_chunks
          (chunk_id, source_kind, source_uri, entry_id, parent_id, line_number, timestamp, cwd, snippet, metadata_json)
        VALUES (?, 'pi-jsonl', ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const insertVector = this.db.prepare(
-      'INSERT INTO vec_pi_jsonl_chunks(chunk_id, embedding) VALUES (?, ?)',
+      'INSERT OR IGNORE INTO vec_pi_jsonl_chunks(chunk_id, embedding) VALUES (?, ?)',
     );
-    const write = this.db.transaction(
-      (chunkItems: readonly { readonly record: PiJsonlChunkRecord; readonly embedding: Buffer }[]) => {
-        for (const item of chunkItems) {
-          insertChunk.run(
-            item.record.chunkId,
-            item.record.pointer.sourceUri,
-            item.record.pointer.entryId,
-            item.record.pointer.parentId ?? null,
-            item.record.pointer.lineNumber,
-            item.record.pointer.timestamp ?? null,
-            item.record.pointer.cwd ?? null,
-            item.record.snippet,
-            item.record.metadataJson,
-          );
-          insertVector.run(item.record.chunkId, item.embedding);
-        }
-      },
-    );
-    write(items);
+    const write = this.db.transaction((chunkItems: readonly PendingChunk[]) => {
+      const written: PiJsonlChunkRecord[] = [];
+      for (const item of chunkItems) {
+        const result = insertChunk.run(
+          item.record.chunkId,
+          item.record.pointer.sourceUri,
+          item.record.pointer.entryId,
+          item.record.pointer.parentId ?? null,
+          item.record.pointer.lineNumber,
+          item.record.pointer.timestamp ?? null,
+          item.record.pointer.cwd ?? null,
+          item.record.snippet,
+          item.record.metadataJson,
+        );
+        if (result.changes === 0) continue;
+        insertVector.run(item.record.chunkId, item.embedding);
+        written.push(item.record);
+      }
+      return written;
+    });
+    return write(items) as PiJsonlChunkRecord[];
   }
 }
 

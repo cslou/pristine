@@ -101,13 +101,18 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
     ctx: PiExtensionContextLike,
     trigger: string,
   ): Promise<PiJsonlIndexRuntimeResult> {
-    const sessionFile = ctx.sessionManager.getSessionFile();
-    if (sessionFile === undefined) {
-      notify(ctx, `Pristine Pi JSONL index skipped (${trigger}): active session is not persisted`, 'info');
-      return { ok: true, indexed: 0, skippedDuplicate: 0 };
-    }
-
+    let sessionFile: string | undefined;
     try {
+      sessionFile = ctx.sessionManager.getSessionFile();
+      if (sessionFile === undefined) {
+        notify(
+          ctx,
+          `Pristine Pi JSONL index skipped (${trigger}): active session is not persisted`,
+          'info',
+        );
+        return { ok: true, indexed: 0, skippedDuplicate: 0 };
+      }
+
       const activeEntryIds = activeEntryIdsFrom(ctx);
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);

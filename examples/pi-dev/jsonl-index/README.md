@@ -13,7 +13,14 @@ mkdir -p .pi/extensions/jsonl-index
 rsync -a examples/pi-dev/jsonl-index/. .pi/extensions/jsonl-index/
 ```
 
-The extension entry point is `index.ts`.
+Install runtime dependencies next to the copied extension:
+
+```bash
+cd .pi/extensions/jsonl-index
+npm install --omit=dev
+```
+
+The extension entry point is `index.ts`. The local `package.json` declares the runtime dependencies Pi needs when the directory is copied outside the Pristine repo.
 
 ## Ingestion lifecycle
 

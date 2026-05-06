@@ -22,8 +22,19 @@ class StubEmbedder {
   public readonly texts: string[] = [];
 
   public async embed(text: string): Promise<readonly number[]> {
-    this.texts.push(text);
-    return [text.length, text.includes('sapphire') ? 1 : 0, text.includes('amber') ? 1 : 0];
+    const results = await this.embedBatch([text]);
+    const first = results[0];
+    if (first === undefined) throw new Error('missing test embedding');
+    return first;
+  }
+
+  public async embedBatch(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
+    this.texts.push(...texts);
+    return texts.map((text) => [
+      text.length,
+      text.includes('sapphire') ? 1 : 0,
+      text.includes('amber') ? 1 : 0,
+    ]);
   }
 }
 

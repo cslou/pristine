@@ -1,13 +1,14 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { load as loadSqliteVec } from 'sqlite-vec';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { PiJsonlEmbedder } from '../../../examples/pi-dev/search-memory/lib/local-embedder.js';
-import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/lib/pi-jsonl-parser.js';
 import {
-  openPiJsonlIndexDatabase,
-  SqlitePiJsonlSourceIndexer,
-} from '../../../examples/pi-dev/jsonl-index/lib/source-index.js';
+  PI_JSONL_CHUNKS_TABLE,
+  PI_JSONL_VECTOR_TABLE,
+} from '../../../examples/pi-dev/shared/lib/pi-jsonl-index-schema.js';
+import type { PiJsonlEmbedder } from '../../../examples/pi-dev/search-memory/lib/local-embedder.js';
 import {
   createPristineVectorSearchTool,
   registerSearchMemoryExtension,
@@ -46,6 +47,16 @@ afterEach(async () => {
   }
 });
 
+interface SeedMessage {
+  readonly text: string;
+  readonly sourceUri: string;
+  readonly entryId: string;
+  readonly parentId?: string;
+  readonly lineNumber: number;
+  readonly timestamp?: string;
+  readonly cwd?: string;
+}
+
 const message = (params: {
   readonly text: string;
   readonly sourceUri?: string;
@@ -54,29 +65,76 @@ const message = (params: {
   readonly lineNumber: number;
   readonly timestamp?: string;
   readonly cwd?: string;
-}): PiJsonlParsedMessage => ({
-  role: 'user',
+}): SeedMessage => ({
   text: params.text,
-  pointer: {
-    sourceKind: 'pi-jsonl',
-    sourceUri: params.sourceUri ?? '/tmp/session-a.jsonl',
-    entryId: params.entryId,
-    parentId: params.parentId,
-    lineNumber: params.lineNumber,
-    timestamp: params.timestamp,
-    cwd: params.cwd,
-  },
+  sourceUri: params.sourceUri ?? '/tmp/session-a.jsonl',
+  entryId: params.entryId,
+  parentId: params.parentId,
+  lineNumber: params.lineNumber,
+  timestamp: params.timestamp,
+  cwd: params.cwd,
 });
 
-const seedDb = async (dbPath: string, messages: readonly PiJsonlParsedMessage[]): Promise<void> => {
-  const db = openPiJsonlIndexDatabase(dbPath);
-  const indexer = new SqlitePiJsonlSourceIndexer({
-    db,
-    embedder: new KeywordEmbedder(),
-    ownsDb: true,
-  });
-  await indexer.indexMessages(messages);
-  indexer.close();
+const toEmbeddingBuffer = (vector: readonly number[]): Buffer => {
+  const embedding = Float32Array.from(vector);
+  return Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+};
+
+const seedDb = async (dbPath: string, messages: readonly SeedMessage[]): Promise<void> => {
+  const db = new Database(dbPath);
+  try {
+    loadSqliteVec(db);
+    db.exec(`
+CREATE TABLE IF NOT EXISTS ${PI_JSONL_CHUNKS_TABLE} (
+  chunk_id TEXT PRIMARY KEY,
+  source_kind TEXT NOT NULL CHECK (source_kind = 'pi-jsonl'),
+  source_uri TEXT NOT NULL,
+  entry_id TEXT NOT NULL,
+  parent_id TEXT,
+  line_number INTEGER NOT NULL,
+  timestamp TEXT,
+  cwd TEXT,
+  snippet TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(source_uri, entry_id)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS ${PI_JSONL_VECTOR_TABLE} USING vec0(
+  chunk_id TEXT PRIMARY KEY,
+  embedding float[3]
+);
+`);
+    const embedder = new KeywordEmbedder();
+    const vectors = await embedder.embedBatch(messages.map((entry) => entry.text));
+    const insertChunk = db.prepare(
+      `INSERT INTO ${PI_JSONL_CHUNKS_TABLE}
+       (chunk_id, source_kind, source_uri, entry_id, parent_id, line_number, timestamp, cwd, snippet, metadata_json)
+       VALUES (?, 'pi-jsonl', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertVector = db.prepare(
+      `INSERT INTO ${PI_JSONL_VECTOR_TABLE}(chunk_id, embedding) VALUES (?, ?)`,
+    );
+    const write = db.transaction(() => {
+      messages.forEach((entry, index) => {
+        const chunkId = `chunk-${index}`;
+        insertChunk.run(
+          chunkId,
+          entry.sourceUri,
+          entry.entryId,
+          entry.parentId ?? null,
+          entry.lineNumber,
+          entry.timestamp ?? null,
+          entry.cwd ?? null,
+          entry.text,
+          JSON.stringify({ role: 'user' }),
+        );
+        insertVector.run(chunkId, toEmbeddingBuffer(vectors[index] ?? []));
+      });
+    });
+    write();
+  } finally {
+    db.close();
+  }
 };
 
 describe('PristinePiVectorSearcher', () => {
@@ -338,8 +396,7 @@ describe('PristinePiVectorSearcher', () => {
     await expect(searcher.search({ query: 'sapphire' })).rejects.toThrow('database is unavailable');
 
     const emptyDbPath = join(dir, 'empty.db');
-    const db = openPiJsonlIndexDatabase(emptyDbPath);
-    db.close();
+    new Database(emptyDbPath).close();
     const emptySearcher = new PristinePiVectorSearcher({
       dbPath: emptyDbPath,
       embedder: new KeywordEmbedder(),

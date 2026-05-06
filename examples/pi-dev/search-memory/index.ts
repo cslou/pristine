@@ -15,7 +15,7 @@ interface PiToolLike {
   readonly description: string;
   readonly promptSnippet: string;
   readonly parameters: Record<string, unknown>;
-  execute(toolCallId: string, params: PristineVectorSearchInput): Promise<PiToolResultLike>;
+  execute(toolCallId: string, params: unknown): Promise<PiToolResultLike>;
 }
 
 interface PiExtensionApiLike {
@@ -25,6 +25,41 @@ interface PiExtensionApiLike {
 interface PristineVectorSearcherLike {
   search(input: PristineVectorSearchInput): Promise<PristineVectorSearchResult>;
 }
+
+const optionalStringFields = [
+  'sourceUri',
+  'entryId',
+  'parentId',
+  'timestampFrom',
+  'timestampTo',
+  'cwd',
+] as const;
+
+const toSearchInput = (params: unknown): PristineVectorSearchInput => {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new Error('pristine_vector_search parameters must be an object');
+  }
+  const input = params as Record<string, unknown>;
+  if (typeof input.query !== 'string') {
+    throw new Error('pristine_vector_search query must be a non-empty string');
+  }
+  const parsed: Record<string, unknown> = { query: input.query };
+  for (const field of optionalStringFields) {
+    const value = input[field];
+    if (value === undefined) continue;
+    if (typeof value !== 'string')
+      throw new Error(`pristine_vector_search ${field} must be a string`);
+    parsed[field] = value;
+  }
+  for (const field of ['lineNumber', 'limit'] as const) {
+    const value = input[field];
+    if (value === undefined) continue;
+    if (typeof value !== 'number')
+      throw new Error(`pristine_vector_search ${field} must be a number`);
+    parsed[field] = value;
+  }
+  return parsed as unknown as PristineVectorSearchInput;
+};
 
 const parameters = {
   type: 'object',
@@ -57,7 +92,7 @@ export const createPristineVectorSearchTool = (
     'pristine_vector_search: semantic search over indexed Pi JSONL snippets; returns sourceUri/entryId/lineNumber pointers.',
   parameters,
   async execute(_toolCallId, params) {
-    const result = await searcher.search(params);
+    const result = await searcher.search(toSearchInput(params));
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       details: result,

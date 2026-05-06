@@ -202,7 +202,7 @@ describe('PristinePiVectorSearcher', () => {
     const dbPath = join(dir, 'pristine.db');
     await seedDb(dbPath, [
       message({
-        text: 'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 should not leak.',
+        text: 'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 and dev@example.com should not leak.',
         entryId: 'entry-secret',
         lineNumber: 4,
       }),
@@ -211,7 +211,9 @@ describe('PristinePiVectorSearcher', () => {
     const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
     const result = await searcher.search({ query: 'sapphire token' });
 
-    expect(result.results[0]?.snippet).toBe('Sapphire token Bearer [REDACTED] should not leak.');
+    expect(result.results[0]?.snippet).toBe(
+      'Sapphire token Bearer [REDACTED] and [REDACTED EMAIL] should not leak.',
+    );
   });
 
   it('registers a reusable Pi tool wrapper with expected response shape', async () => {
@@ -239,6 +241,10 @@ describe('PristinePiVectorSearcher', () => {
     const tool = createPristineVectorSearchTool(searcher);
 
     const result = await tool.execute('tool-call-1', { query: 'sapphire', limit: 1 });
+
+    await expect(tool.execute('tool-call-2', { query: 123 })).rejects.toThrow(
+      'query must be a non-empty string',
+    );
 
     expect(calls).toEqual([{ query: 'sapphire', limit: 1 }]);
     expect(result.content[0]?.type).toBe('text');

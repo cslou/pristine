@@ -106,7 +106,7 @@ Type a unique known phrase into Pi, let `jsonl-index` index the completed turn, 
 ## Install/runtime gotchas
 
 - Pi discovers repo-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md`; copying examples directly under `.pi/<name>` does not load them.
-- Copy `examples/pi-dev/shared/` to `.pi/extensions/shared/` because both extension examples import shared DB path and local embedder helpers.
+- Copy `examples/pi-dev/shared/` to `.pi/extensions/shared/` because both extension examples import the shared DB path helper; dependency-owning embedder code stays inside each extension.
 - Run `npm install --omit=dev` separately in `.pi/extensions/jsonl-index` and `.pi/extensions/search-memory`; each copied extension owns its runtime dependencies.
 - Copied repo-local files are intentionally self-contained and do not import this repository's `src/` internals.
 - Interactive Pi TUI verification is reserved for Lou in `~/projects/test-pristine`; static copy/install checks passed locally.

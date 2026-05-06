@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { PiJsonlEmbedder } from '../../../examples/pi-dev/shared/lib/local-embedder.js';
+import type { PiJsonlEmbedder } from '../../../examples/pi-dev/search-memory/lib/local-embedder.js';
 import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/lib/pi-jsonl-parser.js';
 import {
   openPiJsonlIndexDatabase,

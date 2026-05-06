@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
 import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
-import { LocalNomicEmbedder, type PiJsonlEmbedder } from '../../shared/lib/local-embedder.js';
+import { LocalNomicEmbedder, type PiJsonlEmbedder } from './local-embedder.js';
 
 export interface PristineVectorSearchFilters {
   readonly sourceUri?: string;

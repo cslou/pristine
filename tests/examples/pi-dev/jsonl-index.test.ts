@@ -199,7 +199,7 @@ describe('Pi JSONL index extension reference', () => {
     ]);
   });
 
-  it('does not derive active ids from ambiguous forked sessions when agent_end has empty branch data', async () => {
+  it('derives the latest parent chain from forked sessions when branch data is empty', async () => {
     const dir = await makeTempDir();
     const sessionFile = join(dir, 'forked-session.jsonl');
     await writeFile(
@@ -228,7 +228,10 @@ describe('Pi JSONL index extension reference', () => {
     await runtime.indexAfterAgentEnd(makeCtx({ sessionFile, branchIds: [] }));
 
     expect(indexer.batches).toHaveLength(1);
-    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([]);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
+      'root',
+      'active',
+    ]);
   });
 
   it('derives active ids from linear sessions when agent_end has empty branch data', async () => {

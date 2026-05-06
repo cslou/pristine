@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
 import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
 import { LocalNomicEmbedder } from './local-embedder.js';
 import { parsePiSessionJsonlFile } from './pi-jsonl-parser.js';
@@ -60,23 +61,22 @@ const isJsonObject = (value: unknown): value is Record<string, unknown> =>
 const deriveActiveEntryIdsFromSessionFile = async (
   sessionFile: string,
 ): Promise<ReadonlySet<string>> => {
-  const text = await readFile(sessionFile, 'utf8');
   const parents = new Map<string, string | null>();
-  const childCounts = new Map<string, number>();
   let latestEntryId: string | null = null;
+  const lines = createInterface({
+    input: createReadStream(sessionFile, { encoding: 'utf8' }),
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
 
-  for (const line of text.split(/\r?\n/u)) {
+  for await (const line of lines) {
     if (line.trim().length === 0) continue;
     const parsed = JSON.parse(line) as unknown;
     if (!isJsonObject(parsed)) continue;
     if (typeof parsed.id !== 'string' || parsed.id.length === 0) continue;
     const parentId = typeof parsed.parentId === 'string' ? parsed.parentId : null;
     parents.set(parsed.id, parentId);
-    if (parentId !== null) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
     if (parsed.type === 'message') latestEntryId = parsed.id;
   }
-
-  if ([...childCounts.values()].some((count) => count > 1)) return new Set<string>();
 
   const activeIds = new Set<string>();
   let cursor = latestEntryId;

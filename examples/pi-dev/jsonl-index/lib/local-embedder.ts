@@ -28,13 +28,18 @@ export class LocalNomicEmbedder implements PiJsonlEmbedder {
   }
 
   public async embedBatch(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
+    if (texts.length === 0) return [];
     const extractor = await this.ensureExtractor();
-    const vectors: number[][] = [];
-    for (const text of texts) {
-      const output = await extractor(text, { pooling: 'mean', normalize: true });
-      vectors.push(Array.from(output.data as Float32Array));
+    const output = await extractor([...texts], { pooling: 'mean', normalize: true });
+    const data = output.data as Float32Array;
+    const dimension = data.length / texts.length;
+    if (!Number.isInteger(dimension) || dimension < 1) {
+      throw new Error(`LocalNomicEmbedder returned invalid batch shape for ${texts.length} texts`);
     }
-    return vectors;
+    return texts.map((_, index) => {
+      const start = index * dimension;
+      return Array.from(data.subarray(start, start + dimension));
+    });
   }
 
   private async ensureExtractor(): Promise<FeatureExtractionPipeline> {

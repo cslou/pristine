@@ -404,6 +404,7 @@ Every story defines functional verification for its new behavior and targeted re
 >
 > - Pi JSONL remains authoritative; Pristine indexes snippets/source pointers only. This evidence should guide Sprint 023 source-pointer architecture cleanup.
 > - `pristine_vector_search` returns a redacted snippet placeholder by default to avoid leaking raw session text into model context; raw context inspection is delegated to `search-session-history`.
+> - Filtered vector search is intentionally bounded for the repo-local reference: filters matching more than 5,000 indexed rows return a narrowing message instead of scanning the whole local index.
 >
 > ## New Dependencies
 >

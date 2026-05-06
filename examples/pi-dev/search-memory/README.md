@@ -35,6 +35,8 @@ Optional filters:
 - `cwd`
 - `limit` — defaults to `5`, minimum `1`, maximum `20`.
 
+Filtered search ranks exact semantic distance over the metadata-matched candidate set. To keep this repo-local Pi tool responsive, filters that match more than 5,000 indexed rows return a narrowing message instead of scanning the whole local index; add a more selective `sourceUri`, `entryId`, time range, `cwd`, or lower-scope query workflow before retrying.
+
 ## Result shape
 
 Each result includes:

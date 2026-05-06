@@ -53,21 +53,21 @@ Every story defines functional verification for its new behavior and targeted re
 - **Acceptance criteria:**
   - [ ] Implement testable Pi JSONL parser functions that extract user/assistant text and source pointers from fixture files without running Pi.
   - [ ] Read `/Users/lou/.nvm/versions/node/v22.18.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/session-format.md` and `/Users/lou/.nvm/versions/node/v22.18.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`; document JSONL fields used in `examples/pi-dev/README.md`: file path, line number, entry ID, parent ID, role, content text, timestamp, session file path.
-  - [ ] Choose and document in `examples/pi-dev/README.md` the deterministic capture hook/event plus active-session JSONL discovery contract used by Story 2.
+  - [ ] Document in `examples/pi-dev/README.md` the chosen ingestion contract: primary indexing runs on Pi `agent_end` after each completed turn; reconciliation runs on `session_start`/reload/resume for the active session only; active session path comes from `ctx.sessionManager.getSessionFile()`; v1 does not background-scan all historical sessions.
   - [ ] Define supported pointer metadata/filter keys shared by Stories 2–3: `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd` when available; `timestampFrom` and `timestampTo` are search filter parameters derived from stored `timestamp`.
   - [ ] Define parser behavior for user/assistant natural-language only; tool results, system/custom hidden messages, images, and thinking blocks are ignored for indexing.
   - [ ] Define source pointer shape that this prototype stores/returns and sprint-023 will formalize: `sourceKind: 'pi-jsonl'`, `sourceUri`, optional `entryId`, `parentId`, `lineNumber`, `timestamp`, `cwd/session directory metadata` when available.
   - [ ] `examples/pi-dev/README.md` design note explains vector-search → search-session-history flow.
 - **Functional verification:**
   - [ ] Add parser fixture tests from small JSONL samples. **Pass condition:** user/assistant text and pointers are extracted; ignored roles/blocks are skipped.
-  - [ ] Run `for term in 'file path' 'line number' 'entry ID' 'parent ID' 'role' 'content text' 'timestamp' 'session file path' 'message_end' 'active session' 'sourceUri' 'entryId' 'parentId' 'lineNumber' 'cwd' 'vector search' 'search-session-history' 'jsonl-index'; do grep -q "$term" examples/pi-dev/README.md; done`. **Pass condition:** documented fields, capture contract, pointer/filter keys, and vector-search → search-session-history workflow are present.
+  - [ ] Run `for term in 'file path' 'line number' 'entry ID' 'parent ID' 'role' 'content text' 'timestamp' 'session file path' 'agent_end' 'session_start' 'reload' 'resume' 'ctx.sessionManager.getSessionFile()' 'active session only' 'no background scan' 'sourceUri' 'entryId' 'parentId' 'lineNumber' 'cwd' 'vector search' 'search-session-history' 'jsonl-index'; do grep -q "$term" examples/pi-dev/README.md; done`. **Pass condition:** documented fields, chosen ingestion/reconciliation contract, pointer/filter keys, and vector-search → search-session-history workflow are present.
 - **Regression verification:**
   - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `docs(pi): define JSONL source pointer contract`
   2. `test(pi): add JSONL parser fixtures`
-- **Technical notes:** Prefer parser functions that are testable without running Pi.
+- **Technical notes:** Prefer parser functions that are testable without running Pi. Ingestion contract is already chosen for the sprint: implement `agent_end` as the primary trigger and idempotent active-session reconciliation on `session_start`/reload/resume.
 
 #### Story 2: Build Pi JSONL indexing extension
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -85,13 +85,14 @@ Every story defines functional verification for its new behavior and targeted re
 - **As a** Pi user, **I want** new Pi user/assistant messages indexed into Pristine with JSONL pointers, **so that** past sessions become semantically searchable while raw context stays in Pi files.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `examples/pi-dev/jsonl-index/` contains a self-contained Pi extension that discovers the active session JSONL file and indexes completed user/assistant natural-language messages/windows.
+  - [ ] `examples/pi-dev/jsonl-index/` contains a self-contained Pi extension that discovers the active session JSONL file via `ctx.sessionManager.getSessionFile()` and indexes completed user/assistant natural-language messages/windows on `agent_end`.
   - [ ] Index records include snippet/indexed text plus source pointers back to Pi JSONL.
   - [ ] Default DB path is `~/.pi/pristine/pristine.db`, with documented explicit config and env override.
-  - [ ] Indexing is synchronous/deterministic for first-version verification and surfaces clear Pi-facing errors on failure.
+  - [ ] Indexing is synchronous/deterministic for first-version verification, reconciles the active session idempotently on `session_start`/reload/resume, and surfaces clear Pi-facing errors on failure.
   - [ ] Re-indexing the same JSONL entry is idempotent or deduplicated by stable source pointer.
 - **Functional verification:**
-  - [ ] Add mocked extension-event tests. **Pass condition:** user/assistant messages are indexed with pointers; ignored roles are skipped.
+  - [ ] Add mocked extension-event tests. **Pass condition:** `agent_end` indexes completed user/assistant messages with pointers; ignored roles are skipped.
+  - [ ] Add active-session reconciliation tests. **Pass condition:** `session_start` startup/reload/resume handlers use `ctx.sessionManager.getSessionFile()`, reconcile only that active session file idempotently, and do not scan the all-sessions directory.
   - [ ] Add DB path resolution tests. **Pass condition:** default path, explicit config, and env override resolve in documented precedence order.
   - [ ] Add deterministic failure-surfacing test. **Pass condition:** mocked indexing/embed failure produces a clear Pi-facing error/notification and is not reported as successful.
   - [ ] Add temporary-DB integration test with stub embedder. **Pass condition:** indexed rows contain vector embeddings, snippets, and Pi source metadata.
@@ -122,7 +123,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
   - [ ] `examples/pi-dev/search-memory/` contains the `pristine_vector_search` tool. Tool schema includes `query` non-empty string, optional filters `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestampFrom`, `timestampTo`, and `cwd`, plus `limit` default `5`, min `1`, max `20`.
-  - [ ] Tool returns snippet, score/rank, chunk ID, `sourceUri`, `lineNumber`/`entryId` when available, and metadata JSON.
+  - [ ] Tool returns snippet, score/rank, chunk ID, and canonical Pi source pointer fields either directly or under `sourcePointer`: `sourceKind: 'pi-jsonl'`, `sourceUri`, optional `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd` when available.
   - [ ] Empty query, invalid limit, unavailable DB, and empty index produce clear errors or empty result messages.
 - **Functional verification:**
   - [ ] Seed temporary DB with Pi JSONL-derived chunks. **Pass condition:** semantic query returns expected chunk with JSONL pointer fields.

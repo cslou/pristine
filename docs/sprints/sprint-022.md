@@ -1,6 +1,6 @@
 # Pristine — Sprint 022
 **Date:** 2026-05-06 – TBD
-**Goal:** Refactor Pristine from raw conversation ownership to a source-pointer semantic index: remove raw transcript storage as a core requirement, store vector-indexed chunks with optional metadata and source pointers, and keep search useful even when source metadata is partial.
+**Goal:** Build the Pi reference implementation as a proof before core architecture cleanup: parse Pi JSONL user/assistant messages, index semantic snippets/windows with JSONL source pointers using the current Pristine primitives where practical, expose vector search and JSONL inspection tools, and verify the repo-local `.pi` install in `~/projects/test-pristine`.
 **Status:** 🟡 Planning
 
 ---
@@ -9,35 +9,33 @@
 
 ### Project Context
 - **Repo:** `/Users/lou/projects/pristine`
-- **Tech stack:** TypeScript strict ESM, Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` with Nomic Embed v1.5 default, Vitest.
-- **Current state:** Pristine currently has conversation/message tables, queue/indexer logic built around stored raw messages, vector windows in `vec_windows`, session vectors in `vec_sessions`, FTS/SQL public views, and search APIs returning conversation/message-centric results. New architecture decision: harnesses typically already own authoritative transcript state (Pi JSONL, other harness SQLite/JSONL/etc.), so Pristine should not duplicate raw transcripts by default.
-- **Implementation spec:** `docs/specs/implementation-spec-005.md` must be updated by this sprint because the core primitive model changes from raw corpus owner to semantic index over source-owned records.
+- **Tech stack:** TypeScript strict ESM, Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` with Nomic Embed v1.5 default, Vitest, Pi TypeScript extensions loaded by `@mariozechner/pi-coding-agent`.
+- **Current state:** This sprint intentionally runs before the core architecture cleanup. Pi stores authoritative sessions as JSONL under `~/.pi/agent/sessions/.../*.jsonl`; raw JSONL is grep/jq-readable and should remain the source of truth. Use the current Pristine primitives with the smallest adapter needed, and record architecture-cleanup evidence for sprint-023.
+- **Implementation spec:** `docs/specs/implementation-spec-005.md` current state, plus sprint output notes that will inform sprint-023 source-pointer cleanup. Reference layout convention: `docs/conventions/reference-implementation-layout.md`.
 
 ### Sprint-Wide Context
-- **Sprint type:** Refactor / Architecture cleanup.
-- **Shared context:** No user-data compatibility burden. Remove dead/incorrect raw transcript ownership now rather than preserving dual modes. Pristine stores embeddings, indexed snippets, and optional source pointers/metadata; source systems remain authoritative for raw context. Metadata must be optional because not every harness exposes session IDs, line numbers, timestamps, or stable entry IDs.
-- **Non-goals:** No Pi reference implementation in this sprint. No default embedder swap. No migration support for old Pristine DBs. No fact extraction. No SQL query tool over raw conversations. No published package split.
+- **Sprint type:** Feature / Tooling / Docs.
+- **Shared context:** Pi-only reference implementation. Pristine indexes Pi JSONL snippets/windows with source pointers through the least-invasive current-architecture adapter; it does not add a Pi SQL mirror of raw conversations. Vector search finds candidate memories; JSONL inspection reads surrounding raw context by source pointer. Default index DB path is `~/.pi/pristine/pristine.db`, overrideable. Reference lives under convention-compliant `examples/pi-dev/<tool>/` directories (for example `jsonl-index`, `search-memory`, and `inspect-jsonl`) and is installed into `~/projects/test-pristine/.pi` for real repo-local verification.
+- **Non-goals:** No SQL mirror/tool. No session-start injection. No proactive memory injection. No multi-harness implementation. No default embedder swap. No published package.
 
 ### Affected Flows
 
-- **Existing flows affected:** Memory ingest/index, vector search, FTS/hybrid search if retained, SQL public views if removed/replaced, tests around `ConversationStore`, client APIs that expose `storeAsync`, `drainEmbedQueue`, `buildSessionVector`, and search result shapes.
-- **New flows introduced:** Generic source-chunk indexing with optional source metadata and pointer-based vector search results.
+- **Existing flows affected:** Pristine public API from an external consumer; Pi extension startup/reload; Pi session JSONL parsing; vector search over indexed source chunks.
+- **New flows introduced:**
+  - Pi JSONL parser extracts user/assistant natural-language messages and source pointers.
+  - Pi extension indexes new message/window snippets into Pristine after the deterministic Pi capture hook and active-session discovery contract chosen in Story 1.
+  - Pi custom tool `pristine_vector_search` returns source-pointer results.
+  - Pi custom tool `inspect_pi_session_jsonl` reads raw context around a vector hit.
+  - Repo-local install flow under `~/projects/test-pristine/.pi`.
 
 ### Verification Strategy
 
-This sprint follows verifiability-first engineering: every story must define how its new or changed behavior will be proven correct and which existing behavior it could regress.
-
-Verification has two categories:
-
-- **Functional verification:** new verification created for behavior introduced or changed by this sprint.
-- **Regression verification:** existing verification for behavior that predates this sprint.
-
-Each implementation story must include functional verification for new behavior and targeted regression verification for affected existing behavior. The Final Verification Story runs all sprint functional verification plus the full available regression suite.
+Every story defines functional verification for its new behavior and targeted regression verification for affected existing behavior. The Final Verification Story runs all sprint functional verification plus the full available regression suite.
 
 ### Stories
-**Constraints:** Target 5-8 stories per sprint. Each story should be small enough to review, verify, and merge independently.
+**Constraints:** Target 5-8 stories per sprint. Each story should be independently reviewable and verifiable.
 
-#### Story 1: Update spec and public architecture language for source-pointer indexing
+#### Story 1: Confirm Pi JSONL parser and source-pointer contract
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -50,23 +48,28 @@ Each implementation story must include functional verification for new behavior 
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** SDK maintainer, **I want** the spec to define Pristine as a semantic index over source-owned records, **so that** implementation work removes raw transcript ownership intentionally rather than as an ad-hoc deletion.
+- **As a** maintainer, **I want** Pi JSONL message shapes and source pointers documented, **so that** the reference indexes raw Pi sessions without guessing or duplicating transcripts.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] `docs/specs/implementation-spec-005.md` states that external harness stores are authoritative for raw transcripts and Pristine indexes source chunks with snippets and pointers.
-  - [ ] Spec names index fields: chunk ID, indexed text/snippet, embedding, nullable source kind, nullable source URI, optional source entry/range identifiers, optional timestamps, optional metadata JSON.
-  - [ ] Spec explicitly removes raw `conversations` / `messages` ownership from the core architecture and explains that source context is fetched from the harness store on demand.
-  - [ ] Spec defines missing/partial metadata behavior: indexing/search must work with only indexed text plus a generated chunk ID.
+  - [ ] Implement testable Pi JSONL parser functions that extract user/assistant text and source pointers from fixture files without running Pi.
+  - [ ] Read `/Users/lou/.nvm/versions/node/v22.18.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/session-format.md` and `/Users/lou/.nvm/versions/node/v22.18.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`; document JSONL fields used in `examples/pi-dev/README.md`: file path, line number, entry ID, parent ID, role, content text, timestamp, session file path.
+  - [ ] Choose and document in `examples/pi-dev/README.md` the deterministic capture hook/event plus active-session JSONL discovery contract used by Story 2.
+  - [ ] Define supported pointer metadata/filter keys shared by Stories 2–3: `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd` when available; `timestampFrom` and `timestampTo` are search filter parameters derived from stored `timestamp`.
+  - [ ] Define parser behavior for user/assistant natural-language only; tool results, system/custom hidden messages, images, and thinking blocks are ignored for indexing.
+  - [ ] Define source pointer shape that this prototype stores/returns and sprint-023 will formalize: `sourceKind: 'pi-jsonl'`, `sourceUri`, optional `entryId`, `parentId`, `lineNumber`, `timestamp`, `cwd/session directory metadata` when available.
+  - [ ] `examples/pi-dev/README.md` design note explains vector-search → JSONL-inspection flow.
 - **Functional verification:**
-  - [ ] Run a grep/spec check: `rg 'source pointer|source-owned|metadata_json|chunk ID|source kind|source URI|entry ID|line range|timestamp|text-only|generated chunk ID|conversations / messages|raw transcript' docs/specs/implementation-spec-005.md`. **Pass condition:** output shows the new architecture, required index fields, text-only/minimal metadata behavior, and removal rationale.
+  - [ ] Add parser fixture tests from small JSONL samples. **Pass condition:** user/assistant text and pointers are extracted; ignored roles/blocks are skipped.
+  - [ ] Run `for term in 'file path' 'line number' 'entry ID' 'parent ID' 'role' 'content text' 'timestamp' 'session file path' 'message_end' 'active session' 'sourceUri' 'entryId' 'parentId' 'lineNumber' 'cwd' 'vector search' 'JSONL inspection' 'jsonl-index'; do grep -q "$term" examples/pi-dev/README.md; done`. **Pass condition:** documented fields, capture contract, pointer/filter keys, and vector-search → JSONL-inspection workflow are present.
 - **Regression verification:**
   - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `docs(spec): define source-pointer semantic index architecture`
-- **Technical notes:** This story locks terminology before code deletion: source-owned raw records, Pristine-owned semantic index.
+  1. `docs(pi): define JSONL source pointer contract`
+  2. `test(pi): add JSONL parser fixtures`
+- **Technical notes:** Prefer parser functions that are testable without running Pi.
 
-#### Story 2: Introduce generic source chunk/index types and storage schema
+#### Story 2: Build Pi JSONL indexing extension
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -79,26 +82,30 @@ Each implementation story must include functional verification for new behavior 
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** SDK consumer, **I want** to index arbitrary text chunks with optional source metadata, **so that** Pristine can support Pi JSONL and future harness stores without raw transcript duplication.
+- **As a** Pi user, **I want** new Pi user/assistant messages indexed into Pristine with JSONL pointers, **so that** past sessions become semantically searchable while raw context stays in Pi files.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] Core public types expose an index input such as `SourceChunkInput` with `text` required and all source metadata optional.
-  - [ ] SQLite schema stores vector-indexed chunks with validated embedding dimension, indexed snippet/text, source pointer fields, and metadata JSON.
-  - [ ] Storage accepts full metadata, partial metadata, and no metadata beyond text.
-  - [ ] Metadata must be a JSON-serializable object no larger than 16 KiB; arrays/primitives/cyclic values are rejected. Text must be non-empty after trim and no larger than the configured chunk text limit documented in the module.
+  - [ ] `examples/pi-dev/jsonl-index/` contains a self-contained Pi extension that discovers the active session JSONL file and indexes completed user/assistant natural-language messages/windows.
+  - [ ] Index records include snippet/indexed text plus source pointers back to Pi JSONL.
+  - [ ] Default DB path is `~/.pi/pristine/pristine.db`, with documented explicit config and env override.
+  - [ ] Indexing is synchronous/deterministic for first-version verification and surfaces clear Pi-facing errors on failure.
+  - [ ] Re-indexing the same JSONL entry is idempotent or deduplicated by stable source pointer.
 - **Functional verification:**
-  - [ ] Add unit tests for type/storage validation. **Pass condition:** full, partial, and minimal chunk inputs store successfully; invalid inputs fail with domain errors.
-  - [ ] Add schema tests. **Pass condition:** created vec table uses configured dim and metadata columns are nullable where promised.
+  - [ ] Add mocked extension-event tests. **Pass condition:** user/assistant messages are indexed with pointers; ignored roles are skipped.
+  - [ ] Add DB path resolution tests. **Pass condition:** default path, explicit config, and env override resolve in documented precedence order.
+  - [ ] Add deterministic failure-surfacing test. **Pass condition:** mocked indexing/embed failure produces a clear Pi-facing error/notification and is not reported as successful.
+  - [ ] Add temporary-DB integration test with stub embedder. **Pass condition:** indexed rows contain vector embeddings, snippets, and Pi source metadata.
+  - [ ] Add duplicate-source test. **Pass condition:** reprocessing the same entry does not create duplicate search hits.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/core/database.test.ts tests/embedder/dim-parameterization.test.ts` and the new schema tests. **Pass condition:** database setup still works and configured vector dimensions still create the expected `float[N]` schema.
+  - [ ] Run `npm run test:integration -- tests/integration/dim-default.test.ts tests/integration/dim-parameterization.test.ts tests/integration/searcher-vector.test.ts` plus `npm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts`. **Pass condition:** retained dim/vector behavior and Pi indexing adapter tests pass.
   - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
-- **Manual-only verification:** N/A.
+- **Manual-only verification:** N/A unless Pi active-session discovery cannot be automated; if so, document exact local command and pass/fail evidence.
 - **Planned commits:**
-  1. `feat(index): add source chunk types and storage schema`
-  2. `test(index): verify optional metadata storage`
-- **Technical notes:** Prefer new module names that do not imply chat ownership, e.g. `src/memory/index/` or `src/memory/source-index/`.
+  1. `feat(pi): index JSONL messages with source pointers`
+  2. `test(pi): verify JSONL indexing extension`
+- **Technical notes:** Do not copy raw full sessions into Pristine; store only snippets/windows and source pointers.
 
-#### Story 3: Replace raw conversation ingest with source chunk indexing API
+#### Story 3: Add Pi vector search tool returning JSONL pointers
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -111,29 +118,26 @@ Each implementation story must include functional verification for new behavior 
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** SDK consumer, **I want** an API to index source chunks directly, **so that** harness adapters can feed Pristine snippets/windows without first creating raw conversation/message rows.
+- **As a** Pi agent, **I want** `pristine_vector_search` to return semantically relevant snippets and JSONL source pointers, **so that** I can find likely sessions without exact grep terms.
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
-  - [ ] Public client exposes a direct source-chunk indexing method and no new code path requires `ConversationStore` to ingest raw messages.
-  - [ ] Indexing embeds chunks, writes vectors and metadata atomically, and is idempotent or clearly documents duplicate behavior.
-  - [ ] Synchronous indexing path is available for deterministic harness verification.
-  - [ ] Existing queue/worker code is either adapted to chunks or removed if it only served raw conversation ownership.
+  - [ ] `examples/pi-dev/search-memory/` contains the `pristine_vector_search` tool. Tool schema includes `query` non-empty string, optional filters `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestampFrom`, `timestampTo`, and `cwd`, plus `limit` default `5`, min `1`, max `20`.
+  - [ ] Tool returns snippet, score/rank, chunk ID, `sourceUri`, `lineNumber`/`entryId` when available, and metadata JSON.
+  - [ ] Empty query, invalid limit, unavailable DB, and empty index produce clear errors or empty result messages.
 - **Functional verification:**
-  - [ ] Add integration test for direct source-chunk indexing with stub embedder. **Pass condition:** vector rows and metadata are present after indexing.
-  - [ ] Add synchronous indexing test. **Pass condition:** the public indexing call resolves only after the vector row is queryable in the same process.
-  - [ ] Add duplicate/idempotency test. **Pass condition:** indexing the same stable source pointer twice produces the documented single replacement row or documented duplicate behavior, and search results reflect that behavior.
-  - [ ] Add integration test for minimal metadata. **Pass condition:** vector search can retrieve the chunk and returns empty/undefined optional pointer fields safely.
+  - [ ] Seed temporary DB with Pi JSONL-derived chunks. **Pass condition:** semantic query returns expected chunk with JSONL pointer fields.
+  - [ ] Add supported-filter tests. **Pass condition:** matching `sourceUri`/metadata filters return expected chunks and non-matching filters return empty results.
+  - [ ] Add negative-case tests. **Pass condition:** invalid query/limit/unavailable DB paths behave as documented, and an empty index returns an empty result message without opaque sqlite errors.
 - **Regression verification:**
-  - [ ] Run existing client creation and embed queue tests after adapting/removing queue paths. **Pass condition:** remaining tests pass or deleted tests correspond only to deleted raw-conversation behavior.
-  - [ ] Run `npm run typecheck`, `npm run lint`, and targeted unit tests. **Pass condition:** all exit 0.
+  - [ ] Run `npm run test:integration -- tests/integration/searcher-vector.test.ts tests/integration/dim-mismatch.test.ts` plus `npm run test:unit -- tests/examples/pi-dev/search-memory.test.ts`. **Pass condition:** existing vector behavior still passes and Pi vector results include JSONL pointers.
+  - [ ] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/`. **Pass condition:** all exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `feat(index): expose source chunk indexing API`
-  2. `refactor(queue): adapt or remove raw conversation ingest queue`
-  3. `test(index): verify direct chunk indexing`
-- **Technical notes:** If append/update complexity disappears with chunk indexing, delete it rather than preserving unused abstractions.
+  1. `feat(pi): add pointer-aware vector search tool`
+  2. `test(pi): verify pointer-aware vector results`
+- **Technical notes:** This is the value-proposition tool: semantic search where grep would require guessed keywords.
 
-#### Story 4: Return source pointers from vector search and remove conversation-centric result assumptions
+#### Story 4: Add JSONL inspection tool for post-search investigation
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -146,28 +150,27 @@ Each implementation story must include functional verification for new behavior 
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** search consumer, **I want** vector search results to return snippets and source pointers, **so that** a harness can inspect the authoritative raw source after semantic retrieval.
+- **As a** Pi agent, **I want** an `inspect_pi_session_jsonl` tool, **so that** after vector search identifies a session hit I can retrieve nearby raw user/assistant context from Pi’s authoritative JSONL file.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] Vector search result shape returns chunk ID, snippet/indexed text, score/rank, and optional source pointer/metadata fields.
-  - [ ] Search no longer requires conversation/message joins or assumes `conversationId` / `messageIds` exist.
-  - [ ] FTS/hybrid APIs are either adapted to chunk text with pointer results in this story or explicitly marked for removal in Story 5 before any export/docs remain.
-  - [ ] Missing metadata is represented explicitly and does not throw.
-  - [ ] Dimension mismatch guard remains in place for vector tables.
+  - [ ] `examples/pi-dev/inspect-jsonl/` contains the `inspect_pi_session_jsonl` tool. Tool schema accepts `sourceUri` plus either `lineNumber` or `entryId`, with `before` default `5`, `after` default `10`, max `50` each, and out-of-range values rejected.
+  - [ ] Tool reads JSONL directly, extracts surrounding user/assistant natural-language messages, and returns role/timestamp/line/entry metadata.
+  - [ ] Missing file, invalid pointer, no nearby natural-language messages, and out-of-bounds context return clear errors or empty results.
+  - [ ] Tool does not return tool results, hidden custom messages, system/context content, or thinking blocks.
 - **Functional verification:**
-  - [ ] Add vector search tests for chunks with full and minimal metadata. **Pass condition:** both are retrievable and result shapes match the new pointer model.
-  - [ ] Add a missing-source-metadata test. **Pass condition:** result contains snippet and chunk ID with optional fields absent/null.
-  - [ ] Add FTS/hybrid decision verification. **Pass condition:** either chunk-based FTS/hybrid tests pass with pointer results, or `rg 'ftsSearch|hybridSearch' src tests README.md docs/specs/implementation-spec-005.md` shows only Story-5-owned removal targets.
+  - [ ] Add fixture tests around known JSONL files. **Pass condition:** exact surrounding messages are returned for line-number and entry-ID lookup.
+  - [ ] Add context-bound tests. **Pass condition:** omitted `before`/`after` use defaults `5`/`10`, max `50` values are accepted, and values above `50` or below `0` are rejected.
+  - [ ] Add negative-case tests. **Pass condition:** missing file, invalid pointer, and ignored-role-only ranges behave as documented.
 - **Regression verification:**
-  - [ ] Run existing vector search dimension mismatch/default-dim tests, adapted to chunk tables. **Pass condition:** all pass.
-  - [ ] Run `npm run typecheck`, `npm run lint`, and targeted integration tests. **Pass condition:** all exit 0.
+  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/jsonl-parser.test.ts`. **Pass condition:** parser behavior remains consistent.
+  - [ ] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/inspect-jsonl.test.ts`. **Pass condition:** all exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `refactor(search): return source pointer results`
-  2. `test(search): cover pointer and minimal metadata results`
-- **Technical notes:** FTS/hybrid search should either be adapted to chunk text or explicitly removed in Story 5 if it depends on raw messages.
+  1. `feat(pi): add JSONL inspection tool`
+  2. `test(pi): verify JSONL context inspection`
+- **Technical notes:** This replaces the prior SQL-search-tool concept for Pi.
 
-#### Story 5: Remove raw conversation/message storage and obsolete SQL/public views
+#### Story 5: Document the two-tool memory workflow
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -180,29 +183,25 @@ Each implementation story must include functional verification for new behavior 
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** maintainer, **I want** obsolete raw conversation/message storage removed, **so that** Pristine has one clear source-pointer index architecture and no dead dual mode.
+- **As a** Pi user, **I want** clear docs for vector-search then JSONL-inspection, **so that** I understand why Pristine indexes snippets but does not mirror raw sessions.
 - **Dependencies:** Stories 3 and 4
 - **Acceptance criteria:**
-  - [ ] Remove or rename `ConversationStore` and raw `conversations` / `messages` table creation code when no longer used by live APIs.
-  - [ ] Remove conversation/message public SQL views and SQL search APIs that only make sense over mirrored raw transcripts.
-  - [ ] Remove FTS/hybrid/session-vector APIs if they depend on raw conversations and are not adapted to chunk-based pointer results.
-  - [ ] Remove all exports/docs/tests for any FTS/hybrid/session API removed by the Story 4 decision.
-  - [ ] Delete tests that only verify removed raw transcript ownership; do not weaken tests for retained vector indexing behavior.
-  - [ ] `rg 'ConversationStore|messages_public|conversations_public|vec_sessions|buildSessionVector|storeAsync|ftsSearch|hybridSearch' src tests scripts` returns only intentionally retained chunk-index APIs, compatibility notes, or zero hits.
+  - [ ] Each `examples/pi-dev/<tool>/README.md` opens with: "This is one way to use Pristine primitives. You can write your own."
+  - [ ] README docs explain Pi JSONL remains source of truth and Pristine stores semantic index records plus source pointers.
+  - [ ] README docs document install/config, DB path, reset, `pristine_vector_search`, and `inspect_pi_session_jsonl` examples.
+  - [ ] README docs include deterministic known-phrase verification steps.
+  - [ ] `docs/specs/implementation-spec-005.md` flow section is updated or cross-referenced to mention Pi JSONL/source-pointer reference flow before sprint integration.
 - **Functional verification:**
-  - [ ] Run deletion audit command above. **Pass condition:** no live production references to removed raw transcript APIs remain.
-  - [ ] Run new source-index functional tests from Stories 2–4. **Pass condition:** all pass, proving replacement behavior exists.
+  - [ ] Run `rg '^### .*Pi|Pi JSONL|source-pointer|source pointer|examples/pi-dev' docs/specs/implementation-spec-005.md`. **Pass condition:** the implementation spec flow/reference section specifically mentions the Pi JSONL/source-pointer reference flow or cross-references `examples/pi-dev`.
+  - [ ] Run README structural loop: `for f in examples/pi-dev/README.md examples/pi-dev/jsonl-index/README.md examples/pi-dev/search-memory/README.md examples/pi-dev/inspect-jsonl/README.md; do head -1 "$f" | grep -q 'This is one way to use Pristine primitives. You can write your own.' && grep -q 'source of truth' "$f" && grep -Eq 'PRISTINE_DB_PATH|~/.pi/pristine/pristine.db' "$f" && grep -q 'reset' "$f" && grep -q 'known phrase' "$f"; done; grep -q 'pristine_vector_search' examples/pi-dev/search-memory/README.md; grep -q 'inspect_pi_session_jsonl' examples/pi-dev/inspect-jsonl/README.md`. **Pass condition:** command exits 0 and covers every README AC.
 - **Regression verification:**
-  - [ ] Run full unit tests. **Pass condition:** pass count changes only by tests deleted for removed raw transcript behavior; failures are fixed, not skipped.
-  - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
+  - [ ] Run `test -f examples/pi-dev/README.md && test -d examples/pi-dev/jsonl-index && test -d examples/pi-dev/search-memory && test -d examples/pi-dev/inspect-jsonl` plus `npm run typecheck` and `npm run lint`. **Pass condition:** aggregate README and tool directories exist and checks exit 0, preserving reference-layout convention.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `refactor(memory): remove raw conversation storage`
-  2. `refactor(search): remove obsolete transcript SQL/session APIs`
-  3. `test(memory): delete obsolete transcript-store tests`
-- **Technical notes:** This is the destructive cleanup story; verify all replacement APIs are in place before deleting.
+  1. `docs(pi): document vector search plus JSONL inspection workflow`
+- **Technical notes:** If a small skill is useful to teach the workflow, it can be added here only if it wraps the two direct tools and does not introduce new behavior.
 
-#### Story 6: Update docs, examples, and exports to source-index terminology
+#### Story 6: Verify repo-local `.pi` installation in `~/projects/test-pristine`
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -215,24 +214,26 @@ Each implementation story must include functional verification for new behavior 
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** SDK consumer, **I want** public docs and exports to describe source indexing accurately, **so that** consumers do not build against removed conversation-store assumptions.
-- **Dependencies:** Story 5
+- **As a** Pi test-account user, **I want** the reference installed into `~/projects/test-pristine/.pi`, **so that** we verify the exact repo-local shape a real consumer would use.
+- **Dependencies:** Stories 2–5
 - **Acceptance criteria:**
-  - [ ] Public barrel exports only live source-index/search types and APIs.
-  - [ ] README/JSDoc examples use source chunks and source pointers, not raw conversations.
-  - [ ] Implementation spec and sprint docs have no unresolved contradiction about Pristine owning raw transcripts.
-  - [ ] Package scripts/examples that referenced removed APIs are updated or deleted.
+  - [ ] Create or reuse `~/projects/test-pristine` as a disposable non-production repo with `.pi/` directory.
+  - [ ] Copy/install `examples/pi-dev/` reference artifacts into `~/projects/test-pristine/.pi` using documented commands: `mkdir -p ~/projects/test-pristine/.pi && rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/`.
+  - [ ] Launch/reload Pi from `~/projects/test-pristine` with the documented command, e.g. `cd ~/projects/test-pristine && pi` then `/reload`, and verify the extension/tools load.
+  - [ ] Type known unique messages, verify they are indexed into `~/.pi/pristine/pristine.db`, run vector search, then inspect JSONL context around the hit.
+  - [ ] Record install/runtime gotchas back into `examples/pi-dev/README.md`, or explicitly record `Install/runtime gotchas: None` after verification.
 - **Functional verification:**
-  - [ ] Run `rg 'ConversationStore|storeAsync|buildSessionVector|messages_public|conversations_public' README.md docs src tests scripts examples`. **Pass condition:** hits are zero or explicitly documented as historical/removed behavior.
-  - [ ] Add a public barrel import smoke test or typecheck fixture that imports the new source-index API from the package entrypoint. **Pass condition:** the fixture compiles without importing from `src/` internals.
-  - [ ] Run `rg 'Pristine stores raw|raw conversations are stored|conversation corpus|messages table' README.md docs/specs/implementation-spec-005.md src/index.ts`. **Pass condition:** no unresolved raw-transcript ownership language remains outside historical rationale sections.
+  - [ ] Execute `mkdir -p ~/projects/test-pristine/.pi && rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/`, then launch/reload Pi from `~/projects/test-pristine`. **Pass condition:** Pi exposes both tools from repo-local `.pi`.
+  - [ ] Execute known-phrase E2E using the checklist in `examples/pi-dev/README.md`: type the documented phrase, run `pristine_vector_search`, then run `inspect_pi_session_jsonl` on the returned pointer. **Pass condition:** vector search returns the known phrase pointer and JSONL inspection returns surrounding context.
+  - [ ] Run `grep -q 'Install/runtime gotchas:' examples/pi-dev/README.md`. **Pass condition:** README records concrete gotchas or `Install/runtime gotchas: None`.
 - **Regression verification:**
-  - [ ] Run `npm run typecheck`, `npm run lint`, and docs/static grep checks. **Pass condition:** all exit 0.
-- **Manual-only verification:** N/A.
+  - [ ] Verify copied files do not import this repo's `src/` internals. **Pass condition:** `rg '\.\./src|/src/' ~/projects/test-pristine/.pi` exits 1.
+  - [ ] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/`. **Pass condition:** all exit 0.
+- **Manual-only verification:** Required: interactive Pi repo-local extension discovery and tool invocation. Record exact commands and observed pass/fail evidence.
 - **Planned commits:**
-  1. `docs(memory): update source-index API examples`
-  2. `refactor(exports): expose source index primitives only`
-- **Technical notes:** Keep docs terse; Pi-specific usage belongs in sprint-023.
+  1. `test(pi): verify repo-local installation workflow`
+  2. `docs(pi): record repo-local install notes`
+- **Technical notes:** Do not commit `~/projects/test-pristine` files to this repo unless generalized into `examples/pi-dev/`.
 
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -240,7 +241,7 @@ Each implementation story must include functional verification for new behavior 
   - [ ] Defines where final verification evidence will be recorded
   - [ ] Includes full regression verification, not only areas believed to be touched
   - [ ] Ready for Lou
-- **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new architecture works and existing retained behavior did not regress.
+- **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the Pi reference can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories
 - **Acceptance criteria:**
   - [ ] Every story’s acceptance criteria are evaluated against implementation evidence.
@@ -257,7 +258,7 @@ Each implementation story must include functional verification for new behavior 
 - **Regression verification:**
   - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
   - [ ] Run the full available regression verification suite and record pass/fail evidence.
-- **Manual-only verification:** N/A — architecture cleanup should be fully automatable.
+- **Manual-only verification:** Includes Story 6 repo-local Pi install/tool invocation evidence.
 - **Planned commits:**
   1. `docs(sprint-022): record final verification and completion`
 - **Technical notes:** Use `workflow-prompts/handle-sprint-completion.md` for final completion message shape.

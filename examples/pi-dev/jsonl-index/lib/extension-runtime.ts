@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
 import { LocalNomicEmbedder } from './local-embedder.js';
 import { parsePiSessionJsonlFile } from './pi-jsonl-parser.js';
@@ -53,12 +54,50 @@ const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | 
   return ids;
 };
 
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const deriveActiveEntryIdsFromSessionFile = async (
+  sessionFile: string,
+): Promise<ReadonlySet<string>> => {
+  const text = await readFile(sessionFile, 'utf8');
+  const parents = new Map<string, string | null>();
+  const childCounts = new Map<string, number>();
+  let latestEntryId: string | null = null;
+
+  for (const line of text.split(/\r?\n/u)) {
+    if (line.trim().length === 0) continue;
+    const parsed = JSON.parse(line) as unknown;
+    if (!isJsonObject(parsed)) continue;
+    if (typeof parsed.id !== 'string' || parsed.id.length === 0) continue;
+    const parentId = typeof parsed.parentId === 'string' ? parsed.parentId : null;
+    parents.set(parsed.id, parentId);
+    if (parentId !== null) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
+    if (parsed.type === 'message') latestEntryId = parsed.id;
+  }
+
+  if ([...childCounts.values()].some((count) => count > 1)) return new Set<string>();
+
+  const activeIds = new Set<string>();
+  let cursor = latestEntryId;
+  while (cursor !== null && !activeIds.has(cursor)) {
+    activeIds.add(cursor);
+    cursor = parents.get(cursor) ?? null;
+  }
+  return activeIds;
+};
+
 const notify = (
   ctx: PiExtensionContextLike,
   message: string,
   level: 'info' | 'success' | 'warning' | 'error',
 ): void => {
-  ctx.ui?.notify(message, level);
+  try {
+    ctx.ui?.notify(message, level);
+  } catch {
+    // Pi can mark event contexts stale during non-interactive session replacement.
+    // Indexing should not fail only because the optional UI notification could not render.
+  }
 };
 
 export interface PiJsonlIndexRuntimeLike {
@@ -113,7 +152,11 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
         return { ok: true, indexed: 0, skippedDuplicate: 0 };
       }
 
-      const activeEntryIds = activeEntryIdsFrom(ctx);
+      const contextEntryIds = activeEntryIdsFrom(ctx);
+      const activeEntryIds =
+        contextEntryIds !== undefined && contextEntryIds.size === 0 && trigger === 'agent_end'
+          ? await deriveActiveEntryIdsFromSessionFile(sessionFile)
+          : contextEntryIds;
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
       }

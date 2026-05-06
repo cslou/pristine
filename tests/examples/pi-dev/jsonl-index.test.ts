@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -196,17 +196,38 @@ describe('Pi JSONL index extension reference', () => {
     expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
   });
 
-  it('treats an empty agent_end branch list as unavailable branch data', async () => {
+  it('derives the active chain when agent_end has empty branch data', async () => {
+    const dir = await makeTempDir();
+    const sessionFile = join(dir, 'forked-session.jsonl');
+    await writeFile(
+      sessionFile,
+      [
+        { type: 'message', id: 'root', parentId: null, message: { role: 'user', content: 'root' } },
+        {
+          type: 'message',
+          id: 'orphan',
+          parentId: 'root',
+          message: { role: 'user', content: 'orphan branch should not index' },
+        },
+        {
+          type: 'message',
+          id: 'active',
+          parentId: 'root',
+          message: { role: 'user', content: 'active branch should index' },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join('\n'),
+    );
     const indexer = new CapturingIndexer();
     const runtime = createPiJsonlIndexRuntime({ indexer });
 
-    await runtime.indexAfterAgentEnd(makeCtx({ sessionFile: fixturePath, branchIds: [] }));
+    await runtime.indexAfterAgentEnd(makeCtx({ sessionFile, branchIds: [] }));
 
     expect(indexer.batches).toHaveLength(1);
     expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
-      'u0000001',
-      'a0000002',
-      'u0000004',
+      'root',
+      'active',
     ]);
   });
 

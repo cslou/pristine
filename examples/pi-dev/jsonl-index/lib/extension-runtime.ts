@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
 import { LocalNomicEmbedder } from './local-embedder.js';
 import { parsePiSessionJsonlFile } from './pi-jsonl-parser.js';
@@ -42,10 +43,7 @@ export interface PiExtensionContextLike {
   readonly ui?: PiUiLike;
 }
 
-const activeEntryIdsFrom = (
-  ctx: PiExtensionContextLike,
-  trigger: string,
-): ReadonlySet<string> | undefined => {
+const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | undefined => {
   const branch = ctx.sessionManager.getBranch?.();
   if (branch === undefined) return undefined;
 
@@ -53,8 +51,35 @@ const activeEntryIdsFrom = (
   for (const entry of branch) {
     if (typeof entry.id === 'string' && entry.id.length > 0) ids.add(entry.id);
   }
-  if (ids.size === 0 && trigger === 'agent_end') return undefined;
   return ids;
+};
+
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const deriveActiveEntryIdsFromSessionFile = async (
+  sessionFile: string,
+): Promise<ReadonlySet<string>> => {
+  const text = await readFile(sessionFile, 'utf8');
+  const parents = new Map<string, string | null>();
+  let latestEntryId: string | null = null;
+
+  for (const line of text.split(/\r?\n/u)) {
+    if (line.trim().length === 0) continue;
+    const parsed = JSON.parse(line) as unknown;
+    if (!isJsonObject(parsed)) continue;
+    if (typeof parsed.id !== 'string' || parsed.id.length === 0) continue;
+    parents.set(parsed.id, typeof parsed.parentId === 'string' ? parsed.parentId : null);
+    if (parsed.type === 'message') latestEntryId = parsed.id;
+  }
+
+  const activeIds = new Set<string>();
+  let cursor = latestEntryId;
+  while (cursor !== null && !activeIds.has(cursor)) {
+    activeIds.add(cursor);
+    cursor = parents.get(cursor) ?? null;
+  }
+  return activeIds;
 };
 
 const notify = (
@@ -122,7 +147,11 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
         return { ok: true, indexed: 0, skippedDuplicate: 0 };
       }
 
-      const activeEntryIds = activeEntryIdsFrom(ctx, trigger);
+      const contextEntryIds = activeEntryIdsFrom(ctx);
+      const activeEntryIds =
+        contextEntryIds !== undefined && contextEntryIds.size === 0 && trigger === 'agent_end'
+          ? await deriveActiveEntryIdsFromSessionFile(sessionFile)
+          : contextEntryIds;
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
       }

@@ -1,11 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
 
 export type PiJsonlRole = 'user' | 'assistant';
 
 export interface PiJsonlSourcePointer {
   readonly sourceKind: 'pi-jsonl';
   readonly sourceUri: string;
-  readonly entryId?: string;
+  readonly entryId: string;
   readonly parentId?: string;
   readonly lineNumber: number;
   readonly timestamp?: string;
@@ -87,57 +88,74 @@ const parseJsonLine = (line: string, lineNumber: number, sourceUri: string): unk
   }
 };
 
+interface ParserState {
+  cwd?: string;
+}
+
+const parsePiJsonlEntry = (
+  entry: unknown,
+  lineNumber: number,
+  options: ParsePiSessionJsonlOptions,
+  state: ParserState,
+): PiJsonlParsedMessage | null => {
+  if (!isObject(entry)) return null;
+
+  if (entry.type === 'session') {
+    state.cwd = optionalString(entry.cwd) ?? state.cwd;
+    return null;
+  }
+
+  if (entry.type !== 'message') return null;
+  if (!isObject(entry.message)) return null;
+
+  const entryId = optionalString(entry.id);
+  if (entryId === undefined) return null;
+  if (options.activeEntryIds !== undefined && !options.activeEntryIds.has(entryId)) return null;
+
+  const role = entry.message.role;
+  if (role !== 'user' && role !== 'assistant') return null;
+
+  const texts = readTextBlocks(entry.message.content);
+  if (texts.length === 0) return null;
+
+  const text = texts.join('\n').trim();
+  if (text.length === 0) return null;
+
+  return {
+    role,
+    text,
+    pointer: {
+      sourceKind: 'pi-jsonl',
+      sourceUri: options.sourceUri,
+      entryId,
+      ...(optionalString(entry.parentId) !== undefined
+        ? { parentId: optionalString(entry.parentId) }
+        : {}),
+      lineNumber,
+      ...(optionalString(entry.timestamp) !== undefined
+        ? { timestamp: optionalString(entry.timestamp) }
+        : {}),
+      ...(state.cwd !== undefined ? { cwd: state.cwd } : {}),
+    },
+  };
+};
+
 export const parsePiSessionJsonlText = (
   jsonl: string,
   options: ParsePiSessionJsonlOptions,
 ): readonly PiJsonlParsedMessage[] => {
   const results: PiJsonlParsedMessage[] = [];
-  let cwd: string | undefined;
+  const state: ParserState = {};
 
   for (const { line, lineNumber } of iterateJsonlLines(jsonl)) {
     if (line.trim().length === 0) continue;
-
-    const entry = parseJsonLine(line, lineNumber, options.sourceUri);
-    if (!isObject(entry)) continue;
-
-    if (entry.type === 'session') {
-      cwd = optionalString(entry.cwd) ?? cwd;
-      continue;
-    }
-
-    if (entry.type !== 'message') continue;
-    if (!isObject(entry.message)) continue;
-
-    const entryId = optionalString(entry.id);
-    if (entryId === undefined) continue;
-    if (options.activeEntryIds !== undefined && !options.activeEntryIds.has(entryId)) continue;
-
-    const role = entry.message.role;
-    if (role !== 'user' && role !== 'assistant') continue;
-
-    const texts = readTextBlocks(entry.message.content);
-    if (texts.length === 0) continue;
-
-    const text = texts.join('\n').trim();
-    if (text.length === 0) continue;
-
-    results.push({
-      role,
-      text,
-      pointer: {
-        sourceKind: 'pi-jsonl',
-        sourceUri: options.sourceUri,
-        entryId,
-        ...(optionalString(entry.parentId) !== undefined
-          ? { parentId: optionalString(entry.parentId) }
-          : {}),
-        lineNumber,
-        ...(optionalString(entry.timestamp) !== undefined
-          ? { timestamp: optionalString(entry.timestamp) }
-          : {}),
-        ...(cwd !== undefined ? { cwd } : {}),
-      },
-    });
+    const parsed = parsePiJsonlEntry(
+      parseJsonLine(line, lineNumber, options.sourceUri),
+      lineNumber,
+      options,
+      state,
+    );
+    if (parsed !== null) results.push(parsed);
   }
 
   return results;
@@ -146,6 +164,25 @@ export const parsePiSessionJsonlText = (
 export const parsePiSessionJsonlFile = async (
   sessionFilePath: string,
 ): Promise<readonly PiJsonlParsedMessage[]> => {
-  const jsonl = await readFile(sessionFilePath, 'utf8');
-  return parsePiSessionJsonlText(jsonl, { sourceUri: sessionFilePath });
+  const results: PiJsonlParsedMessage[] = [];
+  const state: ParserState = {};
+  const lines = createInterface({
+    input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  let lineNumber = 0;
+  for await (const line of lines) {
+    lineNumber++;
+    if (line.trim().length === 0) continue;
+    const parsed = parsePiJsonlEntry(
+      parseJsonLine(line, lineNumber, sessionFilePath),
+      lineNumber,
+      { sourceUri: sessionFilePath },
+      state,
+    );
+    if (parsed !== null) results.push(parsed);
+  }
+
+  return results;
 };

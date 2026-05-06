@@ -33,7 +33,7 @@ The prototype stores and returns this source pointer shape so later core archite
 {
   sourceKind: 'pi-jsonl',
   sourceUri: string,
-  entryId?: string,
+  entryId: string,
   parentId?: string,
   lineNumber: number,
   timestamp?: string,

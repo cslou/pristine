@@ -1,6 +1,6 @@
 # Pristine — Sprint 022
 **Date:** 2026-05-06 – TBD
-**Goal:** Build the Pi reference implementation as a proof before core architecture cleanup: parse Pi JSONL user/assistant messages, index semantic snippets/windows with JSONL source pointers using the current Pristine primitives where practical, expose vector search and JSONL inspection tools, and verify the repo-local `.pi` install in `~/projects/test-pristine`.
+**Goal:** Build the Pi reference implementation as a proof before core architecture cleanup: parse Pi JSONL user/assistant messages, index semantic snippets/windows with JSONL source pointers using the current Pristine primitives where practical, expose vector search plus a search-session-history skill, and verify the repo-local `.pi` install in `~/projects/test-pristine`.
 **Status:** 🟡 Planning
 
 ---
@@ -15,7 +15,7 @@
 
 ### Sprint-Wide Context
 - **Sprint type:** Feature / Tooling / Docs.
-- **Shared context:** Pi-only reference implementation. Pristine indexes Pi JSONL snippets/windows with source pointers through the least-invasive current-architecture adapter; it does not add a Pi SQL mirror of raw conversations. Vector search finds candidate memories; JSONL inspection reads surrounding raw context by source pointer. Default index DB path is `~/.pi/pristine/pristine.db`, overrideable. Reference lives under convention-compliant `examples/pi-dev/<tool>/` directories (for example `jsonl-index`, `search-memory`, and `inspect-jsonl`) and is installed into `~/projects/test-pristine/.pi` for real repo-local verification.
+- **Shared context:** Pi-only reference implementation. Pristine indexes Pi JSONL snippets/windows with source pointers through the least-invasive current-architecture adapter; it does not add a Pi SQL mirror of raw conversations. Vector search finds candidate memories; the `search-session-history` skill teaches the agent to inspect surrounding raw JSONL context with existing Pi tools such as `bash`, `read`, grep, and jq. Default index DB path is `~/.pi/pristine/pristine.db`, overrideable. Reference lives under convention-compliant `examples/pi-dev/<tool>/` directories (for example `jsonl-index`, `search-memory`, and `search-session-history`) and is installed into `~/projects/test-pristine/.pi` for real repo-local verification.
 - **Non-goals:** No SQL mirror/tool. No session-start injection. No proactive memory injection. No multi-harness implementation. No default embedder swap. No published package.
 
 ### Affected Flows
@@ -25,7 +25,7 @@
   - Pi JSONL parser extracts user/assistant natural-language messages and source pointers.
   - Pi extension indexes new message/window snippets into Pristine after the deterministic Pi capture hook and active-session discovery contract chosen in Story 1.
   - Pi custom tool `pristine_vector_search` returns source-pointer results.
-  - Pi custom tool `inspect_pi_session_jsonl` reads raw context around a vector hit.
+  - Pi skill `search-session-history` guides raw JSONL context inspection around a vector hit using existing tools.
   - Repo-local install flow under `~/projects/test-pristine/.pi`.
 
 ### Verification Strategy
@@ -57,10 +57,10 @@ Every story defines functional verification for its new behavior and targeted re
   - [ ] Define supported pointer metadata/filter keys shared by Stories 2–3: `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd` when available; `timestampFrom` and `timestampTo` are search filter parameters derived from stored `timestamp`.
   - [ ] Define parser behavior for user/assistant natural-language only; tool results, system/custom hidden messages, images, and thinking blocks are ignored for indexing.
   - [ ] Define source pointer shape that this prototype stores/returns and sprint-023 will formalize: `sourceKind: 'pi-jsonl'`, `sourceUri`, optional `entryId`, `parentId`, `lineNumber`, `timestamp`, `cwd/session directory metadata` when available.
-  - [ ] `examples/pi-dev/README.md` design note explains vector-search → JSONL-inspection flow.
+  - [ ] `examples/pi-dev/README.md` design note explains vector-search → search-session-history flow.
 - **Functional verification:**
   - [ ] Add parser fixture tests from small JSONL samples. **Pass condition:** user/assistant text and pointers are extracted; ignored roles/blocks are skipped.
-  - [ ] Run `for term in 'file path' 'line number' 'entry ID' 'parent ID' 'role' 'content text' 'timestamp' 'session file path' 'message_end' 'active session' 'sourceUri' 'entryId' 'parentId' 'lineNumber' 'cwd' 'vector search' 'JSONL inspection' 'jsonl-index'; do grep -q "$term" examples/pi-dev/README.md; done`. **Pass condition:** documented fields, capture contract, pointer/filter keys, and vector-search → JSONL-inspection workflow are present.
+  - [ ] Run `for term in 'file path' 'line number' 'entry ID' 'parent ID' 'role' 'content text' 'timestamp' 'session file path' 'message_end' 'active session' 'sourceUri' 'entryId' 'parentId' 'lineNumber' 'cwd' 'vector search' 'search-session-history' 'jsonl-index'; do grep -q "$term" examples/pi-dev/README.md; done`. **Pass condition:** documented fields, capture contract, pointer/filter keys, and vector-search → search-session-history workflow are present.
 - **Regression verification:**
   - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
 - **Manual-only verification:** N/A.
@@ -137,7 +137,7 @@ Every story defines functional verification for its new behavior and targeted re
   2. `test(pi): verify pointer-aware vector results`
 - **Technical notes:** This is the value-proposition tool: semantic search where grep would require guessed keywords.
 
-#### Story 4: Add JSONL inspection tool for post-search investigation
+#### Story 4: Add search-session-history skill for post-search investigation
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -150,27 +150,28 @@ Every story defines functional verification for its new behavior and targeted re
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** Pi agent, **I want** an `inspect_pi_session_jsonl` tool, **so that** after vector search identifies a session hit I can retrieve nearby raw user/assistant context from Pi’s authoritative JSONL file.
+- **As a** Pi agent, **I want** a `search-session-history` skill, **so that** after vector search identifies a session hit I can inspect nearby raw user/assistant context from Pi’s authoritative JSONL file using existing Pi tools.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] `examples/pi-dev/inspect-jsonl/` contains the `inspect_pi_session_jsonl` tool. Tool schema accepts `sourceUri` plus either `lineNumber` or `entryId`, with `before` default `5`, `after` default `10`, max `50` each, and out-of-range values rejected.
-  - [ ] Tool reads JSONL directly, extracts surrounding user/assistant natural-language messages, and returns role/timestamp/line/entry metadata.
-  - [ ] Missing file, invalid pointer, no nearby natural-language messages, and out-of-bounds context return clear errors or empty results.
-  - [ ] Tool does not return tool results, hidden custom messages, system/context content, or thinking blocks.
+  - [ ] `examples/pi-dev/search-session-history/` contains a Pi skill named `search-session-history`.
+  - [ ] The skill instructs the agent to use `pristine_vector_search` first when the target session is unknown, then inspect returned `sourceUri`/`lineNumber`/`entryId` using existing `bash`/`read`/grep/jq tools.
+  - [ ] The skill includes concrete jq/grep command templates for extracting nearby user/assistant natural-language messages while excluding tool results, hidden custom messages, system/context content, images, and thinking blocks.
+  - [ ] The skill defines bounded context guidance: default nearby context is 5 messages before and 10 after; do not dump entire session files unless the user explicitly asks.
+  - [ ] Missing file, invalid pointer, or no nearby natural-language messages are handled by reporting a clear limitation and trying an alternate vector hit when available.
 - **Functional verification:**
-  - [ ] Add fixture tests around known JSONL files. **Pass condition:** exact surrounding messages are returned for line-number and entry-ID lookup.
-  - [ ] Add context-bound tests. **Pass condition:** omitted `before`/`after` use defaults `5`/`10`, max `50` values are accepted, and values above `50` or below `0` are rejected.
-  - [ ] Add negative-case tests. **Pass condition:** missing file, invalid pointer, and ignored-role-only ranges behave as documented.
+  - [ ] Run `test -f examples/pi-dev/search-session-history/SKILL.md && grep -q "pristine_vector_search" examples/pi-dev/search-session-history/SKILL.md && grep -q "jq" examples/pi-dev/search-session-history/SKILL.md && grep -q "user/assistant" examples/pi-dev/search-session-history/SKILL.md`. **Pass condition:** skill exists and documents vector-first plus jq-based search-session-history.
+  - [ ] Add fixture/script tests for the documented jq command templates. **Pass condition:** commands extract exact surrounding user/assistant messages for line-number and entry-ID lookup from known JSONL fixtures and exclude tool/thinking/custom blocks.
+  - [ ] Add negative-case checks for the documented workflow. **Pass condition:** missing file, invalid pointer, and ignored-role-only ranges produce clear fallback/limitation guidance in the skill text.
 - **Regression verification:**
   - [ ] Run `npm run test:unit -- tests/examples/pi-dev/jsonl-parser.test.ts`. **Pass condition:** parser behavior remains consistent.
-  - [ ] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/inspect-jsonl.test.ts`. **Pass condition:** all exit 0.
+  - [ ] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts`. **Pass condition:** all exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `feat(pi): add JSONL inspection tool`
-  2. `test(pi): verify JSONL context inspection`
-- **Technical notes:** This replaces the prior SQL-search-tool concept for Pi.
+  1. `docs(pi): add search-session-history skill`
+  2. `test(pi): verify search-session-history jq templates`
+- **Technical notes:** This replaces the prior SQL-search-tool and custom JSONL-inspection-tool concepts for Pi.
 
-#### Story 5: Document the two-tool memory workflow
+#### Story 5: Document the vector-search plus session-history workflow
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -183,23 +184,23 @@ Every story defines functional verification for its new behavior and targeted re
 - **Planning review:**
   - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
   - Resolution: *(changes made, accepted risk, or `N/A`)*
-- **As a** Pi user, **I want** clear docs for vector-search then JSONL-inspection, **so that** I understand why Pristine indexes snippets but does not mirror raw sessions.
+- **As a** Pi user, **I want** clear docs for vector-search then search-session-history, **so that** I understand why Pristine indexes snippets but does not mirror raw sessions.
 - **Dependencies:** Stories 3 and 4
 - **Acceptance criteria:**
   - [ ] Each `examples/pi-dev/<tool>/README.md` opens with: "This is one way to use Pristine primitives. You can write your own."
   - [ ] README docs explain Pi JSONL remains source of truth and Pristine stores semantic index records plus source pointers.
-  - [ ] README docs document install/config, DB path, reset, `pristine_vector_search`, and `inspect_pi_session_jsonl` examples.
+  - [ ] README docs document install/config, DB path, reset, `pristine_vector_search`, and `search-session-history` examples.
   - [ ] README docs include deterministic known-phrase verification steps.
   - [ ] `docs/specs/implementation-spec-005.md` flow section is updated or cross-referenced to mention Pi JSONL/source-pointer reference flow before sprint integration.
 - **Functional verification:**
   - [ ] Run `rg '^### .*Pi|Pi JSONL|source-pointer|source pointer|examples/pi-dev' docs/specs/implementation-spec-005.md`. **Pass condition:** the implementation spec flow/reference section specifically mentions the Pi JSONL/source-pointer reference flow or cross-references `examples/pi-dev`.
-  - [ ] Run README structural loop: `for f in examples/pi-dev/README.md examples/pi-dev/jsonl-index/README.md examples/pi-dev/search-memory/README.md examples/pi-dev/inspect-jsonl/README.md; do head -1 "$f" | grep -q 'This is one way to use Pristine primitives. You can write your own.' && grep -q 'source of truth' "$f" && grep -Eq 'PRISTINE_DB_PATH|~/.pi/pristine/pristine.db' "$f" && grep -q 'reset' "$f" && grep -q 'known phrase' "$f"; done; grep -q 'pristine_vector_search' examples/pi-dev/search-memory/README.md; grep -q 'inspect_pi_session_jsonl' examples/pi-dev/inspect-jsonl/README.md`. **Pass condition:** command exits 0 and covers every README AC.
+  - [ ] Run README structural loop: `for f in examples/pi-dev/README.md examples/pi-dev/jsonl-index/README.md examples/pi-dev/search-memory/README.md examples/pi-dev/search-session-history/README.md; do head -1 "$f" | grep -q 'This is one way to use Pristine primitives. You can write your own.' && grep -q 'source of truth' "$f" && grep -Eq 'PRISTINE_DB_PATH|~/.pi/pristine/pristine.db' "$f" && grep -q 'reset' "$f" && grep -q 'known phrase' "$f"; done; grep -q 'pristine_vector_search' examples/pi-dev/search-memory/README.md; grep -q 'search-session-history' examples/pi-dev/search-session-history/README.md`. **Pass condition:** command exits 0 and covers every README AC.
 - **Regression verification:**
-  - [ ] Run `test -f examples/pi-dev/README.md && test -d examples/pi-dev/jsonl-index && test -d examples/pi-dev/search-memory && test -d examples/pi-dev/inspect-jsonl` plus `npm run typecheck` and `npm run lint`. **Pass condition:** aggregate README and tool directories exist and checks exit 0, preserving reference-layout convention.
+  - [ ] Run `test -f examples/pi-dev/README.md && test -d examples/pi-dev/jsonl-index && test -d examples/pi-dev/search-memory && test -d examples/pi-dev/search-session-history` plus `npm run typecheck` and `npm run lint`. **Pass condition:** aggregate README and tool directories exist and checks exit 0, preserving reference-layout convention.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
-  1. `docs(pi): document vector search plus JSONL inspection workflow`
-- **Technical notes:** If a small skill is useful to teach the workflow, it can be added here only if it wraps the two direct tools and does not introduce new behavior.
+  1. `docs(pi): document vector search plus search-session-history workflow`
+- **Technical notes:** The workflow has one custom search tool (`pristine_vector_search`) plus one skill (`search-session-history`) that teaches JSONL inspection with existing Pi tools.
 
 #### Story 6: Verify repo-local `.pi` installation in `~/projects/test-pristine`
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -219,17 +220,17 @@ Every story defines functional verification for its new behavior and targeted re
 - **Acceptance criteria:**
   - [ ] Create or reuse `~/projects/test-pristine` as a disposable non-production repo with `.pi/` directory.
   - [ ] Copy/install `examples/pi-dev/` reference artifacts into `~/projects/test-pristine/.pi` using documented commands: `mkdir -p ~/projects/test-pristine/.pi && rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/`.
-  - [ ] Launch/reload Pi from `~/projects/test-pristine` with the documented command, e.g. `cd ~/projects/test-pristine && pi` then `/reload`, and verify the extension/tools load.
+  - [ ] Launch/reload Pi from `~/projects/test-pristine` with the documented command, e.g. `cd ~/projects/test-pristine && pi` then `/reload`, and verify the extension plus skill load.
   - [ ] Type known unique messages, verify they are indexed into `~/.pi/pristine/pristine.db`, run vector search, then inspect JSONL context around the hit.
   - [ ] Record install/runtime gotchas back into `examples/pi-dev/README.md`, or explicitly record `Install/runtime gotchas: None` after verification.
 - **Functional verification:**
-  - [ ] Execute `mkdir -p ~/projects/test-pristine/.pi && rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/`, then launch/reload Pi from `~/projects/test-pristine`. **Pass condition:** Pi exposes both tools from repo-local `.pi`.
-  - [ ] Execute known-phrase E2E using the checklist in `examples/pi-dev/README.md`: type the documented phrase, run `pristine_vector_search`, then run `inspect_pi_session_jsonl` on the returned pointer. **Pass condition:** vector search returns the known phrase pointer and JSONL inspection returns surrounding context.
+  - [ ] Execute `mkdir -p ~/projects/test-pristine/.pi && rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/`, then launch/reload Pi from `~/projects/test-pristine`. **Pass condition:** Pi exposes `pristine_vector_search` and loads the `search-session-history` skill from repo-local `.pi`.
+  - [ ] Execute known-phrase E2E using the checklist in `examples/pi-dev/README.md`: type the documented phrase, run `pristine_vector_search`, then follow `search-session-history` on the returned pointer. **Pass condition:** vector search returns the known phrase pointer and the skill-guided search-session-history returns surrounding context.
   - [ ] Run `grep -q 'Install/runtime gotchas:' examples/pi-dev/README.md`. **Pass condition:** README records concrete gotchas or `Install/runtime gotchas: None`.
 - **Regression verification:**
   - [ ] Verify copied files do not import this repo's `src/` internals. **Pass condition:** `rg '\.\./src|/src/' ~/projects/test-pristine/.pi` exits 1.
   - [ ] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/`. **Pass condition:** all exit 0.
-- **Manual-only verification:** Required: interactive Pi repo-local extension discovery and tool invocation. Record exact commands and observed pass/fail evidence.
+- **Manual-only verification:** Required: interactive Pi repo-local extension discovery, `pristine_vector_search` invocation, and `search-session-history` skill usage. Record exact commands and observed pass/fail evidence.
 - **Planned commits:**
   1. `test(pi): verify repo-local installation workflow`
   2. `docs(pi): record repo-local install notes`
@@ -258,7 +259,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Regression verification:**
   - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
   - [ ] Run the full available regression verification suite and record pass/fail evidence.
-- **Manual-only verification:** Includes Story 6 repo-local Pi install/tool invocation evidence.
+- **Manual-only verification:** Includes Story 6 repo-local Pi install, `pristine_vector_search` tool invocation, and `search-session-history` skill evidence.
 - **Planned commits:**
   1. `docs(sprint-022): record final verification and completion`
 - **Technical notes:** Use `workflow-prompts/handle-sprint-completion.md` for final completion message shape.

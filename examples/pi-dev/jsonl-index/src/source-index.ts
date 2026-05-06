@@ -203,8 +203,9 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
          (chunk_id, source_kind, source_uri, entry_id, parent_id, line_number, timestamp, cwd, snippet, metadata_json)
        VALUES (?, 'pi-jsonl', ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    const deleteVector = this.db.prepare('DELETE FROM vec_pi_jsonl_chunks WHERE chunk_id = ?');
     const insertVector = this.db.prepare(
-      'INSERT OR IGNORE INTO vec_pi_jsonl_chunks(chunk_id, embedding) VALUES (?, ?)',
+      'INSERT INTO vec_pi_jsonl_chunks(chunk_id, embedding) VALUES (?, ?)',
     );
     const write = this.db.transaction((chunkItems: readonly PendingChunk[]) => {
       const written: PiJsonlChunkRecord[] = [];
@@ -221,6 +222,7 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
           item.record.metadataJson,
         );
         if (result.changes === 0) continue;
+        deleteVector.run(item.record.chunkId);
         insertVector.run(item.record.chunkId, item.embedding);
         written.push(item.record);
       }

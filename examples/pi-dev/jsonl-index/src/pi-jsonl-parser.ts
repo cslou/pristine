@@ -163,6 +163,7 @@ export const parsePiSessionJsonlText = (
 
 export const parsePiSessionJsonlFile = async (
   sessionFilePath: string,
+  options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> = {},
 ): Promise<readonly PiJsonlParsedMessage[]> => {
   const results: PiJsonlParsedMessage[] = [];
   const state: ParserState = {};
@@ -178,7 +179,7 @@ export const parsePiSessionJsonlFile = async (
     const parsed = parsePiJsonlEntry(
       parseJsonLine(line, lineNumber, sessionFilePath),
       lineNumber,
-      { sourceUri: sessionFilePath },
+      { ...options, sourceUri: sessionFilePath },
       state,
     );
     if (parsed !== null) results.push(parsed);

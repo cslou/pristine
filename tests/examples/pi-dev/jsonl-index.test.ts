@@ -1,0 +1,206 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it } from 'vitest';
+import { resolvePiPristineDbPath } from '../../../examples/pi-dev/jsonl-index/src/db-path.js';
+import {
+  createPiJsonlIndexRuntime,
+  type PiExtensionContextLike,
+} from '../../../examples/pi-dev/jsonl-index/src/extension-runtime.js';
+import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/src/pi-jsonl-parser.js';
+import {
+  SqlitePiJsonlSourceIndexer,
+  type PiJsonlSourceIndexer,
+} from '../../../examples/pi-dev/jsonl-index/src/source-index.js';
+
+const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
+
+class StubEmbedder {
+  public readonly dim = 3;
+  public readonly texts: string[] = [];
+
+  public async embed(text: string): Promise<readonly number[]> {
+    this.texts.push(text);
+    return [text.length, text.includes('sapphire') ? 1 : 0, text.includes('amber') ? 1 : 0];
+  }
+}
+
+class CapturingIndexer implements PiJsonlSourceIndexer {
+  public readonly batches: readonly PiJsonlParsedMessage[][] = [];
+  private readonly fail: boolean;
+
+  public constructor(options: { readonly fail?: boolean } = {}) {
+    this.fail = options.fail ?? false;
+  }
+
+  public async indexMessages(messages: readonly PiJsonlParsedMessage[]) {
+    if (this.fail) throw new Error('mock embed failure');
+    (this.batches as PiJsonlParsedMessage[][]).push([...messages]);
+    return { indexed: messages.length, skippedDuplicate: 0, chunks: [] };
+  }
+}
+
+const tempDirs: string[] = [];
+
+const makeTempDir = async (): Promise<string> => {
+  const dir = await mkdtemp(join(tmpdir(), 'pristine-pi-jsonl-'));
+  tempDirs.push(dir);
+  return dir;
+};
+
+afterEach(async () => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir !== undefined) await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const makeCtx = (params: {
+  readonly sessionFile?: string;
+  readonly branchIds?: readonly string[];
+  readonly notifications?: string[];
+}): PiExtensionContextLike => {
+  const notifications = params.notifications;
+  return {
+    sessionManager: {
+      getSessionFile: () => params.sessionFile,
+      getBranch: () => params.branchIds?.map((id) => ({ id })) ?? [],
+    },
+    ui: {
+      notify: (message, level) => notifications?.push(`${level ?? 'info'}:${message}`),
+    },
+  };
+};
+
+describe('Pi JSONL index extension reference', () => {
+  it('resolves DB path using explicit config, env override, then default', () => {
+    expect(
+      resolvePiPristineDbPath({
+        explicitPath: '/explicit/pristine.db',
+        env: { PRISTINE_DB_PATH: '/env/pristine.db' },
+        homeDir: '/home/test',
+      }),
+    ).toBe('/explicit/pristine.db');
+
+    expect(
+      resolvePiPristineDbPath({
+        env: { PRISTINE_DB_PATH: '/env/pristine.db' },
+        homeDir: '/home/test',
+      }),
+    ).toBe('/env/pristine.db');
+
+    expect(resolvePiPristineDbPath({ env: {}, homeDir: '/home/test' })).toBe(
+      '/home/test/.pi/pristine/pristine.db',
+    );
+  });
+
+  it('indexes Pi JSONL snippets with source pointers and vector rows in a temporary DB', async () => {
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const embedder = new StubEmbedder();
+    const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder });
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+    const notifications: string[] = [];
+
+    const result = await runtime.indexAfterAgentEnd(
+      makeCtx({
+        sessionFile: fixturePath,
+        branchIds: ['u0000001', 'a0000002', 'u0000004'],
+        notifications,
+      }),
+    );
+
+    expect(result).toEqual({ ok: true, sessionFile: fixturePath, indexed: 3, skippedDuplicate: 0 });
+    const rows = db
+      .prepare(
+        'SELECT source_uri, entry_id, line_number, snippet, metadata_json FROM pi_jsonl_chunks ORDER BY line_number',
+      )
+      .all() as {
+      source_uri: string;
+      entry_id: string;
+      line_number: number;
+      snippet: string;
+      metadata_json: string;
+    }[];
+    expect(rows.map((row) => row.entry_id)).toEqual(['u0000001', 'a0000002', 'u0000004']);
+    expect(rows[0]?.source_uri).toBe(fixturePath);
+    expect(rows[0]?.snippet).toContain('sapphire migration note');
+    expect(JSON.parse(rows[0]?.metadata_json ?? '{}')).toMatchObject({
+      role: 'user',
+      sourcePointer: { sourceKind: 'pi-jsonl', entryId: 'u0000001' },
+    });
+    expect(db.prepare('SELECT count(*) AS count FROM vec_pi_jsonl_chunks').get()).toEqual({
+      count: 3,
+    });
+    expect(embedder.texts).toHaveLength(3);
+    expect(notifications.at(-1)).toContain('success:Pristine indexed 3 Pi JSONL entries');
+  });
+
+  it('deduplicates reprocessing by stable source pointer', async () => {
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder: new StubEmbedder() });
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+    const ctx = makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001', 'a0000002'] });
+
+    expect(await runtime.indexAfterAgentEnd(ctx)).toMatchObject({
+      indexed: 2,
+      skippedDuplicate: 0,
+    });
+    expect(await runtime.indexAfterAgentEnd(ctx)).toMatchObject({
+      indexed: 0,
+      skippedDuplicate: 2,
+    });
+    expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
+  });
+
+  it('uses agent_end to index completed active-branch user/assistant entries and skip ignored roles', async () => {
+    const indexer = new CapturingIndexer();
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+
+    await runtime.indexAfterAgentEnd(
+      makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001', 'a0000002', 't0000003'] }),
+    );
+
+    expect(indexer.batches).toHaveLength(1);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
+      'u0000001',
+      'a0000002',
+    ]);
+  });
+
+  it('reconciles only the active session on session_start reload and resume', async () => {
+    const indexer = new CapturingIndexer();
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+    const notifications: string[] = [];
+    const ctx = makeCtx({ sessionFile: fixturePath, branchIds: ['u0000004'], notifications });
+
+    await runtime.reconcileOnSessionStart(ctx, 'reload');
+    await runtime.reconcileOnSessionStart(ctx, 'resume');
+
+    expect(indexer.batches).toHaveLength(2);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
+    expect(indexer.batches[1]?.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
+    expect(notifications.every((message) => message.includes('Pristine indexed 1'))).toBe(true);
+  });
+
+  it('surfaces deterministic Pi-facing errors and does not report success on failure', async () => {
+    const indexer = new CapturingIndexer({ fail: true });
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+    const notifications: string[] = [];
+
+    const result = await runtime.indexAfterAgentEnd(
+      makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001'], notifications }),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      sessionFile: fixturePath,
+      indexed: 0,
+      skippedDuplicate: 0,
+      error: 'mock embed failure',
+    });
+    expect(notifications).toEqual([
+      'error:Pristine Pi JSONL index failed (agent_end): mock embed failure',
+    ]);
+  });
+});

@@ -226,7 +226,7 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Record install/runtime gotchas back into `examples/pi-dev/README.md`, or explicitly record `Install/runtime gotchas: None` after verification.
 - **Functional verification:**
   - [x] Execute the documented repo-local copy/install commands for `.pi/extensions/{shared,jsonl-index,search-memory}` and `.pi/skills/search-session-history`, then launch Pi from `~/projects/test-pristine` with the copied extension/skill paths. **Pass condition:** Pi startup exits 0 and returns `OK`.
-  - [x] Execute repo-local known-phrase verification from Pi: create a saved session containing `sapphire-otter-lantern-five`, reopen it with `jsonl-index` to reconcile, run `pristine_vector_search`, then run `search-session-history` on returned `entryId` `d18eb8fc`. **Pass condition:** vector search returns the known phrase pointer and search-session-history returns nearby user/assistant context.
+  - [x] Execute repo-local known-phrase verification from Pi: create a saved session containing `sapphire-otter-lantern-six`, reopen it with `jsonl-index` to reconcile, run `pristine_vector_search`, then run `search-session-history` on returned `entryId` `514ef844`. **Pass condition:** vector search returns the known phrase pointer and search-session-history returns nearby user/assistant context.
   - [x] Run `grep -q 'Install/runtime gotchas:' examples/pi-dev/README.md`. **Pass condition:** README records concrete gotchas or `Install/runtime gotchas: None`.
 - **Regression verification:**
   - [x] Verify copied files do not import this repo's `src/` internals. **Pass condition:** `rg '\.\./src|/src/' ~/projects/test-pristine/.pi` exits 1.

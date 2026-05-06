@@ -196,7 +196,7 @@ describe('Pi JSONL index extension reference', () => {
     expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
   });
 
-  it('derives the active chain when agent_end has empty branch data', async () => {
+  it('does not derive active ids from ambiguous forked sessions when agent_end has empty branch data', async () => {
     const dir = await makeTempDir();
     const sessionFile = join(dir, 'forked-session.jsonl');
     await writeFile(
@@ -225,9 +225,20 @@ describe('Pi JSONL index extension reference', () => {
     await runtime.indexAfterAgentEnd(makeCtx({ sessionFile, branchIds: [] }));
 
     expect(indexer.batches).toHaveLength(1);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([]);
+  });
+
+  it('derives active ids from linear sessions when agent_end has empty branch data', async () => {
+    const indexer = new CapturingIndexer();
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+
+    await runtime.indexAfterAgentEnd(makeCtx({ sessionFile: fixturePath, branchIds: [] }));
+
+    expect(indexer.batches).toHaveLength(1);
     expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
-      'root',
-      'active',
+      'u0000001',
+      'a0000002',
+      'u0000004',
     ]);
   });
 

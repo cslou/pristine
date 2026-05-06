@@ -169,6 +169,22 @@ describe('Pi JSONL index extension reference', () => {
     });
   });
 
+  it('does not treat an empty branch list as permission to delete all session rows', async () => {
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder: new StubEmbedder() });
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+
+    await runtime.indexAfterAgentEnd(
+      makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001', 'a0000002'] }),
+    );
+    await runtime.reconcileOnSessionStart(
+      makeCtx({ sessionFile: fixturePath, branchIds: [] }),
+      'reload',
+    );
+
+    expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 3 });
+  });
+
   it('uses agent_end to index completed active-branch user/assistant entries and skip ignored roles', async () => {
     const indexer = new CapturingIndexer();
     const runtime = createPiJsonlIndexRuntime({ indexer });

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
@@ -221,10 +221,23 @@ const assertSecureDirectory = (dirPath: string): void => {
   }
 };
 
+const chmodPrivateIfExists = (path: string): void => {
+  if (process.platform === 'win32' || !existsSync(path)) return;
+  chmodSync(path, 0o600);
+};
+
+const chmodDatabaseFiles = (dbPath: string): void => {
+  chmodPrivateIfExists(dbPath);
+  chmodPrivateIfExists(`${dbPath}-wal`);
+  chmodPrivateIfExists(`${dbPath}-shm`);
+  chmodPrivateIfExists(`${dbPath}-journal`);
+};
+
 export const openPiJsonlIndexDatabase = (dbPath: string): Database.Database => {
   assertSecureDirectory(dirname(dbPath));
   const db = new Database(dbPath);
-  if (process.platform !== 'win32') chmodSync(dbPath, 0o600);
+  db.pragma('journal_mode = DELETE');
+  chmodDatabaseFiles(dbPath);
   return db;
 };
 

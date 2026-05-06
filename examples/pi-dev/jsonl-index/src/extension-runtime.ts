@@ -50,7 +50,7 @@ const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | 
   for (const entry of branch) {
     if (typeof entry.id === 'string' && entry.id.length > 0) ids.add(entry.id);
   }
-  return ids;
+  return ids.size > 0 ? ids : undefined;
 };
 
 const notify = (

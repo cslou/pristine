@@ -95,7 +95,11 @@ const scoreFromDistance = (distance: number): number => 1 / (1 + distance);
 
 const euclideanDistance = (left: readonly number[], right: Buffer): number => {
   const values = new Float32Array(right.buffer, right.byteOffset, right.byteLength / 4);
-  if (values.length !== left.length) return Number.POSITIVE_INFINITY;
+  if (values.length !== left.length) {
+    throw new Error(
+      `pristine_vector_search embedding dimension mismatch: query has ${left.length}, stored row has ${values.length}`,
+    );
+  }
   let sum = 0;
   for (let index = 0; index < left.length; index++) {
     const delta = (left[index] ?? 0) - (values[index] ?? 0);

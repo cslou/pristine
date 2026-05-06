@@ -252,6 +252,24 @@ describe('PristinePiVectorSearcher', () => {
     });
   });
 
+  it('rejects filtered rows with mismatched embedding dimensions', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'pristine.db');
+    await seedPiJsonlIndexDb({
+      dbPath,
+      messages: [
+        message({ text: 'Amber mismatched row.', entryId: 'entry-mismatch', lineNumber: 4 }),
+      ],
+      embedder: { embedBatch: async () => [[1, 0]] },
+      dimension: 2,
+    });
+
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    await expect(
+      searcher.search({ query: 'amber', sourceUri: '/tmp/session-a.jsonl' }),
+    ).rejects.toThrow('embedding dimension mismatch');
+  });
+
   it('redacts returned snippets by default', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');

@@ -144,10 +144,17 @@ describe('search-session-history skill', () => {
         id: 'before-visible',
         message: { role: 'user', content: 'Visible before hit.' },
       },
-      ...Array.from({ length: 10 }, (_, index) => ({
+      ...Array.from({ length: 5 }, (_, index) => ({
         type: 'message',
         id: `tool-${index}`,
         message: { role: 'toolResult', content: [{ type: 'text', text: `tool ${index}` }] },
+      })),
+      ...Array.from({ length: 5 }, (_, index) => ({
+        type: 'custom_message',
+        id: `custom-${index}`,
+        customType: 'hidden-context',
+        content: `custom ${index}`,
+        display: false,
       })),
       { type: 'message', id: 'hit-visible', message: { role: 'user', content: 'Visible hit.' } },
       {
@@ -167,6 +174,8 @@ describe('search-session-history skill', () => {
     expect(output).toContain('hit-visible');
     expect(output).toContain('after-visible');
     expect(output).not.toContain('tool 0');
-    expect(output).not.toContain('tool-9');
+    expect(output).not.toContain('tool-4');
+    expect(output).not.toContain('custom 0');
+    expect(output).not.toContain('custom-4');
   });
 });

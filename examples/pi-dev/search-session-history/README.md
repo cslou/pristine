@@ -6,7 +6,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 ## Install
 
-Copy all Pi dev examples so `search-memory` and this skill are installed together:
+Copy the skill into Pi's repo-local skill discovery path. Install `search-memory` separately when you need `pristine_vector_search`:
 
 ```bash
 mkdir -p ~/projects/test-pristine/.pi/skills
@@ -15,7 +15,11 @@ rsync -a --delete examples/pi-dev/search-session-history/. ~/projects/test-prist
 
 ## Reset
 
-No state is stored by this skill. It follows pointers returned from the semantic index at `~/.pi/pristine/pristine.db` or `PRISTINE_DB_PATH`. Reset the semantic index by deleting `~/.pi/pristine/pristine.db` if needed, or delete `PRISTINE_DB_PATH` and its SQLite sidecars when that override is set.
+No state is stored by this skill. It follows pointers returned from the semantic index at `~/.pi/pristine/pristine.db` or `PRISTINE_DB_PATH`. Reset that semantic index with:
+
+```bash
+rm -f "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"-*
+```
 
 ## Known phrase verification
 

@@ -7,8 +7,8 @@ This reference proves a Pi-only memory flow where Pi JSONL is the source of trut
 ## Reference pieces
 
 - `jsonl-index` parses the active Pi session file and indexes user/assistant snippets/windows with source pointers.
-- `search-memory` will provide `pristine_vector_search`, a Pi custom tool that searches the Pristine vector index and returns canonical source pointers.
-- `search-session-history` will be a Pi skill that teaches agents to inspect raw Pi JSONL using existing Pi tools such as `bash`, `read`, grep, and jq.
+- `search-memory` provides `pristine_vector_search`, a Pi custom tool that searches the Pristine vector index and returns canonical source pointers.
+- `search-session-history` is a Pi skill that teaches agents to inspect raw Pi JSONL using existing Pi tools such as `bash`, `read`, grep, and jq.
 
 ## Pi JSONL fields used
 
@@ -75,3 +75,30 @@ The reference workflow is:
 3. `search-session-history` instructs the agent to inspect the returned Pi JSONL pointer with existing tools, for example `read` for the file or `bash` with grep/jq to extract surrounding user/assistant context.
 
 This keeps raw context in Pi JSONL and uses Pristine for semantic recall only. The agent can use grep for exact terms and `pristine_vector_search` when it does not know the exact words used in the prior session.
+
+## Install/config
+
+Copy the reference artifacts into a repo-local `.pi` directory and install each extension's runtime dependencies:
+
+```bash
+mkdir -p ~/projects/test-pristine/.pi/extensions ~/projects/test-pristine/.pi/skills
+rsync -a --delete examples/pi-dev/shared/. ~/projects/test-pristine/.pi/extensions/shared/
+rsync -a --delete examples/pi-dev/jsonl-index/. ~/projects/test-pristine/.pi/extensions/jsonl-index/
+rsync -a --delete examples/pi-dev/search-memory/. ~/projects/test-pristine/.pi/extensions/search-memory/
+rsync -a --delete examples/pi-dev/search-session-history/. ~/projects/test-pristine/.pi/skills/search-session-history/
+(cd ~/projects/test-pristine/.pi/extensions/jsonl-index && npm install --omit=dev)
+(cd ~/projects/test-pristine/.pi/extensions/search-memory && npm install --omit=dev)
+```
+
+The default DB path is `~/.pi/pristine/pristine.db`; set `PRISTINE_DB_PATH` to use a different local SQLite file.
+
+## Reset
+
+```bash
+db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
+```
+
+## Known phrase verification
+
+Type a unique known phrase into Pi, let `jsonl-index` index the completed turn, run `pristine_vector_search` for the phrase, then use `search-session-history` on the returned pointer. Pass condition: search returns a Pi JSONL source pointer and the skill extracts bounded surrounding user/assistant context from the authoritative session file.

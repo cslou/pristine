@@ -327,6 +327,18 @@ Why split by `(harness, tool)`:
 
 Each reference opens with *"This is one way to use Pristine primitives. You can write your own."*
 
+
+### Pi JSONL source-pointer reference flow
+
+Sprint 022 adds a source-tree Pi reference under `examples/pi-dev/` before the core source-pointer cleanup. The flow keeps Pi JSONL as the source of truth and uses Pristine as a semantic index over source-owned records:
+
+1. `examples/pi-dev/jsonl-index/` parses the active Pi session JSONL on `agent_end` and `session_start` reconciliation, indexing user/assistant text snippets with `sourceKind: 'pi-jsonl'`, `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd`.
+2. `examples/pi-dev/search-memory/` exposes `pristine_vector_search`, which searches `~/.pi/pristine/pristine.db` (or `PRISTINE_DB_PATH`) and returns ranked hits plus JSONL source pointers.
+3. `examples/pi-dev/search-session-history/` is a Pi skill that uses the returned pointer to inspect bounded user/assistant context directly from the authoritative JSONL file with existing `bash`/`read`/jq tools.
+
+This reference intentionally does not mirror raw Pi transcripts into a Pristine conversation store. The evidence from this flow informs the later architecture cleanup that formalizes source-pointer indexing across hosts.
+
+
 #### Candidate reference set (each may or may not ship)
 
 - **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + neighbor-expansion helper. Returns formatted text with timestamps and conversation refs.

@@ -2,6 +2,11 @@ import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
 import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
+import {
+  PI_JSONL_CHUNKS_TABLE,
+  PI_JSONL_INDEX_TABLES,
+  PI_JSONL_VECTOR_TABLE,
+} from '../../shared/lib/pi-jsonl-index-schema.js';
 import { LocalNomicEmbedder, type PiJsonlEmbedder } from './local-embedder.js';
 
 export interface PristineVectorSearchFilters {
@@ -52,6 +57,7 @@ export interface PristineVectorSearchConfig {
 const MAX_LIMIT = 20;
 const DEFAULT_LIMIT = 5;
 const MAX_EMBEDDING_DIM = 8192;
+const MAX_FILTERED_CANDIDATES = 5000;
 
 const validateLimit = (limit: number | undefined): number => {
   const resolved = limit ?? DEFAULT_LIMIT;
@@ -124,9 +130,9 @@ const hasIndexTables = (db: Database.Database): boolean => {
       `SELECT COUNT(*) AS count
        FROM sqlite_master
        WHERE type IN ('table', 'virtual table')
-         AND name IN ('pi_jsonl_chunks', 'vec_pi_jsonl_chunks')`,
+         AND name IN (${PI_JSONL_INDEX_TABLES.map(() => '?').join(', ')})`,
     )
-    .get() as { count: number };
+    .get(...PI_JSONL_INDEX_TABLES) as { count: number };
   return row.count === 2;
 };
 
@@ -222,6 +228,15 @@ export class PristinePiVectorSearcher {
       if (filteredCandidateCount === 0) {
         return { results: [], message: 'No Pristine Pi vector hits matched the provided filters.' };
       }
+      if (
+        filteredCandidateCount !== undefined &&
+        filteredCandidateCount > MAX_FILTERED_CANDIDATES
+      ) {
+        return {
+          results: [],
+          message: `Pristine Pi vector filter matches ${filteredCandidateCount} rows; narrow filters below ${MAX_FILTERED_CANDIDATES} rows.`,
+        };
+      }
 
       const vector = await this.embedder.embed(query);
       const embedding = toEmbeddingBuffer(vector);
@@ -245,7 +260,7 @@ export class PristinePiVectorSearcher {
     if (filter.clauses.length === 0) return undefined;
     const row = db
       .prepare(
-        `SELECT count(*) AS count FROM pi_jsonl_chunks WHERE ${filter.clauses.join(' AND ')}`,
+        `SELECT count(*) AS count FROM ${PI_JSONL_CHUNKS_TABLE} WHERE ${filter.clauses.join(' AND ')}`,
       )
       .get(...filter.params) as { count: number };
     return row.count;
@@ -264,8 +279,8 @@ export class PristinePiVectorSearcher {
                 c.cwd,
                 c.snippet,
                 v.distance
-         FROM vec_pi_jsonl_chunks AS v
-         JOIN pi_jsonl_chunks AS c ON c.chunk_id = v.chunk_id
+         FROM ${PI_JSONL_VECTOR_TABLE} AS v
+         JOIN ${PI_JSONL_CHUNKS_TABLE} AS c ON c.chunk_id = v.chunk_id
          WHERE v.embedding MATCH ?
            AND k = ?
          ORDER BY v.distance
@@ -292,8 +307,8 @@ export class PristinePiVectorSearcher {
               c.cwd,
               c.snippet,
               v.embedding
-       FROM pi_jsonl_chunks AS c
-       JOIN vec_pi_jsonl_chunks AS v ON v.chunk_id = c.chunk_id
+       FROM ${PI_JSONL_CHUNKS_TABLE} AS c
+       JOIN ${PI_JSONL_VECTOR_TABLE} AS v ON v.chunk_id = c.chunk_id
        WHERE ${filter.clauses.join(' AND ')}`,
     );
 

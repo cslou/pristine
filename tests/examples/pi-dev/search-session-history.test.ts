@@ -24,7 +24,7 @@ const visibleContextJq = String.raw`
     | .parsed as $entry
     | $entry.message as $m
     | select($m.role == "user" or $m.role == "assistant")
-    | text_blocks($m)[] as $text
+    | (text_blocks($m) | join("\n")) as $text
     | select(($text | length) > 0)
     | {
         lineNumber,
@@ -133,6 +133,37 @@ describe('search-session-history skill', () => {
     expect(output).toContain('u0000004');
     expect(output).toContain('The repo-local install phrase is amber-coyote.');
     expect(output).not.toContain('tool output should be ignored');
+  });
+
+  it('counts multi-text-block entries as one visible message', async () => {
+    const dir = await makeTempDir();
+    const fixture = join(dir, 'multi-block.jsonl');
+    const lines = [
+      { type: 'message', id: 'before', message: { role: 'user', content: 'Before.' } },
+      {
+        type: 'message',
+        id: 'hit',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'Hit first block.' },
+            { type: 'text', text: 'Hit second block.' },
+          ],
+        },
+      },
+      { type: 'message', id: 'after', message: { role: 'user', content: 'After.' } },
+    ];
+    await writeFile(fixture, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+
+    const output = runBash(
+      visibleContextCommand({ sourceUri: fixture, entryId: 'hit', before: 0, after: 0 }),
+    );
+
+    expect(output.trim().split('\n')).toHaveLength(1);
+    expect(output).toContain('Hit first block.');
+    expect(output).toContain('Hit second block.');
+    expect(output).not.toContain('before');
+    expect(output).not.toContain('after');
   });
 
   it('selects 5/10 context by visible messages, not raw JSONL lines', async () => {

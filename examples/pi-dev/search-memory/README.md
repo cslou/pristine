@@ -2,7 +2,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 # Pi Dev Search Memory Reference
 
-`pristine_vector_search` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns snippets plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
+`pristine_vector_search` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns a redacted snippet field plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
 
 ## Install
 

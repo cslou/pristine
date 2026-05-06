@@ -3,6 +3,10 @@ import { chmodSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
+import {
+  PI_JSONL_CHUNKS_TABLE,
+  PI_JSONL_VECTOR_TABLE,
+} from '../../shared/lib/pi-jsonl-index-schema.js';
 import type { PiJsonlParsedMessage, PiJsonlSourcePointer } from './pi-jsonl-parser.js';
 import type { PiJsonlEmbedder } from './local-embedder.js';
 
@@ -37,7 +41,7 @@ const validateEmbeddingDim = (dim: number): number => {
 const buildVecDdl = (dim: number): string => {
   const safeDim = validateEmbeddingDim(dim);
   return `
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_pi_jsonl_chunks USING vec0(
+CREATE VIRTUAL TABLE IF NOT EXISTS ${PI_JSONL_VECTOR_TABLE} USING vec0(
   chunk_id TEXT PRIMARY KEY,
   embedding float[${safeDim}]
 );
@@ -98,6 +102,14 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
       (message) => !existing.has(`${message.pointer.sourceUri}\0${message.pointer.entryId}`),
     );
 
+    if (newCandidates.length === 0) {
+      return {
+        indexed: 0,
+        skippedDuplicate: duplicateInBatch + candidates.length,
+        chunks: [],
+      };
+    }
+
     const vectors = await this.embedder.embedBatch(newCandidates.map((message) => message.text));
     if (vectors.length !== newCandidates.length) {
       throw new Error(
@@ -138,7 +150,7 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
   public reconcileActiveEntries(sourceUri: string, activeEntryIds: ReadonlySet<string>): void {
     if (activeEntryIds.size === 0) return;
     const existing = this.db
-      .prepare('SELECT chunk_id, entry_id FROM pi_jsonl_chunks WHERE source_uri = ?')
+      .prepare(`SELECT chunk_id, entry_id FROM ${PI_JSONL_CHUNKS_TABLE} WHERE source_uri = ?`)
       .all(sourceUri) as { chunk_id: string; entry_id: string }[];
     const staleChunkIds = existing
       .filter((row) => !activeEntryIds.has(row.entry_id))
@@ -146,9 +158,11 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
     if (staleChunkIds.length === 0) return;
 
     const deleteStale = this.db.transaction((chunkIds: readonly string[]) => {
-      const deleteChunk = this.db.prepare('DELETE FROM pi_jsonl_chunks WHERE chunk_id = ?');
+      const deleteChunk = this.db.prepare(
+        `DELETE FROM ${PI_JSONL_CHUNKS_TABLE} WHERE chunk_id = ?`,
+      );
       const deleteVector = this.hasVectorTable()
-        ? this.db.prepare('DELETE FROM vec_pi_jsonl_chunks WHERE chunk_id = ?')
+        ? this.db.prepare(`DELETE FROM ${PI_JSONL_VECTOR_TABLE} WHERE chunk_id = ?`)
         : null;
       for (const chunkId of chunkIds) {
         deleteVector?.run(chunkId);
@@ -166,7 +180,7 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
     this.db.pragma('busy_timeout = 5000');
     loadSqliteVec(this.db);
     this.db.exec(`
-CREATE TABLE IF NOT EXISTS pi_jsonl_chunks (
+CREATE TABLE IF NOT EXISTS ${PI_JSONL_CHUNKS_TABLE} (
   chunk_id TEXT PRIMARY KEY,
   source_kind TEXT NOT NULL CHECK (source_kind = 'pi-jsonl'),
   source_uri TEXT NOT NULL,
@@ -180,8 +194,8 @@ CREATE TABLE IF NOT EXISTS pi_jsonl_chunks (
   created_at TEXT DEFAULT (datetime('now')),
   UNIQUE(source_uri, entry_id)
 );
-CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_source_uri ON pi_jsonl_chunks(source_uri);
-CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(timestamp);
+CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_source_uri ON ${PI_JSONL_CHUNKS_TABLE}(source_uri);
+CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON ${PI_JSONL_CHUNKS_TABLE}(timestamp);
 `);
   }
 
@@ -202,7 +216,7 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
   private hasVectorTable(): boolean {
     const row = this.db
       .prepare(
-        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'vec_pi_jsonl_chunks'",
+        `SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = '${PI_JSONL_VECTOR_TABLE}'`,
       )
       .get() as { present: number } | undefined;
     return row !== undefined;
@@ -214,7 +228,7 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
     const placeholders = sourceUris.map(() => '?').join(', ');
     const rows = this.db
       .prepare(
-        `SELECT source_uri, entry_id FROM pi_jsonl_chunks WHERE source_uri IN (${placeholders})`,
+        `SELECT source_uri, entry_id FROM ${PI_JSONL_CHUNKS_TABLE} WHERE source_uri IN (${placeholders})`,
       )
       .all(...sourceUris) as { source_uri: string; entry_id: string }[];
     return new Set(rows.map((row) => `${row.source_uri}\0${row.entry_id}`));
@@ -223,13 +237,13 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
   private writeChunks(items: readonly PendingChunk[]): readonly PiJsonlChunkRecord[] {
     if (items.length === 0) return [];
     const insertChunk = this.db.prepare(
-      `INSERT OR IGNORE INTO pi_jsonl_chunks
+      `INSERT OR IGNORE INTO ${PI_JSONL_CHUNKS_TABLE}
          (chunk_id, source_kind, source_uri, entry_id, parent_id, line_number, timestamp, cwd, snippet, metadata_json)
        VALUES (?, 'pi-jsonl', ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    const deleteVector = this.db.prepare('DELETE FROM vec_pi_jsonl_chunks WHERE chunk_id = ?');
+    const deleteVector = this.db.prepare(`DELETE FROM ${PI_JSONL_VECTOR_TABLE} WHERE chunk_id = ?`);
     const insertVector = this.db.prepare(
-      'INSERT INTO vec_pi_jsonl_chunks(chunk_id, embedding) VALUES (?, ?)',
+      `INSERT INTO ${PI_JSONL_VECTOR_TABLE}(chunk_id, embedding) VALUES (?, ?)`,
     );
     const write = this.db.transaction((chunkItems: readonly PendingChunk[]) => {
       const written: PiJsonlChunkRecord[] = [];

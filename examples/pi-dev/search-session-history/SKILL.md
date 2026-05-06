@@ -49,7 +49,7 @@ VISIBLE_CONTEXT_JQ='
     | .parsed as $entry
     | $entry.message as $m
     | select($m.role == "user" or $m.role == "assistant")
-    | text_blocks($m)[] as $text
+    | (text_blocks($m) | join("\n")) as $text
     | select(($text | length) > 0)
     | {
         lineNumber,

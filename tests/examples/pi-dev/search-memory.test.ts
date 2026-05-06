@@ -232,6 +232,30 @@ describe('PristinePiVectorSearcher', () => {
     expect(result.results[0]?.sourcePointer.entryId).toBe('entry-b');
   });
 
+  it('asks callers to narrow overly broad filtered searches before embedding', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'pristine.db');
+    await seedDb(
+      dbPath,
+      Array.from({ length: 5001 }, (_, index) =>
+        message({
+          text: `Amber broad candidate ${index}`,
+          sourceUri: '/tmp/large-session.jsonl',
+          entryId: `entry-${index}`,
+          lineNumber: index + 1,
+        }),
+      ),
+    );
+
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    await expect(
+      searcher.search({ query: 'amber', sourceUri: '/tmp/large-session.jsonl', limit: 1 }),
+    ).resolves.toEqual({
+      results: [],
+      message: 'Pristine Pi vector filter matches 5001 rows; narrow filters below 5000 rows.',
+    });
+  });
+
   it('redacts returned snippets by default', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');

@@ -155,7 +155,7 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
 
       const contextEntryIds = activeEntryIdsFrom(ctx);
       const activeEntryIds =
-        contextEntryIds !== undefined && contextEntryIds.size === 0 && trigger === 'agent_end'
+        contextEntryIds !== undefined && contextEntryIds.size === 0
           ? await deriveActiveEntryIdsFromSessionFile(sessionFile)
           : contextEntryIds;
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {

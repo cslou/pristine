@@ -1,4 +1,5 @@
 # Pristine — Sprint 022
+
 **Date:** 2026-05-06 – TBD
 **Goal:** Build the Pi reference implementation as a proof before core architecture cleanup: parse Pi JSONL user/assistant messages, index semantic snippets/windows with JSONL source pointers using the current Pristine primitives where practical, expose vector search plus a search-session-history skill, and verify the repo-local `.pi` install in `~/projects/test-pristine`.
 **Status:** 🟢 Complete
@@ -8,12 +9,14 @@
 ## Handoff
 
 ### Project Context
+
 - **Repo:** `/Users/lou/projects/pristine`
 - **Tech stack:** TypeScript strict ESM, Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` with Nomic Embed v1.5 default, Vitest, Pi TypeScript extensions loaded by `@mariozechner/pi-coding-agent`.
 - **Current state:** This sprint intentionally runs before the core architecture cleanup. Pi stores authoritative sessions as JSONL under `~/.pi/agent/sessions/.../*.jsonl`; raw JSONL is grep/jq-readable and should remain the source of truth. Use the current Pristine primitives with the smallest adapter needed, and record architecture-cleanup evidence for sprint-023.
 - **Implementation spec:** `docs/specs/implementation-spec-005.md` current state, plus sprint output notes that will inform sprint-023 source-pointer cleanup. Reference layout convention: `docs/conventions/reference-implementation-layout.md`.
 
 ### Sprint-Wide Context
+
 - **Sprint type:** Feature / Tooling / Docs.
 - **Shared context:** Pi-only reference implementation. Pristine indexes Pi JSONL snippets/windows with source pointers through the least-invasive current-architecture adapter; it does not add a Pi SQL mirror of raw conversations. Vector search finds candidate memories; the `search-session-history` skill teaches the agent to inspect surrounding raw JSONL context with existing Pi tools such as `bash`, `read`, grep, and jq. Default index DB path is `~/.pi/pristine/pristine.db`, overrideable. Reference lives under convention-compliant `examples/pi-dev/<tool>/` directories (for example `jsonl-index`, `search-memory`, and `search-session-history`) and is installed into `~/projects/test-pristine/.pi` for real repo-local verification.
 - **Non-goals:** No SQL mirror/tool. No session-start injection. No proactive memory injection. No multi-harness implementation. No default embedder swap. No published package.
@@ -33,9 +36,11 @@
 Every story defines functional verification for its new behavior and targeted regression verification for affected existing behavior. The Final Verification Story runs all sprint functional verification plus the full available regression suite.
 
 ### Stories
+
 **Constraints:** Target 5-8 stories per sprint. Each story should be independently reviewable and verifiable.
 
 #### Story 1: Confirm Pi JSONL parser and source-pointer contract
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -46,8 +51,8 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** maintainer, **I want** Pi JSONL message shapes and source pointers documented, **so that** the reference indexes raw Pi sessions without guessing or duplicating transcripts.
 - **Dependencies:** None
 - **Acceptance criteria:**
@@ -70,6 +75,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** Prefer parser functions that are testable without running Pi. Ingestion contract is already chosen for the sprint: implement `agent_end` as the primary trigger and idempotent active-session reconciliation on `session_start`/reload/resume.
 
 #### Story 2: Build Pi JSONL indexing extension
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -80,8 +86,8 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** Pi user, **I want** new Pi user/assistant messages indexed into Pristine with JSONL pointers, **so that** past sessions become semantically searchable while raw context stays in Pi files.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
@@ -107,6 +113,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** Do not copy raw full sessions into Pristine; store only snippets/windows and source pointers.
 
 #### Story 3: Add Pi vector search tool returning JSONL pointers
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -117,8 +124,8 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** Pi agent, **I want** `pristine_vector_search` to return semantically relevant snippets and JSONL source pointers, **so that** I can find likely sessions without exact grep terms.
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
@@ -139,6 +146,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** This is the value-proposition tool: semantic search where grep would require guessed keywords.
 
 #### Story 4: Add search-session-history skill for post-search investigation
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -149,8 +157,8 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** Pi agent, **I want** a `search-session-history` skill, **so that** after vector search identifies a session hit I can inspect nearby raw user/assistant context from Pi’s authoritative JSONL file using existing Pi tools.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
@@ -173,6 +181,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** This replaces the prior SQL-search-tool and custom JSONL-inspection-tool concepts for Pi.
 
 #### Story 5: Document the vector-search plus session-history workflow
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -183,8 +192,8 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** Pi user, **I want** clear docs for vector-search then search-session-history, **so that** I understand why Pristine indexes snippets but does not mirror raw sessions.
 - **Dependencies:** Stories 3 and 4
 - **Acceptance criteria:**
@@ -204,6 +213,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** The workflow has one custom search tool (`pristine_vector_search`) plus one skill (`search-session-history`) that teaches JSONL inspection with existing Pi tools.
 
 #### Story 6: Verify repo-local `.pi` installation in `~/projects/test-pristine`
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -214,8 +224,8 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** Pi test-account user, **I want** the reference installed into `~/projects/test-pristine/.pi`, **so that** we verify the exact repo-local shape a real consumer would use.
 - **Dependencies:** Stories 2–5
 - **Acceptance criteria:**
@@ -238,6 +248,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** Do not commit `~/projects/test-pristine` files to this repo unless generalized into `examples/pi-dev/`.
 
 #### Final Story: Sprint Verification & Completion
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Uses the story sections above and the existing regression suite as the verification source of truth
   - [x] Defines where final verification evidence will be recorded
@@ -266,6 +277,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Technical notes:** Use `workflow-prompts/handle-sprint-completion.md` for final completion message shape.
 
 ### Rules
+
 - Use the sprint-branch workflow from AGENTS.md: `sprint-NNN` branches from target, story branches fork from `sprint-NNN`, and story PRs target `sprint-NNN`.
 - Work through stories sequentially. The Final Verification Story is always last.
 - Each story PR follows the normal review/fix/merge gates from AGENTS.md.
@@ -273,6 +285,7 @@ Every story defines functional verification for its new behavior and targeted re
 - Record new dependencies in `## Final Review`, or record `None` when no dependencies were added.
 
 ### Definition of Done
+
 - All implementation stories pass acceptance criteria.
 - Functional verification evidence is recorded for every implementation story.
 - Targeted regression verification evidence is recorded for every implementation story.
@@ -293,6 +306,7 @@ Every story defines functional verification for its new behavior and targeted re
 > **Objective:** Build the Pi reference implementation as a proof before core architecture cleanup: parse Pi JSONL user/assistant messages, index semantic snippets/windows with JSONL source pointers using current Pristine primitives where practical, expose vector search plus a search-session-history skill, and verify the repo-local `.pi` install in `~/projects/test-pristine`.
 >
 > **What was accomplished:**
+>
 > - **Story 1 — Confirm Pi JSONL parser and source-pointer contract** — Added a testable Pi JSONL parser, fixtures, and source-pointer contract docs. Evidence lives in `examples/pi-dev/README.md`, `examples/pi-dev/jsonl-index/lib/pi-jsonl-parser.ts`, and `tests/examples/pi-dev/jsonl-parser.test.ts`.
 > - **Story 2 — Build Pi JSONL indexing extension** — Added `jsonl-index`, a Pi extension that indexes active-session user/assistant messages on `agent_end` and reconciles on `session_start`, storing snippets plus Pi JSONL pointers in SQLite/sqlite-vec. Evidence lives in `examples/pi-dev/jsonl-index/` and `tests/examples/pi-dev/jsonl-index.test.ts`.
 > - **Story 3 — Add Pi vector search tool returning JSONL pointers** — Added `pristine_vector_search`, filter support, redacted snippet output, canonical pointers, and a self-contained install shape. Evidence lives in `examples/pi-dev/search-memory/` and `tests/examples/pi-dev/search-memory.test.ts`.
@@ -300,49 +314,71 @@ Every story defines functional verification for its new behavior and targeted re
 > - **Story 5 — Document the workflow** — Updated all Pi reference READMEs and `implementation-spec-005` with the vector-search plus source-pointer session-history flow, install/reset commands, and known-phrase verification. Evidence lives in `examples/pi-dev/*/README.md` and `docs/specs/implementation-spec-005.md`.
 > - **Story 6 — Verify repo-local `.pi` installation** — Copied the reference into `~/projects/test-pristine/.pi`, installed copied extension dependencies, verified no repo `src/` internals are referenced, ran a noninteractive Pi load smoke returning `OK`, indexed a saved known-phrase session, retrieved it with `pristine_vector_search`, and inspected it with `search-session-history`. Evidence is recorded in `examples/pi-dev/README.md` and PR #183.
 >
+> **Repo-local Pi smoke evidence:**
+>
+> - Working directory: `/Users/lou/projects/test-pristine` with repo-local files under `/Users/lou/projects/test-pristine/.pi`.
+> - Install/load command class: copy `examples/pi-dev/{shared,jsonl-index,search-memory}` into `.pi/extensions/`, copy `examples/pi-dev/search-session-history` into `.pi/skills/`, run `npm install --omit=dev` inside copied extension package directories, then launch Pi noninteractively from `/Users/lou/projects/test-pristine`. Pass output: `OK` with exit code `0`.
+> - Known phrase: `sapphire-otter-lantern-six`.
+> - Source pointer returned by `pristine_vector_search`: `sourceUri=/Users/lou/.pi/agent/sessions/--Users-lou-projects-test-pristine--/2026-05-06T15-12-00-167Z_019dfdd8-8aa6-70db-a3b6-0dd969ecec1d.jsonl`, `entryId=514ef844`, `lineNumber=4`.
+> - `search-session-history` context output:
+>
+>   ```text
+>   [line 4] user: This is a repo-local known phrase for Sprint 022 verification: sapphire-otter-lantern-six. Reply with OK.
+>   [line 5] assistant: OK
+>   [line 6] user: Reply OK
+>   [line 7] assistant: OK
+>   ```
+>
+> - Rerunnable evidence grep: `rg "sapphire-otter-lantern-six|514ef844" ~/.pi/agent/sessions -g '*.jsonl'`.
+>
 > ## Verification delta
 >
-> | Verification type | Before sprint | Added this sprint | Removed | Pending / not yet run | After sprint | Notes |
-> |---|---:|---:|---:|---:|---:|---|
-> | Unit | 529 | +26 | 0 | 0 | 555 | Added Pi parser/index/search/skill unit coverage under `tests/examples/pi-dev/`. |
-> | Integration / contract | 52 files / 734 tests | +0 files | 0 | 0 | 52 files / 734 tests | Full integration suite passes; Pi adapter integration behaviors are covered in unit/temp-DB tests. |
-> | E2E / smoke | 52 files / 734 tests | +2 smoke checks | 0 | 0 | 52 files / 734 tests + Pi smoke | Full e2e suite passes; added repo-local copy smoke and noninteractive Pi load smoke. |
-> | Simulator / device | 0 | +0 | 0 | 0 | 0 | Not applicable. |
-> | AI / model evals | 0 | +0 | 0 | 0 | 0 | Not added. |
-> | Static / local checks | 2 | +5 | 0 | 0 | 7 | Typecheck/lint plus README structural checks, spec rg check, no repo-src import check, install-layout smoke. |
-> | Performance / load | 0 | +0 | 0 | 0 | 0 | Not added. |
-> | Security / dependency | 0 | +3 | 0 | 0 | 3 | DB permission hardening tests and copied extension `npm install --omit=dev` audit results. |
-> | Accessibility / visual | 0 | +0 | 0 | 0 | 0 | Not applicable. |
-> | Manual-only | 0 | +1 | 0 | 0 | 1 | Repo-local Pi known-phrase indexing/search/session-history smoke passed; Lou may still perform optional interactive TUI acceptance before sprint-integration merge. |
-> | Other verification | 0 | +0 | 0 | 0 | 0 | None. |
-> | **Total** | **531+** | **+37** | **0** | **0** | **568+** | Counting basis mixes test cases, local-check commands, smoke checks, and manual-only rows. |
+> | Verification type      |        Before sprint | Added this sprint | Removed | Pending / not yet run |                    After sprint | Notes                                                                                                                                                               |
+> | ---------------------- | -------------------: | ----------------: | ------: | --------------------: | ------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | Unit                   |                  529 |               +26 |       0 |                     0 |                             555 | Added Pi parser/index/search/skill unit coverage under `tests/examples/pi-dev/`.                                                                                    |
+> | Integration / contract | 52 files / 734 tests |          +0 files |       0 |                     0 |            52 files / 734 tests | Full integration suite passes; Pi adapter integration behaviors are covered in unit/temp-DB tests.                                                                  |
+> | E2E / smoke            | 52 files / 734 tests |   +2 smoke checks |       0 |                     0 | 52 files / 734 tests + Pi smoke | Full e2e suite passes; added repo-local copy smoke and noninteractive Pi load smoke.                                                                                |
+> | Simulator / device     |                    0 |                +0 |       0 |                     0 |                               0 | Not applicable.                                                                                                                                                     |
+> | AI / model evals       |                    0 |                +0 |       0 |                     0 |                               0 | Not added.                                                                                                                                                          |
+> | Static / local checks  |                    2 |                +5 |       0 |                     0 |                               7 | Typecheck/lint plus README structural checks, spec rg check, no repo-src import check, install-layout smoke.                                                        |
+> | Performance / load     |                    0 |                +0 |       0 |                     0 |                               0 | Not added.                                                                                                                                                          |
+> | Security / dependency  |                    0 |                +3 |       0 |                     0 |                               3 | DB permission hardening tests and copied extension `npm install --omit=dev` audit results.                                                                          |
+> | Accessibility / visual |                    0 |                +0 |       0 |                     0 |                               0 | Not applicable.                                                                                                                                                     |
+> | Manual-only            |                    0 |                +1 |       0 |                     0 |                               1 | Repo-local Pi known-phrase indexing/search/session-history smoke passed; Lou may still perform optional interactive TUI acceptance before sprint-integration merge. |
+> | Other verification     |                    0 |                +0 |       0 |                     0 |                               0 | None.                                                                                                                                                               |
+> | **Total**              |             **531+** |           **+37** |   **0** |                 **0** |                        **568+** | Counting basis mixes test cases, local-check commands, smoke checks, and manual-only rows.                                                                          |
 >
 > Counting basis: Vitest test cases for Unit/Integration/E2E rows; command/checklist rows for static, smoke, security/dependency, and manual-only rows. Integration and E2E configs currently overlap many test files, so file/test counts are reported as executed suite totals rather than unique new test cases.
 > Regression summary: all automated regression surfaces referenced by the sprint passed locally; repo-local Pi known-phrase indexing/search/session-history smoke passed in `~/projects/test-pristine`.
 >
 > ## Why ready
+>
 > - All story acceptance criteria are implemented or covered by repo-local smoke evidence; optional Lou TUI acceptance is called out separately.
 > - New functional verification passed: parser/index/search/skill tests, README/spec structural checks, copied `.pi` install checks, dependency installs, no-src import check, and Pi load smoke.
 > - Full regression verification passed: `npm run typecheck`, `npm run lint`, `npm run test:unit` (34 files / 555 tests), `npm run test:integration` (52 files / 734 tests), and `npm run test:e2e` (52 files / 734 tests).
 > - Every story PR ran Pi review/review-fix to mergeability 5/5 and passed pre-merge gates before merging into `sprint-022`.
 >
 > ## Open for your decision
+>
 > - None required for sprint-branch readiness. Optional: Lou may run the interactive Pi TUI known-phrase flow in `~/projects/test-pristine` before approving the sprint-integration PR merge.
 >
 > ## Delivered
-> | Story | Item | Status | Evidence |
-> |---|---|---|---|
-> | Story 1 | JSONL parser/source-pointer contract | ✅ | `tests/examples/pi-dev/jsonl-parser.test.ts`; PR #178 |
-> | Story 2 | Pi JSONL indexing extension | ✅ | `tests/examples/pi-dev/jsonl-index.test.ts`; PR #179 |
-> | Story 3 | `pristine_vector_search` pointer search | ✅ | `tests/examples/pi-dev/search-memory.test.ts`; PR #180 |
-> | Story 4 | `search-session-history` skill | ✅ | `tests/examples/pi-dev/search-session-history.test.ts`; PR #181 |
-> | Story 5 | Workflow/spec docs | ✅ | README structural checks; PR #182 |
-> | Story 6 | Repo-local `.pi` install verification | ✅ | `~/projects/test-pristine/.pi` copy/install checks, Pi load smoke, Pi `pristine_vector_search` known-phrase result, and `search-session-history` context; PR #183 |
-> | Final Story | Sprint-wide verification | ✅ | Final verification commands above; this PR |
+>
+> | Story       | Item                                    | Status | Evidence                                                                                                                                                          |
+> | ----------- | --------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | Story 1     | JSONL parser/source-pointer contract    | ✅     | `tests/examples/pi-dev/jsonl-parser.test.ts`; PR #178                                                                                                             |
+> | Story 2     | Pi JSONL indexing extension             | ✅     | `tests/examples/pi-dev/jsonl-index.test.ts`; PR #179                                                                                                              |
+> | Story 3     | `pristine_vector_search` pointer search | ✅     | `tests/examples/pi-dev/search-memory.test.ts`; PR #180                                                                                                            |
+> | Story 4     | `search-session-history` skill          | ✅     | `tests/examples/pi-dev/search-session-history.test.ts`; PR #181                                                                                                   |
+> | Story 5     | Workflow/spec docs                      | ✅     | README structural checks; PR #182                                                                                                                                 |
+> | Story 6     | Repo-local `.pi` install verification   | ✅     | `~/projects/test-pristine/.pi` copy/install checks, Pi load smoke, Pi `pristine_vector_search` known-phrase result, and `search-session-history` context; PR #183 |
+> | Final Story | Sprint-wide verification                | ✅     | Final verification commands above; this PR                                                                                                                        |
 >
 > ## Drift from spec
+>
 > - Pi JSONL remains authoritative; Pristine indexes snippets/source pointers only. This evidence should guide Sprint 023 source-pointer architecture cleanup.
 > - `pristine_vector_search` returns a redacted snippet placeholder by default to avoid leaking raw session text into model context; raw context inspection is delegated to `search-session-history`.
 >
 > ## New Dependencies
+>
 > - No root package dependencies. Example-local `package.json` files declare runtime dependencies for copied Pi extensions (`@huggingface/transformers`, `better-sqlite3`, `sqlite-vec`, and Pi packages where needed), installed locally in `~/projects/test-pristine/.pi/extensions/*` for verification.

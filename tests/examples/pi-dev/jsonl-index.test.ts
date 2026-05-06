@@ -154,7 +154,8 @@ describe('Pi JSONL index extension reference', () => {
 
   it('removes stale active-branch rows and deduplicates reprocessing by stable source pointer', async () => {
     const db = new Database(join(await makeTempDir(), 'pristine.db'));
-    const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder: new StubEmbedder() });
+    const embedder = new StubEmbedder();
+    const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder });
     const runtime = createPiJsonlIndexRuntime({ indexer });
     const ctx = makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001', 'a0000002'] });
 
@@ -166,6 +167,7 @@ describe('Pi JSONL index extension reference', () => {
       indexed: 0,
       skippedDuplicate: 2,
     });
+    expect(embedder.texts).toHaveLength(2);
     expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
 
     await runtime.reconcileOnSessionStart(
@@ -180,20 +182,21 @@ describe('Pi JSONL index extension reference', () => {
     });
   });
 
-  it('does not treat an empty session-start branch list as permission to delete or index all session rows', async () => {
-    const db = new Database(join(await makeTempDir(), 'pristine.db'));
-    const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder: new StubEmbedder() });
+  it('derives linear active ids on session_start when Pi provides an empty branch list', async () => {
+    const indexer = new CapturingIndexer();
     const runtime = createPiJsonlIndexRuntime({ indexer });
 
-    await runtime.indexAfterAgentEnd(
-      makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001', 'a0000002'] }),
-    );
     await runtime.reconcileOnSessionStart(
       makeCtx({ sessionFile: fixturePath, branchIds: [] }),
       'reload',
     );
 
-    expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
+    expect(indexer.batches).toHaveLength(1);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
+      'u0000001',
+      'a0000002',
+      'u0000004',
+    ]);
   });
 
   it('does not derive active ids from ambiguous forked sessions when agent_end has empty branch data', async () => {

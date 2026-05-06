@@ -229,7 +229,9 @@ export class PristinePiVectorSearcher {
       const rows =
         filteredCandidateCount === undefined
           ? this.runKnn(db, embedding, limit)
-          : this.runFilteredExact(db, vector, limit, filter, filteredCandidateCount);
+          : filteredCandidateCount <= MAX_FILTERED_CANDIDATES
+            ? this.runFilteredExact(db, vector, limit, filter)
+            : this.runFilteredKnnWindow(db, embedding, limit, filter);
       return {
         results: rows.map(mapSearchRow),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
@@ -280,13 +282,7 @@ export class PristinePiVectorSearcher {
     queryVector: readonly number[],
     limit: number,
     filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
-    filteredCandidateCount: number,
   ): readonly SearchRow[] {
-    if (filteredCandidateCount > MAX_FILTERED_CANDIDATES) {
-      throw new Error(
-        `pristine_vector_search filtered candidate set is too large (${filteredCandidateCount}); narrow filters below ${MAX_FILTERED_CANDIDATES} rows`,
-      );
-    }
     const rows = db
       .prepare(
         `SELECT c.chunk_id,
@@ -309,6 +305,36 @@ export class PristinePiVectorSearcher {
       .map((row) => ({ ...row, distance: euclideanDistance(queryVector, row.embedding) }))
       .sort((left, right) => left.distance - right.distance)
       .slice(0, limit);
+  }
+
+  private runFilteredKnnWindow(
+    db: Database.Database,
+    embedding: Buffer,
+    limit: number,
+    filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
+  ): readonly SearchRow[] {
+    const candidatePredicate = `AND v.chunk_id IN (SELECT chunk_id FROM pi_jsonl_chunks WHERE ${filter.clauses.join(' AND ')})`;
+    return db
+      .prepare(
+        `SELECT c.chunk_id,
+                c.source_kind,
+                c.source_uri,
+                c.entry_id,
+                c.parent_id,
+                c.line_number,
+                c.timestamp,
+                c.cwd,
+                c.snippet,
+                v.distance
+         FROM vec_pi_jsonl_chunks AS v
+         JOIN pi_jsonl_chunks AS c ON c.chunk_id = v.chunk_id
+         WHERE v.embedding MATCH ?
+           AND k = ?
+           ${candidatePredicate}
+         ORDER BY v.distance
+         LIMIT ?`,
+      )
+      .all(embedding, MAX_FILTERED_CANDIDATES, ...filter.params, limit) as SearchRow[];
   }
 }
 

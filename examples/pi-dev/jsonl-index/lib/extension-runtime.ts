@@ -58,7 +58,12 @@ const notify = (
   message: string,
   level: 'info' | 'success' | 'warning' | 'error',
 ): void => {
-  ctx.ui?.notify(message, level);
+  try {
+    ctx.ui?.notify(message, level);
+  } catch {
+    // Pi can mark event contexts stale during non-interactive session replacement.
+    // Indexing should not fail only because the optional UI notification could not render.
+  }
 };
 
 export interface PiJsonlIndexRuntimeLike {

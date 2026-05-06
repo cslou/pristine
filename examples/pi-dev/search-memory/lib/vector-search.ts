@@ -52,6 +52,7 @@ export interface PristineVectorSearchConfig {
 const MAX_LIMIT = 20;
 const DEFAULT_LIMIT = 5;
 const MAX_EMBEDDING_DIM = 8192;
+const MAX_FILTERED_CANDIDATES = 5000;
 
 const validateLimit = (limit: number | undefined): number => {
   const resolved = limit ?? DEFAULT_LIMIT;
@@ -85,6 +86,17 @@ const toEmbeddingBuffer = (vector: readonly number[]): Buffer => {
 
 const scoreFromDistance = (distance: number): number => 1 / (1 + distance);
 
+const euclideanDistance = (left: readonly number[], right: Buffer): number => {
+  const values = new Float32Array(right.buffer, right.byteOffset, right.byteLength / 4);
+  if (values.length !== left.length) return Number.POSITIVE_INFINITY;
+  let sum = 0;
+  for (let index = 0; index < left.length; index++) {
+    const delta = (left[index] ?? 0) - (values[index] ?? 0);
+    sum += delta * delta;
+  }
+  return Math.sqrt(sum);
+};
+
 const REDACTED_SNIPPET =
   '[snippet redacted by default; inspect sourcePointer with search-session-history]';
 
@@ -101,6 +113,10 @@ interface SearchRow {
   readonly cwd: string | null;
   readonly snippet: string;
   readonly distance: number;
+}
+
+interface FilteredCandidateRow extends Omit<SearchRow, 'distance'> {
+  readonly embedding: Buffer;
 }
 
 const hasIndexTables = (db: Database.Database): boolean => {
@@ -210,9 +226,10 @@ export class PristinePiVectorSearcher {
 
       const vector = await this.embedder.embed(query);
       const embedding = toEmbeddingBuffer(vector);
-      const totalCandidateCount =
-        filteredCandidateCount === undefined ? undefined : this.countAllCandidates(db);
-      const rows = this.runKnn(db, embedding, limit, filter, totalCandidateCount);
+      const rows =
+        filteredCandidateCount === undefined
+          ? this.runKnn(db, embedding, limit)
+          : this.runFilteredExact(db, vector, limit, filter, filteredCandidateCount);
       return {
         results: rows.map(mapSearchRow),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
@@ -235,27 +252,7 @@ export class PristinePiVectorSearcher {
     return row.count;
   }
 
-  private countAllCandidates(db: Database.Database): number {
-    const row = db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get() as {
-      count: number;
-    };
-    return row.count;
-  }
-
-  private runKnn(
-    db: Database.Database,
-    embedding: Buffer,
-    limit: number,
-    filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
-    totalCandidateCount: number | undefined,
-  ): readonly SearchRow[] {
-    const knnLimit =
-      totalCandidateCount === undefined ? limit : Math.max(limit, totalCandidateCount);
-    const params: unknown[] = [embedding, knnLimit, ...filter.params];
-    const candidatePredicate =
-      filter.clauses.length === 0
-        ? ''
-        : `AND v.chunk_id IN (SELECT chunk_id FROM pi_jsonl_chunks WHERE ${filter.clauses.join(' AND ')})`;
+  private runKnn(db: Database.Database, embedding: Buffer, limit: number): readonly SearchRow[] {
     return db
       .prepare(
         `SELECT c.chunk_id,
@@ -272,10 +269,46 @@ export class PristinePiVectorSearcher {
          JOIN pi_jsonl_chunks AS c ON c.chunk_id = v.chunk_id
          WHERE v.embedding MATCH ?
            AND k = ?
-           ${candidatePredicate}
-         ORDER BY v.distance`,
+         ORDER BY v.distance
+         LIMIT ?`,
       )
-      .all(...params) as SearchRow[];
+      .all(embedding, limit, limit) as SearchRow[];
+  }
+
+  private runFilteredExact(
+    db: Database.Database,
+    queryVector: readonly number[],
+    limit: number,
+    filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
+    filteredCandidateCount: number,
+  ): readonly SearchRow[] {
+    if (filteredCandidateCount > MAX_FILTERED_CANDIDATES) {
+      throw new Error(
+        `pristine_vector_search filtered candidate set is too large (${filteredCandidateCount}); narrow filters below ${MAX_FILTERED_CANDIDATES} rows`,
+      );
+    }
+    const rows = db
+      .prepare(
+        `SELECT c.chunk_id,
+                c.source_kind,
+                c.source_uri,
+                c.entry_id,
+                c.parent_id,
+                c.line_number,
+                c.timestamp,
+                c.cwd,
+                c.snippet,
+                v.embedding
+         FROM pi_jsonl_chunks AS c
+         JOIN vec_pi_jsonl_chunks AS v ON v.chunk_id = c.chunk_id
+         WHERE ${filter.clauses.join(' AND ')}`,
+      )
+      .all(...filter.params) as FilteredCandidateRow[];
+
+    return rows
+      .map((row) => ({ ...row, distance: euclideanDistance(queryVector, row.embedding) }))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, limit);
   }
 }
 

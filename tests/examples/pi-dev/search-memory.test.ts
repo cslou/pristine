@@ -213,6 +213,12 @@ describe('PristinePiVectorSearcher', () => {
         entryId: 'entry-b',
         lineNumber: 4,
       }),
+      message({
+        text: 'Cedar second filtered hit also farther from amber.',
+        sourceUri: '/tmp/session-b.jsonl',
+        entryId: 'entry-c',
+        lineNumber: 5,
+      }),
     ]);
 
     const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });

@@ -4,7 +4,7 @@ import {
   parsePiSessionJsonlFile,
   parsePiSessionJsonlText,
   PiJsonlParseError,
-} from '../../../examples/pi-dev/jsonl-index/src/pi-jsonl-parser.js';
+} from '../../../examples/pi-dev/jsonl-index/lib/pi-jsonl-parser.js';
 
 const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
 

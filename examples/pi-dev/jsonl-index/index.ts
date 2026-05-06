@@ -2,7 +2,7 @@ import {
   createPiJsonlIndexRuntime,
   type PiExtensionContextLike,
   type PiJsonlIndexRuntimeLike,
-} from './src/extension-runtime.js';
+} from './lib/extension-runtime.js';
 
 interface PiExtensionApiLike {
   on(

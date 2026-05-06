@@ -102,3 +102,11 @@ rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ## Known phrase verification
 
 Type a unique known phrase into Pi, let `jsonl-index` index the completed turn, run `pristine_vector_search` for the phrase, then use `search-session-history` on the returned pointer. Pass condition: search returns a Pi JSONL source pointer and the skill extracts bounded surrounding user/assistant context from the authoritative session file.
+
+## Install/runtime gotchas
+
+- Pi discovers repo-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md`; copying examples directly under `.pi/<name>` does not load them.
+- Copy `examples/pi-dev/shared/` to `.pi/extensions/shared/` because both extension examples import the shared DB path helper; dependency-owning embedder code stays inside each extension.
+- Run `npm install --omit=dev` separately in `.pi/extensions/jsonl-index` and `.pi/extensions/search-memory`; each copied extension owns its runtime dependencies.
+- Copied repo-local files are intentionally self-contained and do not import this repository's `src/` internals.
+- Interactive Pi TUI verification is reserved for Lou in `~/projects/test-pristine`; static copy/install checks passed locally.

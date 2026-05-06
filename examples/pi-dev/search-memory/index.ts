@@ -2,7 +2,7 @@ import {
   createPristinePiVectorSearcher,
   type PristineVectorSearchInput,
   type PristineVectorSearchResult,
-} from './src/vector-search.js';
+} from './lib/vector-search.js';
 
 interface PiToolResultLike {
   readonly content: readonly { readonly type: 'text'; readonly text: string }[];

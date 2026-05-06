@@ -4,17 +4,17 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { registerJsonlIndexExtension } from '../../../examples/pi-dev/jsonl-index/index.js';
-import { resolvePiPristineDbPath } from '../../../examples/pi-dev/shared/src/db-path.js';
+import { resolvePiPristineDbPath } from '../../../examples/pi-dev/shared/lib/db-path.js';
 import {
   createPiJsonlIndexRuntime,
   type PiExtensionContextLike,
-} from '../../../examples/pi-dev/jsonl-index/src/extension-runtime.js';
-import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/src/pi-jsonl-parser.js';
+} from '../../../examples/pi-dev/jsonl-index/lib/extension-runtime.js';
+import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/lib/pi-jsonl-parser.js';
 import {
   openPiJsonlIndexDatabase,
   SqlitePiJsonlSourceIndexer,
   type PiJsonlSourceIndexer,
-} from '../../../examples/pi-dev/jsonl-index/src/source-index.js';
+} from '../../../examples/pi-dev/jsonl-index/lib/source-index.js';
 
 const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
 

@@ -2,17 +2,17 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { PiJsonlEmbedder } from '../../../examples/pi-dev/shared/src/local-embedder.js';
-import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/src/pi-jsonl-parser.js';
+import type { PiJsonlEmbedder } from '../../../examples/pi-dev/search-memory/lib/local-embedder.js';
+import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/lib/pi-jsonl-parser.js';
 import {
   openPiJsonlIndexDatabase,
   SqlitePiJsonlSourceIndexer,
-} from '../../../examples/pi-dev/jsonl-index/src/source-index.js';
+} from '../../../examples/pi-dev/jsonl-index/lib/source-index.js';
 import {
   createPristineVectorSearchTool,
   registerSearchMemoryExtension,
 } from '../../../examples/pi-dev/search-memory/index.js';
-import { PristinePiVectorSearcher } from '../../../examples/pi-dev/search-memory/src/vector-search.js';
+import { PristinePiVectorSearcher } from '../../../examples/pi-dev/search-memory/lib/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
   public async embed(text: string): Promise<readonly number[]> {

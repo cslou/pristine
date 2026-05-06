@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
-import { resolvePiPristineDbPath } from '../../jsonl-index/src/db-path.js';
-import { LocalNomicEmbedder, type PiJsonlEmbedder } from '../../jsonl-index/src/local-embedder.js';
+import { resolvePiPristineDbPath } from '../../shared/src/db-path.js';
+import { LocalNomicEmbedder, type PiJsonlEmbedder } from '../../shared/src/local-embedder.js';
 
 export interface PristineVectorSearchFilters {
   readonly sourceUri?: string;
@@ -85,9 +85,14 @@ const toEmbeddingBuffer = (vector: readonly number[]): Buffer => {
 
 const scoreFromDistance = (distance: number): number => 1 / (1 + distance);
 
-interface CandidateRow {
-  readonly chunk_id: string;
-}
+const scrubSnippet = (snippet: string): string =>
+  snippet
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/g, 'Bearer [REDACTED]')
+    .replace(/sk-[A-Za-z0-9]{20,}/g, 'sk-[REDACTED]')
+    .replace(
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+      '[REDACTED PRIVATE KEY]',
+    );
 
 interface SearchRow {
   readonly chunk_id: string;
@@ -149,18 +154,6 @@ const buildFilterWhere = (
   return { clauses, params };
 };
 
-const loadCandidateChunkIds = (
-  db: Database.Database,
-  input: PristineVectorSearchInput,
-): readonly string[] | undefined => {
-  const filter = buildFilterWhere(input);
-  if (filter.clauses.length === 0) return undefined;
-  const rows = db
-    .prepare(`SELECT chunk_id FROM pi_jsonl_chunks WHERE ${filter.clauses.join(' AND ')}`)
-    .all(...filter.params) as CandidateRow[];
-  return rows.map((row) => row.chunk_id);
-};
-
 const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit => {
   const lineNumber =
     typeof row.line_number === 'bigint' ? Number(row.line_number) : row.line_number;
@@ -168,7 +161,7 @@ const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit =>
     rank: index + 1,
     score: scoreFromDistance(row.distance),
     chunkId: row.chunk_id,
-    snippet: row.snippet,
+    snippet: scrubSnippet(row.snippet),
     sourcePointer: {
       sourceKind: row.source_kind,
       sourceUri: row.source_uri,
@@ -213,14 +206,11 @@ export class PristinePiVectorSearcher {
           message: 'Pristine Pi vector index is empty; run jsonl-index first.',
         };
       }
-      const candidateChunkIds = loadCandidateChunkIds(db, input);
-      if (candidateChunkIds !== undefined && candidateChunkIds.length === 0) {
-        return { results: [], message: 'No Pristine Pi vector hits matched the provided filters.' };
-      }
+      const filter = buildFilterWhere(input);
 
       const vector = await this.embedder.embed(query);
       const embedding = toEmbeddingBuffer(vector);
-      const rows = this.runKnn(db, embedding, limit, candidateChunkIds);
+      const rows = this.runKnn(db, embedding, limit, filter);
       return {
         results: rows.map(mapSearchRow),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
@@ -234,12 +224,13 @@ export class PristinePiVectorSearcher {
     db: Database.Database,
     embedding: Buffer,
     limit: number,
-    candidateChunkIds: readonly string[] | undefined,
+    filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
   ): readonly SearchRow[] {
-    const params: unknown[] = [embedding, limit];
+    const params: unknown[] = [embedding, limit, ...filter.params];
     const candidatePredicate =
-      candidateChunkIds === undefined ? '' : 'AND v.chunk_id IN (SELECT value FROM json_each(?))';
-    if (candidateChunkIds !== undefined) params.push(JSON.stringify(candidateChunkIds));
+      filter.clauses.length === 0
+        ? ''
+        : `AND v.chunk_id IN (SELECT chunk_id FROM pi_jsonl_chunks WHERE ${filter.clauses.join(' AND ')})`;
     return db
       .prepare(
         `SELECT c.chunk_id,

@@ -9,8 +9,8 @@ This is one way to use Pristine primitives. You can write your own.
 Copy this directory into a repo-local `.pi` extension location, then install runtime dependencies:
 
 ```bash
-mkdir -p ~/projects/test-pristine/.pi/search-memory
-rsync -a --delete examples/pi-dev/search-memory/. ~/projects/test-pristine/.pi/search-memory/
+mkdir -p ~/projects/test-pristine/.pi
+rsync -a --delete examples/pi-dev/. ~/projects/test-pristine/.pi/
 cd ~/projects/test-pristine/.pi/search-memory
 npm install --omit=dev
 ```
@@ -52,7 +52,7 @@ Each result includes:
 
 ## Known phrase verification
 
-1. Use `jsonl-index` to index a session containing a unique phrase such as `sprint 022 known phrase sapphire bridge`.
+1. Use `jsonl-index` to index a session containing a unique phrase such as `known phrase sapphire bridge`.
 2. Ask Pi to call `pristine_vector_search` with `{ "query": "sapphire bridge", "limit": 5 }`.
 3. Pass condition: one result includes the known phrase snippet and a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`.
 4. Follow the pointer with `search-session-history` to inspect nearby raw JSONL context.

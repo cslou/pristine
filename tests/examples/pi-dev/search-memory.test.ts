@@ -2,12 +2,16 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { PiJsonlEmbedder } from '../../../examples/pi-dev/jsonl-index/src/local-embedder.js';
+import type { PiJsonlEmbedder } from '../../../examples/pi-dev/shared/src/local-embedder.js';
 import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/src/pi-jsonl-parser.js';
 import {
   openPiJsonlIndexDatabase,
   SqlitePiJsonlSourceIndexer,
 } from '../../../examples/pi-dev/jsonl-index/src/source-index.js';
+import {
+  createPristineVectorSearchTool,
+  registerSearchMemoryExtension,
+} from '../../../examples/pi-dev/search-memory/index.js';
 import { PristinePiVectorSearcher } from '../../../examples/pi-dev/search-memory/src/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
@@ -189,8 +193,64 @@ describe('PristinePiVectorSearcher', () => {
       searcher.search({ query: 'sapphire', sourceUri: '/tmp/missing.jsonl' }),
     ).resolves.toMatchObject({
       results: [],
-      message: 'No Pristine Pi vector hits matched the provided filters.',
+      message: 'No Pristine Pi vector hits found.',
     });
+  });
+
+  it('redacts common secret patterns from returned snippets', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'pristine.db');
+    await seedDb(dbPath, [
+      message({
+        text: 'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 should not leak.',
+        entryId: 'entry-secret',
+        lineNumber: 4,
+      }),
+    ]);
+
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    const result = await searcher.search({ query: 'sapphire token' });
+
+    expect(result.results[0]?.snippet).toBe('Sapphire token Bearer [REDACTED] should not leak.');
+  });
+
+  it('registers a reusable Pi tool wrapper with expected response shape', async () => {
+    const calls: unknown[] = [];
+    const searcher = {
+      async search(input: unknown) {
+        calls.push(input);
+        return {
+          results: [
+            {
+              rank: 1,
+              score: 1,
+              chunkId: 'chunk-1',
+              snippet: 'known phrase sapphire bridge',
+              sourcePointer: {
+                sourceKind: 'pi-jsonl' as const,
+                sourceUri: '/tmp/session.jsonl',
+                lineNumber: 1,
+              },
+            },
+          ],
+        };
+      },
+    };
+    const tool = createPristineVectorSearchTool(searcher);
+
+    const result = await tool.execute('tool-call-1', { query: 'sapphire', limit: 1 });
+
+    expect(calls).toEqual([{ query: 'sapphire', limit: 1 }]);
+    expect(result.content[0]?.type).toBe('text');
+    expect(result.content[0]?.text).toContain('known phrase sapphire bridge');
+    expect(result.details.results).toHaveLength(1);
+
+    const registered: unknown[] = [];
+    registerSearchMemoryExtension(
+      { registerTool: (registeredTool) => registered.push(registeredTool) },
+      () => searcher,
+    );
+    expect(registered).toHaveLength(1);
   });
 
   it('returns clear negative-case errors and empty-index messages', async () => {

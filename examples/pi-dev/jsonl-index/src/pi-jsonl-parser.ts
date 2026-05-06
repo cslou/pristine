@@ -20,6 +20,12 @@ export interface PiJsonlParsedMessage {
 
 export interface ParsePiSessionJsonlOptions {
   readonly sourceUri: string;
+  /**
+   * Optional active-branch filter supplied by the Pi extension from
+   * ctx.sessionManager.getBranch(). When present, only message entries whose
+   * IDs are in this set are indexed.
+   */
+  readonly activeEntryIds?: ReadonlySet<string>;
 }
 
 export class PiJsonlParseError extends Error {
@@ -37,7 +43,7 @@ const isObject = (value: unknown): value is JsonObject =>
 const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
 
-const readTextBlocks = (content: unknown, role: PiJsonlRole): string[] => {
+const readTextBlocks = (content: unknown): string[] => {
   if (typeof content === 'string') {
     return content.trim().length > 0 ? [content] : [];
   }
@@ -49,16 +55,26 @@ const readTextBlocks = (content: unknown, role: PiJsonlRole): string[] => {
     if (block.type !== 'text') continue;
     if (typeof block.text !== 'string') continue;
     if (block.text.trim().length === 0) continue;
-
-    // User content arrays can contain text + image blocks. Assistant content
-    // arrays can contain text + thinking + toolCall blocks. Only text blocks
-    // are natural-language transcript content for this reference index.
-    if (role === 'user' || role === 'assistant') {
-      texts.push(block.text);
-    }
+    texts.push(block.text);
   }
   return texts;
 };
+
+function* iterateJsonlLines(jsonl: string): Generator<{ readonly line: string; readonly lineNumber: number }> {
+  let lineStart = 0;
+  let lineNumber = 1;
+
+  for (let index = 0; index <= jsonl.length; index++) {
+    const isEnd = index === jsonl.length;
+    const char = isEnd ? '' : jsonl[index];
+    if (!isEnd && char !== '\n') continue;
+
+    const lineEnd = index > lineStart && jsonl[index - 1] === '\r' ? index - 1 : index;
+    yield { line: jsonl.slice(lineStart, lineEnd), lineNumber };
+    lineStart = index + 1;
+    lineNumber++;
+  }
+}
 
 const parseJsonLine = (line: string, lineNumber: number, sourceUri: string): unknown => {
   try {
@@ -78,12 +94,9 @@ export const parsePiSessionJsonlText = (
   const results: PiJsonlParsedMessage[] = [];
   let cwd: string | undefined;
 
-  const lines = jsonl.split(/\r?\n/);
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (line === undefined || line.trim().length === 0) continue;
+  for (const { line, lineNumber } of iterateJsonlLines(jsonl)) {
+    if (line.trim().length === 0) continue;
 
-    const lineNumber = index + 1;
     const entry = parseJsonLine(line, lineNumber, options.sourceUri);
     if (!isObject(entry)) continue;
 
@@ -95,10 +108,14 @@ export const parsePiSessionJsonlText = (
     if (entry.type !== 'message') continue;
     if (!isObject(entry.message)) continue;
 
+    const entryId = optionalString(entry.id);
+    if (entryId === undefined) continue;
+    if (options.activeEntryIds !== undefined && !options.activeEntryIds.has(entryId)) continue;
+
     const role = entry.message.role;
     if (role !== 'user' && role !== 'assistant') continue;
 
-    const texts = readTextBlocks(entry.message.content, role);
+    const texts = readTextBlocks(entry.message.content);
     if (texts.length === 0) continue;
 
     const text = texts.join('\n').trim();
@@ -110,7 +127,7 @@ export const parsePiSessionJsonlText = (
       pointer: {
         sourceKind: 'pi-jsonl',
         sourceUri: options.sourceUri,
-        ...(optionalString(entry.id) !== undefined ? { entryId: optionalString(entry.id) } : {}),
+        entryId,
         ...(optionalString(entry.parentId) !== undefined
           ? { parentId: optionalString(entry.parentId) }
           : {}),

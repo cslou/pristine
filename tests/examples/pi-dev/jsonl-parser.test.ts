@@ -104,6 +104,28 @@ describe('Pi JSONL parser reference', () => {
     ]);
   });
 
+  it('filters to active branch entry IDs when provided by the Pi extension', async () => {
+    const jsonl = await readFile(fixturePath, 'utf8');
+    const messages = parsePiSessionJsonlText(jsonl, {
+      sourceUri: 'pi://fixture',
+      activeEntryIds: new Set(['u0000004']),
+    });
+
+    expect(messages.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
+    expect(messages).toHaveLength(1);
+  });
+
+  it('skips message entries without stable entry IDs', () => {
+    const jsonl = JSON.stringify({
+      type: 'message',
+      parentId: null,
+      timestamp: '2026-05-06T12:00:00.000Z',
+      message: { role: 'user', content: 'No stable ID means no idempotence key.' },
+    });
+
+    expect(parsePiSessionJsonlText(jsonl, { sourceUri: '/tmp/no-id.jsonl' })).toEqual([]);
+  });
+
   it('throws a parser-specific error for malformed JSONL', () => {
     expect(() => parsePiSessionJsonlText('{not-json}', { sourceUri: '/tmp/bad.jsonl' })).toThrow(
       PiJsonlParseError,

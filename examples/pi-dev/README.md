@@ -16,7 +16,7 @@ The parser follows Pi's documented session file format from `@mariozechner/pi-co
 
 - file path / session file path: the active `.jsonl` file returned by Pi.
 - line number: the 1-indexed JSONL line containing the indexed message entry.
-- entry ID: the message entry `id` field, when present.
+- entry ID: the message entry `id` field. It is required for indexing because idempotence uses `sourceUri` + `entryId`.
 - parent ID: the message entry `parentId` field, when present.
 - role: `message.role`; only `user` and `assistant` are indexed.
 - content text: string content or content blocks where `type === "text"`.
@@ -27,7 +27,7 @@ Parser behavior is intentionally narrow: user/assistant natural-language text is
 
 ## Source pointer shape
 
-The prototype stores and returns this source pointer shape; sprint-023 will formalize it in the core architecture:
+The prototype stores and returns this source pointer shape so later core architecture can formalize the same source-owned record model:
 
 ```ts
 {
@@ -59,9 +59,10 @@ The chosen v1 ingestion contract is deterministic and active-session scoped:
 1. Primary indexing runs in a Pi extension on `agent_end` after each completed turn.
 2. Reconciliation runs on `session_start` for startup, reload, and resume.
 3. The active session path comes from `ctx.sessionManager.getSessionFile()`.
-4. Reconciliation is active session only: it indexes missing entries from the current active JSONL file.
-5. There is no background scan of all historical sessions in v1.
-6. Idempotence is required: reprocessing the same `sourceUri` + `entryId` must not create duplicate search hits.
+4. The active branch comes from `ctx.sessionManager.getBranch()`; abandoned branches in the same JSONL file are not indexed by the runtime extension.
+5. Reconciliation is active session only: it indexes missing entries from the current active JSONL file.
+6. There is no background scan of all historical sessions in v1.
+7. Idempotence is required: reprocessing the same `sourceUri` + `entryId` must not create duplicate search hits; message entries without an `entryId` are skipped.
 
 `session_start` is a catch-up boundary, not a global backfill job. It handles extension install/reload, resumed sessions, missed prior turns, and DB reset while keeping Pi JSONL authoritative.
 

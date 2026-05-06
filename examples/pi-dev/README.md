@@ -95,7 +95,8 @@ The default DB path is `~/.pi/pristine/pristine.db`; set `PRISTINE_DB_PATH` to u
 ## Reset
 
 ```bash
-rm -f "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"-*
+db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ```
 
 ## Known phrase verification

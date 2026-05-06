@@ -18,7 +18,8 @@ rsync -a --delete examples/pi-dev/search-session-history/. ~/projects/test-prist
 No state is stored by this skill. It follows pointers returned from the semantic index at `~/.pi/pristine/pristine.db` or `PRISTINE_DB_PATH`. Reset that semantic index with:
 
 ```bash
-rm -f "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"-*
+db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ```
 
 ## Known phrase verification

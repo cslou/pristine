@@ -63,5 +63,6 @@ Each result includes:
 Remove the local index DB and let `jsonl-index` rebuild it:
 
 ```bash
-rm -f "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"-*
+db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ```

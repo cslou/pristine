@@ -6,6 +6,8 @@ import {
   PI_JSONL_CHUNKS_TABLE,
   PI_JSONL_INDEX_TABLES,
   PI_JSONL_VECTOR_TABLE,
+  piJsonlChunkSelectList,
+  type PiJsonlIndexChunkRow,
 } from '../../shared/lib/pi-jsonl-index-schema.js';
 import { LocalNomicEmbedder, type PiJsonlEmbedder } from './local-embedder.js';
 
@@ -107,16 +109,7 @@ const REDACTED_SNIPPET =
 
 const scrubSnippet = (_snippet: string): string => REDACTED_SNIPPET;
 
-interface SearchRow {
-  readonly chunk_id: string;
-  readonly source_kind: 'pi-jsonl';
-  readonly source_uri: string;
-  readonly entry_id: string | null;
-  readonly parent_id: string | null;
-  readonly line_number: number | bigint;
-  readonly timestamp: string | null;
-  readonly cwd: string | null;
-  readonly snippet: string;
+interface SearchRow extends PiJsonlIndexChunkRow {
   readonly distance: number;
 }
 
@@ -269,15 +262,7 @@ export class PristinePiVectorSearcher {
   private runKnn(db: Database.Database, embedding: Buffer, limit: number): readonly SearchRow[] {
     return db
       .prepare(
-        `SELECT c.chunk_id,
-                c.source_kind,
-                c.source_uri,
-                c.entry_id,
-                c.parent_id,
-                c.line_number,
-                c.timestamp,
-                c.cwd,
-                c.snippet,
+        `SELECT ${piJsonlChunkSelectList('c')},
                 v.distance
          FROM ${PI_JSONL_VECTOR_TABLE} AS v
          JOIN ${PI_JSONL_CHUNKS_TABLE} AS c ON c.chunk_id = v.chunk_id
@@ -297,15 +282,7 @@ export class PristinePiVectorSearcher {
   ): readonly SearchRow[] {
     const rows: SearchRow[] = [];
     const statement = db.prepare(
-      `SELECT c.chunk_id,
-              c.source_kind,
-              c.source_uri,
-              c.entry_id,
-              c.parent_id,
-              c.line_number,
-              c.timestamp,
-              c.cwd,
-              c.snippet,
+      `SELECT ${piJsonlChunkSelectList('c')},
               v.embedding
        FROM ${PI_JSONL_CHUNKS_TABLE} AS c
        JOIN ${PI_JSONL_VECTOR_TABLE} AS v ON v.chunk_id = c.chunk_id

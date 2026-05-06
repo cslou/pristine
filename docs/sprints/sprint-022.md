@@ -317,7 +317,23 @@ Every story defines functional verification for its new behavior and targeted re
 > **Repo-local Pi smoke evidence:**
 >
 > - Working directory: `/Users/lou/projects/test-pristine` with repo-local files under `/Users/lou/projects/test-pristine/.pi`.
-> - Install/load command class: copy `examples/pi-dev/{shared,jsonl-index,search-memory}` into `.pi/extensions/`, copy `examples/pi-dev/search-session-history` into `.pi/skills/`, run `npm install --omit=dev` inside copied extension package directories, then launch Pi noninteractively from `/Users/lou/projects/test-pristine`. Pass output: `OK` with exit code `0`.
+> - Install/load commands:
+>
+>   ```bash
+>   cd /Users/lou/projects/test-pristine
+>   rm -rf .pi/extensions/{shared,jsonl-index,search-memory} .pi/skills/search-session-history
+>   mkdir -p .pi/extensions .pi/skills
+>   cp -R /Users/lou/projects/pristine/examples/pi-dev/shared .pi/extensions/shared
+>   cp -R /Users/lou/projects/pristine/examples/pi-dev/jsonl-index .pi/extensions/jsonl-index
+>   cp -R /Users/lou/projects/pristine/examples/pi-dev/search-memory .pi/extensions/search-memory
+>   cp -R /Users/lou/projects/pristine/examples/pi-dev/search-session-history .pi/skills/search-session-history
+>   (cd .pi/extensions/jsonl-index && npm install --omit=dev)
+>   (cd .pi/extensions/search-memory && npm install --omit=dev)
+>   pi -p "Reply exactly OK."
+>   ```
+>
+>   Pass output: `OK` with exit code `0`.
+>
 > - Known phrase: `sapphire-otter-lantern-six`.
 > - Source pointer returned by `pristine_vector_search`: `sourceUri=/Users/lou/.pi/agent/sessions/--Users-lou-projects-test-pristine--/2026-05-06T15-12-00-167Z_019dfdd8-8aa6-70db-a3b6-0dd969ecec1d.jsonl`, `entryId=514ef844`, `lineNumber=4`.
 > - `search-session-history` context output:
@@ -329,7 +345,17 @@ Every story defines functional verification for its new behavior and targeted re
 >   [line 7] assistant: OK
 >   ```
 >
-> - Rerunnable evidence grep: `rg "sapphire-otter-lantern-six|514ef844" ~/.pi/agent/sessions -g '*.jsonl'`.
+> - Rerunnable known-phrase/search commands:
+>
+>   ```bash
+>   cd /Users/lou/projects/test-pristine
+>   pi -p "This is a repo-local known phrase for Sprint 022 verification: sapphire-otter-lantern-six. Reply with OK."
+>   pi -p "Reply OK"
+>   pi -p "Use pristine_vector_search for sapphire-otter-lantern-six, then use search-session-history on the returned pointer. Return only the sourcePointer and nearby visible user/assistant context."
+>   rg "sapphire-otter-lantern-six|514ef844" ~/.pi/agent/sessions -g '*.jsonl'
+>   ```
+>
+>   Expected outputs: first two Pi commands include `OK`; search output includes `entryId=514ef844`, `lineNumber=4`, and the 4-line context block above.
 >
 > ## Verification delta
 >

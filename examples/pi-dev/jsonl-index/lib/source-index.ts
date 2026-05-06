@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
 import {
+  PI_JSONL_CHUNK_COLUMNS,
   PI_JSONL_CHUNKS_TABLE,
   PI_JSONL_VECTOR_TABLE,
 } from '../../shared/lib/pi-jsonl-index-schema.js';
@@ -236,9 +237,10 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON ${PI_JSONL_CHUNKS_TAB
 
   private writeChunks(items: readonly PendingChunk[]): readonly PiJsonlChunkRecord[] {
     if (items.length === 0) return [];
+    const insertColumns = PI_JSONL_CHUNK_COLUMNS.join(', ');
     const insertChunk = this.db.prepare(
       `INSERT OR IGNORE INTO ${PI_JSONL_CHUNKS_TABLE}
-         (chunk_id, source_kind, source_uri, entry_id, parent_id, line_number, timestamp, cwd, snippet, metadata_json)
+         (${insertColumns})
        VALUES (?, 'pi-jsonl', ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const deleteVector = this.db.prepare(`DELETE FROM ${PI_JSONL_VECTOR_TABLE} WHERE chunk_id = ?`);

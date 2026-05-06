@@ -85,19 +85,10 @@ const toEmbeddingBuffer = (vector: readonly number[]): Buffer => {
 
 const scoreFromDistance = (distance: number): number => 1 / (1 + distance);
 
-const scrubSnippet = (snippet: string): string =>
-  snippet
-    .replace(
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-      '[REDACTED PRIVATE KEY]',
-    )
-    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/g, 'Bearer [REDACTED]')
-    .replace(/\b(?:sk|ghp|github_pat)_[A-Za-z0-9_]{20,}\b/g, '[REDACTED TOKEN]')
-    .replace(/\bA[KS]IA[0-9A-Z]{16}\b/g, '[REDACTED AWS KEY]')
-    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[REDACTED EMAIL]')
-    .replace(/\b(?:\+?\d[\d(). -]{7,}\d)\b/g, '[REDACTED PHONE]')
-    .replace(/\b([A-Z][A-Z0-9_]{2,})=([^\s]{8,})/g, '$1=[REDACTED]')
-    .replace(/\b[A-Za-z0-9_/-]{32,}\b/g, '[REDACTED SECRET]');
+const REDACTED_SNIPPET =
+  '[snippet redacted by default; inspect sourcePointer with search-session-history]';
+
+const scrubSnippet = (_snippet: string): string => REDACTED_SNIPPET;
 
 interface SearchRow {
   readonly chunk_id: string;

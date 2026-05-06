@@ -103,7 +103,7 @@ describe('PristinePiVectorSearcher', () => {
     expect(result.results[0]).toMatchObject({
       rank: 1,
       chunkId: expect.any(String),
-      snippet: 'The sprint 022 known phrase sapphire bridge belongs here.',
+      snippet: '[snippet redacted by default; inspect sourcePointer with search-session-history]',
       sourcePointer: {
         sourceKind: 'pi-jsonl',
         sourceUri: '/tmp/session-a.jsonl',
@@ -197,7 +197,7 @@ describe('PristinePiVectorSearcher', () => {
     });
   });
 
-  it('redacts common secret patterns from returned snippets', async () => {
+  it('redacts returned snippets by default', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
     await seedDb(dbPath, [
@@ -212,7 +212,7 @@ describe('PristinePiVectorSearcher', () => {
     const result = await searcher.search({ query: 'sapphire token' });
 
     expect(result.results[0]?.snippet).toBe(
-      'Sapphire token Bearer [REDACTED] and [REDACTED EMAIL] should not leak.',
+      '[snippet redacted by default; inspect sourcePointer with search-session-history]',
     );
   });
 

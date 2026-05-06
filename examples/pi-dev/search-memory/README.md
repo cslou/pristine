@@ -41,7 +41,7 @@ Each result includes:
 - `rank`
 - `score`
 - `chunkId`
-- `snippet`
+- `snippet` — redacted by default to avoid sending raw Pi session text back into model context; use `sourcePointer` with `search-session-history` for bounded raw JSONL inspection.
 - `sourcePointer.sourceKind` = `pi-jsonl`
 - `sourcePointer.sourceUri`
 - `sourcePointer.entryId`
@@ -54,7 +54,7 @@ Each result includes:
 
 1. Use `jsonl-index` to index a session containing a unique phrase such as `known phrase sapphire bridge`.
 2. Ask Pi to call `pristine_vector_search` with `{ "query": "sapphire bridge", "limit": 5 }`.
-3. Pass condition: one result includes the known phrase snippet and a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`.
+3. Pass condition: one result ranks the known phrase chunk and returns a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`; the `snippet` field is redacted by default.
 4. Follow the pointer with `search-session-history` to inspect nearby raw JSONL context.
 
 ## Reset

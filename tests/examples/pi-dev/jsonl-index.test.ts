@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { registerJsonlIndexExtension } from '../../../examples/pi-dev/jsonl-index/index.js';
-import { resolvePiPristineDbPath } from '../../../examples/pi-dev/jsonl-index/src/db-path.js';
+import { resolvePiPristineDbPath } from '../../../examples/pi-dev/shared/src/db-path.js';
 import {
   createPiJsonlIndexRuntime,
   type PiExtensionContextLike,

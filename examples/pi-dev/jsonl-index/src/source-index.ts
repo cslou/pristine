@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
 import type { PiJsonlParsedMessage, PiJsonlSourcePointer } from './pi-jsonl-parser.js';
-import type { PiJsonlEmbedder } from './local-embedder.js';
+import type { PiJsonlEmbedder } from '../../shared/src/local-embedder.js';
 
 export interface PiJsonlChunkRecord {
   readonly chunkId: string;

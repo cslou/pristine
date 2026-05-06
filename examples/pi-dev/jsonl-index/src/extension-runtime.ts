@@ -1,5 +1,5 @@
-import { resolvePiPristineDbPath } from './db-path.js';
-import { LocalNomicEmbedder } from './local-embedder.js';
+import { resolvePiPristineDbPath } from '../../shared/src/db-path.js';
+import { LocalNomicEmbedder } from '../../shared/src/local-embedder.js';
 import { parsePiSessionJsonlFile } from './pi-jsonl-parser.js';
 import {
   createSqlitePiJsonlSourceIndexer,

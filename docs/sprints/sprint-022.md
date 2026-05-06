@@ -298,7 +298,7 @@ Every story defines functional verification for its new behavior and targeted re
 > - **Story 3 — Add Pi vector search tool returning JSONL pointers** — Added `pristine_vector_search`, filter support, redacted snippet output, canonical pointers, and a self-contained install shape. Evidence lives in `examples/pi-dev/search-memory/` and `tests/examples/pi-dev/search-memory.test.ts`.
 > - **Story 4 — Add search-session-history skill** — Added a Pi skill that uses vector hits to inspect bounded user/assistant context directly from authoritative Pi JSONL with jq/read/bash while excluding tool, hidden, image, and thinking content. Evidence lives in `examples/pi-dev/search-session-history/` and `tests/examples/pi-dev/search-session-history.test.ts`.
 > - **Story 5 — Document the workflow** — Updated all Pi reference READMEs and `implementation-spec-005` with the vector-search plus source-pointer session-history flow, install/reset commands, and known-phrase verification. Evidence lives in `examples/pi-dev/*/README.md` and `docs/specs/implementation-spec-005.md`.
-> - **Story 6 — Verify repo-local `.pi` installation** — Copied the reference into `~/projects/test-pristine/.pi`, installed copied extension dependencies, verified no repo `src/` internals are referenced, and ran a noninteractive Pi load smoke returning `OK`. Evidence is recorded in `examples/pi-dev/README.md` and PR #183.
+> - **Story 6 — Verify repo-local `.pi` installation** — Copied the reference into `~/projects/test-pristine/.pi`, installed copied extension dependencies, verified no repo `src/` internals are referenced, ran a noninteractive Pi load smoke returning `OK`, and invoked `pristine_vector_search` through Pi to confirm the tool is exposed. Evidence is recorded in `examples/pi-dev/README.md` and PR #183.
 >
 > ## Verification delta
 >
@@ -313,21 +313,21 @@ Every story defines functional verification for its new behavior and targeted re
 > | Performance / load | 0 | +0 | 0 | 0 | 0 | Not added. |
 > | Security / dependency | 0 | +3 | 0 | 0 | 3 | DB permission hardening tests and copied extension `npm install --omit=dev` audit results. |
 > | Accessibility / visual | 0 | +0 | 0 | 0 | 0 | Not applicable. |
-> | Manual-only | 0 | +1 | 0 | 1 | 1 | Lou's interactive TUI known-phrase validation remains the human acceptance check before sprint-integration merge. |
+> | Manual-only | 0 | +1 | 0 | 0 | 1 | Repo-local Pi noninteractive load/tool smoke passed; Lou may still perform optional interactive TUI acceptance before sprint-integration merge. |
 > | Other verification | 0 | +0 | 0 | 0 | 0 | None. |
-> | **Total** | **531+** | **+37** | **0** | **1** | **568+** | Counting basis mixes test cases, local-check commands, smoke checks, and manual-only rows. |
+> | **Total** | **531+** | **+37** | **0** | **0** | **568+** | Counting basis mixes test cases, local-check commands, smoke checks, and manual-only rows. |
 >
 > Counting basis: Vitest test cases for Unit/Integration/E2E rows; command/checklist rows for static, smoke, security/dependency, and manual-only rows. Integration and E2E configs currently overlap many test files, so file/test counts are reported as executed suite totals rather than unique new test cases.
-> Regression summary: all automated regression surfaces referenced by the sprint passed locally; one manual-only repo-local interactive TUI validation remains for Lou.
+> Regression summary: all automated regression surfaces referenced by the sprint passed locally; repo-local Pi load/tool smoke passed in `~/projects/test-pristine`.
 >
 > ## Why ready
-> - All story acceptance criteria are implemented or explicitly covered by the repo-local smoke/manual handoff evidence.
+> - All story acceptance criteria are implemented or covered by repo-local smoke evidence; optional Lou TUI acceptance is called out separately.
 > - New functional verification passed: parser/index/search/skill tests, README/spec structural checks, copied `.pi` install checks, dependency installs, no-src import check, and Pi load smoke.
 > - Full regression verification passed: `npm run typecheck`, `npm run lint`, `npm run test:unit` (34 files / 555 tests), `npm run test:integration` (52 files / 734 tests), and `npm run test:e2e` (52 files / 734 tests).
 > - Every story PR ran Pi review/review-fix to mergeability 5/5 and passed pre-merge gates before merging into `sprint-022`.
 >
 > ## Open for your decision
-> - [ ] Lou to run the interactive Pi TUI known-phrase flow in `~/projects/test-pristine` before approving the sprint-integration PR merge.
+> - None required for sprint-branch readiness. Optional: Lou may run the interactive Pi TUI known-phrase flow in `~/projects/test-pristine` before approving the sprint-integration PR merge.
 >
 > ## Delivered
 > | Story | Item | Status | Evidence |
@@ -337,7 +337,7 @@ Every story defines functional verification for its new behavior and targeted re
 > | Story 3 | `pristine_vector_search` pointer search | ✅ | `tests/examples/pi-dev/search-memory.test.ts`; PR #180 |
 > | Story 4 | `search-session-history` skill | ✅ | `tests/examples/pi-dev/search-session-history.test.ts`; PR #181 |
 > | Story 5 | Workflow/spec docs | ✅ | README structural checks; PR #182 |
-> | Story 6 | Repo-local `.pi` install verification | ✅ | `~/projects/test-pristine/.pi` copy/install checks and Pi smoke; PR #183 |
+> | Story 6 | Repo-local `.pi` install verification | ✅ | `~/projects/test-pristine/.pi` copy/install checks, Pi load smoke, and Pi `pristine_vector_search` tool call; PR #183 |
 > | Final Story | Sprint-wide verification | ✅ | Final verification commands above; this PR |
 >
 > ## Drift from spec

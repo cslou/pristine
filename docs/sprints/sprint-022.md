@@ -123,7 +123,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
   - [x] `examples/pi-dev/search-memory/` contains the `pristine_vector_search` tool. Tool schema includes `query` non-empty string, optional filters `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestampFrom`, `timestampTo`, and `cwd`, plus `limit` default `5`, min `1`, max `20`.
-  - [x] Tool returns snippet, score/rank, chunk ID, and canonical Pi source pointer fields either directly or under `sourcePointer`: `sourceKind: 'pi-jsonl'`, `sourceUri`, optional `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd` when available.
+  - [x] Tool returns a redacted snippet field, score/rank, chunk ID, and canonical Pi source pointer fields either directly or under `sourcePointer`: `sourceKind: 'pi-jsonl'`, `sourceUri`, optional `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd` when available.
   - [x] Empty query, invalid limit, unavailable DB, and empty index produce clear errors or empty result messages.
 - **Functional verification:**
   - [x] Seed temporary DB with Pi JSONL-derived chunks. **Pass condition:** semantic query returns expected chunk with JSONL pointer fields.

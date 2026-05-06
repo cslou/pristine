@@ -75,7 +75,9 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
     this.initMetadataTables();
   }
 
-  public async indexMessages(messages: readonly PiJsonlParsedMessage[]): Promise<PiJsonlIndexResult> {
+  public async indexMessages(
+    messages: readonly PiJsonlParsedMessage[],
+  ): Promise<PiJsonlIndexResult> {
     if (messages.length === 0) return { indexed: 0, skippedDuplicate: 0, chunks: [] };
 
     const firstSeen = new Set<string>();
@@ -91,16 +93,21 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
       candidates.push(message);
     }
 
-    const vectors = await this.embedder.embedBatch(candidates.map((message) => message.text));
-    if (vectors.length !== candidates.length) {
+    const existing = this.loadExistingSourceKeys(candidates);
+    const newCandidates = candidates.filter(
+      (message) => !existing.has(`${message.pointer.sourceUri}\0${message.pointer.entryId}`),
+    );
+
+    const vectors = await this.embedder.embedBatch(newCandidates.map((message) => message.text));
+    if (vectors.length !== newCandidates.length) {
       throw new Error(
-        `Pi JSONL indexer expected ${candidates.length} embeddings, got ${vectors.length}`,
+        `Pi JSONL indexer expected ${newCandidates.length} embeddings, got ${vectors.length}`,
       );
     }
 
     const pending: PendingChunk[] = [];
-    for (let index = 0; index < candidates.length; index++) {
-      const message = candidates[index];
+    for (let index = 0; index < newCandidates.length; index++) {
+      const message = newCandidates[index];
       const vector = vectors[index];
       if (message === undefined || vector === undefined) continue;
       this.ensureVectorTable(vector.length);
@@ -118,7 +125,12 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
     const written = this.writeChunks(pending);
     return {
       indexed: written.length,
-      skippedDuplicate: duplicateInBatch + pending.length - written.length,
+      skippedDuplicate:
+        duplicateInBatch +
+        candidates.length -
+        newCandidates.length +
+        pending.length -
+        written.length,
       chunks: written,
     };
   }
@@ -194,6 +206,18 @@ CREATE INDEX IF NOT EXISTS ix_pi_jsonl_chunks_timestamp ON pi_jsonl_chunks(times
       )
       .get() as { present: number } | undefined;
     return row !== undefined;
+  }
+
+  private loadExistingSourceKeys(messages: readonly PiJsonlParsedMessage[]): Set<string> {
+    const sourceUris = [...new Set(messages.map((message) => message.pointer.sourceUri))];
+    if (sourceUris.length === 0) return new Set();
+    const placeholders = sourceUris.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT source_uri, entry_id FROM pi_jsonl_chunks WHERE source_uri IN (${placeholders})`,
+      )
+      .all(...sourceUris) as { source_uri: string; entry_id: string }[];
+    return new Set(rows.map((row) => `${row.source_uri}\0${row.entry_id}`));
   }
 
   private writeChunks(items: readonly PendingChunk[]): readonly PiJsonlChunkRecord[] {

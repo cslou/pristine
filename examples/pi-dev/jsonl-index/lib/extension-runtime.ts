@@ -94,7 +94,8 @@ const notify = (
 ): void => {
   try {
     ctx.ui?.notify(message, level);
-  } catch {
+  } catch (error: unknown) {
+    void error;
     // Pi can mark event contexts stale during non-interactive session replacement.
     // Indexing should not fail only because the optional UI notification could not render.
   }

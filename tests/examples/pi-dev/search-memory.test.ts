@@ -193,8 +193,37 @@ describe('PristinePiVectorSearcher', () => {
       searcher.search({ query: 'sapphire', sourceUri: '/tmp/missing.jsonl' }),
     ).resolves.toMatchObject({
       results: [],
-      message: 'No Pristine Pi vector hits found.',
+      message: 'No Pristine Pi vector hits matched the provided filters.',
     });
+  });
+
+  it('finds filtered hits outside the unfiltered top-k', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'pristine.db');
+    await seedDb(dbPath, [
+      message({
+        text: 'Amber exact nearest global hit.',
+        sourceUri: '/tmp/session-a.jsonl',
+        entryId: 'entry-a',
+        lineNumber: 3,
+      }),
+      message({
+        text: 'Cedar filtered hit farther from amber.',
+        sourceUri: '/tmp/session-b.jsonl',
+        entryId: 'entry-b',
+        lineNumber: 4,
+      }),
+    ]);
+
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    const result = await searcher.search({
+      query: 'amber',
+      sourceUri: '/tmp/session-b.jsonl',
+      limit: 1,
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]?.sourcePointer.entryId).toBe('entry-b');
   });
 
   it('redacts returned snippets by default', async () => {

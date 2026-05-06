@@ -203,10 +203,16 @@ export class PristinePiVectorSearcher {
         };
       }
       const filter = buildFilterWhere(input);
+      const filteredCandidateCount = this.countFilteredCandidates(db, filter);
+      if (filteredCandidateCount === 0) {
+        return { results: [], message: 'No Pristine Pi vector hits matched the provided filters.' };
+      }
 
       const vector = await this.embedder.embed(query);
       const embedding = toEmbeddingBuffer(vector);
-      const rows = this.runKnn(db, embedding, limit, filter);
+      const totalCandidateCount =
+        filteredCandidateCount === undefined ? undefined : this.countAllCandidates(db);
+      const rows = this.runKnn(db, embedding, limit, filter, totalCandidateCount);
       return {
         results: rows.map(mapSearchRow),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
@@ -216,13 +222,36 @@ export class PristinePiVectorSearcher {
     }
   }
 
+  private countFilteredCandidates(
+    db: Database.Database,
+    filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
+  ): number | undefined {
+    if (filter.clauses.length === 0) return undefined;
+    const row = db
+      .prepare(
+        `SELECT count(*) AS count FROM pi_jsonl_chunks WHERE ${filter.clauses.join(' AND ')}`,
+      )
+      .get(...filter.params) as { count: number };
+    return row.count;
+  }
+
+  private countAllCandidates(db: Database.Database): number {
+    const row = db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get() as {
+      count: number;
+    };
+    return row.count;
+  }
+
   private runKnn(
     db: Database.Database,
     embedding: Buffer,
     limit: number,
     filter: { readonly clauses: readonly string[]; readonly params: readonly unknown[] },
+    totalCandidateCount: number | undefined,
   ): readonly SearchRow[] {
-    const params: unknown[] = [embedding, limit, ...filter.params];
+    const knnLimit =
+      totalCandidateCount === undefined ? limit : Math.max(limit, totalCandidateCount);
+    const params: unknown[] = [embedding, knnLimit, ...filter.params];
     const candidatePredicate =
       filter.clauses.length === 0
         ? ''

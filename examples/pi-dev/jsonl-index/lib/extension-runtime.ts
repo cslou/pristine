@@ -42,7 +42,10 @@ export interface PiExtensionContextLike {
   readonly ui?: PiUiLike;
 }
 
-const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | undefined => {
+const activeEntryIdsFrom = (
+  ctx: PiExtensionContextLike,
+  trigger: string,
+): ReadonlySet<string> | undefined => {
   const branch = ctx.sessionManager.getBranch?.();
   if (branch === undefined) return undefined;
 
@@ -50,6 +53,7 @@ const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | 
   for (const entry of branch) {
     if (typeof entry.id === 'string' && entry.id.length > 0) ids.add(entry.id);
   }
+  if (ids.size === 0 && trigger === 'agent_end') return undefined;
   return ids;
 };
 
@@ -118,7 +122,7 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
         return { ok: true, indexed: 0, skippedDuplicate: 0 };
       }
 
-      const activeEntryIds = activeEntryIdsFrom(ctx);
+      const activeEntryIds = activeEntryIdsFrom(ctx, trigger);
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
       }

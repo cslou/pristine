@@ -222,16 +222,16 @@ Every story defines functional verification for its new behavior and targeted re
   - [x] Create or reuse `~/projects/test-pristine` as a disposable non-production repo with `.pi/` directory.
   - [x] Copy/install `examples/pi-dev/` reference artifacts into Pi-discovered repo-local paths under `~/projects/test-pristine/.pi/extensions/` and `~/projects/test-pristine/.pi/skills/` using the documented commands.
   - [x] Launch Pi non-interactively from `~/projects/test-pristine` with copied `jsonl-index`, `search-memory`, and `search-session-history` paths and verify startup succeeds.
-  - [x] Invoke `pristine_vector_search` through Pi from `~/projects/test-pristine` and verify the tool is exposed with a structured result; known-phrase indexing/search behavior remains covered by automated parser/index/search/skill tests.
+  - [x] Type a known unique phrase in repo-local Pi, reconcile the saved session, run `pristine_vector_search`, and inspect surrounding context with `search-session-history`.
   - [x] Record install/runtime gotchas back into `examples/pi-dev/README.md`, or explicitly record `Install/runtime gotchas: None` after verification.
 - **Functional verification:**
   - [x] Execute the documented repo-local copy/install commands for `.pi/extensions/{shared,jsonl-index,search-memory}` and `.pi/skills/search-session-history`, then launch Pi from `~/projects/test-pristine` with the copied extension/skill paths. **Pass condition:** Pi startup exits 0 and returns `OK`.
-  - [x] Execute a repo-local `pristine_vector_search` tool-call smoke from Pi. **Pass condition:** Pi returns the tool's structured empty-index message instead of an unknown-tool/load failure.
+  - [x] Execute repo-local known-phrase verification from Pi: create a saved session containing `sapphire-otter-lantern-four`, reopen it with `jsonl-index` to reconcile, run `pristine_vector_search`, then run `search-session-history` on returned `entryId` `246d4473`. **Pass condition:** vector search returns the known phrase pointer and search-session-history returns nearby user/assistant context.
   - [x] Run `grep -q 'Install/runtime gotchas:' examples/pi-dev/README.md`. **Pass condition:** README records concrete gotchas or `Install/runtime gotchas: None`.
 - **Regression verification:**
   - [x] Verify copied files do not import this repo's `src/` internals. **Pass condition:** `rg '\.\./src|/src/' ~/projects/test-pristine/.pi` exits 1.
   - [x] Run `npm run typecheck`, `npm run lint`, and `npm run test:unit -- tests/examples/pi-dev/`. **Pass condition:** all exit 0.
-- **Manual-only verification:** Repo-local Pi load/tool smoke was run non-interactively. Optional Lou TUI known-phrase validation remains a human acceptance check before sprint-integration merge, not a blocker for sprint-branch readiness.
+- **Manual-only verification:** Repo-local Pi known-phrase indexing/search/session-history verification was run non-interactively through the Pi CLI. Optional Lou TUI validation remains a human acceptance check before sprint-integration merge, not a blocker for sprint-branch readiness.
 - **Planned commits:**
   1. `test(pi): verify repo-local installation workflow`
   2. `docs(pi): record repo-local install notes`
@@ -260,7 +260,7 @@ Every story defines functional verification for its new behavior and targeted re
 - **Regression verification:**
   - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
   - [x] Run the full available regression verification suite and record pass/fail evidence.
-- **Manual-only verification:** Includes Story 6 repo-local Pi install/load smoke and `pristine_vector_search` tool invocation evidence; optional Lou interactive TUI validation is documented in `## Final Review`.
+- **Manual-only verification:** Includes Story 6 repo-local Pi install/load smoke, `pristine_vector_search` known-phrase result, and `search-session-history` context evidence; optional Lou interactive TUI validation is documented in `## Final Review`.
 - **Planned commits:**
   1. `docs(sprint-022): record final verification and completion`
 - **Technical notes:** Use `workflow-prompts/handle-sprint-completion.md` for final completion message shape.
@@ -298,7 +298,7 @@ Every story defines functional verification for its new behavior and targeted re
 > - **Story 3 — Add Pi vector search tool returning JSONL pointers** — Added `pristine_vector_search`, filter support, redacted snippet output, canonical pointers, and a self-contained install shape. Evidence lives in `examples/pi-dev/search-memory/` and `tests/examples/pi-dev/search-memory.test.ts`.
 > - **Story 4 — Add search-session-history skill** — Added a Pi skill that uses vector hits to inspect bounded user/assistant context directly from authoritative Pi JSONL with jq/read/bash while excluding tool, hidden, image, and thinking content. Evidence lives in `examples/pi-dev/search-session-history/` and `tests/examples/pi-dev/search-session-history.test.ts`.
 > - **Story 5 — Document the workflow** — Updated all Pi reference READMEs and `implementation-spec-005` with the vector-search plus source-pointer session-history flow, install/reset commands, and known-phrase verification. Evidence lives in `examples/pi-dev/*/README.md` and `docs/specs/implementation-spec-005.md`.
-> - **Story 6 — Verify repo-local `.pi` installation** — Copied the reference into `~/projects/test-pristine/.pi`, installed copied extension dependencies, verified no repo `src/` internals are referenced, ran a noninteractive Pi load smoke returning `OK`, and invoked `pristine_vector_search` through Pi to confirm the tool is exposed. Evidence is recorded in `examples/pi-dev/README.md` and PR #183.
+> - **Story 6 — Verify repo-local `.pi` installation** — Copied the reference into `~/projects/test-pristine/.pi`, installed copied extension dependencies, verified no repo `src/` internals are referenced, ran a noninteractive Pi load smoke returning `OK`, indexed a saved known-phrase session, retrieved it with `pristine_vector_search`, and inspected it with `search-session-history`. Evidence is recorded in `examples/pi-dev/README.md` and PR #183.
 >
 > ## Verification delta
 >
@@ -313,12 +313,12 @@ Every story defines functional verification for its new behavior and targeted re
 > | Performance / load | 0 | +0 | 0 | 0 | 0 | Not added. |
 > | Security / dependency | 0 | +3 | 0 | 0 | 3 | DB permission hardening tests and copied extension `npm install --omit=dev` audit results. |
 > | Accessibility / visual | 0 | +0 | 0 | 0 | 0 | Not applicable. |
-> | Manual-only | 0 | +1 | 0 | 0 | 1 | Repo-local Pi noninteractive load/tool smoke passed; Lou may still perform optional interactive TUI acceptance before sprint-integration merge. |
+> | Manual-only | 0 | +1 | 0 | 0 | 1 | Repo-local Pi known-phrase indexing/search/session-history smoke passed; Lou may still perform optional interactive TUI acceptance before sprint-integration merge. |
 > | Other verification | 0 | +0 | 0 | 0 | 0 | None. |
 > | **Total** | **531+** | **+37** | **0** | **0** | **568+** | Counting basis mixes test cases, local-check commands, smoke checks, and manual-only rows. |
 >
 > Counting basis: Vitest test cases for Unit/Integration/E2E rows; command/checklist rows for static, smoke, security/dependency, and manual-only rows. Integration and E2E configs currently overlap many test files, so file/test counts are reported as executed suite totals rather than unique new test cases.
-> Regression summary: all automated regression surfaces referenced by the sprint passed locally; repo-local Pi load/tool smoke passed in `~/projects/test-pristine`.
+> Regression summary: all automated regression surfaces referenced by the sprint passed locally; repo-local Pi known-phrase indexing/search/session-history smoke passed in `~/projects/test-pristine`.
 >
 > ## Why ready
 > - All story acceptance criteria are implemented or covered by repo-local smoke evidence; optional Lou TUI acceptance is called out separately.
@@ -337,7 +337,7 @@ Every story defines functional verification for its new behavior and targeted re
 > | Story 3 | `pristine_vector_search` pointer search | ✅ | `tests/examples/pi-dev/search-memory.test.ts`; PR #180 |
 > | Story 4 | `search-session-history` skill | ✅ | `tests/examples/pi-dev/search-session-history.test.ts`; PR #181 |
 > | Story 5 | Workflow/spec docs | ✅ | README structural checks; PR #182 |
-> | Story 6 | Repo-local `.pi` install verification | ✅ | `~/projects/test-pristine/.pi` copy/install checks, Pi load smoke, and Pi `pristine_vector_search` tool call; PR #183 |
+> | Story 6 | Repo-local `.pi` install verification | ✅ | `~/projects/test-pristine/.pi` copy/install checks, Pi load smoke, Pi `pristine_vector_search` known-phrase result, and `search-session-history` context; PR #183 |
 > | Final Story | Sprint-wide verification | ✅ | Final verification commands above; this PR |
 >
 > ## Drift from spec

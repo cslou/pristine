@@ -180,7 +180,7 @@ describe('Pi JSONL index extension reference', () => {
     });
   });
 
-  it('does not treat an empty branch list as permission to delete or index all session rows', async () => {
+  it('does not treat an empty session-start branch list as permission to delete or index all session rows', async () => {
     const db = new Database(join(await makeTempDir(), 'pristine.db'));
     const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder: new StubEmbedder() });
     const runtime = createPiJsonlIndexRuntime({ indexer });
@@ -194,6 +194,20 @@ describe('Pi JSONL index extension reference', () => {
     );
 
     expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
+  });
+
+  it('treats an empty agent_end branch list as unavailable branch data', async () => {
+    const indexer = new CapturingIndexer();
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+
+    await runtime.indexAfterAgentEnd(makeCtx({ sessionFile: fixturePath, branchIds: [] }));
+
+    expect(indexer.batches).toHaveLength(1);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
+      'u0000001',
+      'a0000002',
+      'u0000004',
+    ]);
   });
 
   it('uses agent_end to index completed active-branch user/assistant entries and skip ignored roles', async () => {

@@ -1,8 +1,9 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
+import { registerJsonlIndexExtension } from '../../../examples/pi-dev/jsonl-index/index.js';
 import { resolvePiPristineDbPath } from '../../../examples/pi-dev/jsonl-index/src/db-path.js';
 import {
   createPiJsonlIndexRuntime,
@@ -10,6 +11,7 @@ import {
 } from '../../../examples/pi-dev/jsonl-index/src/extension-runtime.js';
 import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/jsonl-index/src/pi-jsonl-parser.js';
 import {
+  openPiJsonlIndexDatabase,
   SqlitePiJsonlSourceIndexer,
   type PiJsonlSourceIndexer,
 } from '../../../examples/pi-dev/jsonl-index/src/source-index.js';
@@ -17,7 +19,6 @@ import {
 const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
 
 class StubEmbedder {
-  public readonly dim = 3;
   public readonly texts: string[] = [];
 
   public async embed(text: string): Promise<readonly number[]> {
@@ -38,6 +39,10 @@ class CapturingIndexer implements PiJsonlSourceIndexer {
     if (this.fail) throw new Error('mock embed failure');
     (this.batches as PiJsonlParsedMessage[][]).push([...messages]);
     return { indexed: messages.length, skippedDuplicate: 0, chunks: [] };
+  }
+
+  public reconcileActiveEntries(): void {
+    // Test double only needs to prove the runtime calls this before indexing.
   }
 }
 
@@ -136,7 +141,7 @@ describe('Pi JSONL index extension reference', () => {
     expect(notifications.at(-1)).toContain('success:Pristine indexed 3 Pi JSONL entries');
   });
 
-  it('deduplicates reprocessing by stable source pointer', async () => {
+  it('removes stale active-branch rows and deduplicates reprocessing by stable source pointer', async () => {
     const db = new Database(join(await makeTempDir(), 'pristine.db'));
     const indexer = new SqlitePiJsonlSourceIndexer({ db, embedder: new StubEmbedder() });
     const runtime = createPiJsonlIndexRuntime({ indexer });
@@ -151,6 +156,17 @@ describe('Pi JSONL index extension reference', () => {
       skippedDuplicate: 2,
     });
     expect(db.prepare('SELECT count(*) AS count FROM pi_jsonl_chunks').get()).toEqual({ count: 2 });
+
+    await runtime.reconcileOnSessionStart(
+      makeCtx({ sessionFile: fixturePath, branchIds: ['u0000001'] }),
+      'resume',
+    );
+    expect(db.prepare('SELECT entry_id FROM pi_jsonl_chunks ORDER BY entry_id').all()).toEqual([
+      { entry_id: 'u0000001' },
+    ]);
+    expect(db.prepare('SELECT count(*) AS count FROM vec_pi_jsonl_chunks').get()).toEqual({
+      count: 1,
+    });
   });
 
   it('uses agent_end to index completed active-branch user/assistant entries and skip ignored roles', async () => {
@@ -181,6 +197,74 @@ describe('Pi JSONL index extension reference', () => {
     expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
     expect(indexer.batches[1]?.map((message) => message.pointer.entryId)).toEqual(['u0000004']);
     expect(notifications.every((message) => message.includes('Pristine indexed 1'))).toBe(true);
+  });
+
+  it('registers Pi extension lifecycle handlers and lazily forwards valid contexts', async () => {
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void> | void>();
+    const calls: string[] = [];
+    registerJsonlIndexExtension(
+      {
+        on: (event, handler) => handlers.set(event, handler),
+      },
+      () => ({
+        indexAfterAgentEnd: async () => {
+          calls.push('agent_end');
+          return { ok: true, indexed: 0, skippedDuplicate: 0 };
+        },
+        reconcileOnSessionStart: async (_ctx, reason) => {
+          calls.push(`session_start:${reason}`);
+          return { ok: true, indexed: 0, skippedDuplicate: 0 };
+        },
+        close: () => calls.push('session_shutdown'),
+      }),
+    );
+
+    const ctx = makeCtx({ sessionFile: fixturePath, branchIds: [] });
+    await handlers.get('agent_end')?.({}, ctx);
+    await handlers.get('session_start')?.({ reason: 'reload' }, ctx);
+    handlers.get('session_shutdown')?.({}, ctx);
+
+    expect(calls).toEqual(['agent_end', 'session_start:reload', 'session_shutdown']);
+  });
+
+  it('surfaces lazy initialization failures through Pi notifications', async () => {
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void> | void>();
+    const notifications: string[] = [];
+    registerJsonlIndexExtension(
+      {
+        on: (event, handler) => handlers.set(event, handler),
+      },
+      () => {
+        throw new Error('db init failed');
+      },
+    );
+
+    await handlers.get('agent_end')?.({}, makeCtx({ sessionFile: fixturePath, notifications }));
+
+    expect(notifications).toEqual([
+      'error:Pristine Pi JSONL index failed to initialize: db init failed',
+    ]);
+  });
+
+  it('creates the index database with owner-only permissions on Unix', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'secure.db');
+    const db = openPiJsonlIndexDatabase(dbPath);
+    db.close();
+
+    if (process.platform !== 'win32') {
+      const mode = (await stat(dbPath)).mode & 0o777;
+      expect(mode & 0o077).toBe(0);
+    }
+  });
+
+  it('rejects insecure existing index directories on Unix', async () => {
+    if (process.platform === 'win32') return;
+    const dir = await makeTempDir();
+    await chmod(dir, 0o755);
+    expect(() => new Database(join(dir, 'insecure.db'))).not.toThrow();
+    await rm(join(dir, 'insecure.db'), { force: true });
+    expect(() => openPiJsonlIndexDatabase(join(dir, 'insecure.db'))).toThrow(/must be private/);
   });
 
   it('surfaces deterministic Pi-facing errors and does not report success on failure', async () => {

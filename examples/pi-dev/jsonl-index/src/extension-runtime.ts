@@ -61,7 +61,16 @@ const notify = (
   ctx.ui?.notify(message, level);
 };
 
-export class PiJsonlIndexRuntime {
+export interface PiJsonlIndexRuntimeLike {
+  indexAfterAgentEnd(ctx: PiExtensionContextLike): Promise<PiJsonlIndexRuntimeResult>;
+  reconcileOnSessionStart(
+    ctx: PiExtensionContextLike,
+    reason: PiLifecycleReason,
+  ): Promise<PiJsonlIndexRuntimeResult>;
+  close(): void;
+}
+
+export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
   private readonly indexer: PiJsonlSourceIndexer;
 
   public constructor(config: PiJsonlIndexRuntimeConfig = {}) {
@@ -99,8 +108,12 @@ export class PiJsonlIndexRuntime {
     }
 
     try {
+      const activeEntryIds = activeEntryIdsFrom(ctx);
+      if (activeEntryIds !== undefined) {
+        this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
+      }
       const parsed = await parsePiSessionJsonlFile(sessionFile, {
-        activeEntryIds: activeEntryIdsFrom(ctx),
+        activeEntryIds,
       });
       const result: PiJsonlIndexResult = await this.indexer.indexMessages(parsed);
       notify(
@@ -119,6 +132,9 @@ export class PiJsonlIndexRuntime {
       notify(ctx, `Pristine Pi JSONL index failed (${trigger}): ${message}`, 'error');
       return { ok: false, sessionFile, indexed: 0, skippedDuplicate: 0, error: message };
     }
+  }
+  public close(): void {
+    this.indexer.close?.();
   }
 }
 

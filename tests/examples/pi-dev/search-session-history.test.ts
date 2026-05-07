@@ -96,6 +96,11 @@ describe('search-session-history skill', () => {
 
     expect(text).toContain('allowed-tools: pristine_vector_search bash read');
     expect(text).toContain('pristine_vector_search');
+    expect(text).toContain('Pointer-known mode');
+    expect(text).toContain('Do not search globally');
+    expect(text).toContain('Inspect only `sourcePointer.sourceUri`');
+    expect(text).toContain('Global grep fallback');
+    expect(text).toContain('Use `rg` only inside `$SOURCE_URI`');
     expect(text).toContain('jq');
     expect(text).toContain('user/assistant');
     expect(text).toContain('5 user/assistant natural-language messages before');

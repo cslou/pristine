@@ -10,12 +10,31 @@ Use this skill when the user asks about prior Pi session history, previous decis
 
 ## Workflow
 
-1. If the target session/pointer is unknown, call `pristine_vector_search` first with the user's semantic query.
+This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_vector_search` is the discovery layer; `search-session-history` inspects the authoritative Pi JSONL file named by the returned pointer.
+
+### Pointer-known mode
+
+Use this mode when the user or a prior `pristine_vector_search` result provides a `sourcePointer`.
+
+1. Do not search globally. Inspect only `sourcePointer.sourceUri`.
+2. Validate that `sourcePointer.sourceUri` exists and that either `entryId` or `lineNumber` is present.
+3. Use `rg` only inside `$SOURCE_URI` for exact pointer validation, not for history discovery.
+4. Use `jq` on `$SOURCE_URI` to locate the pointed visible message and extract bounded context.
+5. Default bounded context: 5 user/assistant natural-language messages before the hit and 10 after. Do not dump entire session files unless the user explicitly asks.
+6. Exclude tool results, hidden custom/context messages, system content, images, thinking blocks, and non-text blocks before selecting the 5/10-message context window.
+7. Summarize the surrounding user/assistant context and cite the `sourceUri`, `entryId`, and/or `lineNumber` used.
+
+### Pointer-unknown mode
+
+Use this mode when the target session/pointer is unknown.
+
+1. Call `pristine_vector_search` first with the user's semantic query.
 2. Pick the best hit with a usable `sourcePointer.sourceUri` plus either `lineNumber` or `entryId`.
-3. Inspect Pi's authoritative JSONL file directly with existing Pi tools (`bash`, `read`, grep, jq). Do not ask Pristine for raw transcript storage.
-4. Default bounded context: 5 user/assistant natural-language messages before the hit and 10 after. Do not dump entire session files unless the user explicitly asks.
-5. Exclude tool results, hidden custom/context messages, system content, images, thinking blocks, and non-text blocks before selecting the 5/10-message context window.
-6. Summarize the surrounding user/assistant context and cite the `sourceUri`, `entryId`, and/or `lineNumber` used.
+3. Switch immediately to pointer-known mode.
+
+### Global grep fallback
+
+Do not run broad `rg`/grep over `~/.pi/agent/sessions` after a usable `sourcePointer` is available. Broad session scans are fallback-only and allowed only when vector search is unavailable, the index is empty, the pointer file is missing and no alternate hit exists, you are debugging index correctness, or the user explicitly asks for raw exact grep.
 
 ## Pointer checks
 

@@ -72,12 +72,12 @@ If discovery is disabled or you want explicit settings, add paths like this to t
 
 ```json
 {
-  "extensions": ["./.pi/extensions/jsonl-index", "./.pi/extensions/search-memory"],
-  "skills": ["./.pi/skills/search-session-history"]
+  "extensions": ["./extensions/jsonl-index", "./extensions/search-memory"],
+  "skills": ["./skills/search-session-history"]
 }
 ```
 
-Do not add `.pi/extensions/shared` as an extension. It is shared code imported by the extension packages, not a Pi extension entry point.
+Project `.pi/settings.json` paths are relative to the `.pi` directory. Do not add `.pi/extensions/shared` as an extension. It is shared code imported by the extension packages, not a Pi extension entry point.
 
 ## Embedding model and Nomic warmup
 

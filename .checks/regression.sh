@@ -70,7 +70,7 @@ run_check() {
 
   local check_start=$SECONDS
   set +e
-  bash -lc "$command"
+  bash -c "$command"
   local status=$?
   set -e
   local duration=$((SECONDS - check_start))
@@ -116,6 +116,8 @@ run_full() {
   run_check "indexer-real-model-smoke" "E2E / smoke" "npx tsx scripts/smoke-indexer.ts"
 }
 
+ROUTINE_EMPTY=0
+
 case "$TIER" in
   quick)
     run_quick
@@ -137,6 +139,7 @@ case "$TIER" in
     run_full
     ;;
   routine)
+    ROUTINE_EMPTY=1
     echo "Routine checks: none configured"
     skip_check "maintenance" "Other verification" "not configured"
     ;;
@@ -144,7 +147,12 @@ esac
 
 DURATION=$((SECONDS - START_SECONDS))
 
-if [[ $FAILED -eq 0 ]]; then
+if [[ $FAILED -eq 0 && $ROUTINE_EMPTY -eq 1 ]]; then
+  STATUS="yellow"
+  SCORE="3/5"
+  NEXT_ACTION="No routine checks configured"
+  EXIT_CODE=0
+elif [[ $FAILED -eq 0 ]]; then
   STATUS="green"
   SCORE="5/5"
   NEXT_ACTION="Ready for next gate"

@@ -205,6 +205,23 @@ describe('Pi JSONL index extension reference', () => {
     );
   });
 
+  it('keeps missing active-session files visible for non-startup triggers', async () => {
+    const indexer = new CapturingIndexer();
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+    const notifications: string[] = [];
+    const missingSessionFile = join(await makeTempDir(), 'missing-agent-end.jsonl');
+
+    const result = await runtime.indexAfterAgentEnd(
+      makeCtx({ sessionFile: missingSessionFile, branchIds: [], notifications }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.sessionFile).toBe(missingSessionFile);
+    expect(result.error).toContain('ENOENT');
+    expect(indexer.batches).toHaveLength(0);
+    expect(notifications.at(-1)).toContain('error:Pristine Pi JSONL index failed (agent_end)');
+  });
+
   it('derives linear active ids on session_start when Pi provides an empty branch list', async () => {
     const indexer = new CapturingIndexer();
     const runtime = createPiJsonlIndexRuntime({ indexer });

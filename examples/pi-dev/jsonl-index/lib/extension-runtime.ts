@@ -152,7 +152,7 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
         );
         return { ok: true, indexed: 0, skippedDuplicate: 0 };
       }
-      if (!existsSync(sessionFile)) {
+      if (!existsSync(sessionFile) && trigger === 'session_start:startup') {
         notify(
           ctx,
           `Pristine Pi JSONL index skipped (${trigger}): session file is not created yet`,

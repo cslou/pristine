@@ -1,3 +1,3 @@
 import { createVitestConfig } from './vitest.config.js';
 
-export default createVitestConfig(['tests/smoke/**/*.smoke.test.ts']);
+export default createVitestConfig(['tests/smoke/**/*.test.ts']);

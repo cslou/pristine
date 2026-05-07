@@ -912,10 +912,11 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ### Commands
 
 ```bash
-npm test              # Run all tests (585+)
-npm run typecheck     # TypeScript strict mode check
-npm run lint          # ESLint + Prettier
-npm run test:watch    # Watch mode
+.checks/regression.sh --tier=quick     # lint + typecheck
+.checks/regression.sh --tier=standard  # quick + unit tests
+.checks/regression.sh --tier=deep      # standard + build + deterministic integration/e2e
+.checks/regression.sh --tier=full      # deep + real-model integration/smoke
+npm run test:watch                     # Watch mode
 ```
 
 ### Conventions

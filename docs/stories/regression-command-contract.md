@@ -72,6 +72,7 @@ This story follows verifiability-first engineering: define how the new or change
   - [ ] `.checks/regression.sh --tier=quick` exits `0` and report shows lint + typecheck ran.
   - [ ] `.checks/regression.sh --tier=standard` exits `0` and report shows lint + typecheck + unit tests ran.
   - [ ] `.checks/regression.sh --tier=deep` exits `0` and report shows lint + typecheck + unit + build + `SKIP_SLOW_TESTS=1` integration + e2e ran.
+  - [ ] `.checks/regression.sh --tier=full` exits `0` and report shows deep coverage plus full real-model integration/smoke coverage ran, including documented first-run local model-download cost where applicable.
   - [ ] `.checks/regression.sh --tier=routine` exits `0` and report explicitly says no routine checks are configured.
   - [ ] `.checks/regression.sh --tier=not-a-tier` exits `2`. **Pass condition:** invalid usage is visibly rejected.
 - **Regression verification:**

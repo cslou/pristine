@@ -69,6 +69,7 @@ This story follows verifiability-first engineering: define how the new or change
 - **Functional verification:**
   - [ ] `npm run test:smoke` exits `0`. **Pass condition:** Vitest reports the expected smoke files/cases and no failures.
   - [ ] `npx vitest run --passWithNoTests --config vitest.smoke.config.ts` exits `0`. **Pass condition:** direct config invocation matches the package script.
+  - [ ] Vitest discovery boundaries are recorded for `unit`, `smoke`, `integration`, and `e2e` configs. **Pass condition:** command output or reporter evidence shows `*.smoke.test.ts` files are included by the smoke config and excluded from other configs unless the story intentionally documents overlap.
   - [ ] If an indexer Vitest smoke is added, it proves `storeAsync` → drain worker/indexer/searcher behavior with a deterministic embedder. **Pass condition:** assertions cover populated rows and/or search hits without real model loading.
   - [ ] If `scripts/smoke-indexer.ts` remains full-tier only, `npx tsx scripts/smoke-indexer.ts` is documented as full-tier real-model smoke. **Pass condition:** the script remains runnable and is not hidden inside quick/standard/deep by default.
 - **Regression verification:**

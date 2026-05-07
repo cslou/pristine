@@ -67,6 +67,11 @@ const runWithStubs = (
     const env = {
       ...process.env,
       PATH: `${stub.binDir}:${process.env.PATH ?? ''}`,
+      // The regression script itself controls SKIP_SLOW_TESTS for the
+      // deterministic integration command. Clear any parent value so these
+      // contract tests verify tier-local environment assignment rather than
+      // the environment of the outer Vitest process.
+      SKIP_SLOW_TESTS: '',
       ...(options.failNpmMatch === undefined ? {} : { FAIL_NPM_MATCH: options.failNpmMatch }),
     };
     const result = spawnSync(options.script ?? regressionScript, args, {

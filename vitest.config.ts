@@ -1,7 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
+import type { UserConfig } from 'vitest/config';
 
-export const baseVitestConfig = defineConfig({
+export const sharedVitestConfig = {
   resolve: {
     alias: {
       '@': resolve(import.meta.dirname, 'src'),
@@ -20,6 +21,18 @@ export const baseVitestConfig = defineConfig({
     // a tighter bound can still pass one explicitly via `it(..., 5000)`.
     testTimeout: 15_000,
   },
-});
+} satisfies UserConfig;
+
+export const baseVitestConfig = defineConfig(sharedVitestConfig);
+
+export const createVitestConfig = (include: readonly string[], exclude: readonly string[] = []) =>
+  defineConfig({
+    ...sharedVitestConfig,
+    test: {
+      ...sharedVitestConfig.test,
+      include: [...include],
+      exclude: [...exclude],
+    },
+  });
 
 export default baseVitestConfig;

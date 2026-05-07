@@ -1,8 +1,3 @@
-import { mergeConfig } from 'vitest/config';
-import baseConfig from './vitest.config.js';
+import { createVitestConfig } from './vitest.config.js';
 
-export default mergeConfig(baseConfig, {
-  test: {
-    include: ['tests/e2e/**/*.test.ts'],
-  },
-});
+export default createVitestConfig(['tests/e2e/**/*.test.ts']);

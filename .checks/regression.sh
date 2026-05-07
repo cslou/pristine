@@ -106,6 +106,7 @@ run_standard() {
 run_deep() {
   run_standard
   run_check "build" "Static / local checks" "npm run build"
+  run_check "smoke" "E2E / smoke" "npm run test:smoke"
   run_check "integration-deterministic" "Integration / contract" "SKIP_SLOW_TESTS=1 npm run test:integration"
   run_check "e2e" "E2E / smoke" "npm run test:e2e"
 }

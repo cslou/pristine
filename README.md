@@ -914,10 +914,12 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ```bash
 .checks/regression.sh --tier=quick     # lint + typecheck
 .checks/regression.sh --tier=standard  # quick + unit tests
-.checks/regression.sh --tier=deep      # standard + build + deterministic integration/e2e
+.checks/regression.sh --tier=deep      # standard + build + smoke + deterministic integration/e2e
 .checks/regression.sh --tier=full      # deep + real-model integration/smoke
 npm run test:watch                     # Watch mode
 ```
+
+`npm run test:smoke` runs fast deterministic smoke tests from `tests/smoke/`. Broader privacy journey coverage remains in `tests/e2e/`, while `scripts/smoke-indexer.ts` is the explicit full-tier real-model smoke.
 
 ### Conventions
 

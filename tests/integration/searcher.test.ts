@@ -284,6 +284,11 @@ const filterCases = (): readonly FilterCase[] => [
       return { ...base, projectId: 'proj-alpha', dateFrom: timestamps[0] };
     },
     query: 'machine learning',
+    // If the latest proj-alpha conversation is the cooking conversation,
+    // the dateFrom filter can correctly exclude the only literal FTS
+    // "machine learning" match. Dedicated dateFrom contract tests with
+    // explicit time gaps pin non-empty FTS behavior.
+    expectHits: { fts: false },
     assertOnHit: (hit, _method, p) => {
       const row = p.db
         .prepare('SELECT created_at FROM conversations WHERE id = ?')

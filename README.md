@@ -64,11 +64,13 @@ Pristine has three layers — conversation storage, memory extraction, and priva
 ```
 
 **Layers:**
+
 - **Conversation Store** (`src/conversations/`) — Persists raw conversations in SQLite with FTS5 full-text search. Every `store()` call writes the conversation here first, before any extraction. Searchable by keyword and date. Each extracted fact links back to its source conversation via `sourceConversationId`.
 - **Memory Pipeline** (`src/memory/`) — 7-step ingest pipeline: store conversation, extract facts via LLM, embed, find similar, consolidate (dedup/supersede), store facts, validate. Retrieval via vector similarity + temporal filtering.
 - **Privacy Pipeline** (`src/privacy/`) — Detect PII (regex + LLM), redact with encrypted placeholders, store originals in AES-256-GCM vault, reveal on demand.
 
 **Shared infrastructure:**
+
 - **LLM Engine** (`src/engine/`) — Two backends: `node-llama-cpp` (in-process GGUF) or Ollama (HTTP). Both implement the `LlmClient` interface with grammar-constrained JSON output via `generate<T>()`.
 - **Embedder** (`src/embedder/`) — Nomic Embed v1.5 via `@huggingface/transformers`. 768-dimensional vectors, runs in-process.
 - **SQLite** (`src/core/database.ts`) — Single database file with WAL mode, `sqlite-vec` for vector search, FTS5 for keyword search.
@@ -100,13 +102,13 @@ Pristine has three layers — conversation storage, memory extraction, and priva
 
 **What lives where:**
 
-| Key | Storage | Persistence |
-|-----|---------|-------------|
-| RSA-4096 key pair | PEM files in `keys/` | On disk, survives restarts |
-| Wrapped KEK | SQLite `user_keks` table (512-byte blob) | On disk in `pristine.db` |
-| Wrapped DEK | SQLite `vault_entries.encryption_metadata` (40 bytes per value) | On disk in `pristine.db` |
-| Plaintext KEK | `KekManager` in-memory cache | Process memory only, never on disk |
-| Plaintext DEK | Ephemeral during encrypt/decrypt | Never persisted anywhere |
+| Key               | Storage                                                         | Persistence                        |
+| ----------------- | --------------------------------------------------------------- | ---------------------------------- |
+| RSA-4096 key pair | PEM files in `keys/`                                            | On disk, survives restarts         |
+| Wrapped KEK       | SQLite `user_keks` table (512-byte blob)                        | On disk in `pristine.db`           |
+| Wrapped DEK       | SQLite `vault_entries.encryption_metadata` (40 bytes per value) | On disk in `pristine.db`           |
+| Plaintext KEK     | `KekManager` in-memory cache                                    | Process memory only, never on disk |
+| Plaintext DEK     | Ephemeral during encrypt/decrypt                                | Never persisted anywhere           |
 
 ### Backup
 
@@ -124,6 +126,7 @@ Pristine validates directory and file permissions on every key load, following t
 - **Windows**: all permission checks are skipped (`process.platform === 'win32'`).
 
 If permissions are wrong, Pristine refuses to proceed with a descriptive error:
+
 ```
 Permissions 0755 for '~/.pristine/keys/' are too open.
 It is required that your key directory is NOT accessible by others.
@@ -393,13 +396,13 @@ Output: redacted text + placeholder IDs (safe to send to any LLM)
 
 Each module has a single responsibility. This allows contributors to optimize classifiers, redaction, or vault independently.
 
-| Module | Responsibility | Does NOT do |
-|--------|---------------|-------------|
-| **Deterministic classifier** (`classifier/deterministic/`) | Regex-based PII detection: credit cards (Luhn-validated), emails, US SSN, phone numbers. High confidence, no LLM needed. | Contextual analysis, false positive filtering |
-| **LLM classifier** (`classifier/llm/`) | Contextual PII detection via LLM: health conditions, financial info, legal matters, relationships, identity documents. Catches what regex misses. | Pattern matching (that's the deterministic classifier's job) |
-| **Combined classifier** (`classifier/combined/`) | Runs both classifiers in parallel, merges reports, deduplicates overlapping spans. Returns final `SensitivityReport`. | Entity filtering or suppression |
-| **Redaction** (`vault/redaction.ts`) | Replaces detected entities with `[SENSITIVE:type:id]` placeholders. Pure function: entities in, placeholders out. | Classification decisions, false positive filtering, heuristic checks |
-| **Vault** (`vault/sqlite/`, `vault/asymmetric-encrypt.ts`) | Encrypts original PII values (AES-256-GCM + KEK wrapping) and stores in SQLite. | Detection, redaction |
+| Module                                                     | Responsibility                                                                                                                                    | Does NOT do                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Deterministic classifier** (`classifier/deterministic/`) | Regex-based PII detection: credit cards (Luhn-validated), emails, US SSN, phone numbers. High confidence, no LLM needed.                          | Contextual analysis, false positive filtering                        |
+| **LLM classifier** (`classifier/llm/`)                     | Contextual PII detection via LLM: health conditions, financial info, legal matters, relationships, identity documents. Catches what regex misses. | Pattern matching (that's the deterministic classifier's job)         |
+| **Combined classifier** (`classifier/combined/`)           | Runs both classifiers in parallel, merges reports, deduplicates overlapping spans. Returns final `SensitivityReport`.                             | Entity filtering or suppression                                      |
+| **Redaction** (`vault/redaction.ts`)                       | Replaces detected entities with `[SENSITIVE:type:id]` placeholders. Pure function: entities in, placeholders out.                                 | Classification decisions, false positive filtering, heuristic checks |
+| **Vault** (`vault/sqlite/`, `vault/asymmetric-encrypt.ts`) | Encrypts original PII values (AES-256-GCM + KEK wrapping) and stores in SQLite.                                                                   | Detection, redaction                                                 |
 
 **Design principle:** Classifiers decide what is PII. The redaction layer only executes replacements. Over-redaction (fail-closed) is preferred over under-redaction — if a classifier flags something, it gets redacted. False positive improvements belong in the classifier modules, not downstream.
 
@@ -453,7 +456,10 @@ const { redactedText, placeholderIds } = await secureAndRedact(
 
 // Later: recover original values
 const originalText = await reveal(redactedText, {
-  vaultStore, keyManager, kekManager, userId: 'user-1',
+  vaultStore,
+  keyManager,
+  kekManager,
+  userId: 'user-1',
 });
 // originalText: "My email is alice@example.com and my SSN is 123-45-6789"
 
@@ -464,9 +470,11 @@ const clean = scrubOutput(someText);
 ### What Gets Detected
 
 **Deterministic classifier** (regex, high confidence):
+
 - Credit cards (Luhn-validated), emails, US SSN, phone numbers
 
 **LLM classifier** (contextual, catches what regex misses):
+
 - Health conditions, financial info, legal matters, relationships, identity documents
 - System prompt (what to look out for) is configurable by user
 
@@ -558,6 +566,7 @@ Memory has two layers: a **conversation store** that persists raw conversations,
 ### Conversation Store
 
 Every `store()` call writes the raw conversation to SQLite first, before any LLM processing. This gives you:
+
 - **Keyword search** across all past conversations via FTS5 (`searchConversations()`)
 - **Date filtering** — find conversations from a specific time range
 - **Full context retrieval** — when you find a fact via semantic search, follow `sourceConversationId` back to the original conversation (`getConversation()`)
@@ -642,17 +651,18 @@ const convResults = client.searchConversations({
 
 Every fact can have `validFrom` and `validUntil` timestamps, extracted by the LLM with a confidence level:
 
-| Mode | What it returns | Use case |
-|------|----------------|----------|
+| Mode      | What it returns                                            | Use case                             |
+| --------- | ---------------------------------------------------------- | ------------------------------------ |
 | `current` | Facts valid now (no `validUntil`, `validFrom` in the past) | Default — "What does the user like?" |
-| `as_of` | Facts valid at a specific date | "Where did the user live in 2024?" |
-| `full` | All facts including expired/superseded | Debug, audit, history |
+| `as_of`   | Facts valid at a specific date                             | "Where did the user live in 2024?"   |
+| `full`    | All facts including expired/superseded                     | Debug, audit, history                |
 
 Temporal modes are available via `client.orchestrator.retrieve(query, userId, { temporalMode: 'as_of', asOf: '2024-06-01' })`. The convenience `search()` method uses `current` mode by default.
 
 ### Supersession
 
 When a fact changes ("User moved from Tokyo to London"), the consolidation step detects the contradiction and supersedes the old memory:
+
 - Old memory gets `validUntil` + `supersededBy` link
 - New memory gets `supersedes` link back
 - `getSupersessionChain()` traverses the full history
@@ -680,10 +690,7 @@ Multiple agents serving the **same user** share the same memory pool automatical
 
 ```typescript
 // Agent A (personal assistant) stores a conversation
-await client.store(
-  [{ role: 'user', content: 'I am vegetarian on weekdays' }],
-  'user-1',
-);
+await client.store([{ role: 'user', content: 'I am vegetarian on weekdays' }], 'user-1');
 
 // Agent B (meal planner) searches — finds the fact stored by Agent A
 const results = await client.search('dietary preferences', 'user-1');
@@ -695,7 +702,7 @@ const results = await client.search('dietary preferences', 'user-1');
 If you want isolated memory per agent, use different `userId` values:
 
 ```typescript
-await client.store(conversation, 'user-1:assistant');   // personal assistant
+await client.store(conversation, 'user-1:assistant'); // personal assistant
 await client.store(conversation, 'user-1:meal-planner'); // meal planner
 ```
 
@@ -735,16 +742,16 @@ await client.dispose();
 
 ### Public API
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `store(conversation, userId)` | `IngestResult` | Store conversation + extract facts. Returns `{ facts, memoryIds, decisions, errors }` |
-| `search(query, userId, topK?)` | `RetrieveResult` | Semantic search for relevant facts. Returns `{ memories, metadata }` |
-| `searchConversations(params)` | `ConversationSearchResult[]` | FTS5 keyword + date search across raw conversations |
-| `getConversation(id)` | `ConversationDetail \| null` | Retrieve full conversation with messages by ID |
-| `secureAndRedact(text, userId)` | `SecureAndRedactResult` | Detect and encrypt PII, return redacted text |
-| `reveal(redactedText, userId)` | `string` | Decrypt PII placeholders back to original text |
-| `scrubOutput(text)` | `string` | Strip any remaining `[SENSITIVE:...]` placeholders |
-| `dispose()` | `void` | Clean up embedder, LLM clients, and database connections |
+| Method                          | Returns                      | Description                                                                           |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `store(conversation, userId)`   | `IngestResult`               | Store conversation + extract facts. Returns `{ facts, memoryIds, decisions, errors }` |
+| `search(query, userId, topK?)`  | `RetrieveResult`             | Semantic search for relevant facts. Returns `{ memories, metadata }`                  |
+| `searchConversations(params)`   | `ConversationSearchResult[]` | FTS5 keyword + date search across raw conversations                                   |
+| `getConversation(id)`           | `ConversationDetail \| null` | Retrieve full conversation with messages by ID                                        |
+| `secureAndRedact(text, userId)` | `SecureAndRedactResult`      | Detect and encrypt PII, return redacted text                                          |
+| `reveal(redactedText, userId)`  | `string`                     | Decrypt PII placeholders back to original text                                        |
+| `scrubOutput(text)`             | `string`                     | Strip any remaining `[SENSITIVE:...]` placeholders                                    |
+| `dispose()`                     | `void`                       | Clean up embedder, LLM clients, and database connections                              |
 
 **Advanced access:** `client.orchestrator` exposes the full pipeline API for temporal queries, custom pipeline steps, and direct `ingest()`/`retrieve()` calls with options.
 
@@ -754,11 +761,11 @@ await client.dispose();
 
 ```typescript
 interface PristineLocalConfig {
-  baseDir?: string;      // Root directory (default: ~/.pristine)
-  keysDir?: string;      // RSA key directory (default: ~/.pristine/keys)
-  db?: Database;         // Inject database (for testing with :memory:)
+  baseDir?: string; // Root directory (default: ~/.pristine)
+  keysDir?: string; // RSA key directory (default: ~/.pristine/keys)
+  db?: Database; // Inject database (for testing with :memory:)
   llmClients?: LlmClients; // Inject LLM clients (for mocking)
-  embedder?: Embedder;   // Inject embedder (for mocking)
+  embedder?: Embedder; // Inject embedder (for mocking)
 }
 ```
 
@@ -769,12 +776,14 @@ When all three DI fields (`db`, `llmClients`, `embedder`) are provided, `create(
 Agent harnesses (Claude Code, Pi, custom agents) integrate Pristine via hooks and tools:
 
 **Hook (after every agent response — stores conversation):**
+
 ```typescript
 // Runs in ~0.1s — just the SQLite write. Fact extraction runs in background.
 await client.store(conversationMessages, userId);
 ```
 
 **Tool/skill (when the agent needs context):**
+
 ```typescript
 // Semantic search — ~0.2s (embed query + vector search)
 const result = await client.search('What does the user prefer?', userId);
@@ -789,23 +798,24 @@ Pristine uses `REFERENCE_TIME` to resolve relative temporal expressions ("yester
 
 **Two timestamp patterns:**
 
-| Pattern | When to use | How |
-|---------|-------------|-----|
-| Per-message | Each message has its own timestamp (Claude Code, Pi.dev) | Set `Message.timestamp` on each message |
-| Per-session | All messages share one date (LOCOMO benchmark) | Pass `{ referenceTimestamp: date }` via `IngestOptions` to `orchestrator.ingest()` |
+| Pattern     | When to use                                              | How                                                                                |
+| ----------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Per-message | Each message has its own timestamp (Claude Code, Pi.dev) | Set `Message.timestamp` on each message                                            |
+| Per-session | All messages share one date (LOCOMO benchmark)           | Pass `{ referenceTimestamp: date }` via `IngestOptions` to `orchestrator.ingest()` |
 
 **Three-tier resolution chain** (in `extractFactsStep`):
+
 1. Explicit `referenceTimestamp` from `IngestOptions` (caller wins)
 2. `deriveTimestamp(messages)` — chronologically latest `Message.timestamp`
 3. `new Date().toISOString()` — fallback to "now"
 
 **Hook status:**
 
-| Hook | Source | Timestamp Location | Status |
-|------|--------|--------------------|--------|
-| Claude Code | `.jsonl` transcript at `transcript_path` | `entry.timestamp` per message | Documented (future implementation) |
-| Pi.dev | `.jsonl` sessions at `~/.pi/agent/sessions/` | `entry.timestamp` per message | Documented (future implementation) |
-| LOCOMO benchmark | `locomo10.json` | `session.metadata.date` per session | Implemented |
+| Hook             | Source                                       | Timestamp Location                  | Status                             |
+| ---------------- | -------------------------------------------- | ----------------------------------- | ---------------------------------- |
+| Claude Code      | `.jsonl` transcript at `transcript_path`     | `entry.timestamp` per message       | Documented (future implementation) |
+| Pi.dev           | `.jsonl` sessions at `~/.pi/agent/sessions/` | `entry.timestamp` per message       | Documented (future implementation) |
+| LOCOMO benchmark | `locomo10.json`                              | `session.metadata.date` per session | Implemented                        |
 
 **Timestamp format:** ISO 8601 UTC with Z suffix (e.g., `"2023-05-08T13:56:00.000Z"`).
 
@@ -841,7 +851,7 @@ interface LlmClient {
   generate<T>(params: {
     systemPrompt: string;
     userPrompt: string;
-    schema: JsonSchema;    // JSON Schema for structured output
+    schema: JsonSchema; // JSON Schema for structured output
     maxTokens?: number;
   }): Promise<T>;
 }
@@ -852,6 +862,7 @@ interface LlmClient {
 3. Add engine name to `models.json` validation in `src/core/init.ts`
 
 Existing implementations for reference:
+
 - `src/engine/llamacpp/` — in-process, grammar-constrained via `node-llama-cpp`
 - `src/engine/ollama/` — HTTP-based, structured output via Ollama API
 
@@ -912,10 +923,11 @@ The output dimension must match the `sqlite-vec` table configuration (currently 
 ### Commands
 
 ```bash
-npm test              # Run all tests (585+)
-npm run typecheck     # TypeScript strict mode check
-npm run lint          # ESLint + Prettier
-npm run test:watch    # Watch mode
+.checks/regression.sh --tier=quick     # lint + typecheck
+.checks/regression.sh --tier=standard  # quick + unit tests
+.checks/regression.sh --tier=deep      # standard + build + deterministic integration/e2e
+.checks/regression.sh --tier=full      # deep + real-model integration/smoke
+npm run test:watch                     # Watch mode
 ```
 
 ### Conventions

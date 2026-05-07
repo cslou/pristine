@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "[pre-push] lint + typecheck + unit tests"
-
-echo "-> lint"
-npm run lint
-
-echo "-> typecheck"
-npm run typecheck
-
-echo "-> unit tests"
-npm run test:unit
-
-echo "[pre-push] OK"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+exec "$SCRIPT_DIR/regression.sh" --tier=standard

@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "[pre-commit] lint + typecheck"
-
-echo "-> lint"
-npm run lint
-
-echo "-> typecheck"
-npm run typecheck
-
-echo "[pre-commit] OK"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+exec "$SCRIPT_DIR/regression.sh" --tier=quick

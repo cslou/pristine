@@ -2,6 +2,8 @@ This is one way to use Pristine primitives. You can write your own.
 
 # Pi JSONL index extension
 
+Type: Pi extension. Install target: `.pi/extensions/jsonl-index/`. Entry point: `.pi/extensions/jsonl-index/index.ts`.
+
 This Pi extension indexes the active Pi session JSONL into a local Pristine-compatible vector index. Pi JSONL remains the source of truth; the index stores snippets plus source pointers only.
 
 ## Install shape

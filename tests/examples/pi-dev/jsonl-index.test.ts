@@ -182,6 +182,29 @@ describe('Pi JSONL index extension reference', () => {
     });
   });
 
+  it('skips startup reconciliation when Pi reports a session file before creating it', async () => {
+    const indexer = new CapturingIndexer();
+    const runtime = createPiJsonlIndexRuntime({ indexer });
+    const notifications: string[] = [];
+    const missingSessionFile = join(await makeTempDir(), 'not-created-yet.jsonl');
+
+    const result = await runtime.reconcileOnSessionStart(
+      makeCtx({ sessionFile: missingSessionFile, branchIds: [], notifications }),
+      'startup',
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      sessionFile: missingSessionFile,
+      indexed: 0,
+      skippedDuplicate: 0,
+    });
+    expect(indexer.batches).toHaveLength(0);
+    expect(notifications).toContain(
+      'info:Pristine Pi JSONL index skipped (session_start:startup): session file is not created yet',
+    );
+  });
+
   it('derives linear active ids on session_start when Pi provides an empty branch list', async () => {
     const indexer = new CapturingIndexer();
     const runtime = createPiJsonlIndexRuntime({ indexer });

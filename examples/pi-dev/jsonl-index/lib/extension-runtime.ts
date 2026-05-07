@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
 import { LocalNomicEmbedder } from './local-embedder.js';
@@ -151,6 +151,14 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
           'info',
         );
         return { ok: true, indexed: 0, skippedDuplicate: 0 };
+      }
+      if (!existsSync(sessionFile)) {
+        notify(
+          ctx,
+          `Pristine Pi JSONL index skipped (${trigger}): session file is not created yet`,
+          'info',
+        );
+        return { ok: true, sessionFile, indexed: 0, skippedDuplicate: 0 };
       }
 
       const contextEntryIds = activeEntryIdsFrom(ctx);

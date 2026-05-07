@@ -1,0 +1,10 @@
+{
+  "name": "pristine-pi-dev-jsonl-index-reference",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "4.0.1",
+    "better-sqlite3": "12.8.0",
+    "sqlite-vec": "0.1.9"
+  }
+}

@@ -1,6 +1,6 @@
 # Pristine Local
 
-Local-first privacy and source-pointer memory SDK. No API calls, no server, no data leaving the device.
+Local-first privacy and source-pointer memory SDK. No server; no user data leaves the device by default. The default local embedder may download model files on first use unless pre-cached or configured offline.
 
 Pristine indexes source-owned text chunks with local embeddings and returns semantic search hits containing snippets plus optional source pointers. The source system remains authoritative for full raw transcripts/files/events; Pristine stores indexed chunk text/snippets, embeddings, source metadata, and privacy vault data in a local SQLite database.
 

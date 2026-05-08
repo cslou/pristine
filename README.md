@@ -92,9 +92,9 @@ Deletes source chunks and their vector rows atomically within one project. Use t
 
 - `secureAndRedact(text, userId, classifier?)`
 - `reveal(redactedText, userId)`
-- `scrubOutput(text, valuesToScrub?)`
+- `scrubOutput(text, allowlist?)`
 
-These remain local-only and use the SQLite vault plus filesystem keys. The current TypeScript parameter name for `scrubOutput` is `allowlist` for compatibility, but the values are scrubbed from output; pass revealed/sensitive values that must be removed.
+These remain local-only and use the SQLite vault plus filesystem keys. The `scrubOutput` second parameter is named `allowlist` in the current TypeScript signature for compatibility, but the values are scrubbed from output; pass revealed/sensitive values that must be removed.
 
 ```ts
 const secured = await client.secureAndRedact(

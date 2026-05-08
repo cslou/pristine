@@ -285,6 +285,27 @@ The Final Verification Story runs all sprint functional verification plus the fu
   1. `docs(sprint-024): record final verification`
 - **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc.
 
+### Rules
+
+- Use the sprint-branch workflow from AGENTS.md: `sprint-NNN` branches from target, story branches fork from `sprint-NNN`, and story PRs target `sprint-NNN`.
+- Work through stories sequentially. The Final Verification Story is always last.
+- Each story PR follows the normal review/fix/merge gates from AGENTS.md.
+- After the Final Verification Story merges, open the sprint-integration PR (`sprint-NNN → target`). It uses the same gates, then pauses for the user's explicit merge command.
+- Record new dependencies in `## Final Review`, or record `None` when no dependencies were added.
+
+### Definition of Done
+
+- All implementation stories pass acceptance criteria.
+- Functional verification evidence is recorded for every implementation story.
+- Targeted regression verification evidence is recorded for every implementation story.
+- Final Verification Story has run all sprint functional verification and the full available regression verification suite.
+- Failed, ambiguous, manual-only, or unrun verification items are documented in `## Final Review`.
+- `## Final Review` includes a verification delta table showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals by canonical verification type.
+- Sprint doc status is `🟢 Complete` only when completion criteria are met.
+- Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
+- Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
+- If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
+
 ## Final Review
 
 Sprint 024 is complete.
@@ -307,6 +328,7 @@ Functional verification:
 - `npm run test:unit -- tests/embedder/factory.test.ts tests/embedder/local.test.ts tests/embedder/ollama.test.ts tests/embedder/dim-parameterization.test.ts tests/core/init.test.ts tests/client-config-dim.test.ts tests/client.test.ts` — pass.
 - `npm run build && npm run test:smoke` — pass.
 - `npm run test:integration` — pass with slow real-model tests enabled.
+- `SKIP_SLOW_TESTS=1 npm run test:integration` — pass, 16 deterministic tests passed and 3 real-model tests skipped explicitly.
 - `npm run build && node scripts/smoke-source-index.mjs` — pass; printed `source-index smoke: PASS`.
 
 Regression verification:

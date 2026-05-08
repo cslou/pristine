@@ -90,6 +90,8 @@ type JsonScalar = string | number | boolean | null;
 type JsonValue = JsonScalar | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 const assertJsonValue = (value: unknown, path: string, seen: WeakSet<object>): JsonValue => {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+
   if (
     path.length > 0 &&
     typeof value === 'object' &&
@@ -97,10 +99,12 @@ const assertJsonValue = (value: unknown, path: string, seen: WeakSet<object>): J
     'toJSON' in value &&
     typeof value.toJSON === 'function'
   ) {
+    if (seen.has(value)) {
+      throw new InvalidArgumentError(`SourceChunkInput.metadata.${path} must not be cyclic`);
+    }
+    seen.add(value);
     return assertJsonValue(value.toJSON(), path, seen);
   }
-
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) {
       throw new InvalidArgumentError(`SourceChunkInput.metadata.${path} must be a finite number`);

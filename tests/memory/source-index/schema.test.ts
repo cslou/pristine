@@ -162,6 +162,14 @@ describe('SourceChunkStore validation and storage', () => {
     expect(() =>
       store.put({ text: 'ok', metadata: cyclic }, { projectId: 'p', embedding: testEmbedding }),
     ).toThrow(InvalidArgumentError);
+    const recursiveJson: { toJSON?: () => unknown } = {};
+    recursiveJson.toJSON = () => recursiveJson;
+    expect(() =>
+      store.put(
+        { text: 'ok', metadata: { recursiveJson } },
+        { projectId: 'p', embedding: testEmbedding },
+      ),
+    ).toThrow(InvalidArgumentError);
   });
 
   it('writes vector rows atomically with chunk metadata and validates embedding dimension', () => {

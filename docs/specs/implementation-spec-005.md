@@ -467,7 +467,9 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
 | run-llama/llama_index | Broad retrieval ecosystem | `SentenceSplitter` / `SemanticSplitterNodeParser` as oversize-fallback reference; batched-by-user-message as a benchmarkable alternative in §8.1 | Deprecated `VectorMemory` (turn-pair vectors) |
 | jina-ai/late-chunking | Long-context embedding research | Token-span chunking over pre-embedded long context (if we later adopt Nomic's 8192 window fully) | Not a v1 adoption — pure-JS Nomic integration of late-chunking is non-trivial |
 
-### 5.5 Stack
+> **Historical note:** Sections 5.5–5.9 below are the prior raw-conversation target stack/diagram/module map/repo structure/decision table. They are retained as background only until Sprint 023 cleanup deletes or rewrites them. The current target architecture is §1A plus §5.1.
+
+### 5.5 Historical stack
 
 - **Language:** TypeScript (strict mode, ESM only)
 - **Runtime:** Node.js 20+ (Bun has known incompatibilities with `better-sqlite3`)
@@ -479,7 +481,7 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
 - **Test framework:** Vitest
 - **Hard constraints:** No external services. No network calls at SDK runtime. No daemon. No subprocess. Single-file deploy.
 
-### 5.6 System diagram (target state)
+### 5.6 Historical system diagram (prior target state)
 
 ```
                      [Host agent / harness]
@@ -521,7 +523,7 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
              └────────────────────────────┘
 ```
 
-### 5.7 Module overview
+### 5.7 Historical module overview
 
 - **Core Layer** (`src/core/`) — types, interfaces, errors, database bootstrap, shared utilities
 - **Storage Layer** (`src/memory/store/`) — conversations, messages, summaries; stable public views; read-only SQL surface
@@ -532,7 +534,7 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
 - **Privacy Layer** (`src/privacy/`) — unchanged per spec-004 (secret redaction for developer use)
 - **Reference Implementations** (`examples/<harness>/<tool>/` or `@pristine/<harness>-<tool>` packages — see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md)) — `search_memory` tool, `SessionStart` hook for Claude Code, `MEMORY.md` maintainer, session-summary generator, PostToolUse ingestion script
 
-### 5.8 Repo structure (target)
+### 5.8 Historical repo structure (prior target)
 
 ```
 pristine/
@@ -571,7 +573,7 @@ REMOVED IN THIS PIVOT:
 └── tests/memory/consolidator/
 ```
 
-### 5.9 Technical decisions
+### 5.9 Historical technical decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|

@@ -258,8 +258,13 @@ export const normalizeSourceChunkInput = (
   }
 
   const chunkIdValue = inputRecord.chunkId;
-  if (chunkIdValue !== undefined && typeof chunkIdValue !== 'string') {
-    throw new InvalidArgumentError('SourceChunkInput.chunkId must be a string');
+  if (chunkIdValue !== undefined) {
+    if (typeof chunkIdValue !== 'string') {
+      throw new InvalidArgumentError('SourceChunkInput.chunkId must be a string');
+    }
+    if (chunkIdValue.length === 0) {
+      throw new InvalidArgumentError('SourceChunkInput.chunkId must be non-empty');
+    }
   }
 
   const now = new Date().toISOString();

@@ -85,7 +85,13 @@ describe('public-API smoke — PristineLocal boots and the public API round-trip
       'InvalidSqlError',
       'PristineLocal',
       'QueryTimeoutError',
+      'SOURCE_CHUNK_METADATA_JSON_LIMIT',
+      'SOURCE_CHUNK_TEXT_LIMIT',
+      'SourceChunkStore',
+      'buildSourceChunkVectorDdl',
       'createDatabase',
+      'initSourceChunkTables',
+      'normalizeSourceChunkInput',
     ]);
   });
 

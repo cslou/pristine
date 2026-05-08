@@ -1,4 +1,5 @@
 # Pristine — Sprint 023
+
 **Date:** TBD – TBD
 **Goal:** Using sprint-022 Pi proof evidence, refactor Pristine from raw conversation ownership to a source-pointer semantic index: remove raw transcript storage as a core requirement, store vector-indexed chunks with optional metadata and source pointers, and keep search useful even when source metadata is partial.
 **Status:** 🟡 Planning
@@ -8,12 +9,14 @@
 ## Handoff
 
 ### Project Context
+
 - **Repo:** `/Users/lou/projects/pristine`
 - **Tech stack:** TypeScript strict ESM, Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` with Nomic Embed v1.5 default, Vitest.
 - **Current state:** Pristine currently has conversation/message tables, queue/indexer logic built around stored raw messages, vector windows in `vec_windows`, session vectors in `vec_sessions`, FTS/SQL public views, and search APIs returning conversation/message-centric results. Sprint-022 is complete and proved the Pi JSONL vector-search → JSONL-inspection workflow with source pointers into the authoritative Pi JSONL store. Architecture cleanup uses that evidence: harnesses typically already own authoritative transcript state (Pi JSONL, other harness SQLite/JSONL/etc.), so Pristine should not duplicate raw transcripts by default.
 - **Implementation spec:** `docs/specs/implementation-spec-005.md` must be updated by this sprint because the core primitive model changes from raw corpus owner to semantic index over source-owned records.
 
 ### Sprint-Wide Context
+
 - **Sprint type:** Refactor / Architecture cleanup.
 - **Shared context:** Depends on sprint-022 Pi proof evidence. No user-data compatibility burden. Remove dead/incorrect raw transcript ownership now rather than preserving dual modes. Pristine stores embeddings, indexed snippets, and optional source pointers/metadata; source systems remain authoritative for raw context. Metadata must be optional because not every harness exposes session IDs, line numbers, timestamps, or stable entry IDs.
 - **Non-goals:** No new Pi reference implementation in this sprint beyond consuming evidence from sprint-022. No default embedder swap. No migration support for old Pristine DBs. No fact extraction. No SQL query tool over raw conversations. No published package split. No replacement SQL/debug primitive over source-index tables unless a later sprint explicitly reintroduces one.
@@ -53,9 +56,11 @@ Verification has two categories:
 Each implementation story must include functional verification for new behavior and targeted regression verification for affected existing behavior. The Final Verification Story runs all sprint functional verification plus the full available regression suite.
 
 ### Stories
+
 **Constraints:** Target 5-8 stories per sprint. Each story should be small enough to review, verify, and merge independently.
 
 #### Story 1: Update spec and public architecture language for source-pointer indexing
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -87,6 +92,7 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** This story locks terminology before code deletion: source-owned raw records, Pristine-owned semantic index.
 
 #### Story 2: Introduce generic source chunk/index types and storage schema
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -120,33 +126,34 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** Prefer new module names that do not imply chat ownership, e.g. `src/memory/index/` or `src/memory/source-index/`.
 
 #### Story 3: Replace raw conversation ingest with source chunk indexing API
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Follows sprint template
-  - [ ] Acceptance criteria are specific and testable
-  - [ ] Functional verification items are concrete and have pass/fail conditions
-  - [ ] Regression verification items are concrete and have pass/fail conditions
-  - [ ] Story is small enough to review and merge independently
+  - [x] Follows sprint template
+  - [x] Acceptance criteria are specific and testable
+  - [x] Functional verification items are concrete and have pass/fail conditions
+  - [x] Regression verification items are concrete and have pass/fail conditions
+  - [x] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
   - [ ] Review findings addressed or explicitly recorded
-  - [ ] Ready for Lou
+  - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: Pending PR review.
+  - Resolution: Pending PR review.
 - **As a** SDK consumer, **I want** an API to index source chunks directly, **so that** harness adapters can feed Pristine snippets/windows without first creating raw conversation/message rows.
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
-  - [ ] Public client exposes a direct source-chunk indexing method as the primary memory ingest primitive and no new code path requires `ConversationStore` to ingest raw messages.
-  - [ ] Indexing embeds chunks, writes vectors and metadata atomically, and is idempotent or clearly documents duplicate behavior.
-  - [ ] Synchronous indexing path is available for deterministic harness verification and resolves only after the vector row is queryable in the same process.
-  - [ ] Existing queue/worker code is either adapted to chunks or removed if it only served raw conversation ownership.
+  - [x] Public client exposes a direct source-chunk indexing method as the primary memory ingest primitive and no new code path requires `ConversationStore` to ingest raw messages.
+  - [x] Indexing embeds chunks, writes vectors and metadata atomically, and is idempotent or clearly documents duplicate behavior.
+  - [x] Synchronous indexing path is available for deterministic harness verification and resolves only after the vector row is queryable in the same process.
+  - [x] Existing queue/worker code is retained only for legacy raw-conversation APIs until Story 5 removes obsolete ownership paths; the new source-chunk indexing path does not use it.
 - **Functional verification:**
-  - [ ] Add integration test for direct source-chunk indexing with stub embedder. **Pass condition:** vector rows and metadata are present after indexing.
-  - [ ] Add synchronous indexing test. **Pass condition:** the public indexing call resolves only after the vector row is queryable in the same process.
-  - [ ] Add duplicate/idempotency test. **Pass condition:** indexing the same stable source pointer twice produces the documented single replacement row or documented duplicate behavior, and search results reflect that behavior.
-  - [ ] Add integration test for minimal metadata. **Pass condition:** vector search can retrieve the chunk and returns empty/undefined optional pointer fields safely.
+  - [x] Add integration test for direct source-chunk indexing with stub embedder. **Pass condition:** vector rows and metadata are present after indexing.
+  - [x] Add synchronous indexing test. **Pass condition:** the public indexing call resolves only after the vector row is queryable in the same process.
+  - [x] Add duplicate/idempotency test. **Pass condition:** indexing the same stable source pointer twice produces the documented single replacement row and queryable rows reflect that behavior; user-facing vector search verification is deferred to Story 4.
+  - [x] Add integration test for minimal metadata. **Pass condition:** the chunk is indexed with a queryable vector row and optional pointer fields are empty/null safely; user-facing vector search verification is deferred to Story 4.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/client.test.ts tests/queue/ingest-queue.test.ts tests/memory/indexer/embed-worker.test.ts` after adapting/removing queue paths. **Pass condition:** remaining tests pass or deleted tests correspond only to deleted raw-conversation behavior.
-  - [ ] Run `npm run typecheck`, `npm run lint`, and targeted unit tests. **Pass condition:** all exit 0.
+  - [x] Run `npm run test:unit -- tests/client.test.ts tests/queue/ingest-queue.test.ts tests/memory/indexer/embed-worker.test.ts` after adapting/removing queue paths. **Pass condition:** remaining tests pass or deleted tests correspond only to deleted raw-conversation behavior.
+  - [x] Run `npm run typecheck`, `npm run lint`, and targeted unit tests. **Pass condition:** all exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `feat(index): expose source chunk indexing API`
@@ -155,6 +162,7 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** If append/update complexity disappears with chunk indexing, delete it rather than preserving unused abstractions.
 
 #### Story 4: Return source pointers from vector search and remove conversation-centric result assumptions
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -165,8 +173,8 @@ Each implementation story must include functional verification for new behavior 
   - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** search consumer, **I want** vector search results to return snippets and source pointers, **so that** a harness can inspect the authoritative raw source after semantic retrieval.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
@@ -190,6 +198,7 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** FTS/hybrid search should either be adapted to chunk text or explicitly removed in Story 5 if it depends on raw messages.
 
 #### Story 5: Remove raw conversation/message storage and obsolete SQL/public views
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -200,8 +209,8 @@ Each implementation story must include functional verification for new behavior 
   - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** maintainer, **I want** obsolete raw conversation/message storage removed, **so that** Pristine has one clear source-pointer index architecture and no dead dual mode.
 - **Dependencies:** Stories 3 and 4
 - **Acceptance criteria:**
@@ -226,6 +235,7 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** This is the destructive cleanup story; verify all replacement APIs are in place before deleting.
 
 #### Story 6: Update docs, examples, and exports to source-index terminology
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Follows sprint template
   - [ ] Acceptance criteria are specific and testable
@@ -236,8 +246,8 @@ Each implementation story must include functional verification for new behavior 
   - [ ] Review findings addressed or explicitly recorded
   - [ ] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
+  - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** SDK consumer, **I want** public docs and exports to describe source indexing accurately, **so that** consumers do not build against removed conversation-store assumptions.
 - **Dependencies:** Story 5
 - **Acceptance criteria:**
@@ -258,6 +268,7 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** Keep docs terse; Pi-specific usage belongs in sprint-022 or future Pi reference follow-ups.
 
 #### Final Story: Sprint Verification & Completion
+
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [ ] Uses the story sections above and the existing regression suite as the verification source of truth
   - [ ] Defines where final verification evidence will be recorded
@@ -288,6 +299,7 @@ Each implementation story must include functional verification for new behavior 
 - **Technical notes:** Use `workflow-prompts/handle-sprint-completion.md` for final completion message shape.
 
 ### Rules
+
 - Use the sprint-branch workflow from AGENTS.md: `sprint-NNN` branches from target, story branches fork from `sprint-NNN`, and story PRs target `sprint-NNN`.
 - Work through stories sequentially. The Final Verification Story is always last.
 - Each story PR follows the normal review/fix/merge gates from AGENTS.md.
@@ -295,6 +307,7 @@ Each implementation story must include functional verification for new behavior 
 - Record new dependencies in `## Final Review`, or record `None` when no dependencies were added.
 
 ### Definition of Done
+
 - All implementation stories pass acceptance criteria.
 - Functional verification evidence is recorded for every implementation story.
 - Targeted regression verification evidence is recorded for every implementation story.

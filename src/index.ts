@@ -87,7 +87,11 @@
 // ---------------------------------------------------------------------------
 
 export { PristineLocal } from './client.js';
-export type { PristineLocalConfig } from './client.js';
+export type {
+  IndexedSourceChunk,
+  IndexSourceChunksOptions,
+  PristineLocalConfig,
+} from './client.js';
 
 // ---------------------------------------------------------------------------
 // Core types (consumer-facing)

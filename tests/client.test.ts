@@ -69,6 +69,161 @@ describe('PristineLocal', () => {
     });
   });
 
+  describe('source index API', () => {
+    it('indexSourceChunks embeds and writes source chunks synchronously', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      const chunks = await client.indexSourceChunks(
+        [
+          {
+            text: 'source pointer architecture cleanup',
+            chunkId: 'chunk-1',
+            sourceKind: 'pi-jsonl',
+            sourceUri: '/tmp/session.jsonl',
+            metadata: { cwd: '/tmp/project' },
+          },
+        ],
+        { projectId: 'project-a' },
+      );
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual({
+        chunkId: 'chunk-1',
+        projectId: 'project-a',
+        text: 'source pointer architecture cleanup',
+        sourceKind: 'pi-jsonl',
+        sourceUri: '/tmp/session.jsonl',
+        entryId: null,
+        parentId: null,
+        lineNumber: null,
+        lineStart: null,
+        lineEnd: null,
+        timestamp: null,
+        metadata: { cwd: '/tmp/project' },
+      });
+      expect(deps.embedder.embedBatch).toHaveBeenCalledWith([
+        'source pointer architecture cleanup',
+      ]);
+      expect(
+        deps.db
+          .prepare(
+            'SELECT text, source_uri FROM source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', 'chunk-1'),
+      ).toEqual({ text: 'source pointer architecture cleanup', source_uri: '/tmp/session.jsonl' });
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', 'chunk-1'),
+      ).toEqual({ project_id: 'project-a', chunk_id: 'chunk-1' });
+    });
+
+    it('indexSourceChunks replaces duplicate chunk ids within a project and isolates other projects', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await client.indexSourceChunks([{ text: 'before', chunkId: 'stable' }], {
+        projectId: 'project-a',
+      });
+      await client.indexSourceChunks([{ text: 'after', chunkId: 'stable' }], {
+        projectId: 'project-a',
+      });
+      await client.indexSourceChunks([{ text: 'other project', chunkId: 'stable' }], {
+        projectId: 'project-b',
+      });
+
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, text FROM source_chunks WHERE chunk_id = ? ORDER BY project_id',
+          )
+          .all('stable'),
+      ).toEqual([
+        { project_id: 'project-a', text: 'after' },
+        { project_id: 'project-b', text: 'other project' },
+      ]);
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .all('project-a', 'stable'),
+      ).toEqual([{ project_id: 'project-a', chunk_id: 'stable' }]);
+    });
+
+    it('indexSourceChunks validates before embedding and rolls back the whole batch on vector failure', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await expect(
+        client.indexSourceChunks([{ text: '   ', chunkId: 'invalid' }], { projectId: 'project-a' }),
+      ).rejects.toThrow(InvalidArgumentError);
+      expect(deps.embedder.embedBatch).not.toHaveBeenCalled();
+
+      vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
+        Array.from({ length: 768 }, () => 0.1),
+        [0.1],
+      ]);
+      await expect(
+        client.indexSourceChunks(
+          [
+            { text: 'valid before failure', chunkId: 'batch-1' },
+            { text: 'invalid vector', chunkId: 'batch-2' },
+          ],
+          { projectId: 'project-a' },
+        ),
+      ).rejects.toThrow(InvalidArgumentError);
+      expect(
+        deps.db.prepare('SELECT chunk_id FROM source_chunks WHERE chunk_id LIKE ?').all('batch-%'),
+      ).toEqual([]);
+    });
+
+    it('indexSourceChunks supports minimal metadata and rejects invalid input', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      const [minimal] = await client.indexSourceChunks([{ text: 'minimal chunk' }], {
+        projectId: 'project-a',
+      });
+
+      expect(minimal?.chunkId).toHaveLength(36);
+      expect(minimal).toMatchObject({
+        projectId: 'project-a',
+        text: 'minimal chunk',
+        sourceKind: null,
+        sourceUri: null,
+        entryId: null,
+        parentId: null,
+        lineNumber: null,
+        lineStart: null,
+        lineEnd: null,
+        timestamp: null,
+        metadata: null,
+      });
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', minimal?.chunkId),
+      ).toEqual({ project_id: 'project-a', chunk_id: minimal?.chunkId });
+      await expect(client.indexSourceChunks([], { projectId: 'project-a' })).rejects.toThrow(
+        InvalidArgumentError,
+      );
+    });
+  });
+
   describe('conversation API', () => {
     it('getConversation() returns full conversation with messages', async () => {
       const client = await PristineLocal.create({

@@ -30,9 +30,14 @@ describe('SourceChunkStore schema', () => {
     expect(chunksDdl).toContain('metadata_json TEXT');
   });
 
-  it('rejects invalid vector dimensions before DDL interpolation', () => {
+  it('rejects invalid vector dimensions before DDL interpolation without dropping existing tables', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(
+      'CREATE TABLE source_chunks (chunk_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, text TEXT NOT NULL);',
+    );
+
     expect(() => new SourceChunkStore(db, 8192)).toThrow(InvalidArgumentError);
+    expect(readTableSql(db, 'source_chunks')).toContain('chunk_id TEXT PRIMARY KEY');
   });
 
   it('rebuilds incompatible draft source-index tables on init', () => {
@@ -174,6 +179,23 @@ describe('SourceChunkStore validation and storage', () => {
       { project_id: 'project-a', chunk_id: 'stable' },
       { project_id: 'project-b', chunk_id: 'stable' },
     ]);
+    db.prepare(
+      'INSERT INTO vec_source_chunks(chunk_key, project_id, chunk_id, embedding) VALUES (?, ?, ?, ?)',
+    ).run(
+      'project-a\u0000stable',
+      'project-a',
+      'stable',
+      Buffer.from(new Float32Array(testEmbedding).buffer),
+    );
+    store.put(
+      { text: 'after stale key', chunkId: 'stable' },
+      { projectId: 'project-a', embedding: testEmbedding },
+    );
+    const staleKeyRows = db
+      .prepare('SELECT chunk_key FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?')
+      .all('project-a', 'stable');
+    expect(staleKeyRows).toHaveLength(1);
+
     const separatorRows = db
       .prepare(
         'SELECT project_id, chunk_id FROM vec_source_chunks WHERE chunk_id IN (?, ?) ORDER BY project_id',

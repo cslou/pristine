@@ -86,6 +86,7 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database): void => {
 };
 
 export const initSourceChunkTables = (db: Database.Database, dim: number): void => {
+  assertValidDim(dim);
   dropIncompatibleSourceChunkTables(db);
   db.exec(SOURCE_CHUNKS_TABLE_DDL);
   db.exec(buildSourceChunkVectorDdl(dim));
@@ -282,7 +283,9 @@ export class SourceChunkStore {
         metadata_json = excluded.metadata_json,
         updated_at = excluded.updated_at
     `);
-    this.deleteVector = db.prepare('DELETE FROM vec_source_chunks WHERE chunk_key = ?');
+    this.deleteVector = db.prepare(
+      'DELETE FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+    );
     this.insertVector = db.prepare(
       'INSERT INTO vec_source_chunks(chunk_key, project_id, chunk_id, embedding) VALUES (?, ?, ?, ?)',
     );
@@ -304,7 +307,7 @@ export class SourceChunkStore {
         chunk.updatedAt,
       );
       const chunkKey = sourceChunkKey(chunk.projectId, chunk.chunkId);
-      this.deleteVector.run(chunkKey);
+      this.deleteVector.run(chunk.projectId, chunk.chunkId);
       this.insertVector.run(chunkKey, chunk.projectId, chunk.chunkId, embedding);
     });
   }

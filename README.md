@@ -47,33 +47,84 @@ console.log(hits[0]);
 //   lineNumber: 42,
 //   ...
 // }
+
+await client.dispose();
 ```
 
 ## Core API
 
 ### `PristineLocal.create(config?)`
 
-Creates a local client. Pass `db` and `embedder` for deterministic tests, or omit them to use the default local SQLite database and in-process local embedder.
+Creates a local client. Omit config to use the default local SQLite database and in-process local embedder.
+
+| Option | Purpose |
+| --- | --- |
+| `baseDir` | Root directory for `models.json`, `data/pristine.db`, and default `keys/`. Defaults to `~/.pristine`. |
+| `keysDir` | Filesystem key directory. Defaults to `<baseDir>/keys`, or `~/.pristine/keys` when both `db` and `embedder` are injected. |
+| `db` | Inject a `better-sqlite3` database, usually for tests. |
+| `embedder` | Inject a custom embedder, usually for tests or offline deployments. |
+| `privacy` | Deterministic privacy classifier config. Supports `confidenceThreshold`, `customPatternsPath`, and `customPatterns`. |
+
+If both `db` and `embedder` are injected, Pristine skips `initPristine()` and does not create the default data/config directories. Keys still default to `~/.pristine/keys` unless `keysDir` is provided.
 
 ### `indexSourceChunks(chunks, { projectId })`
 
 Indexes source-owned chunks. `text` is required; all source metadata is optional. Duplicate `(projectId, chunkId)` values replace the existing chunk and vector atomically. If `chunkId` is omitted, Pristine generates one.
 
+Validation highlights:
+
+- `projectId` must be a non-empty string.
+- `text` must be non-empty after trimming.
+- `metadata`, when provided, must be a JSON-serializable object up to 16 KiB.
+- Embeddings must match the configured embedder dimension.
+
 ### `searchSourceChunks(query, { projectId, limit? })`
 
 Runs vector search over indexed chunks and returns pointer-oriented hits. Results include `chunkId`, indexed text, score, nullable source fields, and metadata. Search is project-scoped and does not require raw conversation/message tables.
 
+`limit` defaults to `10` and must be a positive integer no greater than `1000`.
+
 ### `deleteSourceChunks(chunkIds, { projectId })`
 
-Deletes source chunks and their vector rows atomically within one project. Use this when the authoritative source system deletes, truncates, rotates, or supersedes records so Pristine does not return stale pointers/snippets.
+Deletes source chunks and their vector rows atomically within one project. Use this when the authoritative source system deletes, truncates, rotates, or supersedes records so Pristine does not return stale pointers/snippets. `chunkIds` must be a non-empty string array.
 
 ### Privacy APIs
 
 - `secureAndRedact(text, userId, classifier?)`
 - `reveal(redactedText, userId)`
-- `scrubOutput(text, allowlist?)`
+- `scrubOutput(text, revealedValues?)`
 
 These remain local-only and use the SQLite vault plus filesystem keys.
+
+```ts
+const secured = await client.secureAndRedact(
+  'Deploy with token sk-ant-example-secret-token-value',
+  'user-123',
+);
+
+if (!secured.ok) {
+  throw new Error(`Blocked by privacy safety scan: ${secured.reason}`);
+}
+
+// Store or send only the redacted text.
+console.log(secured.redactedText);
+
+const revealed = await client.reveal(secured.redactedText, 'user-123');
+console.log(revealed.text);
+
+// Before sending tool/model output back out, remove revealed values and any
+// leftover placeholders or obvious structured secrets.
+const safeOutput = client.scrubOutput(revealed.text, revealed.revealedValues);
+```
+
+`secureAndRedact` returns a `SecureAndRedactResult` union:
+
+- success: `{ ok: true, redactedText, placeholderIds, warnings? }`
+- blocked: `{ ok: false, reason: 'safety_scan', redactedText, safetyViolations, warnings? }`
+
+`reveal` returns `{ text, revealedValues }`. Pass `revealedValues` to `scrubOutput`; they are values to remove from output, not an allowlist.
+
+The built-in classifier is deterministic and local. It detects common API keys, auth tokens, private keys, JWTs, and password/secret assignments. Add custom local patterns through `PristineLocal.create({ privacy: { customPatterns: [...] } })` or `customPatternsPath`.
 
 ## Source chunk shape
 
@@ -93,7 +144,95 @@ interface SourceChunkInput {
 }
 ```
 
-Metadata must be a JSON-serializable object up to 16 KiB. Text must be non-empty after trimming.
+Source pointers are intentionally generic. For Pi JSONL, `sourceUri` can point to the session JSONL file and line fields can identify the relevant entry/window. For other systems, use `sourceKind`, `sourceUri`, `entryId`, `parentId`, and `metadata` to point back to the authoritative source record.
+
+## Storage layout
+
+Default first run creates:
+
+```text
+~/.pristine/                         mode 0700
+  models.json                        embedder config
+  data/                              mode 0700
+    pristine.db                      SQLite database
+  keys/                              mode 0700
+    {userId}-private.pem             private key, owner-only
+    {userId}-public.pem              public key
+```
+
+`pristine.db` stores:
+
+- `source_chunks` — indexed chunk text/snippets plus source metadata and pointers.
+- `vec_source_chunks` — sqlite-vec embeddings for source chunk search.
+- privacy vault tables — encrypted sensitive values, wrapped DEKs, and wrapped per-user KEKs.
+
+Pristine does **not** store full authoritative raw transcripts/files/events. It stores enough text to perform semantic recall and enough pointer metadata to let the calling system inspect the original source.
+
+### Backup and restore
+
+Back up the database and keys together:
+
+```bash
+cp -R ~/.pristine /path/to/backup/pristine
+```
+
+Encrypted vault values require the matching filesystem private keys. If `data/pristine.db` is restored without `keys/`, previously encrypted values may be unrecoverable. Source search hits may also require the original source files/events to still exist, because Pristine only stores snippets and pointers.
+
+### Filesystem permissions
+
+On non-Windows systems, Pristine creates private directories and rejects overly-open key material. Typical repair commands are:
+
+```bash
+chmod 700 ~/.pristine ~/.pristine/data ~/.pristine/keys
+chmod 600 ~/.pristine/keys/*-private.pem
+```
+
+## Embedder configuration
+
+`~/.pristine/models.json` is embedder-only by default:
+
+```json
+{
+  "embedder": { "engine": "local" }
+}
+```
+
+Supported engines:
+
+- `local` — default `@huggingface/transformers` embedder using Nomic Embed v1.5. It runs in process and may download model files on first embedding/search unless cached or configured offline.
+- `ollama` — local Ollama embedding endpoint, for example:
+
+```json
+{
+  "embedder": {
+    "engine": "ollama",
+    "model": "nomic-embed-text",
+    "host": "http://localhost:11434"
+  }
+}
+```
+
+`dim` is optional and defaults to the embedder's configured default. Existing `vec_source_chunks` tables are validated against the configured dimension on init.
+
+For deterministic tests or strict offline deployments, inject a custom `Embedder` and `db` into `PristineLocal.create()`.
+
+## Privacy and key model
+
+Privacy vault data is encrypted locally:
+
+- Each user gets a filesystem RSA key pair.
+- Each user has a generated KEK stored in SQLite wrapped by the RSA public key.
+- Each sensitive value is encrypted with a DEK using AES-256-GCM.
+- DEKs are wrapped by the KEK; plaintext KEKs are cached only in process memory.
+
+There is no server-side recovery. Protect and back up the private keys for any user whose vault entries must remain recoverable.
+
+## Isolation model
+
+- Source index isolation is by `projectId`. Index, search, and delete calls are project-scoped.
+- Privacy vault isolation is by `userId`.
+- Use separate `projectId`s for projects that share one database.
+- Use separate `baseDir`s or injected databases for stronger environment or agent isolation.
 
 ## Local-first guarantees
 
@@ -102,7 +241,22 @@ Metadata must be a JSON-serializable object up to 16 KiB. Text must be non-empty
 - No user data is sent to an API by default. The default Transformers-based embedder may download model files from Hugging Face on first use unless the model is already cached or an offline/local embedder is configured.
 - Full raw source records remain in the calling harness/source system.
 
-## Verification
+## Sprint 023 breaking change note
+
+Sprint 023 removed the previous raw-transcript ownership surface. These concepts are no longer public live APIs:
+
+- raw conversation/message storage through Pristine
+- `storeAsync`
+- `getConversation`
+- `drainEmbedQueue`
+- `buildSessionVector`
+- `searcher.sql`
+- FTS, hybrid, and session-vector search APIs
+- ingest queue and embed-worker APIs
+
+Use `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` against source-owned records instead.
+
+## Development and verification
 
 Common local checks:
 
@@ -116,8 +270,16 @@ npm run test:e2e
 npm run build
 ```
 
+Full regression, including real-model integration and source-index smoke:
+
+```bash
+.checks/regression.sh --tier=full
+```
+
 Full real-model source-index smoke after build:
 
 ```bash
 node scripts/smoke-source-index.mjs
 ```
+
+`npm run test:smoke` builds first because package-entrypoint smoke tests import `dist`. Real-model checks may load/download the local embedding model on first use unless it is already cached.

@@ -353,8 +353,37 @@ export class SourceChunkStore {
         `SourceChunkStore.putStoredMany: expected ${chunks.length} embeddings, got ${embeddingsInput.length}`,
       );
     }
+    const writeTime = new Date().toISOString();
+    const chunksToWrite = chunks.map((chunk) => this.validateStoredChunkForWrite(chunk, writeTime));
     const embeddings = embeddingsInput.map((embedding) => validateEmbedding(embedding, this.dim));
-    this.writeChunksWithVectors(chunks, embeddings);
-    return chunks;
+    this.writeChunksWithVectors(chunksToWrite, embeddings);
+    return chunksToWrite;
+  }
+
+  private validateStoredChunkForWrite(
+    chunk: StoredSourceChunk,
+    updatedAt: string,
+  ): StoredSourceChunk {
+    const projectId = validateProjectId(chunk.projectId);
+    if (typeof chunk.chunkId !== 'string' || chunk.chunkId.length === 0) {
+      throw new InvalidArgumentError('StoredSourceChunk.chunkId must be a non-empty string');
+    }
+    if (typeof chunk.text !== 'string' || chunk.text.trim().length === 0) {
+      throw new InvalidArgumentError('StoredSourceChunk.text must be non-empty');
+    }
+    if (Buffer.byteLength(chunk.text, 'utf8') > SOURCE_CHUNK_TEXT_LIMIT) {
+      throw new InvalidArgumentError(
+        `StoredSourceChunk.text must be <= ${SOURCE_CHUNK_TEXT_LIMIT} bytes`,
+      );
+    }
+    if (
+      chunk.metadataJson !== null &&
+      Buffer.byteLength(chunk.metadataJson, 'utf8') > SOURCE_CHUNK_METADATA_JSON_LIMIT
+    ) {
+      throw new InvalidArgumentError(
+        `StoredSourceChunk.metadataJson must be <= ${SOURCE_CHUNK_METADATA_JSON_LIMIT} bytes`,
+      );
+    }
+    return { ...chunk, projectId, updatedAt };
   }
 }

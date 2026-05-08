@@ -10,18 +10,36 @@
 ### Project Context
 - **Repo:** `/Users/lou/projects/pristine`
 - **Tech stack:** TypeScript strict ESM, Node 18+, `better-sqlite3` + `sqlite-vec`, `@huggingface/transformers` with Nomic Embed v1.5 default, Vitest.
-- **Current state:** Pristine currently has conversation/message tables, queue/indexer logic built around stored raw messages, vector windows in `vec_windows`, session vectors in `vec_sessions`, FTS/SQL public views, and search APIs returning conversation/message-centric results. Sprint-022 is expected to prove the Pi JSONL vector-search → JSONL-inspection workflow and record the source pointer/metadata shape. Architecture cleanup uses that evidence: harnesses typically already own authoritative transcript state (Pi JSONL, other harness SQLite/JSONL/etc.), so Pristine should not duplicate raw transcripts by default.
+- **Current state:** Pristine currently has conversation/message tables, queue/indexer logic built around stored raw messages, vector windows in `vec_windows`, session vectors in `vec_sessions`, FTS/SQL public views, and search APIs returning conversation/message-centric results. Sprint-022 is complete and proved the Pi JSONL vector-search → JSONL-inspection workflow with source pointers into the authoritative Pi JSONL store. Architecture cleanup uses that evidence: harnesses typically already own authoritative transcript state (Pi JSONL, other harness SQLite/JSONL/etc.), so Pristine should not duplicate raw transcripts by default.
 - **Implementation spec:** `docs/specs/implementation-spec-005.md` must be updated by this sprint because the core primitive model changes from raw corpus owner to semantic index over source-owned records.
 
 ### Sprint-Wide Context
 - **Sprint type:** Refactor / Architecture cleanup.
 - **Shared context:** Depends on sprint-022 Pi proof evidence. No user-data compatibility burden. Remove dead/incorrect raw transcript ownership now rather than preserving dual modes. Pristine stores embeddings, indexed snippets, and optional source pointers/metadata; source systems remain authoritative for raw context. Metadata must be optional because not every harness exposes session IDs, line numbers, timestamps, or stable entry IDs.
-- **Non-goals:** No new Pi reference implementation in this sprint beyond consuming evidence from sprint-022. No default embedder swap. No migration support for old Pristine DBs. No fact extraction. No SQL query tool over raw conversations. No published package split.
+- **Non-goals:** No new Pi reference implementation in this sprint beyond consuming evidence from sprint-022. No default embedder swap. No migration support for old Pristine DBs. No fact extraction. No SQL query tool over raw conversations. No published package split. No replacement SQL/debug primitive over source-index tables unless a later sprint explicitly reintroduces one.
 
 ### Affected Flows
 
 - **Existing flows affected:** Memory ingest/index, vector search, FTS/hybrid search if retained, SQL public views if removed/replaced, spec/reference flows `search_memory` and `query_memory`, tests around `ConversationStore`, client APIs that expose `storeAsync`, `drainEmbedQueue`, `buildSessionVector`, and search result shapes.
 - **New flows introduced:** Generic source-chunk indexing with optional source metadata and pointer-based vector search results.
+
+### Regression Invariants to Preserve
+
+- Project isolation is enforced before any search result is returned.
+- Embedding dimension mismatch remains a loud domain error, not an opaque sqlite-vec failure or bogus score.
+- Search results include enough source pointer/provenance data for a harness to inspect the authoritative raw source when metadata is available.
+- Minimal metadata indexing works: text plus generated chunk ID is sufficient to index and retrieve.
+- Stable source-pointer reindex behavior is deterministic: duplicate/replacement semantics are documented and tested.
+- Delete/replace cleanup prevents stale vector hits from removed or superseded source chunks.
+- Pristine does not require or imply ownership of raw transcripts, threads, or messages.
+- Local-first/no-network guarantees remain documented and verified.
+- Deterministic regression tiers remain green; the deep gate includes the first-class smoke suite from PR #188.
+
+### SQL Primitive Decision
+
+- The current public `searcher.sql(...)` primitive is planned for removal during this cleanup because it exists to query curated SQL views over Pristine-owned raw conversation/message mirrors (`messages_public`, `conversations_public`, `messages_fts`, and `summaries_public`).
+- Source systems remain authoritative for raw context inspection; Pristine should return pointers/snippets, not expose a transcript SQL surface.
+- A future source-index-only SQL/debug primitive may be designed later, but it is out of scope for this sprint and must not preserve the current raw-transcript SQL contract.
 
 ### Verification Strategy
 
@@ -57,9 +75,10 @@ Each implementation story must include functional verification for new behavior 
   - [ ] `docs/specs/implementation-spec-005.md` states that external harness stores are authoritative for raw transcripts and Pristine indexes source chunks with snippets and pointers.
   - [ ] Spec names index fields: chunk ID, indexed text/snippet, embedding, nullable source kind, nullable source URI, optional source entry/range identifiers, optional timestamps, optional metadata JSON.
   - [ ] Spec explicitly removes raw `conversations` / `messages` ownership from the core architecture and explains that source context is fetched from the harness store on demand.
+  - [ ] Spec explicitly removes the current `searcher.sql(...)` raw-transcript read primitive and distinguishes that removal from any possible future source-index-only SQL/debug primitive.
   - [ ] Spec defines missing/partial metadata behavior: indexing/search must work with only indexed text plus a generated chunk ID.
 - **Functional verification:**
-  - [ ] Record the observed sprint-022 pointer/metadata shape in the spec or Story 1 PR notes, then run a grep/spec check after reviewing sprint-022 final evidence: `rg 'source pointer|source-owned|metadata_json|chunk ID|source kind|source URI|entry ID|line range|timestamp|text-only|generated chunk ID|conversations / messages|raw transcript' docs/specs/implementation-spec-005.md`. **Pass condition:** output shows the new architecture, required index fields, text-only/minimal metadata behavior, and removal rationale.
+  - [ ] Record the observed sprint-022 pointer/metadata shape in the spec or Story 1 PR notes, then run a grep/spec check after reviewing sprint-022 final evidence: `rg 'source pointer|source-owned|metadata_json|chunk ID|source kind|source URI|entry ID|line range|timestamp|text-only|generated chunk ID|conversations / messages|raw transcript|searcher\.sql|SQL debug' docs/specs/implementation-spec-005.md`. **Pass condition:** output shows the new architecture, required index fields, text-only/minimal metadata behavior, raw SQL primitive removal, and removal rationale.
 - **Regression verification:**
   - [ ] Run `rg 'local-first|No API calls|no data leaving|source pointer' docs/specs/implementation-spec-005.md` plus `npm run typecheck` and `npm run lint`. **Pass condition:** local-first/no-network commitments and source-pointer architecture remain documented, and checks exit 0.
 - **Manual-only verification:** N/A.
@@ -85,11 +104,12 @@ Each implementation story must include functional verification for new behavior 
 - **Acceptance criteria:**
   - [ ] Core public types expose an index input such as `SourceChunkInput` with `text` required and all source metadata optional.
   - [ ] SQLite schema stores vector-indexed chunks with validated embedding dimension, indexed snippet/text, source pointer fields, and metadata JSON.
+  - [ ] New source-index table names and field meanings are documented in the module or spec so future regression tests can audit the stable contract.
   - [ ] Storage accepts full metadata, partial metadata, and no metadata beyond text.
   - [ ] Metadata must be a JSON-serializable object no larger than 16 KiB; arrays/primitives/cyclic values are rejected. Text must be non-empty after trim and no larger than the configured chunk text limit documented in the module.
 - **Functional verification:**
   - [ ] Add unit tests for type/storage validation. **Pass condition:** full, partial, and minimal chunk inputs store successfully; invalid inputs fail with domain errors.
-  - [ ] Add schema tests. **Pass condition:** created vec table uses configured dim and metadata columns are nullable where promised.
+  - [ ] Add schema tests. **Pass condition:** created source-chunk vec table uses configured `float[N]` dim and source/metadata columns are nullable where promised.
 - **Regression verification:**
   - [ ] Run `npm run test:unit -- tests/core/database.test.ts tests/embedder/dim-parameterization.test.ts` and the new schema tests. **Pass condition:** database setup still works and configured vector dimensions still create the expected `float[N]` schema.
   - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
@@ -115,9 +135,9 @@ Each implementation story must include functional verification for new behavior 
 - **As a** SDK consumer, **I want** an API to index source chunks directly, **so that** harness adapters can feed Pristine snippets/windows without first creating raw conversation/message rows.
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
-  - [ ] Public client exposes a direct source-chunk indexing method and no new code path requires `ConversationStore` to ingest raw messages.
+  - [ ] Public client exposes a direct source-chunk indexing method as the primary memory ingest primitive and no new code path requires `ConversationStore` to ingest raw messages.
   - [ ] Indexing embeds chunks, writes vectors and metadata atomically, and is idempotent or clearly documents duplicate behavior.
-  - [ ] Synchronous indexing path is available for deterministic harness verification.
+  - [ ] Synchronous indexing path is available for deterministic harness verification and resolves only after the vector row is queryable in the same process.
   - [ ] Existing queue/worker code is either adapted to chunks or removed if it only served raw conversation ownership.
 - **Functional verification:**
   - [ ] Add integration test for direct source-chunk indexing with stub embedder. **Pass condition:** vector rows and metadata are present after indexing.
@@ -150,9 +170,10 @@ Each implementation story must include functional verification for new behavior 
 - **As a** search consumer, **I want** vector search results to return snippets and source pointers, **so that** a harness can inspect the authoritative raw source after semantic retrieval.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] Vector search result shape returns chunk ID, snippet/indexed text, score/rank, and optional source pointer/metadata fields.
+  - [ ] Vector search is the retained core search primitive and its result shape returns chunk ID, snippet/indexed text, score/rank, and optional source pointer/metadata fields.
   - [ ] Search no longer requires conversation/message joins or assumes `conversationId` / `messageIds` exist.
-  - [ ] FTS/hybrid APIs are either adapted to chunk text with pointer results in this story or explicitly marked for removal in Story 5 before any export/docs remain.
+  - [ ] FTS/hybrid/session-vector APIs are either adapted to chunk text with pointer results in this story or explicitly marked for removal in Story 5 before any export/docs remain; default plan is removal unless adapting them clearly reduces risk.
+  - [ ] `searcher.sql(...)` remains marked for removal unless this story records a reviewed decision to replace it with a source-index-only SQL/debug primitive in a later sprint.
   - [ ] Missing metadata is represented explicitly and does not throw.
   - [ ] Dimension mismatch guard remains in place for vector tables.
 - **Functional verification:**
@@ -185,11 +206,12 @@ Each implementation story must include functional verification for new behavior 
 - **Dependencies:** Stories 3 and 4
 - **Acceptance criteria:**
   - [ ] Remove or rename `ConversationStore` and raw `conversations` / `messages` table creation code when no longer used by live APIs.
-  - [ ] Remove conversation/message public SQL views and SQL search APIs that only make sense over mirrored raw transcripts.
+  - [ ] Remove conversation/message public SQL views and the current `searcher.sql(...)` public API that only makes sense over mirrored raw transcripts.
+  - [ ] Remove `SqlBackend`, `DEFAULT_PUBLIC_VIEW_ALLOWLIST`, and SQL parser/backend code if no retained source-index SQL/debug primitive uses them.
   - [ ] Remove FTS/hybrid/session-vector APIs if they depend on raw conversations and are not adapted to chunk-based pointer results.
   - [ ] Consume Story 4's recorded adapt/remove decision and removal list; if the list is not `None`, remove all named exports/docs/tests for any FTS/hybrid/session API removed by that decision.
   - [ ] Delete tests that only verify removed raw transcript ownership; do not weaken tests for retained vector indexing behavior.
-  - [ ] `rg 'ConversationStore|messages_public|conversations_public|vec_sessions|buildSessionVector|storeAsync|ftsSearch|hybridSearch' src tests scripts` returns only intentionally retained chunk-index APIs, compatibility notes, or zero hits.
+  - [ ] `rg 'ConversationStore|CREATE TABLE IF NOT EXISTS conversations|CREATE TABLE IF NOT EXISTS messages|messages_public|conversations_public|messages_fts|vec_sessions|buildSessionVector|storeAsync|ftsSearch|hybridSearch|searcher\.sql|SqlBackend|DEFAULT_PUBLIC_VIEW_ALLOWLIST' src tests scripts` returns only intentionally retained chunk-index APIs, compatibility notes, or zero hits.
 - **Functional verification:**
   - [ ] Run deletion audit command above. **Pass condition:** no live production references to removed raw transcript APIs remain.
   - [ ] Run new source-index functional tests from Stories 2–4. **Pass condition:** all pass, proving replacement behavior exists.
@@ -219,12 +241,12 @@ Each implementation story must include functional verification for new behavior 
 - **As a** SDK consumer, **I want** public docs and exports to describe source indexing accurately, **so that** consumers do not build against removed conversation-store assumptions.
 - **Dependencies:** Story 5
 - **Acceptance criteria:**
-  - [ ] Public barrel exports only live source-index/search types and APIs.
+  - [ ] Public barrel exports only live source-index/search types and APIs; removed raw-conversation APIs are not exported.
   - [ ] README/JSDoc examples use source chunks and source pointers, not raw conversations.
   - [ ] Implementation spec and sprint docs have no unresolved contradiction about Pristine owning raw transcripts.
   - [ ] Package scripts/examples that referenced removed APIs are updated or deleted.
 - **Functional verification:**
-  - [ ] Run `rg 'ConversationStore|storeAsync|buildSessionVector|messages_public|conversations_public' README.md docs src tests scripts examples`. **Pass condition:** hits are zero or explicitly documented as historical/removed behavior.
+  - [ ] Run `rg 'ConversationStore|storeAsync|buildSessionVector|messages_public|conversations_public|searcher\.sql|ftsSearch|hybridSearch|sessionVectorSearch' README.md docs src tests scripts examples`. **Pass condition:** hits are zero or explicitly documented as historical/removed behavior.
   - [ ] Add a public barrel import smoke test or typecheck fixture that imports the new source-index API from the package entrypoint. **Pass condition:** the fixture compiles without importing from `src/` internals.
   - [ ] Run `rg 'Pristine stores raw|raw conversations are stored|conversation corpus|messages table' README.md docs/specs/implementation-spec-005.md src/index.ts`. **Pass condition:** no unresolved raw-transcript ownership language remains outside historical rationale sections.
 - **Regression verification:**
@@ -257,7 +279,9 @@ Each implementation story must include functional verification for new behavior 
   - [ ] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
   - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence.
+  - [ ] Run the full deterministic regression gate: `.checks/regression.sh --tier=deep`. **Pass condition:** regression status is green and score is 5/5.
+  - [ ] Run first-class deterministic smoke explicitly if not already covered by the recorded deep-gate evidence: `npm run test:smoke`. **Pass condition:** smoke suite discovers and passes `tests/smoke/**/*.test.ts`.
+  - [ ] Run the full available regression verification suite and record pass/fail evidence. **Pass condition:** `npm run test:unit`, `SKIP_SLOW_TESTS=1 npm run test:integration`, `npm run test:e2e`, `npm run typecheck`, and `npm run lint` pass directly or as recorded components of the deep gate.
 - **Manual-only verification:** N/A — architecture cleanup should be fully automatable.
 - **Planned commits:**
   1. `docs(sprint-023): record final verification and completion`

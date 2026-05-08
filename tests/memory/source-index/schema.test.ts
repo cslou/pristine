@@ -109,7 +109,7 @@ describe('SourceChunkStore validation and storage', () => {
     expect(minimal.metadataJson).toBeNull();
   });
 
-  it('updates an existing chunk id instead of duplicating rows', () => {
+  it('updates an existing chunk id within one project without colliding across projects', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const store = new SourceChunkStore(db, 64);
 
@@ -122,16 +122,39 @@ describe('SourceChunkStore validation and storage', () => {
       { projectId: 'project-a', embedding: testEmbedding },
     );
 
+    store.put(
+      { text: 'other project', chunkId: 'stable', sourceKind: 'fixture-b' },
+      { projectId: 'project-b', embedding: testEmbedding },
+    );
+
     const rows = db
-      .prepare('SELECT text, source_kind FROM source_chunks WHERE chunk_id = ?')
+      .prepare(
+        'SELECT project_id, text, source_kind FROM source_chunks WHERE chunk_id = ? ORDER BY project_id',
+      )
       .all('stable');
-    expect(rows).toEqual([{ text: 'after', source_kind: 'fixture' }]);
+    expect(rows).toEqual([
+      { project_id: 'project-a', text: 'after', source_kind: 'fixture' },
+      { project_id: 'project-b', text: 'other project', source_kind: 'fixture-b' },
+    ]);
+    const vectorRows = db
+      .prepare(
+        'SELECT project_id, chunk_id FROM vec_source_chunks WHERE chunk_id = ? ORDER BY project_id',
+      )
+      .all('stable');
+    expect(vectorRows).toEqual([
+      { project_id: 'project-a', chunk_id: 'stable' },
+      { project_id: 'project-b', chunk_id: 'stable' },
+    ]);
   });
 
   it('rejects invalid text, project ids, metadata, and optional integers', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const store = new SourceChunkStore(db, 64);
 
+    expect(() =>
+      store.put(null as unknown as never, { projectId: 'project-a', embedding: testEmbedding }),
+    ).toThrow(InvalidArgumentError);
+    expect(() => store.put({ text: 'ok' }, null as unknown as never)).toThrow(InvalidArgumentError);
     expect(() =>
       store.put({ text: '   ' }, { projectId: 'project-a', embedding: testEmbedding }),
     ).toThrow(InvalidArgumentError);

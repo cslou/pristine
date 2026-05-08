@@ -14,20 +14,22 @@ import type {
  * Source-index storage contract.
  *
  * Tables:
- * - `source_chunks`: stable chunk metadata keyed by `chunk_id`. Required
- *   fields are `chunk_id`, `project_id`, and indexed `text`; source pointer
- *   fields and `metadata_json` are nullable so text-only chunks remain valid.
- * - `vec_source_chunks`: sqlite-vec table keyed by the same `chunk_id`, with
- *   `embedding float[N]` templated from the configured embedder dimension and
- *   `project_id` duplicated for filter-first vector search.
+ * - `source_chunks`: stable chunk metadata keyed by `(project_id, chunk_id)`.
+ *   Required fields are `project_id`, `chunk_id`, and indexed `text`; source
+ *   pointer fields and `metadata_json` are nullable so text-only chunks remain
+ *   valid.
+ * - `vec_source_chunks`: sqlite-vec table keyed by an internal `chunk_key`
+ *   derived from `(project_id, chunk_id)`, with `embedding float[N]` templated
+ *   from the configured embedder dimension and `project_id`/`chunk_id`
+ *   duplicated for filter-first vector search and result reconstruction.
  */
 export const SOURCE_CHUNK_TEXT_LIMIT = 64 * 1024;
 export const SOURCE_CHUNK_METADATA_JSON_LIMIT = 16 * 1024;
 
 const SOURCE_CHUNKS_TABLE_DDL = `
 CREATE TABLE IF NOT EXISTS source_chunks (
-  chunk_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
+  chunk_id TEXT NOT NULL,
   text TEXT NOT NULL,
   source_kind TEXT,
   source_uri TEXT,
@@ -39,7 +41,8 @@ CREATE TABLE IF NOT EXISTS source_chunks (
   timestamp TEXT,
   metadata_json TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (project_id, chunk_id)
 );
 CREATE INDEX IF NOT EXISTS ix_source_chunks_project_updated
   ON source_chunks(project_id, updated_at DESC);
@@ -51,8 +54,9 @@ export const buildSourceChunkVectorDdl = (dim: number): string => {
   assertValidDim(dim);
   return `
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_source_chunks USING vec0(
-  chunk_id TEXT PRIMARY KEY,
+  chunk_key TEXT PRIMARY KEY,
   project_id TEXT,
+  chunk_id TEXT,
   embedding float[${dim}]
 );
 `;
@@ -77,6 +81,18 @@ const assertOptionalInteger = (value: number | undefined, fieldName: string): nu
     throw new InvalidArgumentError(`SourceChunkInput.${fieldName} must be an integer`);
   }
   return value;
+};
+
+const CHUNK_KEY_SEPARATOR = '\u0000';
+
+const sourceChunkKey = (projectId: string, chunkId: string): string =>
+  `${projectId}${CHUNK_KEY_SEPARATOR}${chunkId}`;
+
+const assertRecordInput = (value: unknown, name: string): Record<string, unknown> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new InvalidArgumentError(`${name} must be an object`);
+  }
+  return value as Record<string, unknown>;
 };
 
 const validateProjectId = (projectId: string): string => {
@@ -177,10 +193,12 @@ export const normalizeSourceChunkInput = (
   input: SourceChunkInput,
   options: SourceChunkNormalizeOptions,
 ): StoredSourceChunk => {
-  if (typeof input.text !== 'string') {
+  const inputRecord = assertRecordInput(input, 'SourceChunkInput');
+  const optionsRecord = assertRecordInput(options, 'SourceChunkNormalizeOptions');
+  if (typeof inputRecord.text !== 'string') {
     throw new InvalidArgumentError('SourceChunkInput.text must be a string');
   }
-  const text = input.text.trim();
+  const text = inputRecord.text.trim();
   if (text.length === 0) {
     throw new InvalidArgumentError('SourceChunkInput.text must be non-empty after trim');
   }
@@ -190,20 +208,25 @@ export const normalizeSourceChunkInput = (
     );
   }
 
+  const chunkIdValue = inputRecord.chunkId;
+  if (chunkIdValue !== undefined && typeof chunkIdValue !== 'string') {
+    throw new InvalidArgumentError('SourceChunkInput.chunkId must be a string');
+  }
+
   const now = new Date().toISOString();
   return {
-    chunkId: input.chunkId ?? randomUUID(),
-    projectId: validateProjectId(options.projectId),
+    chunkId: chunkIdValue ?? randomUUID(),
+    projectId: validateProjectId(optionsRecord.projectId as string),
     text,
-    sourceKind: assertOptionalString(input.sourceKind, 'sourceKind'),
-    sourceUri: assertOptionalString(input.sourceUri, 'sourceUri'),
-    entryId: assertOptionalString(input.entryId, 'entryId'),
-    parentId: assertOptionalString(input.parentId, 'parentId'),
-    lineNumber: assertOptionalInteger(input.lineNumber, 'lineNumber'),
-    lineStart: assertOptionalInteger(input.lineStart, 'lineStart'),
-    lineEnd: assertOptionalInteger(input.lineEnd, 'lineEnd'),
-    timestamp: assertOptionalString(input.timestamp, 'timestamp'),
-    metadataJson: validateMetadata(input.metadata),
+    sourceKind: assertOptionalString(inputRecord.sourceKind as string | undefined, 'sourceKind'),
+    sourceUri: assertOptionalString(inputRecord.sourceUri as string | undefined, 'sourceUri'),
+    entryId: assertOptionalString(inputRecord.entryId as string | undefined, 'entryId'),
+    parentId: assertOptionalString(inputRecord.parentId as string | undefined, 'parentId'),
+    lineNumber: assertOptionalInteger(inputRecord.lineNumber as number | undefined, 'lineNumber'),
+    lineStart: assertOptionalInteger(inputRecord.lineStart as number | undefined, 'lineStart'),
+    lineEnd: assertOptionalInteger(inputRecord.lineEnd as number | undefined, 'lineEnd'),
+    timestamp: assertOptionalString(inputRecord.timestamp as string | undefined, 'timestamp'),
+    metadataJson: validateMetadata(inputRecord.metadata as SourceChunkInput['metadata']),
     createdAt: now,
     updatedAt: now,
   };
@@ -214,20 +237,17 @@ export class SourceChunkStore {
   private readonly upsertChunk: Statement;
   private readonly deleteVector: Statement;
   private readonly insertVector: Statement;
+  private readonly writeChunkWithVector: (chunk: StoredSourceChunk, embedding: Buffer) => void;
 
-  public constructor(
-    private readonly db: Database.Database,
-    dim: number,
-  ) {
+  public constructor(db: Database.Database, dim: number) {
     initSourceChunkTables(db, dim);
     this.dim = dim;
     this.upsertChunk = db.prepare(`
       INSERT INTO source_chunks (
-        chunk_id, project_id, text, source_kind, source_uri, entry_id, parent_id,
+        project_id, chunk_id, text, source_kind, source_uri, entry_id, parent_id,
         line_number, line_start, line_end, timestamp, metadata_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(chunk_id) DO UPDATE SET
-        project_id = excluded.project_id,
+      ON CONFLICT(project_id, chunk_id) DO UPDATE SET
         text = excluded.text,
         source_kind = excluded.source_kind,
         source_uri = excluded.source_uri,
@@ -240,19 +260,14 @@ export class SourceChunkStore {
         metadata_json = excluded.metadata_json,
         updated_at = excluded.updated_at
     `);
-    this.deleteVector = db.prepare('DELETE FROM vec_source_chunks WHERE chunk_id = ?');
+    this.deleteVector = db.prepare('DELETE FROM vec_source_chunks WHERE chunk_key = ?');
     this.insertVector = db.prepare(
-      'INSERT INTO vec_source_chunks(chunk_id, project_id, embedding) VALUES (?, ?, ?)',
+      'INSERT INTO vec_source_chunks(chunk_key, project_id, chunk_id, embedding) VALUES (?, ?, ?, ?)',
     );
-  }
-
-  public put(input: SourceChunkInput, options: SourceChunkStoreOptions): StoredSourceChunk {
-    const chunk = normalizeSourceChunkInput(input, options);
-    const embedding = validateEmbedding(options.embedding, this.dim);
-    const runTransaction = this.db.transaction(() => {
+    this.writeChunkWithVector = db.transaction((chunk: StoredSourceChunk, embedding: Buffer) => {
       this.upsertChunk.run(
-        chunk.chunkId,
         chunk.projectId,
+        chunk.chunkId,
         chunk.text,
         chunk.sourceKind,
         chunk.sourceUri,
@@ -266,10 +281,17 @@ export class SourceChunkStore {
         chunk.createdAt,
         chunk.updatedAt,
       );
-      this.deleteVector.run(chunk.chunkId);
-      this.insertVector.run(chunk.chunkId, chunk.projectId, embedding);
+      const chunkKey = sourceChunkKey(chunk.projectId, chunk.chunkId);
+      this.deleteVector.run(chunkKey);
+      this.insertVector.run(chunkKey, chunk.projectId, chunk.chunkId, embedding);
     });
-    runTransaction();
+  }
+
+  public put(input: SourceChunkInput, options: SourceChunkStoreOptions): StoredSourceChunk {
+    const chunk = normalizeSourceChunkInput(input, options);
+    const optionsRecord = assertRecordInput(options, 'SourceChunkStoreOptions');
+    const embedding = validateEmbedding(optionsRecord.embedding as readonly number[], this.dim);
+    this.writeChunkWithVector(chunk, embedding);
     return chunk;
   }
 }

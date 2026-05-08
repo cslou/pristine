@@ -41,6 +41,14 @@ export interface SearchSourceChunksOptions {
   readonly limit?: number;
 }
 
+export interface DeleteSourceChunksOptions {
+  readonly projectId: string;
+}
+
+export interface DeleteSourceChunksResult {
+  readonly deletedCount: number;
+}
+
 export interface SourceChunkSearchHit extends IndexedSourceChunk {
   readonly score: number;
 }
@@ -168,6 +176,17 @@ export class PristineLocal {
       );
     }
     return this.sourceChunkStore.putStoredMany(normalized, embeddings).map(toPublicChunk);
+  }
+
+  public deleteSourceChunks(
+    chunkIds: readonly string[],
+    options: DeleteSourceChunksOptions,
+  ): DeleteSourceChunksResult {
+    if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+      throw new InvalidArgumentError('deleteSourceChunks: options must be an object');
+    }
+    const deletedCount = this.sourceChunkStore.deleteMany(options.projectId, chunkIds);
+    return { deletedCount };
   }
 
   public async searchSourceChunks(

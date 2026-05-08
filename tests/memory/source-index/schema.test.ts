@@ -40,6 +40,14 @@ describe('SourceChunkStore schema', () => {
     expect(readTableSql(db, 'source_chunks')).toContain('chunk_id TEXT PRIMARY KEY');
   });
 
+  it('rejects existing source-index vector tables with a mismatched dimension', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    new SourceChunkStore(db, 64);
+
+    expect(() => new SourceChunkStore(db, 128)).toThrow(InvalidArgumentError);
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('embedding float[64]');
+  });
+
   it('rebuilds incompatible draft source-index tables on init', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     db.exec(`
@@ -133,6 +141,32 @@ describe('SourceChunkStore validation and storage', () => {
     expect(minimal.chunkId).toHaveLength(36);
     expect(minimal.sourceUri).toBeNull();
     expect(minimal.metadataJson).toBeNull();
+  });
+
+  it('deletes chunks and vectors atomically by project id and chunk ids', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+
+    store.put(
+      { text: 'delete me', chunkId: 'same' },
+      { projectId: 'project-a', embedding: testEmbedding },
+    );
+    store.put(
+      { text: 'keep me', chunkId: 'same' },
+      { projectId: 'project-b', embedding: testEmbedding },
+    );
+
+    expect(store.deleteMany('project-a', ['same'])).toBe(1);
+    expect(
+      db.prepare('SELECT chunk_id FROM source_chunks WHERE project_id = ?').all('project-a'),
+    ).toEqual([]);
+    expect(
+      db.prepare('SELECT chunk_id FROM vec_source_chunks WHERE project_id = ?').all('project-a'),
+    ).toEqual([]);
+    expect(
+      db.prepare('SELECT chunk_id FROM source_chunks WHERE project_id = ?').all('project-b'),
+    ).toEqual([{ chunk_id: 'same' }]);
+    expect(() => store.deleteMany('project-a', [])).toThrow(InvalidArgumentError);
   });
 
   it('updates an existing chunk id within one project without colliding across projects', () => {

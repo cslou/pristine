@@ -71,7 +71,12 @@ const readExistingTableSql = (db: Database.Database, tableName: string): string 
   return row?.sql ?? null;
 };
 
-const dropIncompatibleSourceChunkTables = (db: Database.Database): void => {
+const parseEmbeddingDim = (ddl: string): number | null => {
+  const match = /\bembedding\s+float\[(\d+)\]/i.exec(ddl);
+  return match === null ? null : Number.parseInt(match[1]!, 10);
+};
+
+const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): void => {
   const sourceChunksSql = readExistingTableSql(db, 'source_chunks');
   const vecSourceChunksSql = readExistingTableSql(db, 'vec_source_chunks');
   const sourceChunksCompatible =
@@ -84,12 +89,27 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database): void => {
       DROP TABLE IF EXISTS vec_source_chunks;
       DROP TABLE IF EXISTS source_chunks;
     `);
+    return;
+  }
+
+  if (vecSourceChunksSql !== null) {
+    const onDiskDim = parseEmbeddingDim(vecSourceChunksSql);
+    if (onDiskDim === null) {
+      throw new InvalidArgumentError(
+        'SourceChunkStore: vec_source_chunks DDL does not match expected vec0 schema (missing embedding float[N])',
+      );
+    }
+    if (onDiskDim !== dim) {
+      throw new InvalidArgumentError(
+        `SourceChunkStore: configured embedder dim=${dim} but on-disk vec_source_chunks is float[${onDiskDim}]`,
+      );
+    }
   }
 };
 
 export const initSourceChunkTables = (db: Database.Database, dim: number): void => {
   assertValidDim(dim);
-  dropIncompatibleSourceChunkTables(db);
+  dropIncompatibleSourceChunkTables(db, dim);
   db.exec(SOURCE_CHUNKS_TABLE_DDL);
   db.exec(buildSourceChunkVectorDdl(dim));
 };
@@ -266,7 +286,11 @@ export class SourceChunkStore {
   private readonly upsertChunk: Statement;
   private readonly deleteVector: Statement;
   private readonly insertVector: Statement;
+  private readonly deleteChunk: Statement;
   private readonly searchStmt: Statement;
+  private readonly deleteChunksWithVectors: (
+    chunks: readonly { readonly projectId: string; readonly chunkId: string }[],
+  ) => number;
   private readonly writeChunksWithVectors: (
     chunks: readonly StoredSourceChunk[],
     embeddings: readonly Buffer[],
@@ -299,6 +323,9 @@ export class SourceChunkStore {
     this.insertVector = db.prepare(
       'INSERT INTO vec_source_chunks(chunk_key, project_id, chunk_id, embedding) VALUES (?, ?, ?, ?)',
     );
+    this.deleteChunk = db.prepare(
+      'DELETE FROM source_chunks WHERE project_id = ? AND chunk_id = ?',
+    );
     this.searchStmt = db.prepare(`
       SELECT
         c.project_id, c.chunk_id, c.text, c.source_kind, c.source_uri, c.entry_id, c.parent_id,
@@ -311,6 +338,16 @@ export class SourceChunkStore {
         AND v.project_id = ?
       ORDER BY distance
     `);
+    this.deleteChunksWithVectors = db.transaction(
+      (chunks: readonly { readonly projectId: string; readonly chunkId: string }[]) => {
+        let deleted = 0;
+        for (const chunk of chunks) {
+          this.deleteVector.run(chunk.projectId, chunk.chunkId);
+          deleted += this.deleteChunk.run(chunk.projectId, chunk.chunkId).changes;
+        }
+        return deleted;
+      },
+    );
     this.writeChunksWithVectors = db.transaction(
       (chunks: readonly StoredSourceChunk[], embeddings: readonly Buffer[]) => {
         for (let index = 0; index < chunks.length; index++) {
@@ -401,6 +438,25 @@ export class SourceChunkStore {
       },
       score: distanceToScore(row.distance),
     }));
+  }
+
+  public deleteMany(projectIdInput: string, chunkIdsInput: readonly string[]): number {
+    const projectId = validateProjectId(projectIdInput);
+    if (!Array.isArray(chunkIdsInput)) {
+      throw new InvalidArgumentError('SourceChunkStore.deleteMany: chunkIds must be an array');
+    }
+    if (chunkIdsInput.length === 0) {
+      throw new InvalidArgumentError('SourceChunkStore.deleteMany: chunkIds must not be empty');
+    }
+    const chunks = chunkIdsInput.map((chunkId) => {
+      if (typeof chunkId !== 'string' || chunkId.length === 0) {
+        throw new InvalidArgumentError(
+          'SourceChunkStore.deleteMany: chunkIds must be non-empty strings',
+        );
+      }
+      return { projectId, chunkId };
+    });
+    return this.deleteChunksWithVectors(chunks);
   }
 
   public put(input: SourceChunkInput, options: SourceChunkStoreOptions): StoredSourceChunk {

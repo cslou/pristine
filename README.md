@@ -63,6 +63,10 @@ Indexes source-owned chunks. `text` is required; all source metadata is optional
 
 Runs vector search over indexed chunks and returns pointer-oriented hits. Results include `chunkId`, indexed text, score, nullable source fields, and metadata. Search is project-scoped and does not require raw conversation/message tables.
 
+### `deleteSourceChunks(chunkIds, { projectId })`
+
+Deletes source chunks and their vector rows atomically within one project. Use this when the authoritative source system deletes, truncates, rotates, or supersedes records so Pristine does not return stale pointers/snippets.
+
 ### Privacy APIs
 
 - `secureAndRedact(text, userId, classifier?)`

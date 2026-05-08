@@ -147,6 +147,32 @@ describe('PristineLocal', () => {
     ).toEqual([]);
   });
 
+  it('deleteSourceChunks removes stale chunks and vectors within a project', async () => {
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValue([vector(1)]);
+    vi.mocked(deps.embedder.embed).mockResolvedValue(vector(1));
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    await client.indexSourceChunks([{ text: 'delete stale pointer', chunkId: 'stale' }], {
+      projectId: 'project-a',
+    });
+    await client.indexSourceChunks([{ text: 'keep pointer', chunkId: 'stale' }], {
+      projectId: 'project-b',
+    });
+
+    expect(client.deleteSourceChunks(['stale'], { projectId: 'project-a' })).toEqual({
+      deletedCount: 1,
+    });
+    await expect(client.searchSourceChunks('stale', { projectId: 'project-a' })).resolves.toEqual(
+      [],
+    );
+    await expect(
+      client.searchSourceChunks('stale', { projectId: 'project-b' }),
+    ).resolves.toHaveLength(1);
+    expect(() => client.deleteSourceChunks([], { projectId: 'project-a' })).toThrow(
+      InvalidArgumentError,
+    );
+  });
+
   it('searchSourceChunks returns source pointer hits with full and minimal metadata', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
       vector(1),

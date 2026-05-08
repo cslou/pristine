@@ -117,6 +117,7 @@ describe('regression.sh tier contract', () => {
       'npm|run typecheck|SKIP=',
       'npm|run test:unit|SKIP=',
       'npm|run build|SKIP=',
+      'npm|run test:smoke|SKIP=',
       'npm|run test:integration|SKIP=1',
       'npm|run test:e2e|SKIP=',
     ]);
@@ -126,6 +127,7 @@ describe('regression.sh tier contract', () => {
       'npm|run typecheck|SKIP=',
       'npm|run test:unit|SKIP=',
       'npm|run build|SKIP=',
+      'npm|run test:smoke|SKIP=',
       'npm|run test:integration|SKIP=1',
       'npm|run test:e2e|SKIP=',
       'npm|run test:integration|SKIP=',
@@ -166,6 +168,7 @@ describe('regression.sh tier contract', () => {
       'npm|run typecheck|SKIP=',
       'npm|run test:unit|SKIP=',
       'npm|run build|SKIP=',
+      'npm|run test:smoke|SKIP=',
       'npm|run test:integration|SKIP=1',
       'npm|run test:e2e|SKIP=',
     ]);

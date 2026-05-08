@@ -9,7 +9,7 @@ const MAX_DIM = 4096;
  * Validate a candidate embedding dimension. Single source of truth used by
  * the embedder factory, the engine constructors (`LocalEmbedder`,
  * `OllamaEmbedder`), the `models.json` validator (`validateEmbedderEntry`),
- * and the DDL-build sites in `ConversationStore`. Bounds (64..4096) reject
+ * and source-index DDL-build sites. Bounds (64..4096) reject
  * sub-byte-aligned absurdities while covering current production embedders
  * (text-embedding-3-large is 3072 native). The integer check also serves
  * as the SQL-injection guard for the templated `float[${dim}]` DDL — only

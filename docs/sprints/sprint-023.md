@@ -101,7 +101,7 @@ Each implementation story must include functional verification for new behavior 
 |---|---:|---:|---:|---:|---:|---|
 | Unit | 583 | +44 | 336 | 0 | 291 | Added source-index/client/regression coverage; removed raw conversation/search/indexer-only tests. |
 | Integration / contract | 171 | +0 | 153 | 0 | 18 | Retained privacy/embedder integration; removed raw transcript/search integration. |
-| E2E / smoke | 4 | +2 | 0 | 0 | 6 | Added package-entrypoint smoke and real-model source-index smoke; deterministic e2e retained. |
+| E2E / smoke | 4 | +2 | 0 | 0 | 6 | Added package-entrypoint smoke and source-index real-model smoke; deterministic e2e retained. |
 | Simulator / device | 0 | +0 | 0 | 0 | 0 | Not applicable. |
 | AI / model evals | 0 | +1 | 1 | 0 | 1 | Replaced real-model indexer smoke with source-index real-model smoke. |
 | Static / local checks | 5 | +1 | 0 | 0 | 6 | Added smoke build/package-entrypoint contract; lint/typecheck/build/regression tiers retained. |
@@ -116,9 +116,11 @@ Counting basis: Vitest test counts plus scripted verification surfaces from regr
 Regression summary: 0 existing retained regression verifications pending/not yet run; full tier passed with 9/9 checks green.
 
 ## Why ready
-- Every implementation story AC is checked and backed by merged story PR evidence plus final audit commands.
+- Every implementation story AC remains in the sprint body and is checked against merged story PR evidence plus final audit commands.
 - Functional verification for source-index schema, indexing, pointer search, deletion audit, docs/export package entrypoint, and final completion passed.
-- Full regression verification passed: `.checks/regression.sh --tier=full` green, score 5/5, including real-model source-index smoke.
+- Full regression verification passed: `.checks/regression.sh --tier=full` green, score 5/5.
+- Required final suite components passed directly or as named full-tier components: `npm run lint`, `npm run typecheck`, `npm run test:unit`, `npm run build`, `npm run test:smoke`, `SKIP_SLOW_TESTS=1 npm run test:integration`, `npm run test:e2e`, `npm run test:integration`, and `node scripts/smoke-source-index.mjs`.
+- Package-entrypoint verification is preserved: `npm run test:smoke` now runs `npm run build` first and includes `tests/smoke/package-entrypoint.smoke.test.ts` importing built `../../dist/index.js`.
 - Final Story PR review gate will carry the last `/review` / `/review-fix` result before merge.
 
 ## Open for your decision

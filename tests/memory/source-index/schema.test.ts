@@ -181,6 +181,38 @@ describe('SourceChunkStore schema', () => {
     expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_key TEXT PRIMARY KEY');
   });
 
+  it('rejects non-vec0 vec_source_chunks tables before search can fail later', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(`
+      CREATE TABLE source_chunks (
+        project_id TEXT NOT NULL,
+        chunk_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        source_kind TEXT,
+        source_uri TEXT,
+        entry_id TEXT,
+        parent_id TEXT,
+        line_number INTEGER,
+        line_start INTEGER,
+        line_end INTEGER,
+        timestamp TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, chunk_id)
+      );
+      CREATE TABLE vec_source_chunks (
+        chunk_key TEXT PRIMARY KEY,
+        project_id TEXT,
+        chunk_id TEXT,
+        embedding float[64]
+      );
+    `);
+
+    expect(() => new SourceChunkStore(db, 64)).toThrow(/not a sqlite-vec virtual table/);
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('embedding float[64]');
+  });
+
   it('rejects malformed vec_source_chunks DDL missing embedding dimension', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     db.exec(`

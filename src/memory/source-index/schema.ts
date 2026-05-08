@@ -95,14 +95,23 @@ const REQUIRED_SOURCE_CHUNKS_COLUMNS = [
 
 const REQUIRED_VEC_SOURCE_CHUNKS_COLUMNS = ['chunk_key', 'project_id', 'chunk_id'] as const;
 
-const readTableColumns = (db: Database.Database, tableName: string): ReadonlySet<string> => {
-  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+type SourceIndexTableName = 'source_chunks' | 'vec_source_chunks';
+
+const readTableColumns = (
+  db: Database.Database,
+  tableName: SourceIndexTableName,
+): ReadonlySet<string> => {
+  const pragmaSql =
+    tableName === 'source_chunks'
+      ? 'PRAGMA table_info(source_chunks)'
+      : 'PRAGMA table_info(vec_source_chunks)';
+  const rows = db.prepare(pragmaSql).all() as Array<{ name: string }>;
   return new Set(rows.map((row) => row.name));
 };
 
 const assertRequiredColumns = (
   db: Database.Database,
-  tableName: string,
+  tableName: SourceIndexTableName,
   requiredColumns: readonly string[],
 ): void => {
   const columns = readTableColumns(db, tableName);
@@ -113,6 +122,9 @@ const assertRequiredColumns = (
     );
   }
 };
+
+const isVec0VirtualTable = (ddl: string): boolean =>
+  /CREATE\s+VIRTUAL\s+TABLE\b[\s\S]*\bUSING\s+vec0\s*\(/i.test(ddl);
 
 const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): void => {
   const sourceChunksSql = readExistingTableSql(db, 'source_chunks');
@@ -139,6 +151,11 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): 
     if (onDiskDim === null) {
       throw new InvalidArgumentError(
         'SourceChunkStore: vec_source_chunks DDL does not match expected vec0 schema (missing embedding float[N])',
+      );
+    }
+    if (!isVec0VirtualTable(vecSourceChunksSql)) {
+      throw new InvalidArgumentError(
+        'SourceChunkStore: vec_source_chunks DDL does not match expected vec0 schema (not a sqlite-vec virtual table)',
       );
     }
     if (onDiskDim !== dim) {

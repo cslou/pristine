@@ -1,19 +1,19 @@
-# Pristine — Implementation Spec 005: Memory as Searchable Corpus
+# Pristine — Implementation Spec 005: Source-Pointer Semantic Index
 
-**Status:** Draft — architecture committed
-**Last updated:** 2026-04-22
+**Status:** Draft — Sprint 023 source-pointer cleanup target
+**Last updated:** 2026-05-08
 **Author:** Lou + Claude (paired across PR #94 wrap-up, research synthesis, and architecture alignment)
 
 ---
 
 ## Product Overview
 
-Pristine is a local-first privacy and memory SDK for coding agents. The memory subsystem treats past conversations as a **searchable corpus** — not a compressed fact ledger — and exposes primitives (ingest, search, summary storage, embedding) that consumers compose into tools, hooks, and integrations. No API calls, no server, no data leaving the device. This spec defines the memory subsystem's architecture after the pivot from extraction-based storage to corpus-based retrieval.
+Pristine is a local-first privacy and memory SDK for coding agents. The memory subsystem is a **source-pointer semantic index** — not a raw transcript store and not a compressed fact ledger — and exposes primitives that consumers compose into tools, hooks, and integrations. Host harnesses remain authoritative for raw conversations, threads, messages, JSONL files, or other source records; Pristine stores embeddings, indexed text/snippets, and optional source pointers so an agent can find the right source and inspect it in the owning system. No API calls, no server, no data leaving the device. This spec defines the memory subsystem's architecture after the pivot from extraction-based storage and raw-conversation ownership to source-owned semantic retrieval.
 
 ### Key References
 
 - `docs/specs/implementation-spec-001.md` — original Pristine architecture
-- `docs/specs/implementation-spec-003.md` — memory infrastructure (conversation store, embedder, FTS5, hook scripts) — preserved by this pivot
+- `docs/specs/implementation-spec-003.md` — historical memory infrastructure; Sprint 023 preserves reusable embedder/sqlite/hook learnings but removes raw conversation-store and raw-transcript FTS/SQL ownership from the target architecture
 - `docs/specs/implementation-spec-004.md` — privacy narrowed to secrets for developer use; same narrowing discipline applied here
 - `docs/analysis/claude-mem-vs-pristine.html` — 21-slide comparison deck
 - `docs/analysis/developer-memory-pain-research.html` — 55-source developer-memory-pain research deck
@@ -43,9 +43,9 @@ Three of the four quadrants are **harness problems** — enforced through hooks,
 
 Production memory systems — mem0, claude-mem, Letta — extract atomic facts from conversations and store those facts as the memory. They compress at write-time to save tokens at read-time. This design is forced by their architecture: they don't store raw conversations as a queryable corpus, so extraction is the only way to build useable memory.
 
-**Pristine's architecture is different.** Raw conversations are stored locally in SQLite. sqlite-vec retrieval is sub-millisecond. The host agent is fully capable of synthesizing from primary sources. Under these constraints, pre-compression is pure tax — and a lossy tax, because it bakes in write-time guesses about what future queries will need.
+**Pristine's architecture is different.** Raw source records already live locally in the harness that produced them: Pi JSONL, another harness's SQLite store, project files, or future source-owned stores. sqlite-vec retrieval over source-indexed chunks is fast enough that Pristine does not need to mirror complete transcripts to be useful. The host agent is fully capable of synthesizing from primary sources once search returns the right pointer. Under these constraints, pre-compression and raw-transcript duplication are both tax — and lossy/risky tax, because they bake in write-time guesses and create competing sources of truth.
 
-The right analogy is **llms.txt over pre-summarization**. Given a capable reader and fast access to primary sources, an index that points to content beats a summary that replaces it. Same principle applies to memory: raw corpus + index beats compressed ledger whenever the reader can search.
+The right analogy is **llms.txt over pre-summarization**. Given a capable reader and fast access to primary sources, an index that points to content beats a summary that replaces it. Same principle applies to memory: source-owned records + semantic index beats compressed ledger or raw transcript mirror whenever the reader can search and inspect the authoritative source.
 
 Consequence: **no fact extraction.** The existing extractor and consolidator modules are removed from the SDK entirely. There is no opt-in mode, no legacy flag, no dormant import path.
 
@@ -55,14 +55,14 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 
 | Layer | Example |
 |---|---|
-| **Primitive** (core SDK) | `searcher.vectorSearch(query, filters)` |
-| **Reference** (documented example, replaceable) | `search_memory` tool that wraps it for Claude tool-use |
-| **Primitive** | `store.addSummary(sessionId, text, timestamp)` |
-| **Reference** | Session-summary-generation script using the host LLM |
-| **Primitive** | `searcher.sql(rawSql, opts?)` (read-only, row-capped, timeout-guarded; allowlist-validated) |
-| **Reference** | Raw-SQL query tool for agent tool-calling |
-| **Primitive** | `indexer.ingest(turns)` |
-| **Reference** | PostToolUse hook script that calls it |
+| **Primitive** (core SDK) | `indexer.indexSourceChunks(chunks)` |
+| **Reference** | Pi JSONL `jsonl-index` extension that feeds active-session snippets/windows |
+| **Primitive** | `searcher.vectorSearch(query, filters)` returning chunk IDs, snippets, scores, and source pointers |
+| **Reference** (documented example, replaceable) | `pristine_vector_search` / `search_memory` tool that wraps vector search for agent tool-use |
+| **Primitive** | embedder factory and configured vector dimension |
+| **Reference** | Nomic local embedder setup and warmup docs |
+
+The previous raw-transcript primitives — `indexer.ingest(turns)`, `storeAsync(conversation)`, `buildSessionVector(conversationId)`, `searcher.ftsSearch`, `searcher.hybridSearch`, `searcher.sessionVectorSearch`, and `searcher.sql(rawSql, opts?)` over `messages_public` / `conversations_public` — are not part of the target architecture unless explicitly reintroduced over source-index tables. Sprint 023 removes the current `searcher.sql(...)` raw-transcript read primitive rather than preserving a SQL surface that implies Pristine owns conversations/messages. A future source-index-only SQL debug primitive may be designed later, but it must not expose harness-owned raw context.
 
 Reference implementations live in `examples/<harness>/<tool>/` (or as separately-versioned `@pristine/<harness>-<tool>` packages); see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). Each opens with: *"This is one way to use Pristine primitives. You can write your own."*
 
@@ -74,9 +74,9 @@ This principle has teeth: if a feature requires an opinion (a file format, a hoo
 
 PR #94 (`fix/gemma4-extraction-diagnostic`) succeeded at its stated goal: gemma4:e4b now reliably extracts facts from dialogue-dense LOCOMO sessions, lifting the `--limit 1` baseline from 54 memories / 8 sessions to **83 memories / 10 sessions**. PR #95 followed with architectural docs — claude-mem comparison, developer-memory-pain research. But the work surfaced a deeper question: is fact extraction on small local models the right primary mechanism at all?
 
-Two weeks of discovery — claude-mem architecture review, 55-source developer-pain research, and chunking-pattern research across seven shipping memory systems — converged on a reversal: **the extraction model is wrong for our constraints.** Production systems extract because they don't store raw corpora as queryable memory. Pristine *does*, so pre-compression is pure tax. The pivot is toward corpus-based search with agent-driven navigation.
+Two weeks of discovery — claude-mem architecture review, 55-source developer-pain research, and chunking-pattern research across seven shipping memory systems — converged on a reversal: **the extraction model is wrong for our constraints.** Production systems extract because they don't store raw corpora as queryable memory. Sprint 022 then proved Pristine can instead index source-owned snippets and return pointers into an authoritative harness store. Under those constraints, pre-compression and raw transcript mirroring are pure tax. The pivot is toward source-pointer semantic search with agent-driven navigation.
 
-This spec captures that pivot. It supersedes the extraction-based memory design from spec-001 / spec-003 at the semantic layer while preserving the storage and hook infrastructure those specs built. **It is not a build plan.** Its job is to:
+This spec captures that pivot. It supersedes the extraction-based memory design from spec-001 / spec-003 at the semantic layer while preserving reusable local embedder/sqlite lessons. Raw conversation-store and raw-transcript FTS/SQL surfaces are not preserved by the target architecture. **It is not a build plan.** Its job is to:
 
 - Lock in the architectural direction so future decisions stay coherent
 - Define the primitive/reference split that governs SDK surface decisions
@@ -88,9 +88,74 @@ This spec captures that pivot. It supersedes the extraction-based memory design 
 
 ---
 
+## 1A. Sprint 023 target architecture: source-pointer semantic index
+
+Sprint 022's Pi reference flow proved the target shape: Pi JSONL remains authoritative, Pristine indexes semantic snippets/windows, vector search returns a source pointer, and a harness skill/tool inspects the raw JSONL context only after retrieval identifies the relevant source. Sprint 023 generalizes that proof into the core SDK.
+
+### 1A.1 Ownership boundary
+
+External harness stores are authoritative for raw transcripts and source records. Pristine does **not** own raw conversations, threads, or messages in the target architecture and does not require a SQL mirror of them. Pristine owns only the semantic index:
+
+- generated or caller-supplied chunk ID
+- indexed text and/or snippet used for retrieval
+- embedding vector with validated configured dimension
+- nullable `source_kind`
+- nullable `source_uri`
+- optional source entry identifiers such as `entry_id`, `parent_id`, or equivalent harness IDs
+- optional source range identifiers such as `line_number`, `line_start`, `line_end`, byte offsets, or token offsets when available
+- optional timestamps such as `timestamp`, `timestamp_from`, or `timestamp_to`
+- optional `metadata_json` for JSON-serializable harness metadata
+
+Source metadata is intentionally optional. Indexing and search must work with only non-empty indexed text plus a generated chunk ID; every pointer field can be absent/null when the source system does not expose it.
+
+### 1A.2 Minimal source chunk input
+
+The canonical index input is conceptually:
+
+```ts
+interface SourceChunkInput {
+  text: string;
+  chunkId?: string;
+  sourceKind?: string;
+  sourceUri?: string;
+  entryId?: string;
+  parentId?: string;
+  lineNumber?: number;
+  lineStart?: number;
+  lineEnd?: number;
+  timestamp?: string;
+  metadata?: Record<string, unknown>;
+}
+```
+
+Validation requirements:
+
+- `text` is required, non-empty after trim, and bounded by the configured chunk text limit.
+- `metadata` must be a JSON-serializable object, not an array or primitive, and no larger than 16 KiB once serialized.
+- Embedding dimensions are validated before vector table creation and before vector writes/search.
+- Stable source-pointer duplicate/replacement semantics must be documented and regression-tested before implementation is considered complete.
+
+### 1A.3 Search result shape
+
+The retained core search primitive is vector search over source chunks. It returns ranked hits with:
+
+- `chunkId`
+- `snippet` or indexed text preview
+- `score`/rank
+- optional source pointer fields (`sourceKind`, `sourceUri`, source entry/range identifiers, timestamps)
+- optional metadata when safe and requested by the API contract
+
+Search results must never require `conversationId`, `messageIds`, or raw-message joins. A harness that needs exact surrounding context uses the returned pointer to inspect its authoritative store.
+
+### 1A.4 SQL primitive removal
+
+The current public `searcher.sql(...)` primitive is removed in the target architecture because it exists to query curated views over raw transcript mirrors (`messages_public`, `conversations_public`, `messages_fts`, and `summaries_public`). Keeping that API would preserve the wrong ownership model. A future source-index-only SQL/debug primitive may be designed later, but it is not this sprint's contract and must not expose raw harness-owned context.
+
+---
+
 ## 2. What's in place today
 
-The pristine memory pipeline as of `main` post-PR #95:
+The historical memory pipeline as of the earlier corpus-search pivot was:
 
 ```
 PostToolUse hook
@@ -111,9 +176,9 @@ SQLite + sqlite-vec + FTS5
 scripts/search.ts exposed as agent tool
 ```
 
-PRs #94 and #95 are merged. The extractor + consolidator pipeline still runs; this spec supersedes the semantic layer with a corpus-based design but does not invalidate the ingestion-hook, storage, or FTS5 infrastructure already built.
+PRs #94 and #95 are historical context. Current `main` has already removed extractor/consolidator behavior, but it still contains raw conversation/message ownership (`conversations`, `messages`, `messages_fts`, `vec_windows`, `vec_sessions`, `messages_public`, `conversations_public`) and conversation-centric APIs. Sprint 023 supersedes those raw-transcript ownership pieces with source-chunk indexing.
 
-### Infrastructure preserved by this pivot
+### Infrastructure preserved or reconsidered by this pivot
 
 - `PostToolUse` hook wiring (ingestion entry point)
 - SQLite outbox + `pending_ingest_tasks` queue
@@ -152,7 +217,7 @@ Two days of diagnostic work surfaced multiple failure modes that were brittle, p
 
 ### 3.2 Extraction is the wrong abstraction for our constraints
 
-Production memory systems (mem0, claude-mem, Letta) extract because they don't store raw conversations as queryable corpora. Their extraction is a forced move. Pristine stores raw conversations locally with sub-millisecond vector + FTS retrieval; under these constraints, pre-extraction is a lossy compression step with no payoff.
+Production memory systems (mem0, claude-mem, Letta) extract because they don't store raw conversations as queryable corpora. Their extraction is a forced move. Pristine's current prototype proved local vector retrieval is fast enough to retrieve source-owned snippets without pre-extraction; under these constraints, pre-extraction is a lossy compression step with no payoff.
 
 Moving extraction from a weak local model to the host agent (as claude-mem does) improves quality but doesn't fix the abstraction mismatch — it just makes extraction more expensive. claude-mem spends ~2× the tokens of an equivalent corpus-search system because every `Stop` / `PreCompact` / per-tool-observer call pays an LLM roundtrip that wouldn't be needed against a raw log.
 
@@ -187,35 +252,33 @@ Reframing the design question given the pivot.
 
 ### 4.1 What Pristine provides
 
-Pristine provides the **primitives** needed to treat past conversations as a searchable corpus:
+Pristine provides the **primitives** needed to index source-owned records and retrieve them semantically:
 
-- **Ingest** raw turns into SQLite with vector embeddings + FTS5 index
-- **Search** the corpus via vector, full-text, or hybrid retrieval
-- **Query** the corpus via a scoped read-only SQL surface
-- **Store** arbitrary condensations (e.g., session summaries) as timestamped rows
-- **Embed** text via a swappable embedder (default: Nomic v1.5, local)
+- **Index** source chunks/snippets with vector embeddings and optional source pointers/metadata
+- **Search** the semantic index via vector retrieval, returning snippets plus source pointers
+- **Replace/delete** indexed chunks by stable chunk ID or stable source pointer when the source changes
+- **Embed** text via a swappable local embedder (default: Nomic v1.5 through `@huggingface/transformers`)
 
-That is the complete functional scope of the core SDK. Everything a consumer wants to build with these primitives — tools for agent tool-calling, hook scripts for session-start injection, markdown-file integrations, condensation generators — are reference implementations documented separately.
+That is the complete functional scope of the core SDK. Pristine does not ingest raw turns as an authoritative transcript store and does not expose a raw-transcript SQL query primitive. Everything a consumer wants to build around these primitives — tools for agent tool-calling, source-inspection skills, hook scripts, markdown-file integrations, or condensation generators — are reference implementations documented separately.
 
 ### 4.2 Retrieval queries the primitives must support
 
-The primitives must support every recall situation developers actually have. These drive API shape, not feature count:
+The primitives must support the recall situations developers actually have through source-pointer retrieval and harness-owned context inspection. These drive API shape, not feature count:
 
-- **Semantic query** — *"something about the extractor truncating"* → vector search across turns
-- **Exact keyword query** — *"find `DEFAULT_BATCH_MAX_TOKENS`"* → FTS5 search
-- **Scoped filter** — *"what did we discuss yesterday in this repo"* → SQL-over-corpus with timestamp + project filters
-- **Decision recall** — *"why did we go with sqlite-vec"* → hybrid semantic + keyword
-- **Handoff context** — *"last session's summary"* → `store.getRecentSummaries(projectId, N)`
+- **Semantic query** — *"something about the extractor truncating"* → vector search across indexed source chunks
+- **Scoped source filter** — *"what did we discuss yesterday in this repo"* → vector search narrowed by project and optional source metadata/timestamp fields
+- **Decision recall** — *"why did we go with sqlite-vec"* → source-chunk hits plus source pointers for harness-side context inspection
+- **Handoff context** — *"last session's summary"* → a harness/reference can index summary chunks with source metadata, then inspect the owning source on demand
 
-All five are composable from five primitives, each listed in §5.1.
+Exact keyword search, hybrid retrieval, source-context expansion, and summary maintenance are reference or future-extension concerns unless implemented over source chunks without reintroducing raw transcript ownership. The core target primitives are listed in §5.1.
 
 ### 4.3 What Pristine does NOT provide as core SDK
 
-- A `search_memory` tool — **reference implementation** that wraps `searcher.hybridSearch`
-- A `SessionStart` hook — **reference implementation** that calls `store.getRecentSummaries`
+- A `search_memory` tool — **reference implementation** that wraps source-chunk vector search and source-pointer formatting
+- A `search-session-history` or equivalent source-inspection skill — **reference implementation** that reads the authoritative harness store after vector search returns a pointer
 - A `MEMORY.md` file or format — **reference implementation** specific to filesystem-based consumers
-- A session-summary generator — **reference implementation** that calls an LLM, then stores via `store.addSummary`
-- Ingestion hook wiring — **reference implementation** of a PostToolUse script
+- A session-summary generator — **reference implementation** that writes summaries to a harness-owned file/store or indexes them as source chunks
+- Ingestion hook wiring — **reference implementation** of a harness-specific source-chunk indexing script
 
 Each reference implementation is optional. Pristine may or may not ship any given one. Users are expected to fork or rewrite them as their harness requires.
 
@@ -242,61 +305,48 @@ This section splits into primitives (what the core SDK exposes) and reference im
 
 Primitives live in `src/`. Anything that wraps them for a specific host environment (a tool-calling agent, a harness hook, a CLI) is a **reference implementation**, not a primitive — see §5.2 for the layout convention (`examples/<harness>/<tool>/` source dirs, `@pristine/<harness>-<tool>` published packages).
 
-#### 5.1.1 Storage
+#### 5.1.1 Source-index storage
 
 ```
-store.addConversation(conversation: Conversation): void
-store.addMessage(conversationId, message, turnIndex): void
-store.addSummary(sessionId, text, timestamp, metadata?): void
-store.getRecentSummaries(projectId, limit): Summary[]
+indexer.indexSourceChunks(chunks: SourceChunkInput[], opts: { projectId: string }): Promise<IndexResult>
+indexer.deleteSourceChunks(selector: ChunkSelector, opts: { projectId: string }): Promise<DeleteResult>
 ```
 
-Raw conversation turns persisted with `(conversation_id, turn_index, role, content, timestamp, project_id)`. Summaries persisted as standalone timestamped rows with optional metadata — content shape is opaque to the SDK. Project scoping is required on all queries; the projectId source (git root vs. workspace dir vs. config) is discussed in §6.
+Source chunks are the storage contract. A chunk has required non-empty `text`, a generated or caller-supplied `chunkId`, an embedding, and optional source pointer fields. Pristine persists indexed text/snippet and pointer metadata, not raw conversation/thread/message ownership. Project scoping is required on all queries; the projectId source (git root vs. workspace dir vs. config) is discussed in §6.
+
+The source-index schema stores nullable source fields (`source_kind`, `source_uri`, source entry/range identifiers, timestamps) plus bounded `metadata_json`. The vector table uses sqlite-vec `float[N]` where `N` is the configured embedder dimension and is validated before interpolation.
 
 #### 5.1.2 Indexing
 
 ```
-indexer.ingest(turns: Message[], ctx: { projectId, conversationId?, sessionId? }): Promise<void>
-indexer.buildSessionVector(conversationId: string): Promise<void>
-```
-
-**Primary index: sliding-window embeddings.** Configurable via `IndexerConfig`:
-
-```typescript
-interface IndexerConfig {
-  windowSize?: number;     // default: 3 turns
-  windowOverlap?: number;  // default: 1 turn
-  // constraint: 0 < windowOverlap < windowSize
+interface SourceChunkInput {
+  text: string;
+  chunkId?: string;
+  sourceKind?: string;
+  sourceUri?: string;
+  entryId?: string;
+  parentId?: string;
+  lineNumber?: number;
+  lineStart?: number;
+  lineEnd?: number;
+  timestamp?: string;
+  metadata?: Record<string, unknown>;
 }
 ```
 
-Each window is `windowSize` consecutive messages with `windowOverlap` messages shared between adjacent windows. The embedded text is the role-prefixed concatenation (`"[user] …\n[assistant] …\n[user] …"`). One vector per window, keyed by `(conversation_id, window_index)`, stored in `vec_windows`. The `window_messages` join table records which message IDs each window contains.
+Indexing embeds each chunk and writes text/snippet, vector, and metadata atomically. Project scope is required at the indexing call boundary (`opts.projectId`) but is not source metadata; minimal metadata still means a chunk can provide only non-empty `text` and receive a generated chunk ID. The primitive must support three metadata levels: full pointer metadata, partial metadata, and text-only indexing with a generated chunk ID. Stable source-pointer duplicate/replacement behavior is part of the primitive contract and must be deterministic: indexing the same stable source pointer can either replace the existing row or follow documented duplicate behavior, but tests must pin the choice.
 
-**Why sliding-window over per-message.** Short context-dependent turns (`"sure, that works"`, `"yes, do that"`) carry no standalone semantic signal — a per-message vector of three ack-words is nowhere near a query like `"why did we pick sqlite-vec"`. Sliding-window bakes the surrounding exchange into the vector, so the ack is retrievable via its context. Per-message and other alternatives remain benchmarked in §8.1.
-
-**Incremental updates.** As a conversation grows, the tail window fills up. Each addition triggers `INSERT OR REPLACE` on the current window row, keyed by `window_index`. At most one partial window exists at any time (the tail). Each window is re-embedded at most `windowSize - 1` times before it seals. Total embed cost for an N-message conversation is roughly `N` embeds — comparable to per-message, but with `~0.5×` storage.
-
-**Tail-slide-back rule.** If the last computed window would have fewer than `windowSize` messages (e.g., an 8-message conversation with stride 2 ends in a 2-message window), slide the final window's start index back to `max(previous_start, length - windowSize)`. This guarantees every window has exactly `windowSize` messages, except when the entire conversation is shorter than `windowSize` (in which case one window contains all of it).
-
-**Oversize messages.** If a single message exceeds 3000 tokens (rare — typically long tool outputs or code blocks), pre-chunk it before window assembly using Graphiti's "never split mid-message" rule: embed whole if it fits Nomic's 8192-token window; otherwise split at the largest natural boundary (AST for code, paragraph for prose) with 200-token overlap, linked via `parent_message_id` on the `messages` row.
-
-**Secondary index: session-level vector.** `indexer.buildSessionVector(conversationId)` concatenates every message in the conversation (role-prefixed), embeds the whole string, stores in `vec_sessions` keyed by `conversation_id`. Zero LLM, zero extraction. Consumers decide when to call it — typically after a session-close signal. Provides retrieval recall for multi-session and long-range-reference queries that the window-level index alone cannot catch. mcp-memory-service reports +5.6 R@5 and +15 multi-session on LongMemEval from adding this layer alongside turn-level embeddings, at zero LLM cost.
+Harness-specific windowing is a reference concern. For Pi, `examples/pi-dev/jsonl-index/` indexes active-session JSONL user/assistant snippets/windows with Pi source pointers. Another harness may index message windows, file sections, log entries, or summaries, but Pristine's core API sees all of them as source chunks.
 
 #### 5.1.3 Retrieval
 
 ```
-searcher.vectorSearch(query, filters, limit): Hit[]
-searcher.ftsSearch(query, filters, limit): Hit[]
-searcher.hybridSearch(query, filters, limit): Hit[]     // reciprocal rank fusion over
-                                                         //   vec_windows + vec_sessions + FTS5
-searcher.sql(rawSql, opts?): Promise<readonly Row[]>    // read-only, allowlist-scoped view
+searcher.vectorSearch(query, filters, limit): SourceChunkHit[]
 ```
 
-`Filters` support project, timestamp range, conversation id, role. A window hit returns the window's `conversation_id` and constituent `message_ids`; callers resolve to full message content via `searcher.sql` against `messages_public`. A session hit returns the whole conversation via the same path.
+`Filters` support project plus optional source metadata filters when present (for example source kind, source URI, entry ID, timestamp range, or harness-specific metadata fields accepted by the public contract). A hit returns `chunkId`, snippet/indexed text preview, score/rank, and optional source pointer fields. It never requires `conversationId`, `messageIds`, or raw-message joins.
 
-Neighbor expansion (`"give me the N turns before and after this hit"`) is not a primitive — it's a ~10-line consumer composition over `searcher.sql` with `WHERE conversation_id = ? AND turn_index BETWEEN ? AND ?`. See §5.2 reference implementations.
-
-`searcher.sql` accepts raw SQL with positional `?` parameter binding. Queries run on a **read-only SQLite connection** with a per-query timeout and a hard row cap. Queries execute against a **stable public-view allowlist** (`messages_public`, `conversations_public`, `summaries_public`, `messages_fts`) — never the raw storage tables or any future sensitive surface. Schema migrations preserve the views even when internal tables change.
+FTS, hybrid, session-vector, and SQL retrieval from the raw-conversation design are not target primitives unless adapted to source chunks in a later reviewed design. The default Sprint 023 cleanup removes them when they depend on `conversations`, `messages`, `messages_fts`, `vec_sessions`, or raw transcript public views.
 
 #### 5.1.4 Embedding
 
@@ -308,6 +358,8 @@ embedder.embedBatch(texts): Promise<Vector[]>
 Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-token window, CPU inference. Users can swap in any embedder matching the interface. No dimension padding, no remote service.
 
 ### 5.2 Reference implementations
+
+> **Historical note:** The remaining subsections in this spec were written for the prior raw-conversation corpus design and are retained only as research/background until Sprint 023 finishes the cleanup. Where they mention `conversations`, `messages`, `messages_public`, `messages_fts`, `vec_sessions`, `storeAsync`, `indexer.ingest`, `hybridSearch`, neighbor expansion over `searcher.sql`, `query_memory`, or raw-SQL tools, those references are **not** the target architecture. The target architecture for implementation is §1A plus §5.1: source-owned records, source chunks, vector search returning pointers, and removal of the current raw-transcript `searcher.sql(...)` primitive.
 
 The canonical layout convention lives at [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). The summary below restates the rules; the conventions doc is the source of truth.
 
@@ -538,6 +590,8 @@ REMOVED IN THIS PIVOT:
 | Eval strategy | LOCOMO as regression-only; dogfood coding-session corpus is the primary target | §3.3, §7 non-goal 9, §8.5. |
 
 ---
+
+> **Historical sections note:** Sections 6 and later are prior raw-conversation design notes, validation plans, schema sketches, flow diagrams, and phase checklists. They are not the Sprint 023 target where they conflict with §1A or §5.1. Sprint 023 implementation must update or delete those legacy sections as code removal proceeds; Story 1's architectural source of truth is §1A plus §5.1.
 
 ## 6. Open questions
 

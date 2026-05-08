@@ -210,6 +210,7 @@ describe('PristineLocal', () => {
     await expect(client.searchSourceChunks('x', { projectId: '', limit: 1 })).rejects.toThrow(
       InvalidArgumentError,
     );
+    expect(deps.embedder.embed).toHaveBeenCalledTimes(0);
     await expect(
       client.searchSourceChunks('x', { projectId: 'project-a', limit: 0 }),
     ).rejects.toThrow(InvalidArgumentError);

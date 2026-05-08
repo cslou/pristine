@@ -180,20 +180,35 @@ export class PristineLocal {
     if (typeof options !== 'object' || options === null || Array.isArray(options)) {
       throw new InvalidArgumentError('searchSourceChunks: options must be an object');
     }
-    const embedding = await this.embedder.embed(query.trim());
+    if (typeof options.projectId !== 'string' || options.projectId.trim().length === 0) {
+      throw new InvalidArgumentError(
+        'searchSourceChunks: options.projectId must be a non-empty string',
+      );
+    }
     const limit = options.limit === undefined ? 10 : options.limit;
+    if (!Number.isInteger(limit) || limit <= 0 || limit > 1000) {
+      throw new InvalidArgumentError(
+        'searchSourceChunks: options.limit must be a positive integer <= 1000',
+      );
+    }
+
+    const embedding = await this.embedder.embed(query.trim());
     return this.sourceChunkStore
       .search(embedding, { projectId: options.projectId, limit })
       .map((hit) => ({ ...toPublicChunk(hit.chunk), score: hit.score }));
   }
 
-  public async secureAndRedact(text: string, userId: string): Promise<SecureAndRedactResult> {
+  public async secureAndRedact(
+    text: string,
+    userId: string,
+    classifier?: DeterministicClassifierConfig,
+  ): Promise<SecureAndRedactResult> {
     return privacySecureAndRedact(text, {
       vaultStore: this.vaultStore,
       keyManager: this.keyManager,
       kekManager: this.kekManager,
       userId,
-      classifier: this.privacyClassifierConfig,
+      classifier: classifier ?? this.privacyClassifierConfig,
     });
   }
 

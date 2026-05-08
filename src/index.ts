@@ -43,13 +43,6 @@ export type {
 
 export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
-export {
-  AppError,
-  ConfigError,
-  EmbedderError,
-  InvalidArgumentError,
-  InvalidSqlError,
-  QueryTimeoutError,
-} from './core/errors.js';
+export { AppError, ConfigError, EmbedderError, InvalidArgumentError } from './core/errors.js';
 
 export { createDatabase } from './core/database.js';

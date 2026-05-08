@@ -76,6 +76,56 @@ const parseEmbeddingDim = (ddl: string): number | null => {
   return match === null ? null : Number.parseInt(match[1]!, 10);
 };
 
+const REQUIRED_SOURCE_CHUNKS_COLUMNS = [
+  'project_id',
+  'chunk_id',
+  'text',
+  'source_kind',
+  'source_uri',
+  'entry_id',
+  'parent_id',
+  'line_number',
+  'line_start',
+  'line_end',
+  'timestamp',
+  'metadata_json',
+  'created_at',
+  'updated_at',
+] as const;
+
+const REQUIRED_VEC_SOURCE_CHUNKS_COLUMNS = ['chunk_key', 'project_id', 'chunk_id'] as const;
+
+type SourceIndexTableName = 'source_chunks' | 'vec_source_chunks';
+
+const readTableColumns = (
+  db: Database.Database,
+  tableName: SourceIndexTableName,
+): ReadonlySet<string> => {
+  const pragmaSql =
+    tableName === 'source_chunks'
+      ? 'PRAGMA table_info(source_chunks)'
+      : 'PRAGMA table_info(vec_source_chunks)';
+  const rows = db.prepare(pragmaSql).all() as Array<{ name: string }>;
+  return new Set(rows.map((row) => row.name));
+};
+
+const assertRequiredColumns = (
+  db: Database.Database,
+  tableName: SourceIndexTableName,
+  requiredColumns: readonly string[],
+): void => {
+  const columns = readTableColumns(db, tableName);
+  const missingColumns = requiredColumns.filter((column) => !columns.has(column));
+  if (missingColumns.length > 0) {
+    throw new InvalidArgumentError(
+      `SourceChunkStore: existing ${tableName} schema is missing columns: ${missingColumns.join(', ')}`,
+    );
+  }
+};
+
+const isVec0VirtualTable = (ddl: string): boolean =>
+  /CREATE\s+VIRTUAL\s+TABLE\b[\s\S]*\bUSING\s+vec0\s*\(/i.test(ddl);
+
 const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): void => {
   const sourceChunksSql = readExistingTableSql(db, 'source_chunks');
   const vecSourceChunksSql = readExistingTableSql(db, 'vec_source_chunks');
@@ -92,6 +142,10 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): 
     return;
   }
 
+  if (sourceChunksSql !== null) {
+    assertRequiredColumns(db, 'source_chunks', REQUIRED_SOURCE_CHUNKS_COLUMNS);
+  }
+
   if (vecSourceChunksSql !== null) {
     const onDiskDim = parseEmbeddingDim(vecSourceChunksSql);
     if (onDiskDim === null) {
@@ -99,11 +153,17 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): 
         'SourceChunkStore: vec_source_chunks DDL does not match expected vec0 schema (missing embedding float[N])',
       );
     }
+    if (!isVec0VirtualTable(vecSourceChunksSql)) {
+      throw new InvalidArgumentError(
+        'SourceChunkStore: vec_source_chunks DDL does not match expected vec0 schema (not a sqlite-vec virtual table)',
+      );
+    }
     if (onDiskDim !== dim) {
       throw new InvalidArgumentError(
         `SourceChunkStore: configured embedder dim=${dim} but on-disk vec_source_chunks is float[${onDiskDim}]`,
       );
     }
+    assertRequiredColumns(db, 'vec_source_chunks', REQUIRED_VEC_SOURCE_CHUNKS_COLUMNS);
   }
 };
 

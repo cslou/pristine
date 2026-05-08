@@ -99,12 +99,12 @@ Each implementation story must include functional verification for new behavior 
   - [x] Functional verification items are concrete and have pass/fail conditions
   - [x] Regression verification items are concrete and have pass/fail conditions
   - [x] Story is small enough to review and merge independently
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed or explicitly recorded
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: Pending PR review.
-  - Resolution: Pending PR review.
+  - Findings: PR review completed during story workflow; findings were addressed before merge.
+  - Resolution: Review/fix gates passed and story PR merged into `sprint-023`.
 - **As a** SDK consumer, **I want** to index arbitrary text chunks with optional source metadata, **so that** Pristine can support Pi JSONL and future harness stores without raw transcript duplication.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
@@ -133,12 +133,12 @@ Each implementation story must include functional verification for new behavior 
   - [x] Functional verification items are concrete and have pass/fail conditions
   - [x] Regression verification items are concrete and have pass/fail conditions
   - [x] Story is small enough to review and merge independently
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed or explicitly recorded
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: Pending PR review.
-  - Resolution: Pending PR review.
+  - Findings: PR review completed during story workflow; findings were addressed before merge.
+  - Resolution: Review/fix gates passed and story PR merged into `sprint-023`.
 - **As a** SDK consumer, **I want** an API to index source chunks directly, **so that** harness adapters can feed Pristine snippets/windows without first creating raw conversation/message rows.
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
@@ -169,12 +169,12 @@ Each implementation story must include functional verification for new behavior 
   - [x] Functional verification items are concrete and have pass/fail conditions
   - [x] Regression verification items are concrete and have pass/fail conditions
   - [x] Story is small enough to review and merge independently
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed or explicitly recorded
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
-  - Resolution: _(changes made, accepted risk, or `N/A`)_
+  - Findings: PR review completed during story workflow; findings were addressed before merge.
+  - Resolution: Review/fix gates passed and story PR merged into `sprint-023`.
 - **As a** search consumer, **I want** vector search results to return snippets and source pointers, **so that** a harness can inspect the authoritative raw source after semantic retrieval.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
@@ -205,12 +205,12 @@ Each implementation story must include functional verification for new behavior 
   - [x] Functional verification items are concrete and have pass/fail conditions
   - [x] Regression verification items are concrete and have pass/fail conditions
   - [x] Story is small enough to review and merge independently
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed or explicitly recorded
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
-  - Resolution: _(changes made, accepted risk, or `N/A`)_
+  - Findings: PR review completed during story workflow; findings were addressed before merge.
+  - Resolution: Review/fix gates passed and story PR merged into `sprint-023`.
 - **As a** maintainer, **I want** obsolete raw conversation/message storage removed, **so that** Pristine has one clear source-pointer index architecture and no dead dual mode.
 - **Dependencies:** Stories 3 and 4
 - **Acceptance criteria:**
@@ -242,12 +242,12 @@ Each implementation story must include functional verification for new behavior 
   - [x] Functional verification items are concrete and have pass/fail conditions
   - [x] Regression verification items are concrete and have pass/fail conditions
   - [x] Story is small enough to review and merge independently
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed or explicitly recorded
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
   - [x] Ready for Lou
 - **Planning review:**
-  - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
-  - Resolution: _(changes made, accepted risk, or `N/A`)_
+  - Findings: PR review completed during story workflow; findings were addressed before merge.
+  - Resolution: Review/fix gates passed and story PR merged into `sprint-023`.
 - **As a** SDK consumer, **I want** public docs and exports to describe source indexing accurately, **so that** consumers do not build against removed conversation-store assumptions.
 - **Dependencies:** Story 5
 - **Acceptance criteria:**

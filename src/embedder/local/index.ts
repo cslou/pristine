@@ -1,6 +1,6 @@
 import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import type { Embedder } from '../../core/interfaces.js';
-import { EmbedderError, InvalidArgumentError } from '../../core/errors.js';
+import { EmbedderError } from '../../core/errors.js';
 import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../../core/vector-dim.js';
 
 const DEFAULT_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -47,7 +47,7 @@ export class LocalEmbedder implements Embedder {
       const output = await extractor(text, { pooling: 'mean', normalize: true });
       const embedding = Array.from(output.data as Float32Array);
       if (embedding.length !== this.dim) {
-        throw new InvalidArgumentError(
+        throw new EmbedderError(
           `LocalEmbedder configured dim=${this.dim} but model '${this.modelName}' produced ${embedding.length}-d output`,
         );
       }

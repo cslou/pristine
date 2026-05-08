@@ -332,7 +332,7 @@ Functional verification:
 - `npm run build && node scripts/smoke-source-index.mjs` — pass; printed `source-index smoke: PASS`.
 
 Regression verification:
-- `npm run test:unit` — pass, 320 tests.
+- `npm run test:unit` — pass, 322 tests.
 - `npm run test:integration` — pass, 19 tests.
 - `npm run test:e2e` — pass, 4 tests.
 - `npm run test:smoke` — pass, 5 tests.
@@ -347,7 +347,7 @@ Regression verification:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Static / typecheck / lint | 2 commands | 0 | 0 | 0 | 2 commands |
 | Build | 1 command | 0 | 0 | 0 | 1 command |
-| Unit tests | 299 tests | 21 tests | 0 | 0 | 320 tests |
+| Unit tests | 299 tests | 23 tests | 0 | 0 | 322 tests |
 | Integration / contract tests | 18 tests | 1 test | 0 | 0 | 19 tests |
 | E2E tests | 4 tests | 0 | 0 | 0 | 4 tests |
 | Smoke tests | 5 tests | 0 new tests; expanded built-package coverage | 0 | 0 | 5 tests |

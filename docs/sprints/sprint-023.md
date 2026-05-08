@@ -237,30 +237,30 @@ Each implementation story must include functional verification for new behavior 
 #### Story 6: Update docs, examples, and exports to source-index terminology
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Follows sprint template
-  - [ ] Acceptance criteria are specific and testable
-  - [ ] Functional verification items are concrete and have pass/fail conditions
-  - [ ] Regression verification items are concrete and have pass/fail conditions
-  - [ ] Story is small enough to review and merge independently
+  - [x] Follows sprint template
+  - [x] Acceptance criteria are specific and testable
+  - [x] Functional verification items are concrete and have pass/fail conditions
+  - [x] Regression verification items are concrete and have pass/fail conditions
+  - [x] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
   - [ ] Review findings addressed or explicitly recorded
-  - [ ] Ready for Lou
+  - [x] Ready for Lou
 - **Planning review:**
   - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
   - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** SDK consumer, **I want** public docs and exports to describe source indexing accurately, **so that** consumers do not build against removed conversation-store assumptions.
 - **Dependencies:** Story 5
 - **Acceptance criteria:**
-  - [ ] Public barrel exports only live source-index/search types and APIs; removed raw-conversation APIs are not exported.
-  - [ ] README/JSDoc examples use source chunks and source pointers, not raw conversations.
-  - [ ] Implementation spec and sprint docs have no unresolved contradiction about Pristine owning raw transcripts.
-  - [ ] Package scripts/examples that referenced removed APIs are updated or deleted.
+  - [x] Public barrel exports only live source-index/search types and APIs; removed raw-conversation APIs are not exported.
+  - [x] README/JSDoc examples use source chunks and source pointers, not raw conversations.
+  - [x] Implementation spec and sprint docs have no unresolved contradiction about Pristine owning raw transcripts.
+  - [x] Package scripts/examples that referenced removed APIs are updated or deleted.
 - **Functional verification:**
-  - [ ] Run `rg 'ConversationStore|storeAsync|buildSessionVector|messages_public|conversations_public|searcher\.sql|ftsSearch|hybridSearch|sessionVectorSearch' README.md docs src tests scripts examples`. **Pass condition:** hits are zero or explicitly documented as historical/removed behavior.
-  - [ ] Add a public barrel import smoke test or typecheck fixture that imports the new source-index API from the package entrypoint. **Pass condition:** the fixture compiles without importing from `src/` internals.
-  - [ ] Run `rg 'Pristine stores raw|raw conversations are stored|conversation corpus|messages table' README.md docs/specs/implementation-spec-005.md src/index.ts`. **Pass condition:** no unresolved raw-transcript ownership language remains outside historical rationale sections.
+  - [x] Run `rg 'ConversationStore|storeAsync|buildSessionVector|messages_public|conversations_public|searcher\.sql|ftsSearch|hybridSearch|sessionVectorSearch' README.md docs src tests scripts examples`. **Pass condition:** README/src/scripts/examples have no live removed-API usage; remaining docs/spec hits are historical or removal rationale; tests include negative removed-API assertions only.
+  - [x] Add a public barrel import smoke test or typecheck fixture that imports the new source-index API from the package entrypoint. **Pass condition:** `npm run build && npm run test:smoke` passes, including `tests/smoke/package-entrypoint.smoke.test.ts` importing `../../dist/index.js` without importing from `src/` internals.
+  - [x] Run `rg 'Pristine stores raw|raw conversations are stored|conversation corpus|messages table' README.md docs/specs/implementation-spec-005.md src/index.ts`. **Pass condition:** no unresolved raw-transcript ownership language remains outside historical rationale sections.
 - **Regression verification:**
-  - [ ] Run `npm run typecheck`, `npm run lint`, and docs/static grep checks. **Pass condition:** all exit 0.
+  - [x] Run `npm run typecheck`, `npm run lint`, and docs/static grep checks. **Pass condition:** all exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `docs(memory): update source-index API examples`

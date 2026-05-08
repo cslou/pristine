@@ -9,8 +9,14 @@ import {
   SOURCE_CHUNK_TEXT_LIMIT,
   SourceChunkStore,
 } from '../../../src/memory/source-index/index.js';
+import type { StoredSourceChunk } from '../../../src/memory/source-index/index.js';
 
 const testEmbedding = Array.from({ length: 64 }, (_, index) => index / 100);
+const vector64 = (first: number, second = 0): number[] => [
+  first,
+  second,
+  ...Array.from({ length: 62 }, () => 0),
+];
 
 const readTableSql = (db: ReturnType<typeof createDatabase>, tableName: string): string => {
   const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName) as
@@ -18,6 +24,35 @@ const readTableSql = (db: ReturnType<typeof createDatabase>, tableName: string):
     | undefined;
   if (row === undefined) throw new Error(`missing table ${tableName}`);
   return row.sql;
+};
+
+const sourceChunkRowCount = (
+  db: ReturnType<typeof createDatabase>,
+  projectId = 'project-a',
+): number => {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM source_chunks WHERE project_id = ?')
+    .get(projectId) as { count: number };
+  return row.count;
+};
+
+const sourceVectorRowCount = (
+  db: ReturnType<typeof createDatabase>,
+  projectId = 'project-a',
+): number => {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM vec_source_chunks WHERE project_id = ?')
+    .get(projectId) as { count: number };
+  return row.count;
+};
+
+const expectSourceIndexRowCounts = (
+  db: ReturnType<typeof createDatabase>,
+  expected: number,
+  projectId = 'project-a',
+): void => {
+  expect(sourceChunkRowCount(db, projectId)).toBe(expected);
+  expect(sourceVectorRowCount(db, projectId)).toBe(expected);
 };
 
 describe('SourceChunkStore schema', () => {
@@ -339,6 +374,136 @@ describe('SourceChunkStore validation and storage', () => {
     expect(minimal.metadataJson).toBeNull();
   });
 
+  it('searches known vectors with deterministic order, scores, isolation, and limits', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+
+    store.putMany(
+      [
+        { text: 'exact match', chunkId: 'exact' },
+        { text: 'near match', chunkId: 'near' },
+        { text: 'far match', chunkId: 'far' },
+      ],
+      { projectId: 'project-a', embeddings: [vector64(1), vector64(0.5), vector64(0, 1)] },
+    );
+    store.put(
+      { text: 'other project exact', chunkId: 'other-exact' },
+      { projectId: 'project-b', embedding: vector64(1) },
+    );
+
+    const hits = store.search(vector64(1), { projectId: 'project-a', limit: 2 });
+
+    expect(hits.map((hit) => hit.chunk.chunkId)).toEqual(['exact', 'near']);
+    expect(hits[0]?.score).toBe(1);
+    expect(hits.every((hit) => hit.score > 0 && hit.score <= 1)).toBe(true);
+    expect(store.search(vector64(1), { projectId: 'project-b', limit: 10 })).toHaveLength(1);
+  });
+
+  it('rejects invalid search inputs without mutating storage', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+    store.put(
+      { text: 'stable searchable chunk', chunkId: 'stable-search' },
+      { projectId: 'project-a', embedding: vector64(1) },
+    );
+    expectSourceIndexRowCounts(db, 1);
+
+    const invalidSearches: Array<() => readonly unknown[]> = [
+      () => store.search(vector64(1), null as unknown as { projectId: string; limit: number }),
+      () => store.search(vector64(1), { projectId: '', limit: 1 }),
+      () => store.search(vector64(1), { projectId: 'project-a', limit: 0 }),
+      () => store.search(vector64(1), { projectId: 'project-a', limit: -1 }),
+      () => store.search(vector64(1), { projectId: 'project-a', limit: 1.5 }),
+      () => store.search(vector64(1), { projectId: 'project-a', limit: 1001 }),
+      () => store.search([1, 2], { projectId: 'project-a', limit: 1 }),
+      () =>
+        store.search('not-a-vector' as unknown as readonly number[], {
+          projectId: 'project-a',
+          limit: 1,
+        }),
+      () =>
+        store.search([Number.NaN, ...vector64(0).slice(1)], { projectId: 'project-a', limit: 1 }),
+      () => store.search([Infinity, ...vector64(0).slice(1)], { projectId: 'project-a', limit: 1 }),
+    ];
+
+    for (const invalidSearch of invalidSearches) {
+      expect(invalidSearch).toThrow(InvalidArgumentError);
+      expectSourceIndexRowCounts(db, 1);
+    }
+  });
+
+  it('writes multiple chunks through putMany and putStoredMany', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+
+    const putManyStored = store.putMany(
+      [
+        { text: 'first batch chunk', chunkId: 'batch-1' },
+        { text: 'second batch chunk', chunkId: 'batch-2', sourceKind: 'fixture' },
+      ],
+      { projectId: 'project-a', embeddings: [vector64(1), vector64(0, 1)] },
+    );
+    const normalized = store.validateMany(
+      [
+        { text: 'first stored chunk', chunkId: 'stored-1' },
+        { text: 'second stored chunk', chunkId: 'stored-2', sourceUri: '/tmp/source' },
+      ],
+      { projectId: 'project-a' },
+    );
+    const putStoredManyStored = store.putStoredMany(normalized, [vector64(0.5), vector64(0.25)]);
+
+    expect(putManyStored.map((chunk) => chunk.chunkId)).toEqual(['batch-1', 'batch-2']);
+    expect(putManyStored[1]).toMatchObject({ sourceKind: 'fixture', projectId: 'project-a' });
+    expect(putStoredManyStored).toEqual(
+      normalized.map((chunk) => ({ ...chunk, updatedAt: expect.any(String) })),
+    );
+    expectSourceIndexRowCounts(db, 4);
+  });
+
+  it('rejects invalid putStoredMany batches without partial rows', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+    const validStored = store.validateMany([{ text: 'valid stored', chunkId: 'valid-stored' }], {
+      projectId: 'project-a',
+    })[0]!;
+    const invalidStoredChunks: Array<readonly StoredSourceChunk[]> = [
+      [],
+      [{ ...validStored, chunkId: '' }],
+      [{ ...validStored, projectId: '' }],
+      [{ ...validStored, text: '   ' }],
+      [
+        {
+          ...validStored,
+          metadataJson: 'x'.repeat(SOURCE_CHUNK_METADATA_JSON_LIMIT + 1),
+        },
+      ],
+    ];
+
+    expect(() => store.putStoredMany([validStored], [])).toThrow(InvalidArgumentError);
+    expectSourceIndexRowCounts(db, 0);
+    expect(() => store.putStoredMany([validStored], [vector64(1), vector64(2)])).toThrow(
+      InvalidArgumentError,
+    );
+    expectSourceIndexRowCounts(db, 0);
+    expect(() => store.putStoredMany([validStored], [[1, 2]])).toThrow(InvalidArgumentError);
+    expectSourceIndexRowCounts(db, 0);
+    expect(() =>
+      store.putStoredMany([validStored], [[Number.NaN, ...vector64(0).slice(1)]]),
+    ).toThrow(InvalidArgumentError);
+    expectSourceIndexRowCounts(db, 0);
+    expect(() => store.putStoredMany([validStored], [[Infinity, ...vector64(0).slice(1)]])).toThrow(
+      InvalidArgumentError,
+    );
+    expectSourceIndexRowCounts(db, 0);
+
+    for (const invalidStoredChunk of invalidStoredChunks) {
+      expect(() => store.putStoredMany(invalidStoredChunk, [vector64(1)])).toThrow(
+        InvalidArgumentError,
+      );
+      expectSourceIndexRowCounts(db, 0);
+    }
+  });
+
   it('deletes chunks and vectors atomically by project id and chunk ids', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const store = new SourceChunkStore(db, 64);
@@ -363,6 +528,40 @@ describe('SourceChunkStore validation and storage', () => {
       db.prepare('SELECT chunk_id FROM source_chunks WHERE project_id = ?').all('project-b'),
     ).toEqual([{ chunk_id: 'same' }]);
     expect(() => store.deleteMany('project-a', [])).toThrow(InvalidArgumentError);
+  });
+
+  it('reports delete edge-case counts and rejects invalid delete inputs without mutation', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+
+    store.putMany(
+      [
+        { text: 'delete edge one', chunkId: 'delete-1' },
+        { text: 'delete edge two', chunkId: 'delete-2' },
+        { text: 'delete edge three', chunkId: 'delete-3' },
+      ],
+      { projectId: 'project-a', embeddings: [vector64(1), vector64(2), vector64(3)] },
+    );
+    expectSourceIndexRowCounts(db, 3);
+
+    expect(store.deleteMany('project-a', ['missing'])).toBe(0);
+    expectSourceIndexRowCounts(db, 3);
+    expect(store.deleteMany('project-a', ['delete-1', 'missing'])).toBe(1);
+    expectSourceIndexRowCounts(db, 2);
+    expect(store.deleteMany('project-a', ['delete-2', 'delete-2'])).toBe(1);
+    expectSourceIndexRowCounts(db, 1);
+
+    const invalidDeletes: Array<() => number> = [
+      () => store.deleteMany('project-a', 'delete-3' as unknown as readonly string[]),
+      () => store.deleteMany('project-a', [42 as unknown as string]),
+      () => store.deleteMany('project-a', ['']),
+      () => store.deleteMany('', ['delete-3']),
+    ];
+
+    for (const invalidDelete of invalidDeletes) {
+      expect(invalidDelete).toThrow(InvalidArgumentError);
+      expectSourceIndexRowCounts(db, 1);
+    }
   });
 
   it('updates an existing chunk id within one project without colliding across projects', () => {

@@ -143,6 +143,35 @@ describe('PristineLocal', () => {
       ]);
     });
 
+    it('indexSourceChunks validates before embedding and rolls back the whole batch on vector failure', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await expect(
+        client.indexSourceChunks([{ text: '   ', chunkId: 'invalid' }], { projectId: 'project-a' }),
+      ).rejects.toThrow(InvalidArgumentError);
+      expect(deps.embedder.embedBatch).not.toHaveBeenCalled();
+
+      vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
+        Array.from({ length: 768 }, () => 0.1),
+        [0.1],
+      ]);
+      await expect(
+        client.indexSourceChunks(
+          [
+            { text: 'valid before failure', chunkId: 'batch-1' },
+            { text: 'invalid vector', chunkId: 'batch-2' },
+          ],
+          { projectId: 'project-a' },
+        ),
+      ).rejects.toThrow(InvalidArgumentError);
+      expect(
+        deps.db.prepare('SELECT chunk_id FROM source_chunks WHERE chunk_id LIKE ?').all('batch-%'),
+      ).toEqual([]);
+    });
+
     it('indexSourceChunks supports minimal metadata and rejects invalid input', async () => {
       const client = await PristineLocal.create({
         db: deps.db,

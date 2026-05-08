@@ -260,7 +260,10 @@ export class SourceChunkStore {
   private readonly upsertChunk: Statement;
   private readonly deleteVector: Statement;
   private readonly insertVector: Statement;
-  private readonly writeChunkWithVector: (chunk: StoredSourceChunk, embedding: Buffer) => void;
+  private readonly writeChunksWithVectors: (
+    chunks: readonly StoredSourceChunk[],
+    embeddings: readonly Buffer[],
+  ) => void;
 
   public constructor(db: Database.Database, dim: number) {
     initSourceChunkTables(db, dim);
@@ -289,34 +292,64 @@ export class SourceChunkStore {
     this.insertVector = db.prepare(
       'INSERT INTO vec_source_chunks(chunk_key, project_id, chunk_id, embedding) VALUES (?, ?, ?, ?)',
     );
-    this.writeChunkWithVector = db.transaction((chunk: StoredSourceChunk, embedding: Buffer) => {
-      this.upsertChunk.run(
-        chunk.projectId,
-        chunk.chunkId,
-        chunk.text,
-        chunk.sourceKind,
-        chunk.sourceUri,
-        chunk.entryId,
-        chunk.parentId,
-        chunk.lineNumber,
-        chunk.lineStart,
-        chunk.lineEnd,
-        chunk.timestamp,
-        chunk.metadataJson,
-        chunk.createdAt,
-        chunk.updatedAt,
-      );
-      const chunkKey = sourceChunkKey(chunk.projectId, chunk.chunkId);
-      this.deleteVector.run(chunk.projectId, chunk.chunkId);
-      this.insertVector.run(chunkKey, chunk.projectId, chunk.chunkId, embedding);
-    });
+    this.writeChunksWithVectors = db.transaction(
+      (chunks: readonly StoredSourceChunk[], embeddings: readonly Buffer[]) => {
+        for (let index = 0; index < chunks.length; index++) {
+          const chunk = chunks[index]!;
+          this.upsertChunk.run(
+            chunk.projectId,
+            chunk.chunkId,
+            chunk.text,
+            chunk.sourceKind,
+            chunk.sourceUri,
+            chunk.entryId,
+            chunk.parentId,
+            chunk.lineNumber,
+            chunk.lineStart,
+            chunk.lineEnd,
+            chunk.timestamp,
+            chunk.metadataJson,
+            chunk.createdAt,
+            chunk.updatedAt,
+          );
+          const chunkKey = sourceChunkKey(chunk.projectId, chunk.chunkId);
+          this.deleteVector.run(chunk.projectId, chunk.chunkId);
+          this.insertVector.run(chunkKey, chunk.projectId, chunk.chunkId, embeddings[index]!);
+        }
+      },
+    );
+  }
+
+  public validateMany(
+    inputs: readonly SourceChunkInput[],
+    options: SourceChunkNormalizeOptions,
+  ): readonly StoredSourceChunk[] {
+    return inputs.map((input) => normalizeSourceChunkInput(input, options));
   }
 
   public put(input: SourceChunkInput, options: SourceChunkStoreOptions): StoredSourceChunk {
-    const chunk = normalizeSourceChunkInput(input, options);
     const optionsRecord = assertRecordInput(options, 'SourceChunkStoreOptions');
-    const embedding = validateEmbedding(optionsRecord.embedding as readonly number[], this.dim);
-    this.writeChunkWithVector(chunk, embedding);
-    return chunk;
+    const chunks = this.putMany([input], {
+      projectId: optionsRecord.projectId as string,
+      embeddings: [optionsRecord.embedding as readonly number[]],
+    });
+    return chunks[0]!;
+  }
+
+  public putMany(
+    inputs: readonly SourceChunkInput[],
+    options: { readonly projectId: string; readonly embeddings: readonly (readonly number[])[] },
+  ): readonly StoredSourceChunk[] {
+    if (inputs.length !== options.embeddings.length) {
+      throw new InvalidArgumentError(
+        `SourceChunkStore.putMany: expected ${inputs.length} embeddings, got ${options.embeddings.length}`,
+      );
+    }
+    const chunks = inputs.map((input) => normalizeSourceChunkInput(input, options));
+    const embeddings = options.embeddings.map((embedding) =>
+      validateEmbedding(embedding, this.dim),
+    );
+    this.writeChunksWithVectors(chunks, embeddings);
+    return chunks;
   }
 }

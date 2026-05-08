@@ -218,6 +218,9 @@ export class PristineLocal {
       throw new InvalidArgumentError('indexSourceChunks: chunks must not be empty');
     }
 
+    // Cheap validation before embedding so bad caller input does not pay model cost.
+    this.sourceChunkStore.validateMany(chunks, { projectId: options.projectId });
+
     const texts = chunks.map((chunk) => chunk.text);
     const embeddings = await this.embedder.embedBatch(texts);
     if (embeddings.length !== chunks.length) {
@@ -226,12 +229,10 @@ export class PristineLocal {
       );
     }
 
-    return chunks.map((chunk, index) =>
-      this.sourceChunkStore.put(chunk, {
-        projectId: options.projectId,
-        embedding: embeddings[index] ?? [],
-      }),
-    );
+    return this.sourceChunkStore.putMany(chunks, {
+      projectId: options.projectId,
+      embeddings,
+    });
   }
 
   // -------------------------------------------------------------------------

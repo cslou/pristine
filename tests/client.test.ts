@@ -7,6 +7,7 @@ import { PristineLocal, type DeleteSourceChunksResult } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { InvalidArgumentError } from '../src/core/errors.js';
 import type { Embedder } from '../src/core/interfaces.js';
+import { OllamaEmbedder } from '../src/embedder/ollama/index.js';
 
 const vector = (first: number, second = 0): number[] => [
   first,
@@ -36,6 +37,14 @@ const expectSourceIndexRowCounts = (
   expect(sourceChunkRowCount(db, projectId)).toBe(expected);
   expect(sourceVectorRowCount(db, projectId)).toBe(expected);
 };
+
+const mockFetchResponse = (body: unknown): Response =>
+  ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: () => Promise.resolve(body),
+  }) as Response;
 
 const createMockEmbedder = (): Embedder & { dispose: ReturnType<typeof vi.fn> } => ({
   dim: 768,
@@ -234,6 +243,30 @@ describe('PristineLocal', () => {
     }
     expect(deps.embedder.embedBatch).not.toHaveBeenCalled();
     expectSourceIndexRowCounts(deps.db, 0);
+  });
+
+  it('indexSourceChunks rejects malformed Ollama payloads without source-index writes', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        mockFetchResponse({ embeddings: [[Number.NaN, ...Array.from({ length: 767 }, () => 0)]] }),
+      );
+    try {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: new OllamaEmbedder({ model: 'nomic-embed-text', dim: 768 }),
+      });
+
+      await expect(
+        client.indexSourceChunks([{ text: 'malformed ollama payload', chunkId: 'ollama-bad' }], {
+          projectId: 'project-a',
+        }),
+      ).rejects.toThrow(InvalidArgumentError);
+      expectSourceIndexRowCounts(deps.db, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('deleteSourceChunks removes stale chunks and vectors within a project', async () => {

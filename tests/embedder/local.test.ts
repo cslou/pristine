@@ -102,6 +102,19 @@ describe('LocalEmbedder', () => {
     await expect(embedder.embed('test')).rejects.toThrow(/Failed to load embedding model/);
   });
 
+  it('retries pipeline creation after model-load failure', async () => {
+    const extractor = createMockExtractor();
+    mockPipeline
+      .mockRejectedValueOnce(new Error('first load failed'))
+      .mockResolvedValueOnce(extractor);
+
+    const embedder = new LocalEmbedder();
+
+    await expect(embedder.embed('first')).rejects.toThrow(EmbedderError);
+    await expect(embedder.embed('second')).resolves.toHaveLength(768);
+    expect(mockPipeline).toHaveBeenCalledTimes(2);
+  });
+
   it('throws InvalidArgumentError when model output length differs from configured dim', async () => {
     const extractor = vi.fn().mockResolvedValue({
       data: new Float32Array(1024).fill(0.5),

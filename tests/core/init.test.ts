@@ -204,6 +204,25 @@ describe('loadPristineConfig', () => {
     expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
     expect(() => loadPristineConfig(dir)).toThrow(/must be a non-empty string/);
   });
+
+  it('throws ConfigError for invalid embedder model and host field types', () => {
+    const cases = [
+      { name: 'local-empty-model', embedder: { engine: 'local', model: '' } },
+      { name: 'local-non-string-model', embedder: { engine: 'local', model: 42 } },
+      { name: 'ollama-non-string-model', embedder: { engine: 'ollama', model: 42 } },
+      { name: 'ollama-empty-host', embedder: { engine: 'ollama', host: '' } },
+      { name: 'ollama-non-string-host', embedder: { engine: 'ollama', host: 42 } },
+      { name: 'local-non-number-dim', embedder: { engine: 'local', dim: '768' } },
+    ];
+
+    for (const testCase of cases) {
+      const dir = makeTmpDir(`cfg-embedder-${testCase.name}`);
+      writeFileSync(join(dir, 'models.json'), JSON.stringify({ embedder: testCase.embedder }));
+
+      expect(() => loadPristineConfig(dir)).toThrow(ConfigError);
+      expect(() => loadPristineConfig(dir)).toThrow(/embedder/);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -92,9 +92,9 @@ Deletes source chunks and their vector rows atomically within one project. Use t
 
 - `secureAndRedact(text, userId, classifier?)`
 - `reveal(redactedText, userId)`
-- `scrubOutput(text, revealedValues?)`
+- `scrubOutput(text, valuesToScrub?)`
 
-These remain local-only and use the SQLite vault plus filesystem keys.
+These remain local-only and use the SQLite vault plus filesystem keys. The current TypeScript parameter name for `scrubOutput` is `allowlist` for compatibility, but the values are scrubbed from output; pass revealed/sensitive values that must be removed.
 
 ```ts
 const secured = await client.secureAndRedact(
@@ -122,7 +122,7 @@ const safeOutput = client.scrubOutput(revealed.text, revealed.revealedValues);
 - success: `{ ok: true, redactedText, placeholderIds, warnings? }`
 - blocked: `{ ok: false, reason: 'safety_scan', redactedText, safetyViolations, warnings? }`
 
-`reveal` returns `{ text, revealedValues }`. Pass `revealedValues` to `scrubOutput`; they are values to remove from output, not an allowlist.
+`reveal` returns `{ text, revealedValues }`. Pass `revealedValues` to `scrubOutput`; they are values to remove from output.
 
 The built-in classifier is deterministic and local. It detects common API keys, auth tokens, private keys, JWTs, and password/secret assignments. Add custom local patterns through `PristineLocal.create({ privacy: { customPatterns: [...] } })` or `customPatternsPath`.
 
@@ -156,8 +156,14 @@ Default first run creates:
   data/                              mode 0700
     pristine.db                      SQLite database
   keys/                              mode 0700
-    {userId}-private.pem             private key, owner-only
-    {userId}-public.pem              public key
+```
+
+Privacy operations create per-user key files on first use:
+
+```text
+~/.pristine/keys/
+  {encodedUserId}-private.pem        private key, owner-only
+  {encodedUserId}-public.pem         public key
 ```
 
 `pristine.db` stores:

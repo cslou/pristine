@@ -52,9 +52,10 @@ describe.skipIf(skipSlow)('source-index integration (real local embedder)', () =
     const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-integration-'));
     const db = createDatabase(join(dir, 'source-index.db'));
     const embedder = new LocalEmbedder();
-    const client = await PristineLocal.create({ db, embedder, keysDir: join(dir, 'keys') });
+    let client: PristineLocal | undefined;
 
     try {
+      client = await PristineLocal.create({ db, embedder, keysDir: join(dir, 'keys') });
       await client.indexSourceChunks(
         [
           {
@@ -75,7 +76,7 @@ describe.skipIf(skipSlow)('source-index integration (real local embedder)', () =
         sourceKind: 'integration',
       });
     } finally {
-      await client.dispose();
+      await client?.dispose();
       db.close();
       rmSync(dir, { force: true, recursive: true });
     }

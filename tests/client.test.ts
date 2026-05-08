@@ -320,8 +320,11 @@ describe('PristineLocal', () => {
           sourceKind: 'pi-jsonl',
           sourceUri: '/tmp/session.jsonl',
           entryId: 'entry-1',
+          parentId: 'parent-1',
+          lineNumber: 11,
           lineStart: 10,
           lineEnd: 12,
+          timestamp: '2026-05-08T00:00:00.000Z',
           metadata: { cwd: '/tmp/project' },
         },
         { text: 'unrelated chunk', chunkId: 'other' },
@@ -338,17 +341,46 @@ describe('PristineLocal', () => {
       sourceKind: 'pi-jsonl',
       sourceUri: '/tmp/session.jsonl',
       entryId: 'entry-1',
+      parentId: 'parent-1',
+      lineNumber: 11,
       lineStart: 10,
       lineEnd: 12,
+      timestamp: '2026-05-08T00:00:00.000Z',
       metadata: { cwd: '/tmp/project' },
     });
     expect(hits[1]).toMatchObject({
       chunkId: 'minimal',
       sourceKind: null,
       sourceUri: null,
+      entryId: null,
+      parentId: null,
+      lineNumber: null,
+      lineStart: null,
+      lineEnd: null,
+      timestamp: null,
       metadata: null,
     });
     expect(hits.every((hit) => hit.score > 0 && hit.score <= 1)).toBe(true);
+  });
+
+  it('indexSourceChunks generates unique searchable IDs for minimal chunks', async () => {
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1), vector(0.5)]);
+    vi.mocked(deps.embedder.embed).mockResolvedValueOnce(vector(1));
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    const indexed = await client.indexSourceChunks(
+      [{ text: 'generated id first' }, { text: 'generated id second' }],
+      { projectId: 'project-a' },
+    );
+    const chunkIds = indexed.map((chunk) => chunk.chunkId);
+
+    expect(chunkIds).toHaveLength(2);
+    expect(new Set(chunkIds).size).toBe(2);
+    expect(chunkIds.every((chunkId) => chunkId.length > 0)).toBe(true);
+    expectSourceIndexRowCounts(deps.db, 2);
+    await expect(
+      client.searchSourceChunks('generated id', { projectId: 'project-a', limit: 2 }),
+    ).resolves.toHaveLength(2);
   });
 
   it('searchSourceChunks enforces project isolation and validates arguments', async () => {

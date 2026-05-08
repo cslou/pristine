@@ -711,15 +711,36 @@ describe('SourceChunkStore validation and storage', () => {
     expect(missingRows).toEqual([]);
   });
 
-  it('rejects oversized text and metadata JSON', () => {
+  it('accepts exact text and metadata byte limits and rejects one byte over', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const store = new SourceChunkStore(db, 64);
+    const metadataJsonOverhead = Buffer.byteLength(JSON.stringify({ large: '' }), 'utf8');
+    const exactMetadata = {
+      large: 'x'.repeat(SOURCE_CHUNK_METADATA_JSON_LIMIT - metadataJsonOverhead),
+    };
+    const multibyteExactText = 'é'.repeat(SOURCE_CHUNK_TEXT_LIMIT / 2);
+
+    expect(
+      store.put(
+        { text: 'metadata exact limit', chunkId: 'metadata-exact', metadata: exactMetadata },
+        { projectId: 'p', embedding: testEmbedding },
+      ).metadataJson,
+    ).toHaveLength(SOURCE_CHUNK_METADATA_JSON_LIMIT);
+    expect(
+      store.put(
+        { text: 'x'.repeat(SOURCE_CHUNK_TEXT_LIMIT), chunkId: 'text-exact' },
+        { projectId: 'p', embedding: testEmbedding },
+      ).text,
+    ).toHaveLength(SOURCE_CHUNK_TEXT_LIMIT);
+    expect(
+      store.put(
+        { text: multibyteExactText, chunkId: 'text-multibyte-exact' },
+        { projectId: 'p', embedding: testEmbedding },
+      ).text,
+    ).toBe(multibyteExactText);
 
     expect(() =>
-      store.put(
-        { text: 'x'.repeat(SOURCE_CHUNK_TEXT_LIMIT + 1) },
-        { projectId: 'p', embedding: testEmbedding },
-      ),
+      store.put({ text: `${multibyteExactText}x` }, { projectId: 'p', embedding: testEmbedding }),
     ).toThrow(InvalidArgumentError);
     expect(() =>
       store.put(
@@ -727,5 +748,50 @@ describe('SourceChunkStore validation and storage', () => {
         { projectId: 'p', embedding: testEmbedding },
       ),
     ).toThrow(InvalidArgumentError);
+    expect(() =>
+      store.put(
+        {
+          text: 'ok',
+          metadata: {
+            large: `${'é'.repeat((SOURCE_CHUNK_METADATA_JSON_LIMIT - metadataJsonOverhead) / 2)}x`,
+          },
+        },
+        { projectId: 'p', embedding: testEmbedding },
+      ),
+    ).toThrow(InvalidArgumentError);
+  });
+
+  it('round-trips valid nested metadata and supported toJSON values', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+    const metadata = {
+      nested: { tags: ['alpha', 'beta'], values: [1, true, null] },
+      custom: { toJSON: () => ({ serialized: 'value' }) },
+    };
+
+    const stored = store.put(
+      { text: 'valid nested metadata', chunkId: 'nested-metadata', metadata },
+      { projectId: 'p', embedding: testEmbedding },
+    );
+
+    expect(JSON.parse(stored.metadataJson ?? '')).toEqual({
+      nested: { tags: ['alpha', 'beta'], values: [1, true, null] },
+      custom: { serialized: 'value' },
+    });
+  });
+
+  it('rejects nested non-JSON metadata values', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+    const invalidValues = [Number.NaN, Infinity, () => 'nope', Symbol('nope'), BigInt(1)] as const;
+
+    for (const invalidValue of invalidValues) {
+      expect(() =>
+        store.put(
+          { text: 'invalid nested metadata', metadata: { nested: { invalidValue } } },
+          { projectId: 'p', embedding: testEmbedding },
+        ),
+      ).toThrow(InvalidArgumentError);
+    }
   });
 });

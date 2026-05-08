@@ -711,6 +711,45 @@ describe('SourceChunkStore validation and storage', () => {
     expect(missingRows).toEqual([]);
   });
 
+  it('accepts exact-dimension finite vectors and rejects vector boundary violations', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    const store = new SourceChunkStore(db, 64);
+
+    store.put(
+      { text: 'valid vector boundary', chunkId: 'valid-vector-boundary' },
+      { projectId: 'p', embedding: vector64(1) },
+    );
+    expectSourceIndexRowCounts(db, 1, 'p');
+
+    const invalidVectorWrites = [
+      () =>
+        store.put(
+          { text: 'wrong dimension vector', chunkId: 'wrong-dim-vector' },
+          { projectId: 'p', embedding: [1, 2] },
+        ),
+      () =>
+        store.put(
+          { text: 'non-array vector', chunkId: 'non-array-vector' },
+          { projectId: 'p', embedding: 'not-a-vector' as unknown as readonly number[] },
+        ),
+      () =>
+        store.put(
+          { text: 'nan vector', chunkId: 'nan-vector' },
+          { projectId: 'p', embedding: [Number.NaN, ...vector64(0).slice(1)] },
+        ),
+      () =>
+        store.put(
+          { text: 'infinite vector', chunkId: 'infinite-vector' },
+          { projectId: 'p', embedding: [Infinity, ...vector64(0).slice(1)] },
+        ),
+    ];
+
+    for (const invalidVectorWrite of invalidVectorWrites) {
+      expect(invalidVectorWrite).toThrow(InvalidArgumentError);
+      expectSourceIndexRowCounts(db, 1, 'p');
+    }
+  });
+
   it('accepts exact text and metadata byte limits and rejects one byte over', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const store = new SourceChunkStore(db, 64);
@@ -739,6 +778,12 @@ describe('SourceChunkStore validation and storage', () => {
       ).text,
     ).toBe(multibyteExactText);
 
+    expect(() =>
+      store.put(
+        { text: 'x'.repeat(SOURCE_CHUNK_TEXT_LIMIT + 1) },
+        { projectId: 'p', embedding: testEmbedding },
+      ),
+    ).toThrow(InvalidArgumentError);
     expect(() =>
       store.put({ text: `${multibyteExactText}x` }, { projectId: 'p', embedding: testEmbedding }),
     ).toThrow(InvalidArgumentError);

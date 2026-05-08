@@ -57,30 +57,30 @@ Each implementation story must include functional verification for new behavior 
 
 #### Story 1: Update spec and public architecture language for source-pointer indexing
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Follows sprint template
-  - [ ] Acceptance criteria are specific and testable
-  - [ ] Functional verification items are concrete and have pass/fail conditions
-  - [ ] Regression verification items are concrete and have pass/fail conditions
-  - [ ] Story is small enough to review and merge independently
-  - [ ] Reviewed by sub-agent
-  - [ ] Review findings addressed or explicitly recorded
-  - [ ] Ready for Lou
+  - [x] Follows sprint template
+  - [x] Acceptance criteria are specific and testable
+  - [x] Functional verification items are concrete and have pass/fail conditions
+  - [x] Regression verification items are concrete and have pass/fail conditions
+  - [x] Story is small enough to review and merge independently
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
+  - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: P1 contradictions in active spec sections initially still referenced raw conversations, SQL/FTS/hybrid primitives, and legacy `searcher.sql`; P2 ambiguity around whether `projectId` is required chunk metadata.
+  - Resolution: Updated active sections to source-pointer semantic index architecture, marked remaining legacy sections historical/non-target, removed active raw SQL/FTS/hybrid primitive language, and made `projectId` an indexing-call option while minimal chunk metadata remains text plus generated chunk ID.
 - **As a** SDK maintainer, **I want** the spec to define Pristine as a semantic index over source-owned records, **so that** implementation work removes raw transcript ownership intentionally rather than as an ad-hoc deletion.
 - **Dependencies:** Sprint 022 complete
 - **Acceptance criteria:**
-  - [ ] Sprint-022 final evidence from `docs/sprints/sprint-022.md` `## Final Review` is reviewed and the observed Pi source pointer/metadata shape is incorporated into the architecture update.
-  - [ ] `docs/specs/implementation-spec-005.md` states that external harness stores are authoritative for raw transcripts and Pristine indexes source chunks with snippets and pointers.
-  - [ ] Spec names index fields: chunk ID, indexed text/snippet, embedding, nullable source kind, nullable source URI, optional source entry/range identifiers, optional timestamps, optional metadata JSON.
-  - [ ] Spec explicitly removes raw `conversations` / `messages` ownership from the core architecture and explains that source context is fetched from the harness store on demand.
-  - [ ] Spec explicitly removes the current `searcher.sql(...)` raw-transcript read primitive and distinguishes that removal from any possible future source-index-only SQL/debug primitive.
-  - [ ] Spec defines missing/partial metadata behavior: indexing/search must work with only indexed text plus a generated chunk ID.
+  - [x] Sprint-022 final evidence from `docs/sprints/sprint-022.md` `## Final Review` is reviewed and the observed Pi source pointer/metadata shape is incorporated into the architecture update.
+  - [x] `docs/specs/implementation-spec-005.md` states that external harness stores are authoritative for raw transcripts and Pristine indexes source chunks with snippets and pointers.
+  - [x] Spec names index fields: chunk ID, indexed text/snippet, embedding, nullable source kind, nullable source URI, optional source entry/range identifiers, optional timestamps, optional metadata JSON.
+  - [x] Spec explicitly removes raw `conversations` / `messages` ownership from the core architecture and explains that source context is fetched from the harness store on demand.
+  - [x] Spec explicitly removes the current `searcher.sql(...)` raw-transcript read primitive and distinguishes that removal from any possible future source-index-only SQL/debug primitive.
+  - [x] Spec defines missing/partial metadata behavior: indexing/search must work with only indexed text plus a generated chunk ID.
 - **Functional verification:**
-  - [ ] Record the observed sprint-022 pointer/metadata shape in the spec or Story 1 PR notes, then run a grep/spec check after reviewing sprint-022 final evidence: `rg 'source pointer|source-owned|metadata_json|chunk ID|source kind|source URI|entry ID|line range|timestamp|text-only|generated chunk ID|conversations / messages|raw transcript|searcher\.sql|SQL debug' docs/specs/implementation-spec-005.md`. **Pass condition:** output shows the new architecture, required index fields, text-only/minimal metadata behavior, raw SQL primitive removal, and removal rationale.
+  - [x] Record the observed sprint-022 pointer/metadata shape in the spec or Story 1 PR notes, then run a grep/spec check after reviewing sprint-022 final evidence: `rg 'source pointer|source-owned|metadata_json|chunk ID|source kind|source URI|entry ID|line range|timestamp|text-only|generated chunk ID|conversations / messages|raw transcript|searcher\.sql|SQL debug' docs/specs/implementation-spec-005.md`. **Pass condition:** output shows the new architecture, required index fields, text-only/minimal metadata behavior, raw SQL primitive removal, and removal rationale.
 - **Regression verification:**
-  - [ ] Run `rg 'local-first|No API calls|no data leaving|source pointer' docs/specs/implementation-spec-005.md` plus `npm run typecheck` and `npm run lint`. **Pass condition:** local-first/no-network commitments and source-pointer architecture remain documented, and checks exit 0.
+  - [x] Run `rg 'local-first|No API calls|no data leaving|source pointer' docs/specs/implementation-spec-005.md` plus `npm run typecheck` and `npm run lint`. **Pass condition:** local-first/no-network commitments and source-pointer architecture remain documented, and checks exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `docs(spec): define source-pointer semantic index architecture`

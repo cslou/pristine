@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDatabase, PristineLocal } from '../src/index.js';
+import { createDatabase, PristineLocal } from '../dist/index.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-smoke-'));
 const db = createDatabase(join(dir, 'pristine.db'));

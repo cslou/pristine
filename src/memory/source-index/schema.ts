@@ -76,6 +76,44 @@ const parseEmbeddingDim = (ddl: string): number | null => {
   return match === null ? null : Number.parseInt(match[1]!, 10);
 };
 
+const REQUIRED_SOURCE_CHUNKS_COLUMNS = [
+  'project_id',
+  'chunk_id',
+  'text',
+  'source_kind',
+  'source_uri',
+  'entry_id',
+  'parent_id',
+  'line_number',
+  'line_start',
+  'line_end',
+  'timestamp',
+  'metadata_json',
+  'created_at',
+  'updated_at',
+] as const;
+
+const REQUIRED_VEC_SOURCE_CHUNKS_COLUMNS = ['chunk_key', 'project_id', 'chunk_id'] as const;
+
+const readTableColumns = (db: Database.Database, tableName: string): ReadonlySet<string> => {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  return new Set(rows.map((row) => row.name));
+};
+
+const assertRequiredColumns = (
+  db: Database.Database,
+  tableName: string,
+  requiredColumns: readonly string[],
+): void => {
+  const columns = readTableColumns(db, tableName);
+  const missingColumns = requiredColumns.filter((column) => !columns.has(column));
+  if (missingColumns.length > 0) {
+    throw new InvalidArgumentError(
+      `SourceChunkStore: existing ${tableName} schema is missing columns: ${missingColumns.join(', ')}`,
+    );
+  }
+};
+
 const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): void => {
   const sourceChunksSql = readExistingTableSql(db, 'source_chunks');
   const vecSourceChunksSql = readExistingTableSql(db, 'vec_source_chunks');
@@ -92,6 +130,10 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): 
     return;
   }
 
+  if (sourceChunksSql !== null) {
+    assertRequiredColumns(db, 'source_chunks', REQUIRED_SOURCE_CHUNKS_COLUMNS);
+  }
+
   if (vecSourceChunksSql !== null) {
     const onDiskDim = parseEmbeddingDim(vecSourceChunksSql);
     if (onDiskDim === null) {
@@ -104,6 +146,7 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): 
         `SourceChunkStore: configured embedder dim=${dim} but on-disk vec_source_chunks is float[${onDiskDim}]`,
       );
     }
+    assertRequiredColumns(db, 'vec_source_chunks', REQUIRED_VEC_SOURCE_CHUNKS_COLUMNS);
   }
 };
 

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createDatabase } from '../../../src/core/database.js';
 import { InvalidArgumentError } from '../../../src/core/errors.js';
@@ -18,6 +21,49 @@ const readTableSql = (db: ReturnType<typeof createDatabase>, tableName: string):
 };
 
 describe('SourceChunkStore schema', () => {
+  it('persists source and vector rows across file-backed database reopen', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-'));
+    const dbPath = join(dir, 'source-index.db');
+
+    try {
+      const db = createDatabase({ path: dbPath, loadSqliteVec: true, runIntegrityCheck: false });
+      const store = new SourceChunkStore(db, 64);
+      store.put(
+        { text: 'durable source pointer', chunkId: 'durable-1', sourceUri: '/tmp/source.jsonl' },
+        { projectId: 'project-a', embedding: testEmbedding },
+      );
+      db.close();
+
+      const reopened = createDatabase({
+        path: dbPath,
+        loadSqliteVec: true,
+        runIntegrityCheck: false,
+      });
+      const reopenedStore = new SourceChunkStore(reopened, 64);
+
+      expect(
+        reopened
+          .prepare(
+            'SELECT text, source_uri FROM source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', 'durable-1'),
+      ).toEqual({ text: 'durable source pointer', source_uri: '/tmp/source.jsonl' });
+      expect(
+        reopened
+          .prepare('SELECT chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?')
+          .get('project-a', 'durable-1'),
+      ).toEqual({ chunk_id: 'durable-1' });
+      expect(
+        reopenedStore.search(testEmbedding, { projectId: 'project-a', limit: 1 })[0],
+      ).toMatchObject({
+        chunk: { chunkId: 'durable-1', projectId: 'project-a' },
+      });
+      reopened.close();
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
   it('creates source chunk tables with configured vector dimension and nullable metadata columns', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     new SourceChunkStore(db, 1024);
@@ -40,12 +86,130 @@ describe('SourceChunkStore schema', () => {
     expect(readTableSql(db, 'source_chunks')).toContain('chunk_id TEXT PRIMARY KEY');
   });
 
-  it('rejects existing source-index vector tables with a mismatched dimension', () => {
+  it('rejects existing source-index vector tables with a mismatched dimension without dropping schema', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     new SourceChunkStore(db, 64);
 
     expect(() => new SourceChunkStore(db, 128)).toThrow(InvalidArgumentError);
+    expect(readTableSql(db, 'source_chunks')).toContain('PRIMARY KEY (project_id, chunk_id)');
     expect(readTableSql(db, 'vec_source_chunks')).toContain('embedding float[64]');
+  });
+
+  it('rejects file-backed source-index reopen with mismatched dimension without dropping schema', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-dim-'));
+    const dbPath = join(dir, 'source-index.db');
+
+    try {
+      const db = createDatabase({ path: dbPath, loadSqliteVec: true, runIntegrityCheck: false });
+      new SourceChunkStore(db, 64).put(
+        { text: 'dimension mismatch persists', chunkId: 'dim-1' },
+        { projectId: 'project-a', embedding: testEmbedding },
+      );
+      db.close();
+
+      const reopened = createDatabase({
+        path: dbPath,
+        loadSqliteVec: true,
+        runIntegrityCheck: false,
+      });
+      expect(() => new SourceChunkStore(reopened, 128)).toThrow(
+        /configured embedder dim=128.*float\[64\]/,
+      );
+      expect(readTableSql(reopened, 'source_chunks')).toContain(
+        'PRIMARY KEY (project_id, chunk_id)',
+      );
+      expect(readTableSql(reopened, 'vec_source_chunks')).toContain('embedding float[64]');
+      expect(
+        reopened
+          .prepare('SELECT chunk_id FROM source_chunks WHERE project_id = ? AND chunk_id = ?')
+          .get('project-a', 'dim-1'),
+      ).toEqual({ chunk_id: 'dim-1' });
+      reopened.close();
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects compatible-key source_chunks tables missing current pointer columns before writes', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(`
+      CREATE TABLE source_chunks (
+        project_id TEXT NOT NULL,
+        chunk_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, chunk_id)
+      );
+    `);
+
+    expect(() => new SourceChunkStore(db, 64)).toThrow(
+      /source_chunks.*missing columns.*source_kind/,
+    );
+    expect(readTableSql(db, 'source_chunks')).toContain('PRIMARY KEY (project_id, chunk_id)');
+  });
+
+  it('rejects vec_source_chunks tables missing project/chunk columns before writes', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(`
+      CREATE TABLE source_chunks (
+        project_id TEXT NOT NULL,
+        chunk_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        source_kind TEXT,
+        source_uri TEXT,
+        entry_id TEXT,
+        parent_id TEXT,
+        line_number INTEGER,
+        line_start INTEGER,
+        line_end INTEGER,
+        timestamp TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, chunk_id)
+      );
+      CREATE VIRTUAL TABLE vec_source_chunks USING vec0(
+        chunk_key TEXT PRIMARY KEY,
+        embedding float[64]
+      );
+    `);
+
+    expect(() => new SourceChunkStore(db, 64)).toThrow(
+      /vec_source_chunks.*missing columns.*project_id.*chunk_id/,
+    );
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_key TEXT PRIMARY KEY');
+  });
+
+  it('rejects malformed vec_source_chunks DDL missing embedding dimension', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(`
+      CREATE TABLE source_chunks (
+        project_id TEXT NOT NULL,
+        chunk_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        source_kind TEXT,
+        source_uri TEXT,
+        entry_id TEXT,
+        parent_id TEXT,
+        line_number INTEGER,
+        line_start INTEGER,
+        line_end INTEGER,
+        timestamp TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, chunk_id)
+      );
+      CREATE TABLE vec_source_chunks (
+        chunk_key TEXT PRIMARY KEY,
+        project_id TEXT,
+        chunk_id TEXT
+      );
+    `);
+
+    expect(() => new SourceChunkStore(db, 64)).toThrow(/missing embedding float\[N\]/);
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_key TEXT PRIMARY KEY');
   });
 
   it('rebuilds incompatible draft source-index tables on init', () => {

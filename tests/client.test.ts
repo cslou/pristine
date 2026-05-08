@@ -3,16 +3,48 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PristineLocal } from '../src/client.js';
+import { PristineLocal, type DeleteSourceChunksResult } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
-import { InvalidArgumentError } from '../src/core/errors.js';
+import { EmbedderError, InvalidArgumentError } from '../src/core/errors.js';
 import type { Embedder } from '../src/core/interfaces.js';
+import { OllamaEmbedder } from '../src/embedder/ollama/index.js';
 
 const vector = (first: number, second = 0): number[] => [
   first,
   second,
   ...Array.from({ length: 766 }, () => 0),
 ];
+
+const sourceChunkRowCount = (db: Database.Database, projectId = 'project-a'): number => {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM source_chunks WHERE project_id = ?')
+    .get(projectId) as { count: number };
+  return row.count;
+};
+
+const sourceVectorRowCount = (db: Database.Database, projectId = 'project-a'): number => {
+  const row = db
+    .prepare('SELECT COUNT(*) AS count FROM vec_source_chunks WHERE project_id = ?')
+    .get(projectId) as { count: number };
+  return row.count;
+};
+
+const expectSourceIndexRowCounts = (
+  db: Database.Database,
+  expected: number,
+  projectId = 'project-a',
+): void => {
+  expect(sourceChunkRowCount(db, projectId)).toBe(expected);
+  expect(sourceVectorRowCount(db, projectId)).toBe(expected);
+};
+
+const mockFetchResponse = (body: unknown): Response =>
+  ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: () => Promise.resolve(body),
+  }) as Response;
 
 const createMockEmbedder = (): Embedder & { dispose: ReturnType<typeof vi.fn> } => ({
   dim: 768,
@@ -142,9 +174,99 @@ describe('PristineLocal', () => {
         { projectId: 'project-a' },
       ),
     ).rejects.toThrow(InvalidArgumentError);
-    expect(
-      deps.db.prepare('SELECT chunk_id FROM source_chunks WHERE chunk_id LIKE ?').all('batch-%'),
-    ).toEqual([]);
+    expectSourceIndexRowCounts(deps.db, 0);
+  });
+
+  it('indexSourceChunks does not write source or vector rows when embedBatch rejects', async () => {
+    const embedderFailure = new Error('embedder unavailable');
+    vi.mocked(deps.embedder.embedBatch).mockRejectedValueOnce(embedderFailure);
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    await expect(
+      client.indexSourceChunks(
+        [
+          { text: 'first valid chunk', chunkId: 'embed-fail-1' },
+          { text: 'second valid chunk', chunkId: 'embed-fail-2' },
+        ],
+        { projectId: 'project-a' },
+      ),
+    ).rejects.toBe(embedderFailure);
+    expectSourceIndexRowCounts(deps.db, 0);
+  });
+
+  it('indexSourceChunks rejects embedBatch count mismatches before writing rows', async () => {
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1)]);
+    await expect(
+      client.indexSourceChunks(
+        [
+          { text: 'first count mismatch', chunkId: 'count-mismatch-1' },
+          { text: 'second count mismatch', chunkId: 'count-mismatch-2' },
+        ],
+        { projectId: 'project-a' },
+      ),
+    ).rejects.toThrow(InvalidArgumentError);
+    expectSourceIndexRowCounts(deps.db, 0);
+
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1), vector(2), vector(3)]);
+    await expect(
+      client.indexSourceChunks(
+        [
+          { text: 'first extra embedding', chunkId: 'extra-embedding-1' },
+          { text: 'second extra embedding', chunkId: 'extra-embedding-2' },
+        ],
+        { projectId: 'project-a' },
+      ),
+    ).rejects.toThrow(InvalidArgumentError);
+    expectSourceIndexRowCounts(deps.db, 0);
+  });
+
+  it('indexSourceChunks rejects invalid IDs and pointer fields before embedding', async () => {
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+    const invalidInputs = [
+      { text: 'empty chunk id', chunkId: '' },
+      { text: 'non-string chunk id', chunkId: 42 },
+      { text: 'invalid source kind', sourceKind: 42 },
+      { text: 'invalid source uri', sourceUri: 42 },
+      { text: 'invalid entry id', entryId: 42 },
+      { text: 'invalid parent id', parentId: 42 },
+      { text: 'invalid timestamp', timestamp: 42 },
+    ] as const;
+
+    for (const input of invalidInputs) {
+      await expect(
+        client.indexSourceChunks([input as unknown as { text: string }], {
+          projectId: 'project-a',
+        }),
+      ).rejects.toThrow(InvalidArgumentError);
+    }
+    expect(deps.embedder.embedBatch).not.toHaveBeenCalled();
+    expectSourceIndexRowCounts(deps.db, 0);
+  });
+
+  it('indexSourceChunks rejects malformed Ollama payloads without source-index writes', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        mockFetchResponse({ embeddings: [[Number.NaN, ...Array.from({ length: 767 }, () => 0)]] }),
+      );
+    try {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: new OllamaEmbedder({ model: 'nomic-embed-text', dim: 768 }),
+      });
+
+      await expect(
+        client.indexSourceChunks([{ text: 'malformed ollama payload', chunkId: 'ollama-bad' }], {
+          projectId: 'project-a',
+        }),
+      ).rejects.toThrow(EmbedderError);
+      expectSourceIndexRowCounts(deps.db, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('deleteSourceChunks removes stale chunks and vectors within a project', async () => {
@@ -173,6 +295,47 @@ describe('PristineLocal', () => {
     );
   });
 
+  it('deleteSourceChunks reports nonexistent and mixed IDs without mutating invalid calls', async () => {
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValue([vector(1), vector(2)]);
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    await client.indexSourceChunks(
+      [
+        { text: 'delete edge first', chunkId: 'delete-1' },
+        { text: 'delete edge second', chunkId: 'delete-2' },
+      ],
+      { projectId: 'project-a' },
+    );
+    expectSourceIndexRowCounts(deps.db, 2);
+
+    expect(client.deleteSourceChunks(['missing'], { projectId: 'project-a' })).toEqual({
+      deletedCount: 0,
+    });
+    expectSourceIndexRowCounts(deps.db, 2);
+
+    expect(client.deleteSourceChunks(['delete-1', 'missing'], { projectId: 'project-a' })).toEqual({
+      deletedCount: 1,
+    });
+    expectSourceIndexRowCounts(deps.db, 1);
+
+    const invalidDeletes: Array<() => DeleteSourceChunksResult> = [
+      () =>
+        client.deleteSourceChunks('delete-2' as unknown as readonly string[], {
+          projectId: 'project-a',
+        }),
+      () => client.deleteSourceChunks([42 as unknown as string], { projectId: 'project-a' }),
+      () => client.deleteSourceChunks([''], { projectId: 'project-a' }),
+      () => client.deleteSourceChunks(['delete-2'], null as unknown as { projectId: string }),
+      () => client.deleteSourceChunks(['delete-2'], [] as unknown as { projectId: string }),
+      () => client.deleteSourceChunks(['delete-2'], { projectId: '' }),
+    ];
+
+    for (const invalidDelete of invalidDeletes) {
+      expect(invalidDelete).toThrow(InvalidArgumentError);
+      expectSourceIndexRowCounts(deps.db, 1);
+    }
+  });
+
   it('searchSourceChunks returns source pointer hits with full and minimal metadata', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
       vector(1),
@@ -190,8 +353,11 @@ describe('PristineLocal', () => {
           sourceKind: 'pi-jsonl',
           sourceUri: '/tmp/session.jsonl',
           entryId: 'entry-1',
+          parentId: 'parent-1',
+          lineNumber: 11,
           lineStart: 10,
           lineEnd: 12,
+          timestamp: '2026-05-08T00:00:00.000Z',
           metadata: { cwd: '/tmp/project' },
         },
         { text: 'unrelated chunk', chunkId: 'other' },
@@ -208,17 +374,46 @@ describe('PristineLocal', () => {
       sourceKind: 'pi-jsonl',
       sourceUri: '/tmp/session.jsonl',
       entryId: 'entry-1',
+      parentId: 'parent-1',
+      lineNumber: 11,
       lineStart: 10,
       lineEnd: 12,
+      timestamp: '2026-05-08T00:00:00.000Z',
       metadata: { cwd: '/tmp/project' },
     });
     expect(hits[1]).toMatchObject({
       chunkId: 'minimal',
       sourceKind: null,
       sourceUri: null,
+      entryId: null,
+      parentId: null,
+      lineNumber: null,
+      lineStart: null,
+      lineEnd: null,
+      timestamp: null,
       metadata: null,
     });
     expect(hits.every((hit) => hit.score > 0 && hit.score <= 1)).toBe(true);
+  });
+
+  it('indexSourceChunks generates unique searchable IDs for minimal chunks', async () => {
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1), vector(0.5)]);
+    vi.mocked(deps.embedder.embed).mockResolvedValueOnce(vector(1));
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    const indexed = await client.indexSourceChunks(
+      [{ text: 'generated id first' }, { text: 'generated id second' }],
+      { projectId: 'project-a' },
+    );
+    const chunkIds = indexed.map((chunk) => chunk.chunkId);
+
+    expect(chunkIds).toHaveLength(2);
+    expect(new Set(chunkIds).size).toBe(2);
+    expect(chunkIds.every((chunkId) => chunkId.length > 0)).toBe(true);
+    expectSourceIndexRowCounts(deps.db, 2);
+    await expect(
+      client.searchSourceChunks('generated id', { projectId: 'project-a', limit: 2 }),
+    ).resolves.toHaveLength(2);
   });
 
   it('searchSourceChunks enforces project isolation and validates arguments', async () => {
@@ -250,6 +445,27 @@ describe('PristineLocal', () => {
     await expect(
       client.searchSourceChunks('x', { projectId: 'project-a', limit: 1 }),
     ).resolves.toHaveLength(1);
+  });
+
+  it('searchSourceChunks trims queries and defaults to a limit of 10', async () => {
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => vector(index + 1)),
+    );
+    vi.mocked(deps.embedder.embed).mockResolvedValue(vector(1));
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    await client.indexSourceChunks(
+      Array.from({ length: 12 }, (_, index) => ({
+        text: `default limit chunk ${index}`,
+        chunkId: `default-limit-${index}`,
+      })),
+      { projectId: 'project-a' },
+    );
+
+    const hits = await client.searchSourceChunks('  default limit  ', { projectId: 'project-a' });
+
+    expect(deps.embedder.embed).toHaveBeenCalledWith('default limit');
+    expect(hits).toHaveLength(10);
   });
 
   it('searchSourceChunks rejects query embedding dimension mismatches', async () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EmbedderError, InvalidArgumentError } from '../../src/core/errors.js';
+import { EmbedderError } from '../../src/core/errors.js';
 import { OllamaEmbedder } from '../../src/embedder/ollama/index.js';
 
 const TEST_CONFIG = {
@@ -50,7 +50,7 @@ describe('OllamaEmbedder', () => {
       const embedder = new OllamaEmbedder(TEST_CONFIG);
 
       await expect(embedder.embed('hello')).rejects.toThrow(EmbedderError);
-      await expect(embedder.embed('hello')).rejects.toThrow(/returned no results/);
+      await expect(embedder.embed('hello')).rejects.toThrow(/expected 1 embeddings but received 0/);
     });
   });
 
@@ -250,16 +250,32 @@ describe('OllamaEmbedder', () => {
   });
 
   describe('strict dim validation', () => {
-    it('throws InvalidArgumentError naming both dims when model output length differs from configured dim', async () => {
+    it('throws EmbedderError naming both dims when model output length differs from configured dim', async () => {
       vi.mocked(globalThis.fetch).mockResolvedValue(
         mockFetchResponse({ embeddings: makeEmbeddings(1, 1024) }),
       );
 
       const embedder = new OllamaEmbedder({ ...TEST_CONFIG, dim: 768 });
 
-      await expect(embedder.embed('hello')).rejects.toBeInstanceOf(InvalidArgumentError);
+      await expect(embedder.embed('hello')).rejects.toBeInstanceOf(EmbedderError);
       await expect(embedder.embed('hello')).rejects.toThrow(/configured dim=768/);
       await expect(embedder.embed('hello')).rejects.toThrow(/produced 1024-d/);
+    });
+
+    it('throws EmbedderError for malformed nested embedding payloads', async () => {
+      const malformedPayloads = [
+        { embeddings: [makeEmbeddings(1)[0], makeEmbeddings(1)[0]] },
+        { embeddings: ['not-an-array'] },
+        { embeddings: [[1, ...Array.from({ length: 767 }, () => 'bad')]] },
+        { embeddings: [[Number.NaN, ...Array.from({ length: 767 }, () => 0)]] },
+        { embeddings: [[Infinity, ...Array.from({ length: 767 }, () => 0)]] },
+      ];
+
+      for (const payload of malformedPayloads) {
+        vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockFetchResponse(payload));
+        const embedder = new OllamaEmbedder(TEST_CONFIG);
+        await expect(embedder.embedBatch(['hello'])).rejects.toBeInstanceOf(EmbedderError);
+      }
     });
   });
 });

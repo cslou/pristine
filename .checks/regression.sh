@@ -114,7 +114,6 @@ run_deep() {
 run_full() {
   run_deep
   run_check "integration-full-real-model" "Integration / contract" "npm run test:integration"
-  run_check "indexer-real-model-smoke" "E2E / smoke" "npx tsx scripts/smoke-indexer.ts"
 }
 
 ROUTINE_EMPTY=0

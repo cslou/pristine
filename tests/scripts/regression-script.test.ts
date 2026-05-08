@@ -131,7 +131,6 @@ describe('regression.sh tier contract', () => {
       'npm|run test:integration|SKIP=1',
       'npm|run test:e2e|SKIP=',
       'npm|run test:integration|SKIP=',
-      'npx|tsx scripts/smoke-indexer.ts|SKIP=',
     ]);
   });
 

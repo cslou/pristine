@@ -222,6 +222,122 @@ describe('PristineLocal', () => {
         InvalidArgumentError,
       );
     });
+
+    it('searchSourceChunks returns source pointer hits with full and minimal metadata', async () => {
+      vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
+        [1, ...Array.from({ length: 767 }, () => 0)],
+        [0, 1, ...Array.from({ length: 766 }, () => 0)],
+        [0.5, ...Array.from({ length: 767 }, () => 0)],
+      ]);
+      vi.mocked(deps.embedder.embed).mockResolvedValueOnce([
+        1,
+        ...Array.from({ length: 767 }, () => 0),
+      ]);
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      const [full, other, minimal] = await client.indexSourceChunks(
+        [
+          {
+            text: 'pi source pointer hit',
+            chunkId: 'full-pointer',
+            sourceKind: 'pi-jsonl',
+            sourceUri: '/tmp/session.jsonl',
+            entryId: 'entry-1',
+            lineStart: 10,
+            lineEnd: 12,
+            timestamp: '2026-05-07T00:00:00.000Z',
+            metadata: { cwd: '/tmp/project' },
+          },
+          { text: 'unrelated chunk', chunkId: 'other' },
+          { text: 'minimal pointerless hit', chunkId: 'minimal' },
+        ],
+        { projectId: 'project-a' },
+      );
+      expect(full?.chunkId).toBe('full-pointer');
+      expect(other?.chunkId).toBe('other');
+      expect(minimal?.chunkId).toBe('minimal');
+
+      const hits = await client.searchSourceChunks('pointer', { projectId: 'project-a', limit: 3 });
+
+      expect(hits.map((hit) => hit.chunkId)).toEqual(['full-pointer', 'minimal', 'other']);
+      expect(hits[0]).toMatchObject({
+        text: 'pi source pointer hit',
+        sourceKind: 'pi-jsonl',
+        sourceUri: '/tmp/session.jsonl',
+        entryId: 'entry-1',
+        lineStart: 10,
+        lineEnd: 12,
+        timestamp: '2026-05-07T00:00:00.000Z',
+        metadata: { cwd: '/tmp/project' },
+      });
+      expect(hits[1]).toMatchObject({
+        chunkId: 'minimal',
+        sourceKind: null,
+        sourceUri: null,
+        metadata: null,
+      });
+      expect(hits.every((hit) => hit.score > 0 && hit.score <= 1)).toBe(true);
+    });
+
+    it('searchSourceChunks enforces project isolation and validates arguments', async () => {
+      vi.mocked(deps.embedder.embedBatch).mockResolvedValue([
+        [1, ...Array.from({ length: 767 }, () => 0)],
+      ]);
+      vi.mocked(deps.embedder.embed).mockResolvedValue([
+        1,
+        ...Array.from({ length: 767 }, () => 0),
+      ]);
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await client.indexSourceChunks([{ text: 'project scoped', chunkId: 'scoped' }], {
+        projectId: 'project-a',
+      });
+
+      await expect(client.searchSourceChunks('', { projectId: 'project-a' })).rejects.toThrow(
+        InvalidArgumentError,
+      );
+      await expect(client.searchSourceChunks('x', { projectId: '', limit: 1 })).rejects.toThrow(
+        InvalidArgumentError,
+      );
+      await expect(
+        client.searchSourceChunks('x', { projectId: 'project-a', limit: 0 }),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(
+        client.searchSourceChunks('x', { projectId: 'project-a', limit: null } as never),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(
+        client.searchSourceChunks('x', { projectId: 'project-a', limit: 1001 }),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(client.searchSourceChunks('x', { projectId: 'project-b' })).resolves.toEqual([]);
+      await expect(
+        client.searchSourceChunks('x', { projectId: 'project-a', limit: 1 }),
+      ).resolves.toHaveLength(1);
+    });
+
+    it('searchSourceChunks rejects query embedding dimension mismatches', async () => {
+      vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
+        [1, ...Array.from({ length: 767 }, () => 0)],
+      ]);
+      vi.mocked(deps.embedder.embed).mockResolvedValueOnce([1]);
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await client.indexSourceChunks([{ text: 'dimension guard', chunkId: 'dim' }], {
+        projectId: 'project-a',
+      });
+
+      await expect(
+        client.searchSourceChunks('dimension', { projectId: 'project-a' }),
+      ).rejects.toThrow(InvalidArgumentError);
+    });
   });
 
   describe('conversation API', () => {

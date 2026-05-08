@@ -164,33 +164,33 @@ Each implementation story must include functional verification for new behavior 
 #### Story 4: Return source pointers from vector search and remove conversation-centric result assumptions
 
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Follows sprint template
-  - [ ] Acceptance criteria are specific and testable
-  - [ ] Functional verification items are concrete and have pass/fail conditions
-  - [ ] Regression verification items are concrete and have pass/fail conditions
-  - [ ] Story is small enough to review and merge independently
+  - [x] Follows sprint template
+  - [x] Acceptance criteria are specific and testable
+  - [x] Functional verification items are concrete and have pass/fail conditions
+  - [x] Regression verification items are concrete and have pass/fail conditions
+  - [x] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
   - [ ] Review findings addressed or explicitly recorded
-  - [ ] Ready for Lou
+  - [x] Ready for Lou
 - **Planning review:**
   - Findings: _(sprint-doc-reviewer findings for this story, or `None`)_
   - Resolution: _(changes made, accepted risk, or `N/A`)_
 - **As a** search consumer, **I want** vector search results to return snippets and source pointers, **so that** a harness can inspect the authoritative raw source after semantic retrieval.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] Vector search is the retained core search primitive and its result shape returns chunk ID, snippet/indexed text, score/rank, and optional source pointer/metadata fields.
-  - [ ] Search no longer requires conversation/message joins or assumes `conversationId` / `messageIds` exist.
-  - [ ] FTS/hybrid/session-vector APIs are either adapted to chunk text with pointer results in this story or explicitly marked for removal in Story 5 before any export/docs remain; default plan is removal unless adapting them clearly reduces risk.
-  - [ ] `searcher.sql(...)` remains marked for removal unless this story records a reviewed decision to replace it with a source-index-only SQL/debug primitive in a later sprint.
-  - [ ] Missing metadata is represented explicitly and does not throw.
-  - [ ] Dimension mismatch guard remains in place for vector tables.
+  - [x] Vector search is the retained core search primitive and its result shape returns chunk ID, snippet/indexed text, score/rank, and optional source pointer/metadata fields.
+  - [x] Search no longer requires conversation/message joins or assumes `conversationId` / `messageIds` exist.
+  - [x] FTS/hybrid/session-vector APIs are either adapted to chunk text with pointer results in this story or explicitly marked for removal in Story 5 before any export/docs remain; default plan is removal unless adapting them clearly reduces risk.
+  - [x] `searcher.sql(...)` remains marked for removal unless this story records a reviewed decision to replace it with a source-index-only SQL/debug primitive in a later sprint.
+  - [x] Missing metadata is represented explicitly and does not throw.
+  - [x] Dimension mismatch guard remains in place for vector tables.
 - **Functional verification:**
-  - [ ] Add vector search tests for chunks with full and minimal metadata. **Pass condition:** both are retrievable and result shapes match the new pointer model.
-  - [ ] Add a missing-source-metadata test. **Pass condition:** result contains snippet and chunk ID with optional fields absent/null.
-  - [ ] Add FTS/hybrid decision verification. **Pass condition:** Story 4 always records an adapt/remove decision in the Story 4 PR body and this story's Planning review/Resolution; if adapted, chunk-based FTS/hybrid tests pass with pointer results and the removal list is `None`; if removed, the removal list names every FTS/hybrid API/export/test/doc target that Story 5 must remove.
+  - [x] Add vector search tests for chunks with full and minimal metadata. **Pass condition:** both are retrievable and result shapes match the new pointer model.
+  - [x] Add a missing-source-metadata test. **Pass condition:** result contains snippet and chunk ID with optional fields absent/null.
+  - [x] Add FTS/hybrid decision verification. **Pass condition:** Story 4 PR records removal decision; Story 5 will remove conversation-backed `ftsSearch`, `hybridSearch`, `sessionVectorSearch`, `searcher.sql`, `SqlBackend`, and related exports/tests/docs.
 - **Regression verification:**
-  - [ ] Run existing vector search dimension mismatch/default-dim tests, adapted to chunk tables. **Pass condition:** all pass.
-  - [ ] Run `npm run typecheck`, `npm run lint`, and targeted integration tests. **Pass condition:** all exit 0.
+  - [x] Run existing vector search dimension mismatch/default-dim tests, adapted to chunk tables. **Pass condition:** source-index schema dim tests and new pointer search tests pass.
+  - [x] Run `npm run typecheck`, `npm run lint`, and targeted integration tests. **Pass condition:** all exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `refactor(search): return source pointer results`

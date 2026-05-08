@@ -18,7 +18,7 @@ import { createIndexer, type Indexer } from './memory/indexer/index.js';
 import { createEmbedTaskHandler, runEmbedWorker } from './memory/indexer/embed-worker.js';
 import { createWindowWriter } from './memory/indexer/windows.js';
 import { createSearcher, type Searcher } from './memory/searcher/index.js';
-import { SourceChunkStore, type StoredSourceChunk } from './memory/source-index/index.js';
+import { SourceChunkStore } from './memory/source-index/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
@@ -37,6 +37,21 @@ const VALID_ROLES = new Set<string>(['system', 'user', 'assistant']);
 
 export interface IndexSourceChunksOptions {
   readonly projectId: string;
+}
+
+export interface IndexedSourceChunk {
+  readonly chunkId: string;
+  readonly projectId: string;
+  readonly text: string;
+  readonly sourceKind: string | null;
+  readonly sourceUri: string | null;
+  readonly entryId: string | null;
+  readonly parentId: string | null;
+  readonly lineNumber: number | null;
+  readonly lineStart: number | null;
+  readonly lineEnd: number | null;
+  readonly timestamp: string | null;
+  readonly metadata: SourceChunkInput['metadata'] | null;
 }
 
 export interface PristineLocalConfig {
@@ -210,7 +225,7 @@ export class PristineLocal {
   public async indexSourceChunks(
     chunks: readonly SourceChunkInput[],
     options: IndexSourceChunksOptions,
-  ): Promise<readonly StoredSourceChunk[]> {
+  ): Promise<readonly IndexedSourceChunk[]> {
     if (!Array.isArray(chunks)) {
       throw new InvalidArgumentError('indexSourceChunks: chunks must be an array');
     }
@@ -218,10 +233,14 @@ export class PristineLocal {
       throw new InvalidArgumentError('indexSourceChunks: chunks must not be empty');
     }
 
-    // Cheap validation before embedding so bad caller input does not pay model cost.
-    this.sourceChunkStore.validateMany(chunks, { projectId: options.projectId });
+    if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+      throw new InvalidArgumentError('indexSourceChunks: options must be an object');
+    }
 
-    const texts = chunks.map((chunk) => chunk.text);
+    // Cheap validation before embedding so bad caller input does not pay model cost.
+    const normalized = this.sourceChunkStore.validateMany(chunks, { projectId: options.projectId });
+
+    const texts = normalized.map((chunk) => chunk.text);
     const embeddings = await this.embedder.embedBatch(texts);
     if (embeddings.length !== chunks.length) {
       throw new InvalidArgumentError(
@@ -229,10 +248,24 @@ export class PristineLocal {
       );
     }
 
-    return this.sourceChunkStore.putMany(chunks, {
-      projectId: options.projectId,
-      embeddings,
-    });
+    const stored = this.sourceChunkStore.putStoredMany(normalized, embeddings);
+    return stored.map((chunk) => ({
+      chunkId: chunk.chunkId,
+      projectId: chunk.projectId,
+      text: chunk.text,
+      sourceKind: chunk.sourceKind,
+      sourceUri: chunk.sourceUri,
+      entryId: chunk.entryId,
+      parentId: chunk.parentId,
+      lineNumber: chunk.lineNumber,
+      lineStart: chunk.lineStart,
+      lineEnd: chunk.lineEnd,
+      timestamp: chunk.timestamp,
+      metadata:
+        chunk.metadataJson === null
+          ? null
+          : (JSON.parse(chunk.metadataJson) as SourceChunkInput['metadata']),
+    }));
   }
 
   // -------------------------------------------------------------------------

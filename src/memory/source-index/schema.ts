@@ -340,15 +340,20 @@ export class SourceChunkStore {
     inputs: readonly SourceChunkInput[],
     options: { readonly projectId: string; readonly embeddings: readonly (readonly number[])[] },
   ): readonly StoredSourceChunk[] {
-    if (inputs.length !== options.embeddings.length) {
+    const chunks = this.validateMany(inputs, options);
+    return this.putStoredMany(chunks, options.embeddings);
+  }
+
+  public putStoredMany(
+    chunks: readonly StoredSourceChunk[],
+    embeddingsInput: readonly (readonly number[])[],
+  ): readonly StoredSourceChunk[] {
+    if (chunks.length !== embeddingsInput.length) {
       throw new InvalidArgumentError(
-        `SourceChunkStore.putMany: expected ${inputs.length} embeddings, got ${options.embeddings.length}`,
+        `SourceChunkStore.putStoredMany: expected ${chunks.length} embeddings, got ${embeddingsInput.length}`,
       );
     }
-    const chunks = inputs.map((input) => normalizeSourceChunkInput(input, options));
-    const embeddings = options.embeddings.map((embedding) =>
-      validateEmbedding(embedding, this.dim),
-    );
+    const embeddings = embeddingsInput.map((embedding) => validateEmbedding(embedding, this.dim));
     this.writeChunksWithVectors(chunks, embeddings);
     return chunks;
   }

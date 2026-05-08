@@ -90,11 +90,19 @@ describe('PristineLocal', () => {
       );
 
       expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
+      expect(chunks[0]).toEqual({
         chunkId: 'chunk-1',
         projectId: 'project-a',
+        text: 'source pointer architecture cleanup',
         sourceKind: 'pi-jsonl',
         sourceUri: '/tmp/session.jsonl',
+        entryId: null,
+        parentId: null,
+        lineNumber: null,
+        lineStart: null,
+        lineEnd: null,
+        timestamp: null,
+        metadata: { cwd: '/tmp/project' },
       });
       expect(deps.embedder.embedBatch).toHaveBeenCalledWith([
         'source pointer architecture cleanup',
@@ -141,6 +149,13 @@ describe('PristineLocal', () => {
         { project_id: 'project-a', text: 'after' },
         { project_id: 'project-b', text: 'other project' },
       ]);
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .all('project-a', 'stable'),
+      ).toEqual([{ project_id: 'project-a', chunk_id: 'stable' }]);
     });
 
     it('indexSourceChunks validates before embedding and rolls back the whole batch on vector failure', async () => {
@@ -183,7 +198,26 @@ describe('PristineLocal', () => {
       });
 
       expect(minimal?.chunkId).toHaveLength(36);
-      expect(minimal?.sourceUri).toBeNull();
+      expect(minimal).toMatchObject({
+        projectId: 'project-a',
+        text: 'minimal chunk',
+        sourceKind: null,
+        sourceUri: null,
+        entryId: null,
+        parentId: null,
+        lineNumber: null,
+        lineStart: null,
+        lineEnd: null,
+        timestamp: null,
+        metadata: null,
+      });
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', minimal?.chunkId),
+      ).toEqual({ project_id: 'project-a', chunk_id: minimal?.chunkId });
       await expect(client.indexSourceChunks([], { projectId: 'project-a' })).rejects.toThrow(
         InvalidArgumentError,
       );

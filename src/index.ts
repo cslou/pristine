@@ -91,6 +91,8 @@ export type {
   IndexedSourceChunk,
   IndexSourceChunksOptions,
   PristineLocalConfig,
+  SearchSourceChunksOptions,
+  SourceChunkSearchHit,
 } from './client.js';
 
 // ---------------------------------------------------------------------------

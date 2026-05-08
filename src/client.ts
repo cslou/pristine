@@ -54,6 +54,15 @@ export interface IndexedSourceChunk {
   readonly metadata: SourceChunkInput['metadata'] | null;
 }
 
+export interface SearchSourceChunksOptions {
+  readonly projectId: string;
+  readonly limit?: number;
+}
+
+export interface SourceChunkSearchHit extends IndexedSourceChunk {
+  readonly score: number;
+}
+
 export interface PristineLocalConfig {
   readonly baseDir?: string;
   readonly keysDir?: string;
@@ -265,6 +274,48 @@ export class PristineLocal {
         chunk.metadataJson === null
           ? null
           : (JSON.parse(chunk.metadataJson) as SourceChunkInput['metadata']),
+    }));
+  }
+
+  /**
+   * Vector-search indexed source chunks and return source-pointer results.
+   *
+   * Results never require conversation/message rows. Text-only chunks return
+   * their snippet text and generated chunk id with nullable source fields.
+   */
+  public async searchSourceChunks(
+    query: string,
+    options: SearchSourceChunksOptions,
+  ): Promise<readonly SourceChunkSearchHit[]> {
+    if (typeof query !== 'string' || query.trim().length === 0) {
+      throw new InvalidArgumentError('searchSourceChunks: query must be a non-empty string');
+    }
+    if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+      throw new InvalidArgumentError('searchSourceChunks: options must be an object');
+    }
+    const limit = options.limit ?? 10;
+    const embedding = await this.embedder.embed(query.trim());
+    const hits = this.sourceChunkStore.search(embedding, {
+      projectId: options.projectId,
+      limit,
+    });
+    return hits.map((hit) => ({
+      chunkId: hit.chunk.chunkId,
+      projectId: hit.chunk.projectId,
+      text: hit.chunk.text,
+      sourceKind: hit.chunk.sourceKind,
+      sourceUri: hit.chunk.sourceUri,
+      entryId: hit.chunk.entryId,
+      parentId: hit.chunk.parentId,
+      lineNumber: hit.chunk.lineNumber,
+      lineStart: hit.chunk.lineStart,
+      lineEnd: hit.chunk.lineEnd,
+      timestamp: hit.chunk.timestamp,
+      metadata:
+        hit.chunk.metadataJson === null
+          ? null
+          : (JSON.parse(hit.chunk.metadataJson) as SourceChunkInput['metadata']),
+      score: hit.score,
     }));
   }
 

@@ -6,6 +6,8 @@ import { assertValidDim } from '../../core/vector-dim.js';
 import type {
   SourceChunkInput,
   SourceChunkNormalizeOptions,
+  SourceChunkSearchHit,
+  SourceChunkSearchOptions,
   SourceChunkStoreOptions,
   StoredSourceChunk,
 } from './types.js';
@@ -194,6 +196,10 @@ const validateMetadata = (metadata: SourceChunkInput['metadata']): string | null
   return encoded;
 };
 
+const MAX_SOURCE_CHUNK_SEARCH_LIMIT = 1000;
+
+const distanceToScore = (distance: number): number => 1 / (1 + distance);
+
 const validateEmbedding = (embedding: readonly number[], dim: number): Buffer => {
   if (!Array.isArray(embedding)) {
     throw new InvalidArgumentError('SourceChunkStoreOptions.embedding must be an array');
@@ -260,6 +266,7 @@ export class SourceChunkStore {
   private readonly upsertChunk: Statement;
   private readonly deleteVector: Statement;
   private readonly insertVector: Statement;
+  private readonly searchStmt: Statement;
   private readonly writeChunksWithVectors: (
     chunks: readonly StoredSourceChunk[],
     embeddings: readonly Buffer[],
@@ -292,6 +299,18 @@ export class SourceChunkStore {
     this.insertVector = db.prepare(
       'INSERT INTO vec_source_chunks(chunk_key, project_id, chunk_id, embedding) VALUES (?, ?, ?, ?)',
     );
+    this.searchStmt = db.prepare(`
+      SELECT
+        c.project_id, c.chunk_id, c.text, c.source_kind, c.source_uri, c.entry_id, c.parent_id,
+        c.line_number, c.line_start, c.line_end, c.timestamp, c.metadata_json, c.created_at,
+        c.updated_at, v.distance
+      FROM vec_source_chunks v
+      JOIN source_chunks c ON c.project_id = v.project_id AND c.chunk_id = v.chunk_id
+      WHERE v.embedding MATCH ?
+        AND k = ?
+        AND v.project_id = ?
+      ORDER BY distance
+    `);
     this.writeChunksWithVectors = db.transaction(
       (chunks: readonly StoredSourceChunk[], embeddings: readonly Buffer[]) => {
         for (let index = 0; index < chunks.length; index++) {
@@ -325,6 +344,63 @@ export class SourceChunkStore {
     options: SourceChunkNormalizeOptions,
   ): readonly StoredSourceChunk[] {
     return inputs.map((input) => normalizeSourceChunkInput(input, options));
+  }
+
+  public search(
+    embedding: readonly number[],
+    options: SourceChunkSearchOptions,
+  ): readonly SourceChunkSearchHit[] {
+    const projectId = validateProjectId(
+      assertRecordInput(options, 'SourceChunkSearchOptions').projectId as string,
+    );
+    const limit = options.limit;
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new InvalidArgumentError(
+        `SourceChunkStore.search: limit must be a positive integer, got ${String(limit)}`,
+      );
+    }
+    if (limit > MAX_SOURCE_CHUNK_SEARCH_LIMIT) {
+      throw new InvalidArgumentError(
+        `SourceChunkStore.search: limit must be <= ${MAX_SOURCE_CHUNK_SEARCH_LIMIT}, got ${limit}`,
+      );
+    }
+    const queryEmbedding = validateEmbedding(embedding, this.dim);
+    const rows = this.searchStmt.all(queryEmbedding, limit, projectId) as Array<{
+      project_id: string;
+      chunk_id: string;
+      text: string;
+      source_kind: string | null;
+      source_uri: string | null;
+      entry_id: string | null;
+      parent_id: string | null;
+      line_number: number | null;
+      line_start: number | null;
+      line_end: number | null;
+      timestamp: string | null;
+      metadata_json: string | null;
+      created_at: string;
+      updated_at: string;
+      distance: number;
+    }>;
+    return rows.map((row) => ({
+      chunk: {
+        projectId: row.project_id,
+        chunkId: row.chunk_id,
+        text: row.text,
+        sourceKind: row.source_kind,
+        sourceUri: row.source_uri,
+        entryId: row.entry_id,
+        parentId: row.parent_id,
+        lineNumber: row.line_number,
+        lineStart: row.line_start,
+        lineEnd: row.line_end,
+        timestamp: row.timestamp,
+        metadataJson: row.metadata_json,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+      score: distanceToScore(row.distance),
+    }));
   }
 
   public put(input: SourceChunkInput, options: SourceChunkStoreOptions): StoredSourceChunk {

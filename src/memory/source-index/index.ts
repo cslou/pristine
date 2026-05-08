@@ -10,6 +10,8 @@ export type {
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
+  SourceChunkSearchHit,
+  SourceChunkSearchOptions,
   SourceChunkStoreOptions,
   StoredSourceChunk,
 } from './types.js';

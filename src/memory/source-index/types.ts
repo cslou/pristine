@@ -24,3 +24,12 @@ export interface SourceChunkNormalizeOptions {
 export interface SourceChunkStoreOptions extends SourceChunkNormalizeOptions {
   readonly embedding: readonly number[];
 }
+
+export interface SourceChunkSearchOptions extends SourceChunkNormalizeOptions {
+  readonly limit: number;
+}
+
+export interface SourceChunkSearchHit {
+  readonly chunk: StoredSourceChunk;
+  readonly score: number;
+}

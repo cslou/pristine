@@ -117,7 +117,11 @@ export {
   initSourceChunkTables,
   normalizeSourceChunkInput,
 } from './memory/source-index/index.js';
-export type { SourceChunkStoreOptions, StoredSourceChunk } from './memory/source-index/index.js';
+export type {
+  SourceChunkNormalizeOptions,
+  SourceChunkStoreOptions,
+  StoredSourceChunk,
+} from './memory/source-index/index.js';
 
 export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 

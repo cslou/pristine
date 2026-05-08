@@ -53,7 +53,11 @@ describe('SourceChunkStore validation and storage', () => {
         lineStart: 10,
         lineEnd: 14,
         timestamp: '2026-05-08T00:00:00.000Z',
-        metadata: { cwd: '/tmp/project', branch: 'main' },
+        metadata: {
+          cwd: '/tmp/project',
+          branch: 'main',
+          observedAt: new Date('2026-05-08T00:00:00.000Z'),
+        },
       },
       { projectId: 'project-a', embedding: testEmbedding },
     );
@@ -70,7 +74,13 @@ describe('SourceChunkStore validation and storage', () => {
       lineEnd: 14,
       timestamp: '2026-05-08T00:00:00.000Z',
     });
-    expect(stored.metadataJson).toBe(JSON.stringify({ cwd: '/tmp/project', branch: 'main' }));
+    expect(stored.metadataJson).toBe(
+      JSON.stringify({
+        cwd: '/tmp/project',
+        branch: 'main',
+        observedAt: '2026-05-08T00:00:00.000Z',
+      }),
+    );
   });
 
   it('stores partial metadata and no metadata beyond text', () => {

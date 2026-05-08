@@ -3,7 +3,12 @@ import type { Statement } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { InvalidArgumentError } from '../../core/errors.js';
 import { assertValidDim } from '../../core/vector-dim.js';
-import type { SourceChunkInput, SourceChunkStoreOptions, StoredSourceChunk } from './types.js';
+import type {
+  SourceChunkInput,
+  SourceChunkNormalizeOptions,
+  SourceChunkStoreOptions,
+  StoredSourceChunk,
+} from './types.js';
 
 /**
  * Source-index storage contract.
@@ -85,6 +90,16 @@ type JsonScalar = string | number | boolean | null;
 type JsonValue = JsonScalar | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 const assertJsonValue = (value: unknown, path: string, seen: WeakSet<object>): JsonValue => {
+  if (
+    path.length > 0 &&
+    typeof value === 'object' &&
+    value !== null &&
+    'toJSON' in value &&
+    typeof value.toJSON === 'function'
+  ) {
+    return assertJsonValue(value.toJSON(), path, seen);
+  }
+
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) {
@@ -151,7 +166,7 @@ const validateEmbedding = (embedding: readonly number[], dim: number): Buffer =>
 
 export const normalizeSourceChunkInput = (
   input: SourceChunkInput,
-  options: SourceChunkStoreOptions,
+  options: SourceChunkNormalizeOptions,
 ): StoredSourceChunk => {
   if (typeof input.text !== 'string') {
     throw new InvalidArgumentError('SourceChunkInput.text must be a string');

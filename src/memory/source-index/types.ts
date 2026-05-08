@@ -17,7 +17,10 @@ export interface StoredSourceChunk {
   readonly updatedAt: string;
 }
 
-export interface SourceChunkStoreOptions {
+export interface SourceChunkNormalizeOptions {
   readonly projectId: string;
+}
+
+export interface SourceChunkStoreOptions extends SourceChunkNormalizeOptions {
   readonly embedding: readonly number[];
 }

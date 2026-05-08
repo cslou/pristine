@@ -2,7 +2,7 @@
 
 Local-first privacy and source-pointer memory SDK. No API calls, no server, no data leaving the device.
 
-Pristine indexes source-owned text chunks with local embeddings and returns semantic search hits containing snippets plus optional source pointers. The source system remains authoritative for raw transcripts/files/events; Pristine stores only the semantic index, metadata, and privacy vault data in a local SQLite database.
+Pristine indexes source-owned text chunks with local embeddings and returns semantic search hits containing snippets plus optional source pointers. The source system remains authoritative for full raw transcripts/files/events; Pristine stores indexed chunk text/snippets, embeddings, source metadata, and privacy vault data in a local SQLite database.
 
 ## Install
 
@@ -94,9 +94,9 @@ Metadata must be a JSON-serializable object up to 16 KiB. Text must be non-empty
 ## Local-first guarantees
 
 - Embeddings run locally through the configured embedder.
-- Data is stored in a local SQLite file.
-- No API calls are made by default.
-- Raw source records remain in the calling harness/source system.
+- Indexed chunk text/snippets, embeddings, metadata, and vault entries are stored in a local SQLite file.
+- No user data is sent to an API by default. The default Transformers-based embedder may download model files from Hugging Face on first use unless the model is already cached or an offline/local embedder is configured.
+- Full raw source records remain in the calling harness/source system.
 
 ## Verification
 

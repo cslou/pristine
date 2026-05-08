@@ -257,7 +257,7 @@ Each implementation story must include functional verification for new behavior 
   - [x] Package scripts/examples that referenced removed APIs are updated or deleted.
 - **Functional verification:**
   - [x] Run `rg 'ConversationStore|storeAsync|buildSessionVector|messages_public|conversations_public|searcher\.sql|ftsSearch|hybridSearch|sessionVectorSearch' README.md docs src tests scripts examples`. **Pass condition:** README/src/scripts/examples have no live removed-API usage; remaining docs/spec hits are historical or removal rationale; tests include negative removed-API assertions only.
-  - [x] Add a public barrel import smoke test or typecheck fixture that imports the new source-index API from the package entrypoint. **Pass condition:** the fixture compiles without importing from `src/` internals.
+  - [x] Add a public barrel import smoke test or typecheck fixture that imports the new source-index API from the package entrypoint. **Pass condition:** `npm run build && npm run test:smoke` passes, including `tests/smoke/package-entrypoint.smoke.test.ts` importing `../../dist/index.js` without importing from `src/` internals.
   - [x] Run `rg 'Pristine stores raw|raw conversations are stored|conversation corpus|messages table' README.md docs/specs/implementation-spec-005.md src/index.ts`. **Pass condition:** no unresolved raw-transcript ownership language remains outside historical rationale sections.
 - **Regression verification:**
   - [x] Run `npm run typecheck`, `npm run lint`, and docs/static grep checks. **Pass condition:** all exit 0.

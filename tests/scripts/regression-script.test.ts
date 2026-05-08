@@ -48,8 +48,17 @@ echo "npx|$*|SKIP=\${SKIP_SLOW_TESTS:-}" >> "${logPath}"
 exit 0
 `,
   );
+  writeFileSync(
+    join(binDir, 'node'),
+    `#!/usr/bin/env bash
+set -euo pipefail
+echo "node|$*|SKIP=\${SKIP_SLOW_TESTS:-}" >> "${logPath}"
+exit 0
+`,
+  );
   chmodSync(join(binDir, 'npm'), 0o755);
   chmodSync(join(binDir, 'npx'), 0o755);
+  chmodSync(join(binDir, 'node'), 0o755);
 
   return {
     binDir,
@@ -131,7 +140,7 @@ describe('regression.sh tier contract', () => {
       'npm|run test:integration|SKIP=1',
       'npm|run test:e2e|SKIP=',
       'npm|run test:integration|SKIP=',
-      'npx|tsx scripts/smoke-indexer.ts|SKIP=',
+      'node|scripts/smoke-source-index.mjs|SKIP=',
     ]);
   });
 

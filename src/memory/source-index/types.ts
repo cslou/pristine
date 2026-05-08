@@ -19,4 +19,5 @@ export interface StoredSourceChunk {
 
 export interface SourceChunkStoreOptions {
   readonly projectId: string;
+  readonly embedding: readonly number[];
 }

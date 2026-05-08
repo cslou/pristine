@@ -359,8 +359,6 @@ Default: Nomic Embed v1.5 via `@huggingface/transformers`, 768 dimensions, 8192-
 
 ### 5.2 Reference implementations
 
-> **Historical note:** The remaining subsections in this spec were written for the prior raw-conversation corpus design and are retained only as research/background until Sprint 023 finishes the cleanup. Where they mention `conversations`, `messages`, `messages_public`, `messages_fts`, `vec_sessions`, `storeAsync`, `indexer.ingest`, `hybridSearch`, neighbor expansion over `searcher.sql`, `query_memory`, or raw-SQL tools, those references are **not** the target architecture. The target architecture for implementation is §1A plus §5.1: source-owned records, source chunks, vector search returning pointers, and removal of the current raw-transcript `searcher.sql(...)` primitive.
-
 The canonical layout convention lives at [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). The summary below restates the rules; the conventions doc is the source of truth.
 
 Each reference lives **outside `src/`** so it is structurally distinct from the SDK primitives it composes. Two artifact shapes are supported:
@@ -393,18 +391,17 @@ This reference intentionally does not mirror raw Pi transcripts into a Pristine 
 
 #### Candidate reference set (each may or may not ship)
 
-- **`search_memory` tool** — JSON-schema tool wrapper for Claude / Cursor / any tool-calling agent. Composes `hybridSearch` + neighbor-expansion helper. Returns formatted text with timestamps and conversation refs.
-- **Neighbor-expansion helper (`expandHit`)** — ergonomic wrapper over `searcher.sql`: given a hit and a window size `N`, returns the hit's message plus the ±N surrounding turns within the same conversation. ~10 LOC. Opinions baked in (default `N`, conversation-boundary behavior, whether to respect `parent_message_id` for oversize-split messages) — hence reference-only. Often bundled into the `search_memory` tool.
-- **`SessionStart` hook for Claude Code** — script that on `startup` matcher calls `store.getRecentSummaries(projectId, 5)`, formats as markdown, emits via `hookSpecificOutput.additionalContext`. Timestamps every entry, ≤500 lines, fires on `startup` only (per research: re-injecting on `resume`/`compact` wastes tokens).
-- **Raw-SQL query tool** — tool wrapper over `searcher.sql` against the public-view allowlist. The LLM emits raw SELECT; the handler validates + executes via `client.searcher.sql(rawSql, { params })`. No DSL or translator step.
-- **`MEMORY.md` maintainer** — script that writes timestamped session summaries to a project-scoped markdown file, with decay. Composes `store.getRecentSummaries` + filesystem write.
-- **Session-summary generator** — script that, on `Stop` hook, calls the host LLM with a condensation prompt, then stores via `store.addSummary`. Entirely prompt + format choice — LLM, prompt, and schema are all consumer opinions.
-- **Session-vector lifecycle wiring** — script that calls `indexer.buildSessionVector(conversationId)` on a session-close signal. Opinion: when to trigger (session end vs. first retrieval vs. nightly batch).
-- **PostToolUse ingestion script** — reframed `scripts/store.ts`.
+- **`search_memory` / `pristine_vector_search` tool** — JSON-schema tool wrapper for Claude / Cursor / Pi / any tool-calling agent. Composes source-chunk vector search and formats snippets plus source pointers.
+- **Source-inspection helper or skill** — given a returned pointer, reads bounded context from the authoritative harness store (for example Pi JSONL via `search-session-history`).
+- **Harness indexing hook** — feeds source chunks into `indexSourceChunks` on a harness-specific event such as `agent_end`, session close, file save, or explicit user command.
+- **`MEMORY.md` maintainer** — optional reference that writes timestamped summaries to a project-scoped markdown file or indexes summary text as source chunks with file pointers.
+- **Session-summary generator** — optional reference that calls a host LLM and then writes to a harness-owned source store or indexes generated summary chunks. LLM, prompt, and schema are consumer opinions.
 
 None are required for Pristine to function as an SDK. A consumer can build any of them from the primitives with a weekend of work.
 
-#### Migration recipe — keyword search across a project's conversations
+> **Historical note:** The remaining subsections in this spec were written for the prior raw-conversation corpus design and are retained only as research/background until Sprint 023 finishes the cleanup. Where they mention `conversations`, `messages`, `messages_public`, `messages_fts`, `vec_sessions`, `storeAsync`, `indexer.ingest`, `hybridSearch`, neighbor expansion over `searcher.sql`, `query_memory`, or raw-SQL tools, those references are **not** the target architecture. The target architecture for implementation is §1A plus §5.1: source-owned records, source chunks, vector search returning pointers, and removal of the current raw-transcript `searcher.sql(...)` primitive.
+
+#### Historical migration recipe — keyword search across a project's conversations
 
 Pristine v0.x exposed `client.searchConversations({ userId, keyword, ... })` as a built-in. v1 removes that method (sprint-019 Story 5) — keyword-search composition belongs at the consumer / reference-tool layer, not on the SDK surface. The canonical replacement is a project-scoped raw SQL query against the public-view allowlist:
 

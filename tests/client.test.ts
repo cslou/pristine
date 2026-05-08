@@ -69,6 +69,98 @@ describe('PristineLocal', () => {
     });
   });
 
+  describe('source index API', () => {
+    it('indexSourceChunks embeds and writes source chunks synchronously', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      const chunks = await client.indexSourceChunks(
+        [
+          {
+            text: 'source pointer architecture cleanup',
+            chunkId: 'chunk-1',
+            sourceKind: 'pi-jsonl',
+            sourceUri: '/tmp/session.jsonl',
+            metadata: { cwd: '/tmp/project' },
+          },
+        ],
+        { projectId: 'project-a' },
+      );
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toMatchObject({
+        chunkId: 'chunk-1',
+        projectId: 'project-a',
+        sourceKind: 'pi-jsonl',
+        sourceUri: '/tmp/session.jsonl',
+      });
+      expect(deps.embedder.embedBatch).toHaveBeenCalledWith([
+        'source pointer architecture cleanup',
+      ]);
+      expect(
+        deps.db
+          .prepare(
+            'SELECT text, source_uri FROM source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', 'chunk-1'),
+      ).toEqual({ text: 'source pointer architecture cleanup', source_uri: '/tmp/session.jsonl' });
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, chunk_id FROM vec_source_chunks WHERE project_id = ? AND chunk_id = ?',
+          )
+          .get('project-a', 'chunk-1'),
+      ).toEqual({ project_id: 'project-a', chunk_id: 'chunk-1' });
+    });
+
+    it('indexSourceChunks replaces duplicate chunk ids within a project and isolates other projects', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await client.indexSourceChunks([{ text: 'before', chunkId: 'stable' }], {
+        projectId: 'project-a',
+      });
+      await client.indexSourceChunks([{ text: 'after', chunkId: 'stable' }], {
+        projectId: 'project-a',
+      });
+      await client.indexSourceChunks([{ text: 'other project', chunkId: 'stable' }], {
+        projectId: 'project-b',
+      });
+
+      expect(
+        deps.db
+          .prepare(
+            'SELECT project_id, text FROM source_chunks WHERE chunk_id = ? ORDER BY project_id',
+          )
+          .all('stable'),
+      ).toEqual([
+        { project_id: 'project-a', text: 'after' },
+        { project_id: 'project-b', text: 'other project' },
+      ]);
+    });
+
+    it('indexSourceChunks supports minimal metadata and rejects invalid input', async () => {
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      const [minimal] = await client.indexSourceChunks([{ text: 'minimal chunk' }], {
+        projectId: 'project-a',
+      });
+
+      expect(minimal?.chunkId).toHaveLength(36);
+      expect(minimal?.sourceUri).toBeNull();
+      await expect(client.indexSourceChunks([], { projectId: 'project-a' })).rejects.toThrow(
+        InvalidArgumentError,
+      );
+    });
+  });
+
   describe('conversation API', () => {
     it('getConversation() returns full conversation with messages', async () => {
       const client = await PristineLocal.create({

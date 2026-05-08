@@ -5,6 +5,7 @@ import type {
   Message,
   RevealResult,
   SecureAndRedactResult,
+  SourceChunkInput,
 } from './core/types.js';
 import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
 import { IngestQueueError, InvalidArgumentError } from './core/errors.js';
@@ -17,6 +18,7 @@ import { createIndexer, type Indexer } from './memory/indexer/index.js';
 import { createEmbedTaskHandler, runEmbedWorker } from './memory/indexer/embed-worker.js';
 import { createWindowWriter } from './memory/indexer/windows.js';
 import { createSearcher, type Searcher } from './memory/searcher/index.js';
+import { SourceChunkStore, type StoredSourceChunk } from './memory/source-index/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
@@ -32,6 +34,10 @@ const VALID_ROLES = new Set<string>(['system', 'user', 'assistant']);
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
+
+export interface IndexSourceChunksOptions {
+  readonly projectId: string;
+}
 
 export interface PristineLocalConfig {
   readonly baseDir?: string;
@@ -56,6 +62,7 @@ export class PristineLocal {
   private readonly ingestQueue: IngestQueue;
   private readonly conversationStore: ConversationStore;
   private readonly indexer: Indexer;
+  private readonly sourceChunkStore: SourceChunkStore;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
   private readonly keyManager: KeyManager;
@@ -70,6 +77,7 @@ export class PristineLocal {
     conversationStore: ConversationStore;
     indexer: Indexer;
     searcher: Searcher;
+    sourceChunkStore: SourceChunkStore;
     db: Database.Database;
     embedder: Embedder;
     keyManager: KeyManager;
@@ -83,6 +91,7 @@ export class PristineLocal {
     this.conversationStore = deps.conversationStore;
     this.indexer = deps.indexer;
     this.searcher = deps.searcher;
+    this.sourceChunkStore = deps.sourceChunkStore;
     this.db = deps.db;
     this.embedder = deps.embedder;
     this.keyManager = deps.keyManager;
@@ -155,6 +164,7 @@ export class PristineLocal {
     });
 
     const searcher = createSearcher({ db, embedder });
+    const sourceChunkStore = new SourceChunkStore(db, embedder.dim);
 
     const keysDir =
       config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
@@ -167,6 +177,7 @@ export class PristineLocal {
       conversationStore,
       indexer,
       searcher,
+      sourceChunkStore,
       db,
       embedder,
       keyManager,
@@ -176,6 +187,51 @@ export class PristineLocal {
       ownsEmbedder,
       privacyClassifierConfig: config.privacy,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Source index API
+  // -------------------------------------------------------------------------
+
+  /**
+   * Synchronously index source-owned chunks with optional source pointers.
+   *
+   * This is the source-pointer primitive replacing raw conversation
+   * ownership: callers provide text/snippets plus any source metadata their
+   * harness exposes, and Pristine stores indexed text, metadata, and a vector
+   * row in the same local transaction. The raw source remains in the harness;
+   * returned `chunkId`s are handles for later pointer-oriented search/delete
+   * flows.
+   *
+   * Duplicate behavior is stable by `(projectId, chunkId)`: re-indexing the
+   * same chunk id within the same project replaces the prior text, metadata,
+   * and vector. The same chunk id in a different project is isolated.
+   */
+  public async indexSourceChunks(
+    chunks: readonly SourceChunkInput[],
+    options: IndexSourceChunksOptions,
+  ): Promise<readonly StoredSourceChunk[]> {
+    if (!Array.isArray(chunks)) {
+      throw new InvalidArgumentError('indexSourceChunks: chunks must be an array');
+    }
+    if (chunks.length === 0) {
+      throw new InvalidArgumentError('indexSourceChunks: chunks must not be empty');
+    }
+
+    const texts = chunks.map((chunk) => chunk.text);
+    const embeddings = await this.embedder.embedBatch(texts);
+    if (embeddings.length !== chunks.length) {
+      throw new InvalidArgumentError(
+        `indexSourceChunks: embedder returned ${embeddings.length} embeddings for ${chunks.length} chunks`,
+      );
+    }
+
+    return chunks.map((chunk, index) =>
+      this.sourceChunkStore.put(chunk, {
+        projectId: options.projectId,
+        embedding: embeddings[index] ?? [],
+      }),
+    );
   }
 
   // -------------------------------------------------------------------------

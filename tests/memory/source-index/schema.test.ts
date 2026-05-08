@@ -34,6 +34,27 @@ describe('SourceChunkStore schema', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     expect(() => new SourceChunkStore(db, 8192)).toThrow(InvalidArgumentError);
   });
+
+  it('rebuilds incompatible draft source-index tables on init', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(`
+      CREATE TABLE source_chunks (
+        chunk_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        text TEXT NOT NULL
+      );
+      CREATE VIRTUAL TABLE vec_source_chunks USING vec0(
+        chunk_id TEXT PRIMARY KEY,
+        project_id TEXT,
+        embedding float[64]
+      );
+    `);
+
+    new SourceChunkStore(db, 64);
+
+    expect(readTableSql(db, 'source_chunks')).toContain('PRIMARY KEY (project_id, chunk_id)');
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_key TEXT PRIMARY KEY');
+  });
 });
 
 describe('SourceChunkStore validation and storage', () => {
@@ -126,6 +147,14 @@ describe('SourceChunkStore validation and storage', () => {
       { text: 'other project', chunkId: 'stable', sourceKind: 'fixture-b' },
       { projectId: 'project-b', embedding: testEmbedding },
     );
+    store.put(
+      { text: 'separator case 1', chunkId: 'b\u0000c' },
+      { projectId: 'a', embedding: testEmbedding },
+    );
+    store.put(
+      { text: 'separator case 2', chunkId: 'c' },
+      { projectId: 'a\u0000b', embedding: testEmbedding },
+    );
 
     const rows = db
       .prepare(
@@ -144,6 +173,15 @@ describe('SourceChunkStore validation and storage', () => {
     expect(vectorRows).toEqual([
       { project_id: 'project-a', chunk_id: 'stable' },
       { project_id: 'project-b', chunk_id: 'stable' },
+    ]);
+    const separatorRows = db
+      .prepare(
+        'SELECT project_id, chunk_id FROM vec_source_chunks WHERE chunk_id IN (?, ?) ORDER BY project_id',
+      )
+      .all('b\u0000c', 'c');
+    expect(separatorRows).toEqual([
+      { project_id: 'a', chunk_id: 'b\u0000c' },
+      { project_id: 'a\u0000b', chunk_id: 'c' },
     ]);
   });
 

@@ -62,7 +62,31 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_source_chunks USING vec0(
 `;
 };
 
+const readExistingTableSql = (db: Database.Database, tableName: string): string | null => {
+  const row = db.prepare('SELECT sql FROM sqlite_master WHERE name = ?').get(tableName) as
+    | { sql: string | null }
+    | undefined;
+  return row?.sql ?? null;
+};
+
+const dropIncompatibleSourceChunkTables = (db: Database.Database): void => {
+  const sourceChunksSql = readExistingTableSql(db, 'source_chunks');
+  const vecSourceChunksSql = readExistingTableSql(db, 'vec_source_chunks');
+  const sourceChunksCompatible =
+    sourceChunksSql === null || /PRIMARY KEY\s*\(project_id,\s*chunk_id\)/i.test(sourceChunksSql);
+  const vecSourceChunksCompatible =
+    vecSourceChunksSql === null || /\bchunk_key\s+TEXT\s+PRIMARY KEY\b/i.test(vecSourceChunksSql);
+
+  if (!sourceChunksCompatible || !vecSourceChunksCompatible) {
+    db.exec(`
+      DROP TABLE IF EXISTS vec_source_chunks;
+      DROP TABLE IF EXISTS source_chunks;
+    `);
+  }
+};
+
 export const initSourceChunkTables = (db: Database.Database, dim: number): void => {
+  dropIncompatibleSourceChunkTables(db);
   db.exec(SOURCE_CHUNKS_TABLE_DDL);
   db.exec(buildSourceChunkVectorDdl(dim));
 };
@@ -83,10 +107,8 @@ const assertOptionalInteger = (value: number | undefined, fieldName: string): nu
   return value;
 };
 
-const CHUNK_KEY_SEPARATOR = '\u0000';
-
 const sourceChunkKey = (projectId: string, chunkId: string): string =>
-  `${projectId}${CHUNK_KEY_SEPARATOR}${chunkId}`;
+  JSON.stringify([projectId, chunkId]);
 
 const assertRecordInput = (value: unknown, name: string): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {

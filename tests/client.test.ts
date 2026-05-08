@@ -5,7 +5,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PristineLocal, type DeleteSourceChunksResult } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
-import { InvalidArgumentError } from '../src/core/errors.js';
+import { EmbedderError, InvalidArgumentError } from '../src/core/errors.js';
 import type { Embedder } from '../src/core/interfaces.js';
 import { OllamaEmbedder } from '../src/embedder/ollama/index.js';
 
@@ -262,7 +262,7 @@ describe('PristineLocal', () => {
         client.indexSourceChunks([{ text: 'malformed ollama payload', chunkId: 'ollama-bad' }], {
           projectId: 'project-a',
         }),
-      ).rejects.toThrow(InvalidArgumentError);
+      ).rejects.toThrow(EmbedderError);
       expectSourceIndexRowCounts(deps.db, 0);
     } finally {
       globalThis.fetch = originalFetch;

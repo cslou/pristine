@@ -279,6 +279,26 @@ describe('SourceChunkStore schema', () => {
     expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_key TEXT PRIMARY KEY');
   });
 
+  it('rejects incompatible draft source-index tables with mismatched vectors without dropping schema', () => {
+    const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
+    db.exec(`
+      CREATE TABLE source_chunks (
+        chunk_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        text TEXT NOT NULL
+      );
+      CREATE VIRTUAL TABLE vec_source_chunks USING vec0(
+        chunk_id TEXT PRIMARY KEY,
+        project_id TEXT,
+        embedding float[64]
+      );
+    `);
+
+    expect(() => new SourceChunkStore(db, 128)).toThrow(/configured embedder dim=128.*float\[64\]/);
+    expect(readTableSql(db, 'source_chunks')).toContain('chunk_id TEXT PRIMARY KEY');
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('embedding float[64]');
+  });
+
   it('rebuilds incompatible draft source-index tables on init', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     db.exec(`
@@ -757,14 +777,29 @@ describe('SourceChunkStore validation and storage', () => {
     const exactMetadata = {
       large: 'x'.repeat(SOURCE_CHUNK_METADATA_JSON_LIMIT - metadataJsonOverhead),
     };
+    const exactMultibyteMetadata = {
+      large: 'é'.repeat((SOURCE_CHUNK_METADATA_JSON_LIMIT - metadataJsonOverhead) / 2),
+    };
     const multibyteExactText = 'é'.repeat(SOURCE_CHUNK_TEXT_LIMIT / 2);
 
-    expect(
-      store.put(
-        { text: 'metadata exact limit', chunkId: 'metadata-exact', metadata: exactMetadata },
-        { projectId: 'p', embedding: testEmbedding },
-      ).metadataJson,
-    ).toHaveLength(SOURCE_CHUNK_METADATA_JSON_LIMIT);
+    const exactMetadataJson = store.put(
+      { text: 'metadata exact limit', chunkId: 'metadata-exact', metadata: exactMetadata },
+      { projectId: 'p', embedding: testEmbedding },
+    ).metadataJson;
+    expect(Buffer.byteLength(exactMetadataJson ?? '', 'utf8')).toBe(
+      SOURCE_CHUNK_METADATA_JSON_LIMIT,
+    );
+    const exactMultibyteMetadataJson = store.put(
+      {
+        text: 'metadata multibyte exact limit',
+        chunkId: 'metadata-multibyte-exact',
+        metadata: exactMultibyteMetadata,
+      },
+      { projectId: 'p', embedding: testEmbedding },
+    ).metadataJson;
+    expect(Buffer.byteLength(exactMultibyteMetadataJson ?? '', 'utf8')).toBe(
+      SOURCE_CHUNK_METADATA_JSON_LIMIT,
+    );
     expect(
       store.put(
         { text: 'x'.repeat(SOURCE_CHUNK_TEXT_LIMIT), chunkId: 'text-exact' },

@@ -1,5 +1,5 @@
 import type { Embedder } from '../../core/interfaces.js';
-import { AppError, EmbedderError, InvalidArgumentError } from '../../core/errors.js';
+import { AppError, EmbedderError } from '../../core/errors.js';
 import { assertValidDim, DEFAULT_EMBEDDING_DIM } from '../../core/vector-dim.js';
 
 const DEFAULT_MODEL = 'nomic-embed-text';
@@ -50,31 +50,31 @@ export class OllamaEmbedder implements Embedder {
     });
 
     if (response.embeddings.length !== texts.length) {
-      throw new InvalidArgumentError(
+      throw new EmbedderError(
         `OllamaEmbedder expected ${texts.length} embeddings but received ${response.embeddings.length}`,
       );
     }
 
-    return response.embeddings.map((embedding, embeddingIndex) => {
+    for (let embeddingIndex = 0; embeddingIndex < response.embeddings.length; embeddingIndex += 1) {
+      const embedding = response.embeddings[embeddingIndex];
       if (!Array.isArray(embedding)) {
-        throw new InvalidArgumentError(
-          `OllamaEmbedder embedding[${embeddingIndex}] must be an array`,
-        );
+        throw new EmbedderError(`OllamaEmbedder embedding[${embeddingIndex}] must be an array`);
       }
       if (embedding.length !== this.dim) {
-        throw new InvalidArgumentError(
+        throw new EmbedderError(
           `OllamaEmbedder configured dim=${this.dim} but model '${this.model}' produced ${embedding.length}-d output`,
         );
       }
       for (let valueIndex = 0; valueIndex < embedding.length; valueIndex += 1) {
         if (!Number.isFinite(embedding[valueIndex])) {
-          throw new InvalidArgumentError(
+          throw new EmbedderError(
             `OllamaEmbedder embedding[${embeddingIndex}][${valueIndex}] must be finite`,
           );
         }
       }
-      return embedding;
-    });
+    }
+
+    return response.embeddings;
   }
 
   private async fetchWithRetry(

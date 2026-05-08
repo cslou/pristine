@@ -103,7 +103,9 @@ const assertJsonValue = (value: unknown, path: string, seen: WeakSet<object>): J
       throw new InvalidArgumentError(`SourceChunkInput.metadata.${path} must not be cyclic`);
     }
     seen.add(value);
-    return assertJsonValue(value.toJSON(), path, seen);
+    const serialized = assertJsonValue(value.toJSON(), path, seen);
+    seen.delete(value);
+    return serialized;
   }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) {
@@ -116,7 +118,9 @@ const assertJsonValue = (value: unknown, path: string, seen: WeakSet<object>): J
       throw new InvalidArgumentError(`SourceChunkInput.metadata.${path} must not be cyclic`);
     }
     seen.add(value);
-    return value.map((item, index) => assertJsonValue(item, `${path}[${index}]`, seen));
+    const out = value.map((item, index) => assertJsonValue(item, `${path}[${index}]`, seen));
+    seen.delete(value);
+    return out;
   }
   if (typeof value === 'object') {
     if (seen.has(value)) {
@@ -127,6 +131,7 @@ const assertJsonValue = (value: unknown, path: string, seen: WeakSet<object>): J
     for (const [key, child] of Object.entries(value)) {
       out[key] = assertJsonValue(child, path.length === 0 ? key : `${path}.${key}`, seen);
     }
+    seen.delete(value);
     return out;
   }
   throw new InvalidArgumentError(

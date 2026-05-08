@@ -57,6 +57,7 @@ describe('SourceChunkStore validation and storage', () => {
           cwd: '/tmp/project',
           branch: 'main',
           observedAt: new Date('2026-05-08T00:00:00.000Z'),
+          observedAgain: new Date('2026-05-08T00:00:00.000Z'),
         },
       },
       { projectId: 'project-a', embedding: testEmbedding },
@@ -79,6 +80,7 @@ describe('SourceChunkStore validation and storage', () => {
         cwd: '/tmp/project',
         branch: 'main',
         observedAt: '2026-05-08T00:00:00.000Z',
+        observedAgain: '2026-05-08T00:00:00.000Z',
       }),
     );
   });

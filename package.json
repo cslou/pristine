@@ -1,7 +1,7 @@
 {
   "name": "@pristine/shield-local",
   "version": "0.0.1",
-  "description": "Local-first privacy and memory SDK — no API calls, no server, no data leaving the device",
+  "description": "Local-first privacy and source-pointer memory SDK — no server; no user data leaves by default",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

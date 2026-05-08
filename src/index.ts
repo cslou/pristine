@@ -4,8 +4,9 @@
  * Pristine indexes source-owned text chunks with local embeddings and returns
  * semantic search hits containing snippets plus optional source pointers. Raw
  * transcripts remain in the harness/source system; Pristine stores only the
- * semantic index, source metadata, and privacy vault data. No API calls, no
- * server, no data leaving the device.
+ * semantic index, source metadata, and privacy vault data. No server; no user
+ * data leaves the device by default. The default embedder may download model
+ * files on first use unless pre-cached or configured offline.
  */
 
 export { PristineLocal } from './client.js';

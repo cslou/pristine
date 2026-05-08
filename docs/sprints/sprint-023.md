@@ -88,31 +88,31 @@ Each implementation story must include functional verification for new behavior 
 
 #### Story 2: Introduce generic source chunk/index types and storage schema
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
-  - [ ] Follows sprint template
-  - [ ] Acceptance criteria are specific and testable
-  - [ ] Functional verification items are concrete and have pass/fail conditions
-  - [ ] Regression verification items are concrete and have pass/fail conditions
-  - [ ] Story is small enough to review and merge independently
+  - [x] Follows sprint template
+  - [x] Acceptance criteria are specific and testable
+  - [x] Functional verification items are concrete and have pass/fail conditions
+  - [x] Regression verification items are concrete and have pass/fail conditions
+  - [x] Story is small enough to review and merge independently
   - [ ] Reviewed by sub-agent
   - [ ] Review findings addressed or explicitly recorded
-  - [ ] Ready for Lou
+  - [x] Ready for Lou
 - **Planning review:**
-  - Findings: *(sprint-doc-reviewer findings for this story, or `None`)*
-  - Resolution: *(changes made, accepted risk, or `N/A`)*
+  - Findings: Pending PR review.
+  - Resolution: Pending PR review.
 - **As a** SDK consumer, **I want** to index arbitrary text chunks with optional source metadata, **so that** Pristine can support Pi JSONL and future harness stores without raw transcript duplication.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] Core public types expose an index input such as `SourceChunkInput` with `text` required and all source metadata optional.
-  - [ ] SQLite schema stores vector-indexed chunks with validated embedding dimension, indexed snippet/text, source pointer fields, and metadata JSON.
-  - [ ] New source-index table names and field meanings are documented in the module or spec so future regression tests can audit the stable contract.
-  - [ ] Storage accepts full metadata, partial metadata, and no metadata beyond text.
-  - [ ] Metadata must be a JSON-serializable object no larger than 16 KiB; arrays/primitives/cyclic values are rejected. Text must be non-empty after trim and no larger than the configured chunk text limit documented in the module.
+  - [x] Core public types expose an index input such as `SourceChunkInput` with `text` required and all source metadata optional.
+  - [x] SQLite schema stores vector-indexed chunks with validated embedding dimension, indexed snippet/text, source pointer fields, and metadata JSON.
+  - [x] New source-index table names and field meanings are documented in the module or spec so future regression tests can audit the stable contract.
+  - [x] Storage accepts full metadata, partial metadata, and no metadata beyond text.
+  - [x] Metadata must be a JSON-serializable object no larger than 16 KiB; arrays/primitives/cyclic values are rejected. Text must be non-empty after trim and no larger than the configured chunk text limit documented in the module.
 - **Functional verification:**
-  - [ ] Add unit tests for type/storage validation. **Pass condition:** full, partial, and minimal chunk inputs store successfully; invalid inputs fail with domain errors.
-  - [ ] Add schema tests. **Pass condition:** created source-chunk vec table uses configured `float[N]` dim and source/metadata columns are nullable where promised.
+  - [x] Add unit tests for type/storage validation. **Pass condition:** full, partial, and minimal chunk inputs store successfully; invalid inputs fail with domain errors.
+  - [x] Add schema tests. **Pass condition:** created source-chunk vec table uses configured `float[N]` dim and source/metadata columns are nullable where promised.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/core/database.test.ts tests/embedder/dim-parameterization.test.ts` and the new schema tests. **Pass condition:** database setup still works and configured vector dimensions still create the expected `float[N]` schema.
-  - [ ] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
+  - [x] Run `npm run test:unit -- tests/core/database.test.ts tests/embedder/dim-parameterization.test.ts` and the new schema tests. **Pass condition:** database setup still works and configured vector dimensions still create the expected `float[N]` schema.
+  - [x] Run `npm run typecheck` and `npm run lint`. **Pass condition:** both exit 0.
 - **Manual-only verification:** N/A.
 - **Planned commits:**
   1. `feat(index): add source chunk types and storage schema`

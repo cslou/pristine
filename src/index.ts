@@ -97,6 +97,8 @@ export type {
   ConversationDetail,
   Message,
   MessageRole,
+  SourceChunkInput,
+  SourceChunkMetadata,
   SecureAndRedactResult,
   RevealResult,
 } from './core/types.js';
@@ -106,6 +108,16 @@ export type {
 // ---------------------------------------------------------------------------
 
 export type { Embedder } from './core/interfaces.js';
+
+export {
+  SOURCE_CHUNK_METADATA_JSON_LIMIT,
+  SOURCE_CHUNK_TEXT_LIMIT,
+  SourceChunkStore,
+  buildSourceChunkVectorDdl,
+  initSourceChunkTables,
+  normalizeSourceChunkInput,
+} from './memory/source-index/index.js';
+export type { SourceChunkStoreOptions, StoredSourceChunk } from './memory/source-index/index.js';
 
 export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 

@@ -293,7 +293,7 @@ export class PristineLocal {
     if (typeof options !== 'object' || options === null || Array.isArray(options)) {
       throw new InvalidArgumentError('searchSourceChunks: options must be an object');
     }
-    const limit = options.limit ?? 10;
+    const limit = options.limit === undefined ? 10 : options.limit;
     const embedding = await this.embedder.embed(query.trim());
     const hits = this.sourceChunkStore.search(embedding, {
       projectId: options.projectId,

@@ -309,12 +309,34 @@ describe('PristineLocal', () => {
         client.searchSourceChunks('x', { projectId: 'project-a', limit: 0 }),
       ).rejects.toThrow(InvalidArgumentError);
       await expect(
+        client.searchSourceChunks('x', { projectId: 'project-a', limit: null } as never),
+      ).rejects.toThrow(InvalidArgumentError);
+      await expect(
         client.searchSourceChunks('x', { projectId: 'project-a', limit: 1001 }),
       ).rejects.toThrow(InvalidArgumentError);
       await expect(client.searchSourceChunks('x', { projectId: 'project-b' })).resolves.toEqual([]);
       await expect(
         client.searchSourceChunks('x', { projectId: 'project-a', limit: 1 }),
       ).resolves.toHaveLength(1);
+    });
+
+    it('searchSourceChunks rejects query embedding dimension mismatches', async () => {
+      vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
+        [1, ...Array.from({ length: 767 }, () => 0)],
+      ]);
+      vi.mocked(deps.embedder.embed).mockResolvedValueOnce([1]);
+      const client = await PristineLocal.create({
+        db: deps.db,
+        embedder: deps.embedder,
+      });
+
+      await client.indexSourceChunks([{ text: 'dimension guard', chunkId: 'dim' }], {
+        projectId: 'project-a',
+      });
+
+      await expect(
+        client.searchSourceChunks('dimension', { projectId: 'project-a' }),
+      ).rejects.toThrow(InvalidArgumentError);
     });
   });
 

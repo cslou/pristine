@@ -44,13 +44,13 @@ describe('OllamaEmbedder', () => {
       expect(result).toEqual(embeddings[0]);
     });
 
-    it('throws EmbedderError when response has empty embeddings', async () => {
+    it('throws InvalidArgumentError when response has empty embeddings', async () => {
       vi.mocked(globalThis.fetch).mockResolvedValue(mockFetchResponse({ embeddings: [] }));
 
       const embedder = new OllamaEmbedder(TEST_CONFIG);
 
-      await expect(embedder.embed('hello')).rejects.toThrow(EmbedderError);
-      await expect(embedder.embed('hello')).rejects.toThrow(/returned no results/);
+      await expect(embedder.embed('hello')).rejects.toThrow(InvalidArgumentError);
+      await expect(embedder.embed('hello')).rejects.toThrow(/expected 1 embeddings but received 0/);
     });
   });
 
@@ -260,6 +260,22 @@ describe('OllamaEmbedder', () => {
       await expect(embedder.embed('hello')).rejects.toBeInstanceOf(InvalidArgumentError);
       await expect(embedder.embed('hello')).rejects.toThrow(/configured dim=768/);
       await expect(embedder.embed('hello')).rejects.toThrow(/produced 1024-d/);
+    });
+
+    it('throws InvalidArgumentError for malformed nested embedding payloads', async () => {
+      const malformedPayloads = [
+        { embeddings: [makeEmbeddings(1)[0], makeEmbeddings(1)[0]] },
+        { embeddings: ['not-an-array'] },
+        { embeddings: [[1, ...Array.from({ length: 767 }, () => 'bad')]] },
+        { embeddings: [[Number.NaN, ...Array.from({ length: 767 }, () => 0)]] },
+        { embeddings: [[Infinity, ...Array.from({ length: 767 }, () => 0)]] },
+      ];
+
+      for (const payload of malformedPayloads) {
+        vi.mocked(globalThis.fetch).mockResolvedValueOnce(mockFetchResponse(payload));
+        const embedder = new OllamaEmbedder(TEST_CONFIG);
+        await expect(embedder.embedBatch(['hello'])).rejects.toBeInstanceOf(InvalidArgumentError);
+      }
     });
   });
 });

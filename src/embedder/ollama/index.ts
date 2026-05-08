@@ -49,15 +49,32 @@ export class OllamaEmbedder implements Embedder {
       input: texts,
     });
 
-    for (const embedding of response.embeddings) {
+    if (response.embeddings.length !== texts.length) {
+      throw new InvalidArgumentError(
+        `OllamaEmbedder expected ${texts.length} embeddings but received ${response.embeddings.length}`,
+      );
+    }
+
+    return response.embeddings.map((embedding, embeddingIndex) => {
+      if (!Array.isArray(embedding)) {
+        throw new InvalidArgumentError(
+          `OllamaEmbedder embedding[${embeddingIndex}] must be an array`,
+        );
+      }
       if (embedding.length !== this.dim) {
         throw new InvalidArgumentError(
           `OllamaEmbedder configured dim=${this.dim} but model '${this.model}' produced ${embedding.length}-d output`,
         );
       }
-    }
-
-    return response.embeddings;
+      for (let valueIndex = 0; valueIndex < embedding.length; valueIndex += 1) {
+        if (!Number.isFinite(embedding[valueIndex])) {
+          throw new InvalidArgumentError(
+            `OllamaEmbedder embedding[${embeddingIndex}][${valueIndex}] must be finite`,
+          );
+        }
+      }
+      return embedding;
+    });
   }
 
   private async fetchWithRetry(

@@ -42,11 +42,13 @@ const secretAssignmentNamePattern = [
   'TOKEN',
 ].join('|');
 
+const secretAssignmentValuePattern = '"[^"]{12,}"|\'[^\']{12,}\'|[^[:space:]]{12,}';
+
 const grepPattern = [
   'BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY',
   'ghp_[A-Za-z0-9_]{20,}',
   'sk-[A-Za-z0-9_-]{20,}',
-  `(${secretAssignmentNamePattern})[[:space:]]*=[[:space:]]*["'\\]?[A-Za-z0-9_./+=-]{12,}`,
+  `(${secretAssignmentNamePattern})[[:space:]]*=[[:space:]]*(${secretAssignmentValuePattern})`,
 ].join('|');
 
 const jsPatterns = [
@@ -56,13 +58,13 @@ const jsPatterns = [
   {
     name: 'secret-env-assignment',
     pattern: new RegExp(
-      `(?:${secretAssignmentNamePattern})\\s*=\\s*["'\\\\]?[A-Za-z0-9_./+=-]{12,}`,
+      `(?:${secretAssignmentNamePattern})\\s*=\\s*(?:"[^"]{12,}"|'[^']{12,}'|\\S{12,})`,
       'g',
     ),
   },
 ];
 
-const pathspec = [
+const historyPathspec = [
   '--',
   '.',
   ':(exclude)package-lock.json',
@@ -70,8 +72,9 @@ const pathspec = [
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 
+const currentPathspec = [...historyPathspec];
 if (normalizedOutputPath !== undefined) {
-  pathspec.push(`:(exclude)${normalizedOutputPath}`);
+  currentPathspec.push(`:(exclude)${normalizedOutputPath}`);
 }
 
 const allowedFalsePositiveEntries = [
@@ -88,6 +91,14 @@ const allowedFalsePositiveEntries = [
     rationale: 'deterministic classifier synthetic GitHub token fixture',
   },
   {
+    match: 'ANTHROPIC_API_KEY=sk-ant-...',
+    rationale: 'documentation placeholder showing environment-variable usage, not a credential',
+  },
+  {
+    match: 'API_KEY=sk-ant-...',
+    rationale: 'documentation placeholder showing environment-variable usage, not a credential',
+  },
+  {
     match: 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     rationale: 'synthetic deterministic safety-scan fixture value',
   },
@@ -96,9 +107,24 @@ const allowedFalsePositiveEntries = [
     rationale: 'synthetic deterministic safety-scan fixture value with sentence punctuation',
   },
   {
+    match: 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456',
+    pathPrefix: 'docs/security-audits/',
+    rationale: 'historical audit report line containing a truncated deterministic safety-scan fixture value',
+  },
+  {
+    match: 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef012',
+    pathPrefix: 'docs/security-audits/',
+    rationale: 'historical audit report line containing a truncated deterministic safety-scan fixture value',
+  },
+  {
     match: 'BEGIN PRIVATE KEY',
     pathPrefix: 'tests/',
     rationale: 'unit test asserts generated PEM/header detection with ephemeral synthetic keys',
+  },
+  {
+    match: 'BEGIN PRIVATE KEY',
+    pathPrefix: 'docs/security-audits/',
+    rationale: 'historical audit report line documenting a synthetic private-key header false positive',
   },
   {
     match: 'sk-sun-sunrise-sunset-shore-wave-dawn-dusk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-',
@@ -106,9 +132,24 @@ const allowedFalsePositiveEntries = [
     rationale: 'URL text false-positive from benchmark fixture, not a credential',
   },
   {
+    match: 'sk-sun-sunrise-sunset-shore-wave-dawn-dusk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-',
+    pathPrefix: 'docs/security-audits/',
+    rationale: 'historical audit report line documenting a benchmark URL text false positive',
+  },
+  {
     match: 'sk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-clouds-afterglow-sunset-beach-gulf-of-mexico-wind-wave-515918',
     pathPrefix: 'benchmarks/memorybench/data/benchmarks/locomo/',
     rationale: 'URL slug false-positive from benchmark fixture, not a credential',
+  },
+  {
+    match: 'sk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-clouds-afterglow-sunset-beach-gulf-of-mexico-wind-wave-515918',
+    pathPrefix: 'docs/security-audits/',
+    rationale: 'historical audit report line documenting a benchmark URL slug false positive',
+  },
+  {
+    match: 'sk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-',
+    pathPrefix: 'docs/security-audits/',
+    rationale: 'historical audit report line documenting a truncated benchmark URL slug false positive',
   },
 ];
 
@@ -191,18 +232,22 @@ const expandMatchedFindings = (finding) => {
   return matchedFindings;
 };
 
+const normalizeAllowedCandidate = (text) =>
+  text.replace(/^[`'\"]+/, '').replace(/[)`'\",;]+$/g, '');
+
 const allowedEntryFor = (finding) => {
+  const normalizedMatchedText = normalizeAllowedCandidate(finding.matchedText);
   const explicitEntry = allowedFalsePositiveEntries.find((entry) =>
-    finding.matchedText === entry.match &&
+    normalizedMatchedText === entry.match &&
     (entry.pathPrefix === undefined || finding.path.startsWith(entry.pathPrefix)),
   );
   if (explicitEntry !== undefined) {
     return explicitEntry;
   }
 
-  if (syntheticTokenPrefixes.includes(finding.matchedText)) {
+  if (syntheticTokenPrefixes.includes(normalizedMatchedText)) {
     return {
-      match: finding.matchedText,
+      match: normalizedMatchedText,
       rationale: 'exact synthetic sk-ant fixture used by privacy redaction tests',
     };
   }
@@ -219,7 +264,7 @@ const classifyFindings = (grepFindings) => grepFindings.flatMap(expandMatchedFin
   };
 });
 
-const currentOutput = runGit(['grep', '-I', '-n', '-E', grepPattern, ...pathspec]);
+const currentOutput = runGit(['grep', '-I', '-n', '-E', grepPattern, ...currentPathspec]);
 const currentFindings = classifyFindings(parseCurrentGrep(currentOutput));
 
 const commits = runGit(['rev-list', '--all']).split('\n').filter(Boolean);
@@ -227,7 +272,7 @@ const historyFindings = [];
 const batchSize = 100;
 for (let index = 0; index < commits.length; index += batchSize) {
   const batch = commits.slice(index, index + batchSize);
-  const output = runGit(['grep', '-I', '-n', '-E', grepPattern, ...batch, ...pathspec]);
+  const output = runGit(['grep', '-I', '-n', '-E', grepPattern, ...batch, ...historyPathspec]);
   historyFindings.push(...classifyFindings(parseHistoryGrep(output)));
 }
 
@@ -243,11 +288,15 @@ const renderFindings = (findings) => {
   if (findings.length === 0) {
     return '- None';
   }
-  return findings
+  return [...findings]
+    .sort((left, right) => Number(left.allowed) - Number(right.allowed))
     .slice(0, 200)
-    .map((finding) =>
-      `- ${finding.allowed ? 'False positive' : 'Unresolved'} | ${finding.commit.slice(0, 12)} | ${finding.path}:${finding.line} | ${finding.check} | ${finding.matchedText} | ${finding.rationale ?? 'requires remediation'} | ${finding.context.slice(0, 200)}`,
-    )
+    .map((finding) => {
+      if (!finding.allowed) {
+        return `- Unresolved | ${finding.commit.slice(0, 12)} | ${finding.path}:${finding.line} | ${finding.check} | <redacted> | requires remediation | context redacted`;
+      }
+      return `- False positive | ${finding.commit.slice(0, 12)} | ${finding.path}:${finding.line} | ${finding.check} | ${finding.matchedText} | ${finding.rationale ?? 'documented false positive'} | ${finding.context.slice(0, 200)}`;
+    })
     .join('\n');
 };
 

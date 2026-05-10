@@ -1,8 +1,8 @@
 # Repository Secret Audit — Sprint 025
 
 **Scan target:** working tree at generation time, including uncommitted audit-script/report changes committed with this report
-**History base before report commit:** 60248bc1802b970f1bf3e3247fb3fd7a34a67aa5
-**Reachable commits scanned before report commit:** 915
+**History base before report commit:** b6cb3603236198a351e6699b8b68aac90b61eca5
+**Reachable commits scanned before report commit:** 923
 **Current findings in working tree snapshot:** 37
 **Unique history findings before report commit:** 90
 **Unresolved findings:** 0

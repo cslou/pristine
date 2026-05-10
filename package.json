@@ -54,7 +54,7 @@
     "prepack": "npm run build",
     "verify:package": "npm run build && node scripts/verify-package-contents.mjs",
     "verify:docs": "npm run build && node scripts/verify-public-docs.mjs",
-    "verify:public-api-types": "npx tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck tests/smoke/public-api-types.fixture.mts",
+    "verify:public-api-types": "npx tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck tests/smoke/public-api-types-fixture.mts",
     "db:reset": "rm -f ~/.pristine/data/pristine.db*"
   },
   "devDependencies": {

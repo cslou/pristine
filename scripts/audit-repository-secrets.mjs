@@ -41,6 +41,11 @@ const pathspec = [
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 
+if (outputPath) {
+  const normalizedOutputPath = outputPath.replace(/^\.\//, '');
+  pathspec.push(`:(exclude)${normalizedOutputPath}`);
+}
+
 const allowedFalsePositiveSnippets = [
   'sk-ant-example-secret-token-value',
   'sk-ant-api03-real-secret-value',

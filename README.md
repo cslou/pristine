@@ -100,7 +100,7 @@ These remain local-only and use the SQLite vault plus filesystem keys. The `scru
 
 ```ts
 const secured = await client.secureAndRedact(
-  'Deploy with token sk-ant-example-secret-token-value',
+  'Deploy with token REDACTED_API_TOKEN_EXAMPLE',
   'user-123',
 );
 

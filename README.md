@@ -52,7 +52,7 @@ try {
   // }
 
   await client.deleteSourceChunks(['session-1:line-42'], { projectId: 'my-project' });
-} catch (error) {
+} catch (error: unknown) {
   // AppError subclasses from Pristine include validation, config, and embedder failures.
   // Unknown errors should still be logged/handled by your application boundary.
   console.error(error);

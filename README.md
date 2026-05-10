@@ -10,6 +10,8 @@ Pristine indexes source-owned text chunks with local embeddings and returns sema
 npm install @pristine/shield-local
 ```
 
+Pristine is MIT licensed and currently tested on Node.js 22 or newer. It is ESM-only and uses native SQLite dependencies (`better-sqlite3` and `sqlite-vec`), so install/build behavior follows the platform support of those packages.
+
 ## Quick start
 
 ```ts

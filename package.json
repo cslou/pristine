@@ -2,6 +2,29 @@
   "name": "@pristine/shield-local",
   "version": "0.0.1",
   "description": "Local-first privacy and source-pointer memory SDK — no server; no user data leaves by default",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getlou-gh/pristine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/getlou-gh/pristine/issues"
+  },
+  "homepage": "https://github.com/getlou-gh/pristine#readme",
+  "keywords": [
+    "local-first",
+    "privacy",
+    "memory",
+    "semantic-search",
+    "sqlite",
+    "sqlite-vec",
+    "embeddings",
+    "typescript",
+    "sdk"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,7 +37,8 @@
   "files": [
     "dist",
     "package.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",

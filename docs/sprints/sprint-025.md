@@ -76,17 +76,17 @@ Each story below is included because the public-readiness review identified it a
 - **As a** public user, **I want** clear license and package identity metadata, **so that** I can legally evaluate, install, and link to Pristine.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] A `LICENSE` file exists at the repo root with the selected open-source license text.
-  - [ ] `package.json` includes `license`, `repository`, `bugs`, `homepage`, `keywords`, and `engines` fields with values matching the public repo and tested runtime.
-  - [ ] README installation and package-name references match the package metadata.
-  - [ ] If Node support is constrained by native dependencies or ESM behavior, the `engines.node` value and README support note state that constraint explicitly.
+  - [x] A `LICENSE` file exists at the repo root with the selected open-source license text. Evidence: `LICENSE` contains MIT license text selected by Lou.
+  - [x] `package.json` includes `license`, `repository`, `bugs`, `homepage`, `keywords`, and `engines` fields with values matching the public repo and tested runtime. Evidence: metadata check command passed.
+  - [x] README installation and package-name references match the package metadata. Evidence: README install block uses `@pristine/shield-local` and public repo/runtime note was added.
+  - [x] If Node support is constrained by native dependencies or ESM behavior, the `engines.node` value and README support note state that constraint explicitly. Evidence: `engines.node` is `>=22`; README notes Node.js 22+, ESM-only, and native SQLite dependencies.
 - **Functional verification:**
-  - [ ] Run `node -e "const p=require('./package.json'); for (const k of ['license','repository','bugs','homepage','keywords','engines']) if (!(k in p)) throw new Error('missing '+k); if (!require('fs').existsSync('LICENSE')) throw new Error('missing LICENSE');"` and confirm it exits 0.
-  - [ ] Run `npm pack --dry-run --json` and confirm the generated package metadata includes the chosen license and no metadata warning about missing license.
+  - [x] Run `node -e "const p=require('./package.json'); for (const k of ['license','repository','bugs','homepage','keywords','engines']) if (!(k in p)) throw new Error('missing '+k); if (!require('fs').existsSync('LICENSE')) throw new Error('missing LICENSE');"` and confirm it exits 0. Evidence: passed with MIT license assertion.
+  - [x] Run `npm pack --dry-run --json` and confirm the generated package metadata includes the chosen license and no metadata warning about missing license. Evidence: passed; dry-run package includes `LICENSE` and `package.json`, and `package.json` declares `MIT`.
 - **Regression verification:**
-  - [ ] Run `npm run build` and confirm package metadata/doc-only changes do not affect compilation.
-  - [ ] Run `npm run test:smoke` and confirm public package entrypoints still load.
-- **Manual-only verification:** Validate with Lou which license to use before finalizing this story if the license was not specified in sprint-start instructions; pass condition is the sprint doc or PR body records the selected license.
+  - [x] Run `npm run build` and confirm package metadata/doc-only changes do not affect compilation. Evidence: passed.
+  - [x] Run `npm run test:smoke` and confirm public package entrypoints still load. Evidence: passed, 5 smoke tests.
+- **Manual-only verification:** Completed — Lou selected MIT before Story 1 implementation.
 - **Planned commits:**
   1. `docs: add public license and package metadata`
 - **Technical notes:** Required because open-source use is legally ambiguous without a license. Prefer no runtime code changes in this story.

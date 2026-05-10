@@ -170,12 +170,12 @@ Each story below is included because the public-readiness review identified it a
 - **As a** maintainer, **I want** GitHub CI to run the deterministic public gate, **so that** external PRs cannot pass with broken types, lint, build, smoke, integration, e2e, or package artifacts.
 - **Dependencies:** Stories 2 and 3
 - **Acceptance criteria:**
-  - [x] GitHub Actions runs `npm ci`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:unit`, `npm run test:smoke`, deterministic integration with slow model tests skipped, `npm run test:e2e`, and package verification. Evidence: `.github/workflows/unit-tests.yml` now defines the deterministic public gate with those steps.
+  - [x] GitHub Actions runs `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:smoke`, deterministic integration with slow model tests skipped, `npm run test:e2e`, and package verification. Evidence: `.github/workflows/unit-tests.yml` now defines the deterministic public gate with those steps, building before typecheck so smoke tests can resolve `dist` on a fresh checkout.
   - [x] CI avoids paid services, production endpoints, and model-download-only checks by default. Evidence: integration uses `SKIP_SLOW_TESTS=1`; no credentials or hosted services are configured.
   - [x] CI workflow names clearly distinguish deterministic public checks from local full/regression checks that may use real local models. Evidence: workflow is named `Public CI Gate`, job is `Deterministic public gate`.
   - [x] README or CONTRIBUTING docs state which checks run in CI and which checks maintainers run locally before release. Evidence: README development section lists CI commands and notes full local regression for real local model checks.
 - **Functional verification:**
-  - [x] Run a local workflow-equivalent command sequence from the CI YAML and confirm every command exits 0. Evidence: `npm ci && npm run typecheck && npm run lint && npm run build && npm run test:unit && npm run test:smoke && SKIP_SLOW_TESTS=1 npm run test:integration && npm run test:e2e && npm run verify:package` passed.
+  - [x] Run a local workflow-equivalent command sequence from the CI YAML and confirm every command exits 0. Evidence: `rm -rf dist && npm ci && npm run build && npm run typecheck && npm run lint && npm run test:unit && npm run test:smoke && SKIP_SLOW_TESTS=1 npm run test:integration && npm run test:e2e && npm run verify:package` passed.
   - [ ] Push the story branch and confirm the GitHub Actions check for this workflow passes on the story PR. Evidence: pending PR CI.
 - **Regression verification:**
   - [ ] Run `.checks/pre-merge.sh` and confirm the local gate remains green.

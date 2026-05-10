@@ -1,6 +1,6 @@
 # Agent Framework Integration (historical)
 
-> **Historical archive:** This document described the pre-Sprint-023 conversation-ingest/extraction architecture and referenced scripts/APIs that are no longer part of the public SDK surface. It is retained only as planning history.
+> **Historical archive:** This document described the legacy conversation-ingest/extraction architecture and referenced scripts/APIs that are no longer part of the public SDK surface. It is retained only as planning history.
 >
 > For current public onboarding, use `README.md`.
 > For the maintained Pi JSONL reference implementation, use `examples/pi-dev/README.md`.

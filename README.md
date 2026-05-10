@@ -66,7 +66,7 @@ try {
 
 - **Core SDK primitives:** `PristineLocal.create`, `indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`, `secureAndRedact`, `reveal`, and `scrubOutput` are the supported public package surface.
 - **Reference implementations:** `examples/pi-dev/` shows one Pi JSONL integration built from the primitives. It is not required for normal SDK use.
-- **Historical design notes:** `docs/specs/` and `docs/sprints/` preserve planning context and may mention APIs removed before `0.0.1`; use this README as the public onboarding contract.
+- **Historical design notes:** `docs/specs/` and `docs/sprints/` preserve planning context and may mention APIs removed before the current package surface; use this README as the public onboarding contract.
 
 ## Core API
 
@@ -279,9 +279,9 @@ Privacy vault data is encrypted locally:
 - **Filesystem permissions:** if privacy operations fail on Unix-like systems, check that `~/.pristine`, `~/.pristine/data`, and `~/.pristine/keys` are `0700`, and private key files are `0600`.
 - **Ollama:** when using the `ollama` engine, verify the configured `host` is reachable and that the model exists in that Ollama instance.
 
-## Sprint 023 breaking change note
+## Legacy raw-transcript ownership note
 
-Sprint 023 removed the previous raw-transcript ownership surface. These concepts are no longer public live APIs:
+Pristine no longer exposes the previous raw-transcript ownership surface. These concepts are not public live APIs:
 
 - raw conversation/message storage through Pristine
 - `storeAsync`

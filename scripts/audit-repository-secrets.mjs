@@ -69,6 +69,7 @@ const historyPathspec = [
   '.',
   ':(exclude)package-lock.json',
   ':(exclude)node_modules/**',
+  ':(exclude)docs/security-audits/**',
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 

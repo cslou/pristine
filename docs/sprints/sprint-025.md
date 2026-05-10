@@ -139,16 +139,16 @@ Each story below is included because the public-readiness review identified it a
 - **As a** package consumer, **I want** the npm tarball to contain only current supported package artifacts, **so that** installing Pristine does not ship stale removed modules or misleading code.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] Package build or prepack flow removes stale `dist/` before rebuilding.
-  - [ ] A repeatable package-content verification script exists and fails if `npm pack --dry-run --json` includes stale removed paths such as `dist/conversations/`, `dist/memory/indexer/`, `dist/memory/searcher/`, `dist/queue/`, or `dist/privacy/classifier/llm/` when those paths are not current supported package output.
-  - [ ] `package.json` includes a `verify:package` npm script for package verification.
-  - [ ] The verified tarball includes required public files: `package.json`, `README.md`, `LICENSE`, and current `dist/` entrypoint/type files.
+  - [x] Package build or prepack flow removes stale `dist/` before rebuilding. Evidence: `build` now runs `clean` before `tsc`; `prepack` runs `build`.
+  - [x] A repeatable package-content verification script exists and fails if `npm pack --dry-run --json` includes stale removed paths such as `dist/conversations/`, `dist/memory/indexer/`, `dist/memory/searcher/`, `dist/queue/`, or `dist/privacy/classifier/llm/` when those paths are not current supported package output. Evidence: `scripts/verify-package-contents.mjs` checks forbidden prefixes and negative fixture failed as expected.
+  - [x] `package.json` includes a `verify:package` npm script for package verification. Evidence: `npm run verify:package` passed.
+  - [x] The verified tarball includes required public files: `package.json`, `README.md`, `LICENSE`, and current `dist/` entrypoint/type files. Evidence: verifier requires those paths and passed on `npm pack --dry-run --json` output.
 - **Functional verification:**
-  - [ ] Run `npm run verify:package` and confirm it exits 0 on a clean build.
-  - [ ] Generate or fixture an `npm pack --dry-run --json` payload containing a forbidden path, run the verifier in scan-only mode (for example `node scripts/verify-package-contents.mjs --pack-json <fixture>`), and confirm it exits non-zero without relying on dirty `dist/` state.
+  - [x] Run `npm run verify:package` and confirm it exits 0 on a clean build. Evidence: passed; `package contents verified: 151 files`.
+  - [x] Generate or fixture an `npm pack --dry-run --json` payload containing a forbidden path, run the verifier in scan-only mode (for example `node scripts/verify-package-contents.mjs --pack-json <fixture>`), and confirm it exits non-zero without relying on dirty `dist/` state. Evidence: fixture containing `dist/queue/ingest-queue.js` failed with `Package includes forbidden stale files`.
 - **Regression verification:**
-  - [ ] Run `npm run test:smoke` and confirm built-package public API smoke tests still pass after package-script changes.
-  - [ ] Run `npm run build` and confirm clean build still produces the expected `dist/` entrypoints.
+  - [x] Run `npm run test:smoke` and confirm built-package public API smoke tests still pass after package-script changes. Evidence: passed, 5 smoke tests.
+  - [x] Run `npm run build` and confirm clean build still produces the expected `dist/` entrypoints. Evidence: passed.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `chore: add clean package artifact verification`

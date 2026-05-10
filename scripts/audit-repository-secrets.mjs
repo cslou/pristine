@@ -1,10 +1,24 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, normalize } from 'node:path';
 
 const outputIndex = process.argv.indexOf('--output');
 const outputPath = outputIndex === -1 ? undefined : process.argv[outputIndex + 1];
+
+const normalizeOutputPath = (path) => normalize(path).replace(/^\.\//, '');
+const containsPathspecMeta = (path) => /[\[\]{}*?]/.test(path) || path.includes('..') || path.startsWith(':');
+
+const normalizedOutputPath = outputPath === undefined ? undefined : normalizeOutputPath(outputPath);
+if (normalizedOutputPath !== undefined) {
+  if (
+    containsPathspecMeta(normalizedOutputPath) ||
+    !normalizedOutputPath.startsWith('docs/security-audits/') ||
+    !normalizedOutputPath.endsWith('.md')
+  ) {
+    throw new Error('--output must be an exact repo-relative markdown path under docs/security-audits/');
+  }
+}
 
 const secretAssignmentNamePattern = [
   'ANTHROPIC_API_KEY',
@@ -25,12 +39,25 @@ const secretAssignmentNamePattern = [
   'TOKEN',
 ].join('|');
 
-const pattern = [
+const grepPattern = [
   'BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY',
   'ghp_[A-Za-z0-9_]{20,}',
   'sk-[A-Za-z0-9_-]{20,}',
   `(${secretAssignmentNamePattern})[[:space:]]*=[[:space:]]*["'\\]?[A-Za-z0-9_./+=-]{12,}`,
 ].join('|');
+
+const jsPatterns = [
+  { name: 'private-key-header', pattern: /BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY/g },
+  { name: 'github-token', pattern: /ghp_[A-Za-z0-9_]{20,}/g },
+  { name: 'openai-style-token', pattern: /sk-[A-Za-z0-9_-]{20,}/g },
+  {
+    name: 'secret-env-assignment',
+    pattern: new RegExp(
+      `(?:${secretAssignmentNamePattern})\\s*=\\s*["'\\\\]?[A-Za-z0-9_./+=-]{12,}`,
+      'g',
+    ),
+  },
+];
 
 const pathspec = [
   '--',
@@ -41,14 +68,49 @@ const pathspec = [
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 
-if (outputPath) {
-  const normalizedOutputPath = outputPath.replace(/^\.\//, '');
+if (normalizedOutputPath !== undefined) {
   pathspec.push(`:(exclude)${normalizedOutputPath}`);
 }
 
-const allowedFalsePositiveSnippets = [
-  'sk-ant-example-secret-token-value',
-  'sk-ant-api03-real-secret-value',
+const allowedFalsePositiveEntries = [
+  {
+    match: 'sk-ant-example-secret-token-value',
+    rationale: 'historical README synthetic token placeholder',
+  },
+  {
+    match: 'sk-ant-api03-real-secret-value',
+    rationale: 'implementation spec synthetic example explicitly using example.com',
+  },
+  {
+    match: 'ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ',
+    rationale: 'deterministic classifier synthetic GitHub token fixture',
+  },
+  {
+    match: 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    rationale: 'synthetic deterministic safety-scan fixture value',
+  },
+  {
+    match: 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.',
+    rationale: 'synthetic deterministic safety-scan fixture value with sentence punctuation',
+  },
+  {
+    match: 'BEGIN PRIVATE KEY',
+    pathPrefix: 'tests/',
+    rationale: 'unit test asserts generated PEM/header detection with ephemeral synthetic keys',
+  },
+  {
+    match: 'sk-sun-sunrise-sunset-shore-wave-dawn-dusk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-',
+    pathPrefix: 'benchmarks/memorybench/data/benchmarks/locomo/',
+    rationale: 'URL text false-positive from benchmark fixture, not a credential',
+  },
+  {
+    match: 'sk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-clouds-afterglow-sunset-beach-gulf-of-mexico-wind-wave-515918',
+    pathPrefix: 'benchmarks/memorybench/data/benchmarks/locomo/',
+    rationale: 'URL slug false-positive from benchmark fixture, not a credential',
+  },
+];
+
+const syntheticTokenPrefixes = [
   'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
   'sk-ant-api03-rotateabcdefghijklmnopqrstuvwxyz123456',
   'sk-ant-api03-preabcdefghijklmnopqrstuvwxyz123456',
@@ -59,12 +121,6 @@ const allowedFalsePositiveSnippets = [
   'sk-ant-api03-charlieabcdefghijklmnopqrstuvwxyz123456',
   'sk-ant-api03-afterrotateabcdefghijklmnopqrstuvwxyz123456',
   'sk-ant-api03-multirotateabcdefghijklmnopqrstuvwxyz123456',
-  'ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ',
-  'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-  "'-----BEGIN PRIVATE KEY-----'",
-  "expect(result.privateKey).toContain('BEGIN PRIVATE KEY')",
-  'expect(privateKey).toMatch(/^-----BEGIN PRIVATE KEY-----/)',
-  'beach-landscape-sea-coast-water-sand-ocean-horizon-cloud-sky-sun-sunrise-sunset-shore',
 ];
 
 const hasExitStatus = (error) =>
@@ -118,30 +174,67 @@ const parseHistoryGrep = (output) => output
     };
   });
 
-const isAllowed = (finding) =>
-  allowedFalsePositiveSnippets.some((snippet) => finding.context.includes(snippet));
+const expandMatchedFindings = (finding) => {
+  const matchedFindings = [];
+  for (const check of jsPatterns) {
+    check.pattern.lastIndex = 0;
+    for (const match of finding.context.matchAll(check.pattern)) {
+      matchedFindings.push({
+        ...finding,
+        check: check.name,
+        matchedText: match[0],
+      });
+    }
+  }
+  return matchedFindings;
+};
 
-const currentOutput = runGit(['grep', '-I', '-n', '-E', pattern, ...pathspec]);
-const currentFindings = parseCurrentGrep(currentOutput).map((finding) => ({
-  ...finding,
-  allowed: isAllowed(finding),
-}));
+const allowedEntryFor = (finding) => {
+  const explicitEntry = allowedFalsePositiveEntries.find((entry) =>
+    finding.matchedText === entry.match &&
+    (entry.pathPrefix === undefined || finding.path.startsWith(entry.pathPrefix)),
+  );
+  if (explicitEntry !== undefined) {
+    return explicitEntry;
+  }
+
+  if (
+    syntheticTokenPrefixes.includes(finding.matchedText) ||
+    syntheticTokenPrefixes.some((prefix) => finding.matchedText.startsWith(prefix))
+  ) {
+    return {
+      match: finding.matchedText,
+      rationale: 'synthetic sk-ant fixture used by privacy redaction tests',
+    };
+  }
+
+  return undefined;
+};
+
+const classifyFindings = (grepFindings) => grepFindings.flatMap(expandMatchedFindings).map((finding) => {
+  const allowedEntry = allowedEntryFor(finding);
+  return {
+    ...finding,
+    allowed: allowedEntry !== undefined,
+    rationale: allowedEntry?.rationale,
+  };
+});
+
+const currentOutput = runGit(['grep', '-I', '-n', '-E', grepPattern, ...pathspec]);
+const currentFindings = classifyFindings(parseCurrentGrep(currentOutput));
 
 const commits = runGit(['rev-list', '--all']).split('\n').filter(Boolean);
 const historyFindings = [];
 const batchSize = 100;
 for (let index = 0; index < commits.length; index += batchSize) {
   const batch = commits.slice(index, index + batchSize);
-  const output = runGit(['grep', '-I', '-n', '-E', pattern, ...batch, ...pathspec]);
-  historyFindings.push(...parseHistoryGrep(output).map((finding) => ({
-    ...finding,
-    allowed: isAllowed(finding),
-  })));
+  const output = runGit(['grep', '-I', '-n', '-E', grepPattern, ...batch, ...pathspec]);
+  historyFindings.push(...classifyFindings(parseHistoryGrep(output)));
 }
 
 const uniqueHistoryFindings = new Map();
 for (const finding of historyFindings) {
-  const key = `${finding.path}:${finding.line}:${finding.context}`;
+  const key = `${finding.path}:${finding.line}:${finding.matchedText}:${finding.context}`;
   uniqueHistoryFindings.set(key, finding);
 }
 
@@ -154,13 +247,14 @@ const renderFindings = (findings) => {
   return findings
     .slice(0, 200)
     .map((finding) =>
-      `- ${finding.allowed ? 'False positive' : 'Unresolved'} | ${finding.commit.slice(0, 12)} | ${finding.path}:${finding.line} | ${finding.context.slice(0, 200)}`,
+      `- ${finding.allowed ? 'False positive' : 'Unresolved'} | ${finding.commit.slice(0, 12)} | ${finding.path}:${finding.line} | ${finding.check} | ${finding.matchedText} | ${finding.rationale ?? 'requires remediation'} | ${finding.context.slice(0, 200)}`,
     )
     .join('\n');
 };
 
 const report = `# Repository Secret Audit — Sprint 025\n\n` +
-  `**Commit scanned:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
+  `**Scan target:** working tree at generation time\n` +
+  `**Base commit:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
   `**Reachable commits scanned:** ${commits.length}\n` +
   `**Current findings:** ${currentFindings.length}\n` +
   `**History findings:** ${uniqueHistoryFindings.size}\n` +
@@ -174,12 +268,12 @@ const report = `# Repository Secret Audit — Sprint 025\n\n` +
     ? '- No unresolved secret findings. Findings above, if any, are documented placeholders or synthetic examples, not credentials.\n'
     : '- Public release remains blocked until unresolved findings are remediated or Lou records an accepted resolution.\n');
 
-if (outputPath) {
-  const dir = dirname(outputPath);
+if (normalizedOutputPath !== undefined) {
+  const dir = dirname(normalizedOutputPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(outputPath, report);
+  writeFileSync(normalizedOutputPath, report);
 }
 
 console.log(report);

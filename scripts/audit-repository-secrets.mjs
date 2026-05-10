@@ -191,29 +191,27 @@ const runGit = (args, options = {}) => {
 const parseCurrentGrep = (output) => output
   .split('\n')
   .filter(Boolean)
-  .map((line) => {
-    const [path, lineNumber, ...contextParts] = line.split(':');
+  .map((record) => {
+    const [path, lineNumber, context = ''] = record.split('\0');
     return {
       commit: 'WORKTREE',
       path,
       line: lineNumber,
-      context: contextParts.join(':').trim(),
+      context: context.trim(),
     };
   });
 
 const parseHistoryGrep = (output) => output
   .split('\n')
   .filter(Boolean)
-  .map((line) => {
-    const firstColon = line.indexOf(':');
-    const commit = line.slice(0, firstColon);
-    const rest = line.slice(firstColon + 1);
-    const [path, lineNumber, ...contextParts] = rest.split(':');
+  .map((record) => {
+    const [commitAndPath, lineNumber, context = ''] = record.split('\0');
+    const firstColon = commitAndPath.indexOf(':');
     return {
-      commit,
-      path,
+      commit: commitAndPath.slice(0, firstColon),
+      path: commitAndPath.slice(firstColon + 1),
       line: lineNumber,
-      context: contextParts.join(':').trim(),
+      context: context.trim(),
     };
   });
 
@@ -264,7 +262,7 @@ const classifyFindings = (grepFindings) => grepFindings.flatMap(expandMatchedFin
   };
 });
 
-const currentOutput = runGit(['grep', '-I', '-n', '-E', grepPattern, ...currentPathspec]);
+const currentOutput = runGit(['grep', '-I', '-n', '-z', '-E', grepPattern, ...currentPathspec]);
 const currentFindings = classifyFindings(parseCurrentGrep(currentOutput));
 
 const commits = runGit(['rev-list', '--all']).split('\n').filter(Boolean);
@@ -272,7 +270,7 @@ const historyFindings = [];
 const batchSize = 100;
 for (let index = 0; index < commits.length; index += batchSize) {
   const batch = commits.slice(index, index + batchSize);
-  const output = runGit(['grep', '-I', '-n', '-E', grepPattern, ...batch, ...historyPathspec]);
+  const output = runGit(['grep', '-I', '-n', '-z', '-E', grepPattern, ...batch, ...historyPathspec]);
   historyFindings.push(
     ...classifyFindings(parseHistoryGrep(output)).filter(
       (finding) =>
@@ -314,7 +312,7 @@ const report = `# Repository Secret Audit — Sprint 025\n\n` +
   `**Unique history findings before report commit:** ${uniqueHistoryFindings.size}\n` +
   `**Unresolved findings:** ${unresolvedFindings.length}\n\n` +
   `## Commands\n\n` +
-  `- \`node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md\`\n\n` +
+  `- \`node scripts/audit-repository-secrets.mjs${normalizedOutputPath === undefined ? '' : ` --output ${normalizedOutputPath}`}\`\n\n` +
   `## Current tree findings\n\n${renderFindings(currentFindings)}\n\n` +
   `## Reachable history findings\n\n${renderFindings([...uniqueHistoryFindings.values()])}\n\n` +
   `## Remediation status\n\n` +

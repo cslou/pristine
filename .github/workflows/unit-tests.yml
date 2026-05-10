@@ -46,5 +46,8 @@ jobs:
       - name: E2E tests
         run: npm run test:e2e
 
+      - name: Verify public docs
+        run: npm run verify:docs
+
       - name: Verify package contents
         run: npm run verify:package

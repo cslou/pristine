@@ -49,7 +49,10 @@
     "test:integration": "vitest run --passWithNoTests --config vitest.integration.config.ts",
     "test:e2e": "vitest run --passWithNoTests --config vitest.e2e.config.ts",
     "test:watch": "vitest",
-    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "verify:package": "npm run build && node scripts/verify-package-contents.mjs",
     "db:reset": "rm -f ~/.pristine/data/pristine.db*"
   },
   "devDependencies": {

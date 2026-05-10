@@ -329,7 +329,7 @@ Each story below is included because the public-readiness review identified it a
 - `## Final Review` includes a verification delta table showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals by canonical verification type.
 - Sprint doc status is `🟢 Complete` only when completion criteria are met.
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
-- Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
+- After this Final Verification Story merges, the sprint-integration PR is opened, reviewed, and paused for Lou's explicit merge command before target-branch integration.
 - If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
 
 ## Final Review
@@ -366,7 +366,7 @@ Each story below is included because the public-readiness review identified it a
 | Other verification | 0 | +4 | 0 | 0 | 4 | License/package metadata, package contents, docs existence, and release-process checks. |
 | **Total** | **10** | **+16** | **0** | **0** | **26** |  |
 
-Counting basis: distinct verification command/checklist surfaces referenced by the sprint, not individual Vitest assertions except where noted. Full final regression evidence: `.checks/regression.sh --tier=full` passed 9/9 checks with regression score 5/5; `npm run verify:docs`, `npm run verify:package`, `npm audit --omit=dev`, and the repository secret audit also passed.
+Counting basis: distinct verification command/checklist surfaces referenced by the sprint, not individual Vitest assertions except where noted. Full final regression evidence: `.checks/regression.sh --tier=full` passed 9/9 checks with regression score 5/5; `npm run verify:docs`, `npm run verify:package`, `npm audit --omit=dev`, and the repository secret audit also passed. Audit metadata preserves the Story 5 fix intent: `History base before report commit` is the commit checked out before the final report commit, and `Reachable commits scanned before report commit` is the audit command's reachable-history scope for that base.
 Regression summary: 0 required regression verifications pending/not yet run; 26 total verification surfaces referenced.
 
 ## Why ready

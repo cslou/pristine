@@ -6,19 +6,30 @@ import { dirname } from 'node:path';
 const outputIndex = process.argv.indexOf('--output');
 const outputPath = outputIndex === -1 ? undefined : process.argv[outputIndex + 1];
 
-const secretVarNames = [
+const secretAssignmentNamePattern = [
   'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
   'GOOGLE_API_KEY',
   'GEMINI_API_KEY',
   'AWS_SECRET_ACCESS_KEY',
-];
+  'DATABASE_URL',
+  'JWT_SECRET',
+  'NPM_TOKEN',
+  'GITHUB_TOKEN',
+  'GH_TOKEN',
+  'DEPLOYER_PRIVATE_KEY',
+  'PASSWORD',
+  'PRIVATE_KEY',
+  'API_KEY',
+  'SECRET',
+  'TOKEN',
+].join('|');
 
 const pattern = [
   'BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY',
   'ghp_[A-Za-z0-9_]{20,}',
   'sk-[A-Za-z0-9_-]{20,}',
-  `(${secretVarNames.join('|')})[[:space:]]*=[[:space:]]*["'\\]?[A-Za-z0-9_./+=-]{12,}`,
+  `(${secretAssignmentNamePattern})[[:space:]]*=[[:space:]]*["'\\]?[A-Za-z0-9_./+=-]{12,}`,
 ].join('|');
 
 const pathspec = [
@@ -27,22 +38,36 @@ const pathspec = [
   ':(exclude)package-lock.json',
   ':(exclude)node_modules/**',
   ':(exclude)dist/**',
+  ':(exclude)docs/security-audits/**',
+  ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 
 const allowedFalsePositiveSnippets = [
   'sk-ant-example-secret-token-value',
-  'OPENAI_API_KEY=',
-  'ANTHROPIC_API_KEY=',
-  'GEMINI_API_KEY=',
-  'pattern = [',
-  'secretVarNames',
+  'sk-ant-api03-real-secret-value',
+  'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-rotateabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-preabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-beforeabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-afterabcdefghijklmnopqrstuvwxyz1234567',
+  'sk-ant-api03-alphaabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-bravoabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-charlieabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-afterrotateabcdefghijklmnopqrstuvwxyz123456',
+  'sk-ant-api03-multirotateabcdefghijklmnopqrstuvwxyz123456',
+  'ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ',
+  'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  "'-----BEGIN PRIVATE KEY-----'",
+  "expect(result.privateKey).toContain('BEGIN PRIVATE KEY')",
+  'expect(privateKey).toMatch(/^-----BEGIN PRIVATE KEY-----/)',
+  'beach-landscape-sea-coast-water-sand-ocean-horizon-cloud-sky-sun-sunrise-sunset-shore',
 ];
 
-const allowedFalsePositivePathPrefixes = [
-  'tests/',
-  'docs/specs/implementation-spec-004.md',
-  'benchmarks/memorybench/data/benchmarks/locomo/',
-];
+const hasExitStatus = (error) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'status' in error &&
+  typeof error.status === 'number';
 
 const runGit = (args, options = {}) => {
   try {
@@ -53,7 +78,7 @@ const runGit = (args, options = {}) => {
       ...options,
     });
   } catch (error) {
-    if (error.status === 1) {
+    if (hasExitStatus(error) && error.status === 1) {
       return '';
     }
     throw error;
@@ -90,8 +115,7 @@ const parseHistoryGrep = (output) => output
   });
 
 const isAllowed = (finding) =>
-  allowedFalsePositiveSnippets.some((snippet) => finding.context.includes(snippet)) ||
-  allowedFalsePositivePathPrefixes.some((prefix) => finding.path.startsWith(prefix));
+  allowedFalsePositiveSnippets.some((snippet) => finding.context.includes(snippet));
 
 const currentOutput = runGit(['grep', '-I', '-n', '-E', pattern, ...pathspec]);
 const currentFindings = parseCurrentGrep(currentOutput).map((finding) => ({

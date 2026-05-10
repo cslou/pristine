@@ -1,9 +1,9 @@
 # Repository Secret Audit — Sprint 025
 
-**Commit scanned:** dfac97e8eeb1d91c78ad1e84568012634765324d
-**Reachable commits scanned:** 909
-**Current findings:** 31
-**History findings:** 82
+**Commit scanned:** c2936d156c8bb7da93f2349e4428ac493e17ff69
+**Reachable commits scanned:** 910
+**Current findings:** 34
+**History findings:** 85
 **Unresolved findings:** 0
 
 ## Commands
@@ -21,10 +21,12 @@
 - False positive | WORKTREE | tests/client.test.ts:496 | 'Token sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
 - False positive | WORKTREE | tests/client.test.ts:500 | expect(client.scrubOutput('Tool leaked sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456')).toBe(
 - False positive | WORKTREE | tests/e2e/privacy-pipeline.test.ts:42 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+- False positive | WORKTREE | tests/e2e/privacy-pipeline.test.ts:44 | 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 - False positive | WORKTREE | tests/e2e/privacy-pipeline.test.ts:75 | await secureAndRedact('API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456', {
 - False positive | WORKTREE | tests/e2e/privacy-pipeline.test.ts:97 | await secureAndRedact('API key sk-ant-api03-rotateabcdefghijklmnopqrstuvwxyz123456', {
 - False positive | WORKTREE | tests/e2e/privacy-pipeline.test.ts:120 | const text = 'API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 for John.';
 - False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:47 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+- False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:49 | 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 - False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:93 | const apiKey = 'sk-ant-api03-preabcdefghijklmnopqrstuvwxyz123456';
 - False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:133 | const beforeKey = 'sk-ant-api03-beforeabcdefghijklmnopqrstuvwxyz123456';
 - False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:134 | const afterKey = 'sk-ant-api03-afterabcdefghijklmnopqrstuvwxyz1234567';
@@ -32,6 +34,7 @@
 - False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:185 | 'sk-ant-api03-bravoabcdefghijklmnopqrstuvwxyz123456',
 - False positive | WORKTREE | tests/integration/kek-lifecycle.test.ts:186 | 'sk-ant-api03-charlieabcdefghijklmnopqrstuvwxyz123456',
 - False positive | WORKTREE | tests/integration/privacy.test.ts:41 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+- False positive | WORKTREE | tests/integration/privacy.test.ts:43 | 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 - False positive | WORKTREE | tests/integration/privacy.test.ts:102 | const text = 'API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
 - False positive | WORKTREE | tests/integration/privacy.test.ts:140 | 'Contact alice@example.com or [SENSITIVE:phone_number:def-456] and sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456.';
 - False positive | WORKTREE | tests/integration/privacy.test.ts:303 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
@@ -46,7 +49,6 @@
 
 ## Reachable history findings
 
-- False positive | 0f3e8b0360b0 | README.md:103 | 'Deploy with token sk-ant-example-secret-token-value',
 - False positive | 14a602ae836f | benchmarks/memorybench/data/benchmarks/locomo/locomo10.json:13578 | "https://get.pxhere.com/photo/beach-landscape-sea-coast-water-sand-ocean-horizon-cloud-sky-sun-sunrise-sunset-shore-wave-dawn-dusk-evening-relax-paradise-tropical-peaceful-blue-colorful-body-of-water-
 - False positive | 0384cd2597f4 | docs/specs/implementation-spec-004.md:678 | "command": "curl -H 'Authorization: Bearer sk-ant-api03-real-secret-value' https://api.example.com",
 - False positive | 432e9c81c773 | tests/classifier/deterministic-classifier.test.ts:36 | 'Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ.',
@@ -56,10 +58,12 @@
 - False positive | 4b342db1fab1 | tests/client.test.ts:496 | 'Token sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
 - False positive | 4b342db1fab1 | tests/client.test.ts:500 | expect(client.scrubOutput('Tool leaked sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456')).toBe(
 - False positive | fcd92e7ae7c7 | tests/e2e/privacy-pipeline.test.ts:42 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+- False positive | fcd92e7ae7c7 | tests/e2e/privacy-pipeline.test.ts:44 | 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 - False positive | fcd92e7ae7c7 | tests/e2e/privacy-pipeline.test.ts:75 | await secureAndRedact('API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456', {
 - False positive | fcd92e7ae7c7 | tests/e2e/privacy-pipeline.test.ts:97 | await secureAndRedact('API key sk-ant-api03-rotateabcdefghijklmnopqrstuvwxyz123456', {
 - False positive | fcd92e7ae7c7 | tests/e2e/privacy-pipeline.test.ts:120 | const text = 'API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 for John.';
 - False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:47 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+- False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:49 | 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 - False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:93 | const apiKey = 'sk-ant-api03-preabcdefghijklmnopqrstuvwxyz123456';
 - False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:133 | const beforeKey = 'sk-ant-api03-beforeabcdefghijklmnopqrstuvwxyz123456';
 - False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:134 | const afterKey = 'sk-ant-api03-afterabcdefghijklmnopqrstuvwxyz1234567';
@@ -67,6 +71,7 @@
 - False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:185 | 'sk-ant-api03-bravoabcdefghijklmnopqrstuvwxyz123456',
 - False positive | 0384cd2597f4 | tests/integration/kek-lifecycle.test.ts:186 | 'sk-ant-api03-charlieabcdefghijklmnopqrstuvwxyz123456',
 - False positive | 0384cd2597f4 | tests/integration/privacy.test.ts:41 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+- False positive | 0384cd2597f4 | tests/integration/privacy.test.ts:43 | 'DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 - False positive | 0384cd2597f4 | tests/integration/privacy.test.ts:102 | const text = 'API key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
 - False positive | 0384cd2597f4 | tests/integration/privacy.test.ts:140 | 'Contact alice@example.com or [SENSITIVE:phone_number:def-456] and sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456.';
 - False positive | fcd92e7ae7c7 | tests/integration/privacy.test.ts:303 | const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
@@ -78,6 +83,7 @@
 - False positive | fcd92e7ae7c7 | tests/privacy/safety-scan.test.ts:35 | '-----BEGIN PRIVATE KEY-----',
 - False positive | fcd92e7ae7c7 | tests/privacy/safety-scan.test.ts:64 | 'Key sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and DEPLOYER_PRIVATE_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef and password=correct-horse-battery';
 - False positive | 8753a5d15ba7 | tests/vault/asymmetric-crypto.test.ts:39 | expect(privateKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+- False positive | 0f3e8b0360b0 | README.md:103 | 'Deploy with token sk-ant-example-secret-token-value',
 - False positive | 3a3e2b349b5d | README.md:101 | 'Deploy with token sk-ant-example-secret-token-value',
 - False positive | a442e33f01b9 | tests/client.test.ts:463 | 'Token sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
 - False positive | a442e33f01b9 | tests/client.test.ts:467 | expect(client.scrubOutput('Tool leaked sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456')).toBe(

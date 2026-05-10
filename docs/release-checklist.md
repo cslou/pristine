@@ -39,7 +39,7 @@ This checklist prepares a public alpha package. It does not publish the package 
 
    ```bash
    npm audit --omit=dev
-   node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md
+   node scripts/audit-repository-secrets.mjs --output docs/security-audits/<YYYY-MM-DD>-<release-or-branch>-history-audit.md
    ```
 
 6. Confirm the package artifact is clean:

@@ -235,18 +235,18 @@ Each story below is included because the public-readiness review identified it a
 - **As a** new public user, **I want** accurate public documentation and a clear privacy threat model, **so that** I can install, run, and evaluate Pristine without relying on stale internal sprint context.
 - **Dependencies:** Stories 1, 2, and 3
 - **Acceptance criteria:**
-  - [ ] README includes a plain Node quickstart that covers creating a client, indexing source chunks, searching, and cleanup/error handling.
-  - [ ] README privacy section explicitly states default model download behavior, offline/cache expectations, what data is stored in plaintext source chunks, what vault data is encrypted, and when configuring a non-local Ollama host sends text to that endpoint.
-  - [ ] Stale docs that describe removed public APIs are either updated, archived with a clear historical banner, or removed from public onboarding paths.
-  - [ ] Native/runtime troubleshooting is documented for `better-sqlite3`, `sqlite-vec`, Node version, ESM-only usage, and local model cache behavior.
-  - [ ] Public docs distinguish core SDK primitives from examples/reference implementations.
+  - [x] README includes a plain Node quickstart that covers creating a client, indexing source chunks, searching, and cleanup/error handling. Evidence: quickstart now uses `try`/`catch`/`finally`, `deleteSourceChunks`, and `dispose`.
+  - [x] README privacy section explicitly states default model download behavior, offline/cache expectations, what data is stored in plaintext source chunks, what vault data is encrypted, and when configuring a non-local Ollama host sends text to that endpoint. Evidence: `Privacy threat model` section updated.
+  - [x] Stale docs that describe removed public APIs are either updated, archived with a clear historical banner, or removed from public onboarding paths. Evidence: `docs/agent-integration.md` archived with a historical banner and current integration pointer.
+  - [x] Native/runtime troubleshooting is documented for `better-sqlite3`, `sqlite-vec`, Node version, ESM-only usage, and local model cache behavior. Evidence: README native/runtime troubleshooting section added.
+  - [x] Public docs distinguish core SDK primitives from examples/reference implementations. Evidence: README public documentation map distinguishes public primitives, `examples/pi-dev/`, and historical planning docs.
 - **Functional verification:**
-  - [ ] Run README/public-doc link and code-fence checks if an existing checker exists; otherwise add/run a lightweight script that verifies referenced local files exist and package import snippets compile or are marked illustrative.
-  - [ ] Run `npm run test:smoke` and confirm README-documented package entrypoints remain valid.
+  - [x] Run README/public-doc link and code-fence checks if an existing checker exists; otherwise add/run a lightweight script that verifies referenced local files exist and package import snippets compile or are marked illustrative. Evidence: `npm run verify:docs` passed.
+  - [x] Run `npm run test:smoke` and confirm README-documented package entrypoints remain valid. Evidence: passed, 5 smoke tests.
 - **Regression verification:**
-  - [ ] Run `npm run build` and confirm docs/example updates do not break package build.
-  - [ ] Run `npm run test:e2e` and confirm documented privacy pipeline behavior still passes.
-- **Manual-only verification:** Manually read README and any public onboarding doc from a first-time-user perspective; pass condition is no page instructs users to call APIs removed in Sprint 023/024.
+  - [x] Run `npm run build` and confirm docs/example updates do not break package build. Evidence: passed.
+  - [x] Run `npm run test:e2e` and confirm documented privacy pipeline behavior still passes. Evidence: passed, 4 e2e tests.
+- **Manual-only verification:** Completed — manually read README plus public onboarding docs; `rg 'storeAsync|getConversation|drainEmbedQueue|buildSessionVector|searcher\.sql|extract-worker|store\.ts|search-conversations' README.md docs/agent-integration.md examples/pi-dev/README.md` shows only negative/archived removed-API mentions, not live onboarding instructions.
 - **Planned commits:**
   1. `docs: update public onboarding and privacy threat model`
   2. `docs: archive stale public-facing references`

@@ -107,17 +107,17 @@ Each story below is included because the public-readiness review identified it a
 - **As a** privacy-conscious user, **I want** a documented vulnerability reporting path and a clean production dependency audit, **so that** I can trust the public alpha is not launching with known critical dependency risk.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `SECURITY.md` exists and documents supported versions, private vulnerability reporting instructions, disclosure expectations, and the local-first/privacy-sensitive nature of reports.
-  - [ ] Production dependency audit no longer reports the critical `protobufjs <7.5.5` path from `@huggingface/transformers` / `onnxruntime-web`, either by safe upgrade, override, or documented dependency replacement.
-  - [ ] `package-lock.json` reflects deterministic dependency changes when dependency versions or overrides change.
-  - [ ] If dev-only audit findings remain, they are recorded in the story PR body with severity, affected package, and follow-up decision.
+  - [x] `SECURITY.md` exists and documents supported versions, private vulnerability reporting instructions, disclosure expectations, and the local-first/privacy-sensitive nature of reports. Evidence: `SECURITY.md` added and content check passed.
+  - [x] Production dependency audit no longer reports the critical `protobufjs <7.5.5` path from `@huggingface/transformers` / `onnxruntime-web`, either by safe upgrade, override, or documented dependency replacement. Evidence: `protobufjs` override pins `7.5.5`; `npm audit --omit=dev --audit-level=moderate` passed.
+  - [x] `package-lock.json` reflects deterministic dependency changes when dependency versions or overrides change. Evidence: `npm install --package-lock-only --ignore-scripts` and `npm audit fix --package-lock-only --ignore-scripts` updated the lockfile.
+  - [x] If dev-only audit findings remain, they are recorded in the story PR body with severity, affected package, and follow-up decision. Evidence: full `npm audit --audit-level=moderate` passed with 0 vulnerabilities after lockfile updates to `vite` and `postcss`.
 - **Functional verification:**
-  - [ ] Run `npm audit --omit=dev --audit-level=moderate` and confirm it exits 0.
-  - [ ] Run `node -e "const fs=require('fs'); const s=fs.readFileSync('SECURITY.md','utf8'); for (const term of ['Supported Versions','Reporting','Security']) if (!s.includes(term)) throw new Error('SECURITY.md missing '+term);"` and confirm it exits 0.
+  - [x] Run `npm audit --omit=dev --audit-level=moderate` and confirm it exits 0. Evidence: passed, `found 0 vulnerabilities`.
+  - [x] Run `node -e "const fs=require('fs'); const s=fs.readFileSync('SECURITY.md','utf8'); for (const term of ['Supported Versions','Reporting','Security']) if (!s.includes(term)) throw new Error('SECURITY.md missing '+term);"` and confirm it exits 0. Evidence: passed.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit` and confirm dependency/security-policy changes do not regress unit behavior.
-  - [ ] Run `npm run test:integration` and confirm the local embedder integration still works after dependency changes.
-- **Manual-only verification:** N/A — no manual-only verification required unless the dependency vulnerability cannot be remediated automatically; in that case, record the exact advisory, mitigation, and residual risk for Lou before merge.
+  - [x] Run `npm run test:unit` and confirm dependency/security-policy changes do not regress unit behavior. Evidence: passed, 322 tests.
+  - [x] Run `npm run test:integration` and confirm the local embedder integration still works after dependency changes. Evidence: passed, 19 tests including local embedder integration.
+- **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `chore: remediate production dependency audit findings`
   2. `docs: add security policy`

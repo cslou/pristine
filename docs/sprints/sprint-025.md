@@ -268,18 +268,18 @@ Each story below is included because the public-readiness review identified it a
 - **As a** contributor or package consumer, **I want** a defined public API, contribution workflow, changelog, and release checklist, **so that** I know what is supported and how changes reach users safely.
 - **Dependencies:** Stories 1, 3, 4, and 6
 - **Acceptance criteria:**
-  - [ ] `CONTRIBUTING.md` documents setup, local verification commands, slow-test controls, coding conventions, PR expectations, and how to run package verification.
-  - [ ] `CHANGELOG.md` exists with an initial unreleased/public-alpha entry and a semver policy for pre-1.0 changes.
-  - [ ] A release checklist documents clean build, audit, package verification, full regression, npm provenance/trusted publishing expectations, and the fact that actual publish remains out of scope for this sprint.
-  - [ ] The root public exports are audited and documented as supported, intentionally internal, or deferred; any export-surface change has test coverage and migration notes.
-  - [ ] `.github/PULL_REQUEST_TEMPLATE.md` and issue templates, if changed, are external-contributor friendly and still capture verification evidence.
+  - [x] `CONTRIBUTING.md` documents setup, local verification commands, slow-test controls, coding conventions, PR expectations, and how to run package verification. Evidence: `CONTRIBUTING.md` added.
+  - [x] `CHANGELOG.md` exists with an initial unreleased/public-alpha entry and a semver policy for pre-1.0 changes. Evidence: `CHANGELOG.md` added.
+  - [x] A release checklist documents clean build, audit, package verification, full regression, npm provenance/trusted publishing expectations, and the fact that actual publish remains out of scope for this sprint. Evidence: `docs/release-checklist.md` added.
+  - [x] The root public exports are audited and documented as supported, intentionally internal, or deferred; any export-surface change has test coverage and migration notes. Evidence: `docs/public-api.md` added and package-entrypoint smoke asserts exact runtime root exports.
+  - [x] `.github/PULL_REQUEST_TEMPLATE.md` and issue templates, if changed, are external-contributor friendly and still capture verification evidence. Evidence: PR template now includes public API/docs impact and verification evidence prompts; no issue templates exist.
 - **Functional verification:**
-  - [ ] Run a new or existing API export smoke test that imports every documented public root export from the built package and confirms each documented export exists.
-  - [ ] Run `node -e "for (const f of ['CONTRIBUTING.md','CHANGELOG.md']) if (!require('fs').existsSync(f)) throw new Error('missing '+f);"` and confirm it exits 0.
+  - [x] Run a new or existing API export smoke test that imports every documented public root export from the built package and confirms each documented export exists. Evidence: `npm run test:smoke` passed with exact root export assertion.
+  - [x] Run `node -e "for (const f of ['CONTRIBUTING.md','CHANGELOG.md']) if (!require('fs').existsSync(f)) throw new Error('missing '+f);"` and confirm it exits 0. Evidence: command passed.
 - **Regression verification:**
-  - [ ] Run `npm run test:smoke` and confirm public API smoke coverage still passes.
-  - [ ] Run `npm run typecheck` and confirm any export-surface typing changes are valid.
-- **Manual-only verification:** Review the release checklist against this sprint's package/CI/security stories; pass condition is every release gate has an owner command or explicit manual step.
+  - [x] Run `npm run test:smoke` and confirm public API smoke coverage still passes. Evidence: passed, 5 smoke tests.
+  - [x] Run `npm run typecheck` and confirm any export-surface typing changes are valid. Evidence: passed.
+- **Manual-only verification:** Completed — reviewed `docs/release-checklist.md` against package, CI, dependency-audit, and repository-secret stories; every release gate has an owner command or explicit manual step.
 - **Planned commits:**
   1. `docs: add contribution and release process`
   2. `test: document and verify public api exports`

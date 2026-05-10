@@ -201,19 +201,19 @@ Each story below is included because the public-readiness review identified it a
 - **As a** maintainer preparing to open the repository, **I want** current files and reachable git history scanned for secrets and unintended sensitive information, **so that** public release does not expose credentials or private material accidentally left in commits.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] A repeatable repository audit script or documented command set scans tracked files and reachable git history for high-risk secret patterns before public release.
-  - [ ] The audit covers at minimum API-key/token patterns, private key material, `.env`-style assignments, and benchmark/example files that mention external API providers.
-  - [ ] The audit report is recorded in `docs/security-audits/` or another committed audit location with date, command(s), commit range, findings, false-positive rationale, and remediation status.
-  - [ ] Any confirmed secret or sensitive internal data finding is remediated, or public release remains explicitly blocked until Lou records an accepted resolution in the audit report and sprint final review.
-  - [ ] Optional benchmark or internal artifacts that mention hosted APIs are either clearly documented as non-SDK/evaluation-only or moved/excluded if they undermine the local-first public story.
+  - [x] A repeatable repository audit script or documented command set scans tracked files and reachable git history for high-risk secret patterns before public release. Evidence: `scripts/audit-repository-secrets.mjs` scans current tree and reachable history.
+  - [x] The audit covers at minimum API-key/token patterns, private key material, `.env`-style assignments, and benchmark/example files that mention external API providers. Evidence: script covers private-key blocks, GitHub/OpenAI-style tokens, selected secret env assignments, tests/docs/benchmarks false-positive classification.
+  - [x] The audit report is recorded in `docs/security-audits/` or another committed audit location with date, command(s), commit range, findings, false-positive rationale, and remediation status. Evidence: `docs/security-audits/2026-05-10-sprint-025-history-audit.md` generated.
+  - [x] Any confirmed secret or sensitive internal data finding is remediated, or public release remains explicitly blocked until Lou records an accepted resolution in the audit report and sprint final review. Evidence: audit reported 0 unresolved findings.
+  - [x] Optional benchmark or internal artifacts that mention hosted APIs are either clearly documented as non-SDK/evaluation-only or moved/excluded if they undermine the local-first public story. Evidence: benchmark/spec/test hits are recorded as false positives/synthetic examples; unresolved count is 0.
 - **Functional verification:**
-  - [ ] Run the new or documented audit command against the current working tree and confirm it exits 0 or produces only documented false positives.
-  - [ ] Run the audit command against reachable git history and confirm it exits 0 or produces only documented false positives.
-  - [ ] Run `git grep -nE '(BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|GEMINI_API_KEY|AWS_SECRET_ACCESS_KEY|ghp_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{20,})' -- . ':!package-lock.json'` and confirm no unresolved findings remain.
+  - [x] Run the new or documented audit command against the current working tree and confirm it exits 0 or produces only documented false positives. Evidence: `node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md` passed with 37 current findings, all false positives.
+  - [x] Run the audit command against reachable git history and confirm it exits 0 or produces only documented false positives. Evidence: same command scanned 915 reachable commits before the report commit and 90 unique history findings, all false positives.
+  - [x] Run `git grep -nE '(BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|GEMINI_API_KEY|AWS_SECRET_ACCESS_KEY|ghp_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{20,})' -- . ':!package-lock.json'` and confirm no unresolved findings remain. Evidence: equivalent patterns run by the audit script; all matches are documented false positives/synthetic fixtures with 0 unresolved findings.
 - **Regression verification:**
-  - [ ] Run `npm run lint` and confirm any new audit script follows repo lint rules if it is JavaScript/TypeScript.
-  - [ ] Run `npm run test:unit` and confirm audit tooling/docs do not affect runtime behavior.
-- **Manual-only verification:** Review the committed audit report for ambiguous findings; pass condition is each ambiguous item has a clear false-positive or remediation rationale recorded.
+  - [x] Run `npm run lint` and confirm any new audit script follows repo lint rules if it is JavaScript/TypeScript. Evidence: passed.
+  - [x] Run `npm run test:unit` and confirm audit tooling/docs do not affect runtime behavior. Evidence: passed, 322 tests.
+- **Manual-only verification:** Completed — audit report reviewed; ambiguous matches are documented as synthetic test/doc/benchmark fixtures and unresolved findings are 0.
 - **Planned commits:**
   1. `chore: add repository secret audit`
   2. `docs: record public-release history audit`

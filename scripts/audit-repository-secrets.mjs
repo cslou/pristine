@@ -64,16 +64,15 @@ const jsPatterns = [
   },
 ];
 
-const historyPathspec = [
+const basePathspec = [
   '--',
   '.',
   ':(exclude)package-lock.json',
   ':(exclude)node_modules/**',
-  ':(exclude)docs/security-audits/**',
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
-
-const currentPathspec = [...historyPathspec];
+const historyPathspec = [...basePathspec];
+const currentPathspec = [...basePathspec];
 if (normalizedOutputPath !== undefined) {
   currentPathspec.push(`:(exclude)${normalizedOutputPath}`);
 }
@@ -274,7 +273,13 @@ const batchSize = 100;
 for (let index = 0; index < commits.length; index += batchSize) {
   const batch = commits.slice(index, index + batchSize);
   const output = runGit(['grep', '-I', '-n', '-E', grepPattern, ...batch, ...historyPathspec]);
-  historyFindings.push(...classifyFindings(parseHistoryGrep(output)));
+  historyFindings.push(
+    ...classifyFindings(parseHistoryGrep(output)).filter(
+      (finding) =>
+        !(finding.path.startsWith('docs/security-audits/') &&
+          finding.context.includes('False positive |')),
+    ),
+  );
 }
 
 const uniqueHistoryFindings = new Map();

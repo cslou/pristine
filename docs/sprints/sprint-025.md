@@ -208,7 +208,7 @@ Each story below is included because the public-readiness review identified it a
   - [x] Optional benchmark or internal artifacts that mention hosted APIs are either clearly documented as non-SDK/evaluation-only or moved/excluded if they undermine the local-first public story. Evidence: benchmark/spec/test hits are recorded as false positives/synthetic examples; unresolved count is 0.
 - **Functional verification:**
   - [x] Run the new or documented audit command against the current working tree and confirm it exits 0 or produces only documented false positives. Evidence: `node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md` passed with 37 current findings, all false positives.
-  - [x] Run the audit command against reachable git history and confirm it exits 0 or produces only documented false positives. Evidence: final rerun scanned 923 reachable commits before the report commit and 90 unique history findings, all false positives.
+  - [x] Run the audit command against reachable git history and confirm it exits 0 or produces only documented false positives. Evidence: final integration rerun scanned 926 reachable commits before the report commit and 90 unique history findings, all false positives.
   - [x] Run `git grep -nE '(BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|GEMINI_API_KEY|AWS_SECRET_ACCESS_KEY|ghp_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{20,})' -- . ':!package-lock.json'` and confirm no unresolved findings remain. Evidence: equivalent patterns run by the audit script; all matches are documented false positives/synthetic fixtures with 0 unresolved findings.
 - **Regression verification:**
   - [x] Run `npm run lint` and confirm any new audit script follows repo lint rules if it is JavaScript/TypeScript. Evidence: passed.
@@ -386,7 +386,7 @@ Regression summary: 0 required regression verifications pending/not yet run; 26 
 | Story 2 — Security Policy & Dependency Audit | Security policy and dependency remediation | ✅ | `SECURITY.md`, `npm audit --omit=dev`, PR #206 |
 | Story 3 — Clean Package Artifact Verification | Deterministic package contents verification | ✅ | `npm run verify:package`, PR #207 |
 | Story 4 — Public CI Gate Expansion | Hosted deterministic public gate | ✅ | `.github/workflows/unit-tests.yml`, PR #208 CI pass |
-| Story 5 — Repository History & Secret Disclosure Audit | Current tree/history audit with 0 unresolved findings | ✅ | `node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md`, PR #209 |
+| Story 5 — Repository History & Secret Disclosure Audit | Current tree/history audit with 0 unresolved findings | ✅ | `node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md`, PR #209 and integration fix including historical `dist/` paths |
 | Story 6 — Public Documentation & Privacy Threat Model | README/privacy docs and stale-doc archive | ✅ | `npm run verify:docs`, PR #210 |
 | Story 7 — Public API Stability, Contribution, and Release Process | Contribution/release/API docs and exact export smoke | ✅ | `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/public-api.md`, `npm run test:smoke`, PR #211 |
 | Final Verification | Full available regression | ✅ | `.checks/regression.sh --tier=full` passed 9/9 checks, score 5/5 |

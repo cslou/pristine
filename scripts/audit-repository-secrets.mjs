@@ -5,6 +5,9 @@ import { dirname, normalize } from 'node:path';
 
 const outputIndex = process.argv.indexOf('--output');
 const outputPath = outputIndex === -1 ? undefined : process.argv[outputIndex + 1];
+if (outputIndex !== -1 && (outputPath === undefined || outputPath.startsWith('-'))) {
+  throw new Error('--output requires a repo-relative markdown path under docs/security-audits/');
+}
 
 const normalizeOutputPath = (path) => normalize(path).replace(/^\.\//, '');
 const containsPathspecMeta = (path) => /[\[\]{}*?]/.test(path) || path.includes('..') || path.startsWith(':');
@@ -64,7 +67,6 @@ const pathspec = [
   '.',
   ':(exclude)package-lock.json',
   ':(exclude)node_modules/**',
-  ':(exclude)dist/**',
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 

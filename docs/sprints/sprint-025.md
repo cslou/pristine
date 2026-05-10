@@ -176,11 +176,11 @@ Each story below is included because the public-readiness review identified it a
   - [x] README or CONTRIBUTING docs state which checks run in CI and which checks maintainers run locally before release. Evidence: README development section lists CI commands and notes full local regression for real local model checks.
 - **Functional verification:**
   - [x] Run a local workflow-equivalent command sequence from the CI YAML and confirm every command exits 0. Evidence: `rm -rf dist && npm ci && npm run build && npm run typecheck && npm run lint && npm run test:unit && npm run test:smoke && SKIP_SLOW_TESTS=1 npm run test:integration && npm run test:e2e && npm run verify:package` passed.
-  - [ ] Push the story branch and confirm the GitHub Actions check for this workflow passes on the story PR. Evidence: pending PR CI.
+  - [x] Push the story branch and confirm the GitHub Actions check for this workflow passes on the story PR. Evidence: PR #208 `Deterministic public gate` passed in GitHub Actions run `25628281099`.
 - **Regression verification:**
-  - [ ] Run `.checks/pre-merge.sh` and confirm the local gate remains green.
+  - [x] Run `.checks/pre-merge.sh` and confirm the local gate remains green. Evidence: passed, regression score 5/5.
   - [x] Run `npm run test:unit` and confirm the existing unit suite count remains at or above the pre-sprint baseline unless removals are explicitly documented. Evidence: local workflow-equivalent command passed, 322 unit tests.
-- **Manual-only verification:** GitHub-hosted CI pass is external but reproducible: pass condition is the story PR checks show success for the new/updated workflow; pending story PR CI.
+- **Manual-only verification:** Completed — PR #208 GitHub-hosted `Deterministic public gate` check passed.
 - **Planned commits:**
   1. `ci: expand public regression gate`
 - **Technical notes:** Required because unit-only CI is insufficient for public contributors. Use `SKIP_SLOW_TESTS=1 npm run test:integration` for deterministic hosted CI unless the repo already supports model caching in CI.

@@ -269,14 +269,17 @@ Use `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` against 
 Common local checks:
 
 ```bash
+npm run build
 npm run typecheck
 npm run lint
 npm run test:unit
 npm run test:smoke
 SKIP_SLOW_TESTS=1 npm run test:integration
 npm run test:e2e
-npm run build
+npm run verify:package
 ```
+
+GitHub's deterministic public CI gate runs `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:smoke`, `SKIP_SLOW_TESTS=1 npm run test:integration`, `npm run test:e2e`, and `npm run verify:package`. Maintainers run the full local regression tier before release when real local model checks are needed.
 
 Full regression, including real-model integration and source-index smoke:
 

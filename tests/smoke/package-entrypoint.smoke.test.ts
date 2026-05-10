@@ -6,6 +6,20 @@ describe('package entrypoint smoke', () => {
   it('exports and exercises the source-index public API from dist', async () => {
     const pkg = (await import('../../dist/index.js')) as Record<string, unknown>;
 
+    expect(Object.keys(pkg).sort()).toEqual([
+      'AppError',
+      'ConfigError',
+      'EmbedderError',
+      'InvalidArgumentError',
+      'PristineLocal',
+      'SOURCE_CHUNK_METADATA_JSON_LIMIT',
+      'SOURCE_CHUNK_TEXT_LIMIT',
+      'SourceChunkStore',
+      'buildSourceChunkVectorDdl',
+      'createDatabase',
+      'initSourceChunkTables',
+      'normalizeSourceChunkInput',
+    ]);
     expect(pkg.PristineLocal).toBeTypeOf('function');
     expect(pkg.createDatabase).toBeTypeOf('function');
     expect(pkg.SourceChunkStore).toBeTypeOf('function');

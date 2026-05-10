@@ -251,10 +251,10 @@ const renderFindings = (findings) => {
 
 const report = `# Repository Secret Audit — Sprint 025\n\n` +
   `**Scan target:** working tree at generation time, including uncommitted audit-script/report changes committed with this report\n` +
-  `**Base commit before report commit:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
-  `**Reachable commits scanned:** ${commits.length}\n` +
-  `**Current findings:** ${currentFindings.length}\n` +
-  `**History findings:** ${uniqueHistoryFindings.size}\n` +
+  `**History base before report commit:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
+  `**Reachable commits scanned before report commit:** ${commits.length}\n` +
+  `**Current findings in working tree snapshot:** ${currentFindings.length}\n` +
+  `**Unique history findings before report commit:** ${uniqueHistoryFindings.size}\n` +
   `**Unresolved findings:** ${unresolvedFindings.length}\n\n` +
   `## Commands\n\n` +
   `- \`node scripts/audit-repository-secrets.mjs --output docs/security-audits/2026-05-10-sprint-025-history-audit.md\`\n\n` +

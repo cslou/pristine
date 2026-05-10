@@ -38,7 +38,6 @@ const pathspec = [
   ':(exclude)package-lock.json',
   ':(exclude)node_modules/**',
   ':(exclude)dist/**',
-  ':(exclude)docs/security-audits/**',
   ':(exclude)scripts/audit-repository-secrets.mjs',
 ];
 

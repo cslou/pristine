@@ -304,7 +304,7 @@ const renderFindings = (findings) => {
     .join('\n');
 };
 
-const report = `# Repository Secret Audit — Sprint 025\n\n` +
+const report = `# Repository Secret Audit\n\n` +
   `**Scan target:** working tree at generation time, including uncommitted audit-script/report changes committed with this report\n` +
   `**History base before report commit:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
   `**Reachable commits scanned before report commit:** ${commits.length}\n` +

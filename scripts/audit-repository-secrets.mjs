@@ -198,13 +198,10 @@ const allowedEntryFor = (finding) => {
     return explicitEntry;
   }
 
-  if (
-    syntheticTokenPrefixes.includes(finding.matchedText) ||
-    syntheticTokenPrefixes.some((prefix) => finding.matchedText.startsWith(prefix))
-  ) {
+  if (syntheticTokenPrefixes.includes(finding.matchedText)) {
     return {
       match: finding.matchedText,
-      rationale: 'synthetic sk-ant fixture used by privacy redaction tests',
+      rationale: 'exact synthetic sk-ant fixture used by privacy redaction tests',
     };
   }
 
@@ -253,8 +250,8 @@ const renderFindings = (findings) => {
 };
 
 const report = `# Repository Secret Audit — Sprint 025\n\n` +
-  `**Scan target:** working tree at generation time\n` +
-  `**Base commit:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
+  `**Scan target:** working tree at generation time, including uncommitted audit-script/report changes committed with this report\n` +
+  `**Base commit before report commit:** ${runGit(['rev-parse', 'HEAD']).trim()}\n` +
   `**Reachable commits scanned:** ${commits.length}\n` +
   `**Current findings:** ${currentFindings.length}\n` +
   `**History findings:** ${uniqueHistoryFindings.size}\n` +

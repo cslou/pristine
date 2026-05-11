@@ -67,12 +67,12 @@ describe('public-API smoke — source chunk API', () => {
     const client = await PristineLocal.create({ db, embedder: makeEmbedderStub() });
 
     try {
-      await client.indexSourceChunks(
+      await client.store(
         [{ text: 'espresso with cardamom', chunkId: 'chunk-1', sourceUri: '/tmp/session.jsonl' }],
         { projectId: 'project-a' },
       );
 
-      const hits = await client.searchSourceChunks('cardamom', { projectId: 'project-a' });
+      const hits = await client.recall('cardamom', { projectId: 'project-a' });
       expect(hits[0]).toMatchObject({
         chunkId: 'chunk-1',
         text: 'espresso with cardamom',

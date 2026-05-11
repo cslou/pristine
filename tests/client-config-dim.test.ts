@@ -36,11 +36,11 @@ describe('PristineLocal baseDir embedder config', () => {
 
     const client = await PristineLocal.create({ baseDir });
     try {
-      await client.indexSourceChunks([{ text: 'configured dimension chunk', chunkId: 'dim-64' }], {
+      await client.store([{ text: 'configured dimension chunk', chunkId: 'dim-64' }], {
         projectId: 'project-a',
       });
       await expect(
-        client.searchSourceChunks('configured dimension', { projectId: 'project-a', limit: 1 }),
+        client.recall('configured dimension', { projectId: 'project-a', limit: 1 }),
       ).resolves.toHaveLength(1);
       expect(mockPipeline).toHaveBeenCalledWith('feature-extraction', 'test/local-64');
     } finally {

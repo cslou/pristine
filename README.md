@@ -10,6 +10,8 @@ Pristine indexes source-owned text chunks with local embeddings and returns sema
 npm install @pristine/shield-local
 ```
 
+Pristine is MIT licensed and currently tested on Node.js 22 or newer. It is ESM-only and uses native SQLite dependencies (`better-sqlite3` and `sqlite-vec`), so install/build behavior follows the platform support of those packages.
+
 ## Quick start
 
 ```ts
@@ -17,39 +19,54 @@ import { PristineLocal } from '@pristine/shield-local';
 
 const client = await PristineLocal.create();
 
-await client.indexSourceChunks(
-  [
-    {
-      text: 'Pi JSONL source pointer architecture cleanup notes',
-      chunkId: 'session-1:line-42',
-      sourceKind: 'pi-jsonl',
-      sourceUri: 'file:///Users/me/.pi/agent/sessions/session.jsonl',
-      lineNumber: 42,
-      metadata: { cwd: '/Users/me/project' },
-    },
-  ],
-  { projectId: 'my-project' },
-);
+try {
+  await client.indexSourceChunks(
+    [
+      {
+        text: 'Pi JSONL source pointer architecture cleanup notes',
+        chunkId: 'session-1:line-42',
+        sourceKind: 'pi-jsonl',
+        sourceUri: 'file:///Users/me/.pi/agent/sessions/session.jsonl',
+        lineNumber: 42,
+        metadata: { cwd: '/Users/me/project' },
+      },
+    ],
+    { projectId: 'my-project' },
+  );
 
-const hits = await client.searchSourceChunks('source pointer cleanup', {
-  projectId: 'my-project',
-  limit: 5,
-});
+  const hits = await client.searchSourceChunks('source pointer cleanup', {
+    projectId: 'my-project',
+    limit: 5,
+  });
 
-console.log(hits[0]);
-// {
-//   chunkId: 'session-1:line-42',
-//   projectId: 'my-project',
-//   text: 'Pi JSONL source pointer architecture cleanup notes',
-//   score: 0.91,
-//   sourceKind: 'pi-jsonl',
-//   sourceUri: 'file:///Users/me/.pi/agent/sessions/session.jsonl',
-//   lineNumber: 42,
-//   ...
-// }
+  console.log(hits[0]);
+  // {
+  //   chunkId: 'session-1:line-42',
+  //   projectId: 'my-project',
+  //   text: 'Pi JSONL source pointer architecture cleanup notes',
+  //   score: 0.91,
+  //   sourceKind: 'pi-jsonl',
+  //   sourceUri: 'file:///Users/me/.pi/agent/sessions/session.jsonl',
+  //   lineNumber: 42,
+  //   ...
+  // }
 
-await client.dispose();
+  await client.deleteSourceChunks(['session-1:line-42'], { projectId: 'my-project' });
+} catch (error: unknown) {
+  // AppError subclasses from Pristine include validation, config, and embedder failures.
+  // Unknown errors should still be logged/handled by your application boundary.
+  console.error(error);
+  throw error;
+} finally {
+  await client.dispose();
+}
 ```
+
+## Public documentation map
+
+- **Core SDK primitives:** `PristineLocal.create`, `indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`, `secureAndRedact`, `reveal`, and `scrubOutput` are the supported public package surface.
+- **Reference implementations:** `examples/pi-dev/` shows one Pi JSONL integration built from the primitives. It is not required for normal SDK use.
+- **Historical design notes:** `docs/specs/` and `docs/sprints/` preserve planning context and may mention APIs removed before the current package surface; use this README as the public onboarding contract.
 
 ## Core API
 
@@ -98,7 +115,7 @@ These remain local-only and use the SQLite vault plus filesystem keys. The `scru
 
 ```ts
 const secured = await client.secureAndRedact(
-  'Deploy with token sk-ant-example-secret-token-value',
+  'Deploy with token REDACTED_API_TOKEN_EXAMPLE',
   'user-123',
 );
 
@@ -222,7 +239,16 @@ Supported engines:
 
 For deterministic tests or strict offline deployments, inject a custom `Embedder` and `db` into `PristineLocal.create()`.
 
-## Privacy and key model
+## Privacy threat model
+
+Pristine is local-first by default, but it is still an index and vault you run on your machine:
+
+- **Default model behavior:** the default `local` embedder runs through `@huggingface/transformers` in process and may download Nomic Embed v1.5 model files from Hugging Face on first embedding/search. After the files are cached, normal embedding work is local. Strict offline deployments should pre-populate the Transformers cache or inject a custom offline `Embedder`.
+- **Plaintext source index:** `source_chunks` stores the indexed chunk `text`, snippets, source pointer fields, and JSON metadata in plaintext so semantic search can return useful local results. Do not index text you are unwilling to store in the local SQLite file.
+- **Encrypted privacy vault:** detected sensitive values are stored in vault tables encrypted with AES-256-GCM DEKs; DEKs are wrapped by per-user KEKs; KEKs are wrapped by filesystem RSA keys.
+- **Keys and recovery:** private keys live under `keys/` with owner-only permissions on Unix-like systems. There is no server-side recovery; back up the database and matching keys together.
+- **Ollama host configuration:** the `ollama` embedder sends text to the configured Ollama `host`. Keep the host on `localhost` for local-only behavior. A remote or container-network host receives the text you embed/search.
+- **No raw source ownership:** full transcripts/files/events remain in the calling harness/source system. Pristine stores indexed text chunks plus pointers, not a complete authoritative source archive.
 
 Privacy vault data is encrypted locally:
 
@@ -230,8 +256,6 @@ Privacy vault data is encrypted locally:
 - Each user has a generated KEK stored in SQLite wrapped by the RSA public key.
 - Each sensitive value is encrypted with a DEK using AES-256-GCM.
 - DEKs are wrapped by the KEK; plaintext KEKs are cached only in process memory.
-
-There is no server-side recovery. Protect and back up the private keys for any user whose vault entries must remain recoverable.
 
 ## Isolation model
 
@@ -247,9 +271,17 @@ There is no server-side recovery. Protect and back up the private keys for any u
 - No user data is sent to an API by default. The default Transformers-based embedder may download model files from Hugging Face on first use unless the model is already cached or an offline/local embedder is configured.
 - Full raw source records remain in the calling harness/source system.
 
-## Sprint 023 breaking change note
+## Native/runtime troubleshooting
 
-Sprint 023 removed the previous raw-transcript ownership surface. These concepts are no longer public live APIs:
+- **Node.js:** use Node.js 22 or newer. The package is ESM-only (`"type": "module"`); CommonJS `require()` is not a supported import path.
+- **Native SQLite packages:** `better-sqlite3` and `sqlite-vec` install native/prebuilt artifacts. If install fails, confirm your Node version, platform architecture, and local compiler toolchain match those packages' support matrix.
+- **Model cache:** first local embedding/search can be slower while Transformers downloads and initializes the Nomic model. Pre-cache model files or inject a custom `Embedder` for fully offline startup.
+- **Filesystem permissions:** if privacy operations fail on Unix-like systems, check that `~/.pristine`, `~/.pristine/data`, and `~/.pristine/keys` are `0700`, and private key files are `0600`.
+- **Ollama:** when using the `ollama` engine, verify the configured `host` is reachable and that the model exists in that Ollama instance.
+
+## Legacy raw-transcript ownership note
+
+Pristine no longer exposes the previous raw-transcript ownership surface. These concepts are not public live APIs:
 
 - raw conversation/message storage through Pristine
 - `storeAsync`
@@ -267,14 +299,18 @@ Use `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` against 
 Common local checks:
 
 ```bash
+npm run build
 npm run typecheck
 npm run lint
 npm run test:unit
 npm run test:smoke
 SKIP_SLOW_TESTS=1 npm run test:integration
 npm run test:e2e
-npm run build
+npm run verify:docs
+npm run verify:package
 ```
+
+GitHub's deterministic public CI gate is intentionally cost-conscious: it runs `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:smoke`, `npm run verify:docs`, and `npm run verify:package`. Maintainers run strict local pre-merge/regression gates for deterministic integration, e2e, secret-history audit, and real local model checks before release.
 
 Full regression, including real-model integration and source-index smoke:
 

@@ -1,0 +1,107 @@
+#!/usr/bin/env node
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+const publicDocPaths = [
+  'README.md',
+  'CONTRIBUTING.md',
+  'CHANGELOG.md',
+  'SECURITY.md',
+  'docs/public-api.md',
+  'docs/release-checklist.md',
+  'docs/agent-integration.md',
+  'examples/pi-dev/README.md',
+];
+
+const failures = [];
+const packageImportSnippets = [];
+const localLinkPattern = /\[[^\]]+\]\(([^)]+)\)/g;
+const snippetPattern = /```(ts|typescript)\n([\s\S]*?)```/g;
+
+const isExternalTarget = (target) =>
+  target.startsWith('http://') ||
+  target.startsWith('https://') ||
+  target.startsWith('mailto:') ||
+  target.startsWith('#');
+
+for (const docPath of publicDocPaths) {
+  if (!existsSync(docPath)) {
+    failures.push(`Missing public doc: ${docPath}`);
+    continue;
+  }
+
+  const content = readFileSync(docPath, 'utf8');
+  if (content.length === 0) {
+    failures.push(`Public doc is empty: ${docPath}`);
+    continue;
+  }
+
+  for (const match of content.matchAll(localLinkPattern)) {
+    const target = match[1].trim();
+    if (isExternalTarget(target)) {
+      continue;
+    }
+    const path = target.split('#')[0];
+    if (path.length === 0) {
+      continue;
+    }
+    const resolvedPath = join(dirname(docPath), path);
+    if (!existsSync(resolvedPath)) {
+      failures.push(`Missing local link target in ${docPath}: ${target}`);
+    }
+  }
+
+  for (const match of content.matchAll(snippetPattern)) {
+    const snippet = match[2];
+    if (snippet.includes('@pristine/shield-local')) {
+      packageImportSnippets.push({ docPath, snippet });
+    }
+  }
+}
+
+if (packageImportSnippets.length === 0) {
+  failures.push('Public docs have no TypeScript package import snippets to verify');
+}
+
+for (const [index, { docPath, snippet }] of packageImportSnippets.entries()) {
+  const dir = mkdtempSync('.tmp-pristine-docs-');
+  const file = join(dir, `snippet-${index}.mts`);
+  writeFileSync(file, snippet);
+  try {
+    execFileSync(
+      'npx',
+      [
+        'tsc',
+        '--noEmit',
+        '--strict',
+        '--target',
+        'ES2022',
+        '--module',
+        'NodeNext',
+        '--moduleResolution',
+        'NodeNext',
+        '--skipLibCheck',
+        file,
+      ],
+      { stdio: 'pipe' },
+    );
+  } catch (error) {
+    const stderr = error instanceof Error && 'stderr' in error ? String(error.stderr) : '';
+    const stdout = error instanceof Error && 'stdout' in error ? String(error.stdout) : '';
+    failures.push(
+      `${docPath} TypeScript package import snippet ${index + 1} failed to compile:\n${stdout}${stderr}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+if (failures.length > 0) {
+  console.error(failures.join('\n\n'));
+  process.exit(1);
+}
+
+console.log(
+  `Verified ${publicDocPaths.length} public doc(s), ${packageImportSnippets.length} TypeScript package import snippet(s), and local links.`,
+);

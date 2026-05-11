@@ -204,16 +204,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** a final stale-name audit for the old memory method names, **so that** the repo clearly presents `store`, `recall`, and `forget` as canonical and keeps old names only where intentional.
 - **Dependencies:** Stories 1–4
 - **Acceptance criteria:**
-  - [ ] A repo-wide search identifies every remaining `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` reference under `README.md`, `docs/`, `src/`, `tests/`, and `examples/`.
-  - [ ] Remaining old-name references are limited to deprecated compatibility aliases, compatibility tests, migration/deprecation notes, or immutable historical sprint records.
-  - [ ] If old type names remain exported, `src/index.ts` and the public type fixture make clear they are compatibility exports, not the canonical naming users should copy first.
-  - [ ] The sprint notes record whether the old aliases are intended for removal in a future breaking cleanup or indefinite compatibility.
+  - [x] A repo-wide search identifies every remaining `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` reference under `README.md`, `docs/`, `src/`, `tests/`, and `examples/`. Evidence: repo-wide `rg` completed and categorized hits.
+  - [x] Remaining old-name references are limited to deprecated compatibility aliases, compatibility tests, migration/deprecation notes, or immutable historical sprint records. Evidence: live hits are README compatibility note, `src/client.ts` deprecated aliases, compatibility tests, and sprint history/planning records.
+  - [x] If old type names remain exported, `src/index.ts` and the public type fixture make clear they are compatibility exports, not the canonical naming users should copy first. Evidence: legacy aliases in `src/client.ts` have `@deprecated`; `src/index.ts` groups old type names under deprecated compatibility exports; public type fixture separates canonical types from deprecated compatibility imports.
+  - [x] The sprint notes record whether the old aliases are intended for removal in a future breaking cleanup or indefinite compatibility. Evidence: aliases are retained as deprecated transition compatibility and may be removed only in a future breaking cleanup after an explicit sprint/spec update.
 - **Functional verification:**
-  - [ ] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks" README.md docs src tests examples` and record the categorized hit list in the story PR body. **Pass condition:** every hit is categorized as canonical replacement needed, compatibility alias/test, deprecated-alias doc, or historical record; no uncategorized stale user-facing reference remains.
-  - [ ] Run `npm run verify:docs` and confirm migration/deprecation wording does not break public docs checks.
+  - [x] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks" README.md docs src tests examples` and record the categorized hit list in the story PR body. **Pass condition:** every hit is categorized as canonical replacement needed, compatibility alias/test, deprecated-alias doc, or historical record; no uncategorized stale user-facing reference remains. Evidence: categorized hit list recorded for Story 5 PR.
+  - [x] Run `npm run verify:docs` and confirm migration/deprecation wording does not break public docs checks. Evidence: passed.
 - **Regression verification:**
-  - [ ] Run `npm run lint` and confirm any deprecation comments or code moves follow lint rules.
-  - [ ] Run `npm run test:unit` and confirm the full unit suite remains green after the migration audit.
+  - [x] Run `npm run lint` and confirm any deprecation comments or code moves follow lint rules. Evidence: passed.
+  - [x] Run `npm run test:unit` and confirm the full unit suite remains green after the migration audit. Evidence: passed, 324 tests.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `chore: audit memory primitive naming migration`

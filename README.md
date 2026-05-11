@@ -310,7 +310,7 @@ npm run verify:docs
 npm run verify:package
 ```
 
-GitHub's deterministic public CI gate runs `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:smoke`, `SKIP_SLOW_TESTS=1 npm run test:integration`, `npm run test:e2e`, `npm run verify:docs`, and `npm run verify:package`. Maintainers run the full local regression tier before release when real local model checks are needed.
+GitHub's deterministic public CI gate is intentionally cost-conscious: it runs `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:unit`, `npm run test:smoke`, `npm run verify:docs`, and `npm run verify:package`. Maintainers run strict local pre-merge/regression gates for deterministic integration, e2e, secret-history audit, and real local model checks before release.
 
 Full regression, including real-model integration and source-index smoke:
 

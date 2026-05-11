@@ -17,11 +17,11 @@ import {
 } from './privacy/index.js';
 import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
-export interface IndexSourceChunksOptions {
+export interface StoreOptions {
   readonly projectId: string;
 }
 
-export interface IndexedSourceChunk {
+export interface StoredMemory {
   readonly chunkId: string;
   readonly projectId: string;
   readonly text: string;
@@ -36,22 +36,35 @@ export interface IndexedSourceChunk {
   readonly metadata: SourceChunkInput['metadata'] | null;
 }
 
-export interface SearchSourceChunksOptions {
+export interface RecallOptions {
   readonly projectId: string;
   readonly limit?: number;
 }
 
-export interface DeleteSourceChunksOptions {
+export interface ForgetOptions {
   readonly projectId: string;
 }
 
-export interface DeleteSourceChunksResult {
+export interface ForgetResult {
   readonly deletedCount: number;
 }
 
-export interface SourceChunkSearchHit extends IndexedSourceChunk {
+export interface RecalledMemory extends StoredMemory {
   readonly score: number;
 }
+
+/** @deprecated Use StoreOptions. */
+export type IndexSourceChunksOptions = StoreOptions;
+/** @deprecated Use StoredMemory. */
+export type IndexedSourceChunk = StoredMemory;
+/** @deprecated Use RecallOptions. */
+export type SearchSourceChunksOptions = RecallOptions;
+/** @deprecated Use ForgetOptions. */
+export type DeleteSourceChunksOptions = ForgetOptions;
+/** @deprecated Use ForgetResult. */
+export type DeleteSourceChunksResult = ForgetResult;
+/** @deprecated Use RecalledMemory. */
+export type SourceChunkSearchHit = RecalledMemory;
 
 export interface PristineLocalConfig {
   readonly baseDir?: string;
@@ -74,7 +87,7 @@ const toPublicChunk = (chunk: {
   readonly lineEnd: number | null;
   readonly timestamp: string | null;
   readonly metadataJson: string | null;
-}): IndexedSourceChunk => ({
+}): StoredMemory => ({
   chunkId: chunk.chunkId,
   projectId: chunk.projectId,
   text: chunk.text,
@@ -154,67 +167,81 @@ export class PristineLocal {
     });
   }
 
-  public async indexSourceChunks(
+  public async store(
     chunks: readonly SourceChunkInput[],
-    options: IndexSourceChunksOptions,
-  ): Promise<readonly IndexedSourceChunk[]> {
+    options: StoreOptions,
+  ): Promise<readonly StoredMemory[]> {
     if (!Array.isArray(chunks)) {
-      throw new InvalidArgumentError('indexSourceChunks: chunks must be an array');
+      throw new InvalidArgumentError('store: chunks must be an array');
     }
     if (chunks.length === 0) {
-      throw new InvalidArgumentError('indexSourceChunks: chunks must not be empty');
+      throw new InvalidArgumentError('store: chunks must not be empty');
     }
     if (typeof options !== 'object' || options === null || Array.isArray(options)) {
-      throw new InvalidArgumentError('indexSourceChunks: options must be an object');
+      throw new InvalidArgumentError('store: options must be an object');
     }
 
     const normalized = this.sourceChunkStore.validateMany(chunks, { projectId: options.projectId });
     const embeddings = await this.embedder.embedBatch(normalized.map((chunk) => chunk.text));
     if (embeddings.length !== normalized.length) {
       throw new InvalidArgumentError(
-        `indexSourceChunks: embedder returned ${embeddings.length} embeddings for ${normalized.length} chunks`,
+        `store: embedder returned ${embeddings.length} embeddings for ${normalized.length} chunks`,
       );
     }
     return this.sourceChunkStore.putStoredMany(normalized, embeddings).map(toPublicChunk);
   }
 
-  public deleteSourceChunks(
-    chunkIds: readonly string[],
-    options: DeleteSourceChunksOptions,
-  ): DeleteSourceChunksResult {
+  public forget(chunkIds: readonly string[], options: ForgetOptions): ForgetResult {
     if (typeof options !== 'object' || options === null || Array.isArray(options)) {
-      throw new InvalidArgumentError('deleteSourceChunks: options must be an object');
+      throw new InvalidArgumentError('forget: options must be an object');
     }
     const deletedCount = this.sourceChunkStore.deleteMany(options.projectId, chunkIds);
     return { deletedCount };
   }
 
-  public async searchSourceChunks(
-    query: string,
-    options: SearchSourceChunksOptions,
-  ): Promise<readonly SourceChunkSearchHit[]> {
+  public async recall(query: string, options: RecallOptions): Promise<readonly RecalledMemory[]> {
     if (typeof query !== 'string' || query.trim().length === 0) {
-      throw new InvalidArgumentError('searchSourceChunks: query must be a non-empty string');
+      throw new InvalidArgumentError('recall: query must be a non-empty string');
     }
     if (typeof options !== 'object' || options === null || Array.isArray(options)) {
-      throw new InvalidArgumentError('searchSourceChunks: options must be an object');
+      throw new InvalidArgumentError('recall: options must be an object');
     }
     if (typeof options.projectId !== 'string' || options.projectId.trim().length === 0) {
-      throw new InvalidArgumentError(
-        'searchSourceChunks: options.projectId must be a non-empty string',
-      );
+      throw new InvalidArgumentError('recall: options.projectId must be a non-empty string');
     }
     const limit = options.limit === undefined ? 10 : options.limit;
     if (!Number.isInteger(limit) || limit <= 0 || limit > 1000) {
-      throw new InvalidArgumentError(
-        'searchSourceChunks: options.limit must be a positive integer <= 1000',
-      );
+      throw new InvalidArgumentError('recall: options.limit must be a positive integer <= 1000');
     }
 
     const embedding = await this.embedder.embed(query.trim());
     return this.sourceChunkStore
       .search(embedding, { projectId: options.projectId, limit })
       .map((hit) => ({ ...toPublicChunk(hit.chunk), score: hit.score }));
+  }
+
+  /** @deprecated Use store(). */
+  public async indexSourceChunks(
+    chunks: readonly SourceChunkInput[],
+    options: IndexSourceChunksOptions,
+  ): Promise<readonly IndexedSourceChunk[]> {
+    return this.store(chunks, options);
+  }
+
+  /** @deprecated Use forget(). */
+  public deleteSourceChunks(
+    chunkIds: readonly string[],
+    options: DeleteSourceChunksOptions,
+  ): DeleteSourceChunksResult {
+    return this.forget(chunkIds, options);
+  }
+
+  /** @deprecated Use recall(). */
+  public async searchSourceChunks(
+    query: string,
+    options: SearchSourceChunksOptions,
+  ): Promise<readonly SourceChunkSearchHit[]> {
+    return this.recall(query, options);
   }
 
   public async secureAndRedact(

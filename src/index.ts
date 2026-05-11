@@ -13,11 +13,17 @@ export { PristineLocal } from './client.js';
 export type {
   DeleteSourceChunksOptions,
   DeleteSourceChunksResult,
+  ForgetOptions,
+  ForgetResult,
   IndexedSourceChunk,
   IndexSourceChunksOptions,
   PristineLocalConfig,
+  RecalledMemory,
+  RecallOptions,
   SearchSourceChunksOptions,
   SourceChunkSearchHit,
+  StoredMemory,
+  StoreOptions,
 } from './client.js';
 
 export type {

@@ -173,16 +173,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** developer copying the Pi examples, **I want** examples and example docs to align with the new primitive names where they discuss SDK composition, **so that** reference implementations do not teach stale public API language.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] `examples/README.md` and `examples/pi-dev/README.md` are audited and updated if they mention the core memory primitive names.
-  - [ ] `examples/pi-dev/extensions/jsonl-index/`, `examples/pi-dev/extensions/search-memory/`, and `examples/pi-dev/skills/search-session-history/` are audited for stale public method names; any actual SDK-client calls are migrated to `store`, `recall`, or `forget`.
-  - [ ] `tests/examples/pi-dev/` remains aligned with the example source layout and passes after any example doc/code changes.
-  - [ ] Pi tool names such as `pristine_vector_search` are left unchanged unless a test or README proves they are specifically describing the SDK primitive rather than the Pi tool.
+  - [x] `examples/README.md` and `examples/pi-dev/README.md` are audited and updated if they mention the core memory primitive names. Evidence: grep found no stale public method-name hits under examples.
+  - [x] `examples/pi-dev/extensions/jsonl-index/`, `examples/pi-dev/extensions/search-memory/`, and `examples/pi-dev/skills/search-session-history/` are audited for stale public method names; any actual SDK-client calls are migrated to `store`, `recall`, or `forget`. Evidence: grep found zero stale method-name hits; examples do not call `PristineLocal` directly.
+  - [x] `tests/examples/pi-dev/` remains aligned with the example source layout and passes after any example doc/code changes. Evidence: `npm run test:unit -- tests/examples/pi-dev/` passed, 35 tests.
+  - [x] Pi tool names such as `pristine_vector_search` are left unchanged unless a test or README proves they are specifically describing the SDK primitive rather than the Pi tool. Evidence: no Pi tool renames were needed; example tests passed.
 - **Functional verification:**
-  - [ ] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks" examples tests/examples/pi-dev` and confirm zero hits or only explicitly justified compatibility references.
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/` and confirm all Pi example tests pass.
+  - [x] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks" examples tests/examples/pi-dev` and confirm zero hits or only explicitly justified compatibility references. Evidence: zero hits.
+  - [x] Run `npm run test:unit -- tests/examples/pi-dev/` and confirm all Pi example tests pass. Evidence: passed, 35 tests.
 - **Regression verification:**
-  - [ ] Run `npm run typecheck` and confirm example/test imports and TypeScript source remain valid.
-  - [ ] Run `npm run verify:docs` and confirm example README links/snippets remain valid.
+  - [x] Run `npm run typecheck` and confirm example/test imports and TypeScript source remain valid. Evidence: passed.
+  - [x] Run `npm run verify:docs` and confirm example README links/snippets remain valid. Evidence: passed.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: align examples with memory verb primitives`

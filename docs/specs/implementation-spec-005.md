@@ -57,7 +57,7 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 |---|---|
 | **Primitive** (core SDK) | `client.store(chunks)` |
 | **Reference** | Pi JSONL `jsonl-index` extension that feeds active-session snippets/windows |
-| **Primitive** | `searcher.vectorSearch(query, filters)` returning chunk IDs, snippets, scores, and source pointers |
+| **Primitive** | `client.recall(query, opts)` returning recalled chunks/snippets, scores, and source pointers |
 | **Reference** (documented example, replaceable) | `pristine_vector_search` / `search_memory` tool that wraps vector search for agent tool-use |
 | **Primitive** | embedder factory and configured vector dimension |
 | **Reference** | Nomic local embedder setup and warmup docs |
@@ -342,10 +342,10 @@ Harness-specific windowing is a reference concern. For Pi, `examples/pi-dev/exte
 #### 5.1.3 Retrieval
 
 ```
-searcher.vectorSearch(query, filters, limit): SourceChunkHit[]
+client.recall(query: string, opts: { projectId: string; limit?: number }): Promise<RecalledMemory[]>
 ```
 
-`Filters` support project plus optional source metadata filters when present (for example source kind, source URI, entry ID, timestamp range, or harness-specific metadata fields accepted by the public contract). A hit returns `chunkId`, snippet/indexed text preview, score/rank, and optional source pointer fields. It never requires `conversationId`, `messageIds`, or raw-message joins.
+Recall options support project scope plus optional source metadata filters when present (for example source kind, source URI, entry ID, timestamp range, or harness-specific metadata fields accepted by the public contract). A recalled memory returns `chunkId`, snippet/indexed text preview, score/rank, and optional source pointer fields. It never requires `conversationId`, `messageIds`, or raw-message joins.
 
 FTS, hybrid, session-vector, and SQL retrieval from the raw-conversation design are not target primitives unless adapted to source chunks in a later reviewed design. The default Sprint 023 cleanup removes them when they depend on `conversations`, `messages`, `messages_fts`, `vec_sessions`, or raw transcript public views.
 

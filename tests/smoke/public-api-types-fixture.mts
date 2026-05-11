@@ -3,9 +3,13 @@ import type {
   DeleteSourceChunksResult,
   DeterministicClassifierConfig,
   Embedder,
+  ForgetOptions,
+  ForgetResult,
   IndexedSourceChunk,
   IndexSourceChunksOptions,
   PristineLocalConfig,
+  RecalledMemory,
+  RecallOptions,
   RevealResult,
   SearchSourceChunksOptions,
   SecureAndRedactResult,
@@ -15,7 +19,9 @@ import type {
   SourceChunkSearchHit,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
+  StoredMemory,
   StoredSourceChunk,
+  StoreOptions,
 } from '@pristine/shield-local';
 
 type PublicRootTypes = [
@@ -23,9 +29,13 @@ type PublicRootTypes = [
   DeleteSourceChunksResult,
   DeterministicClassifierConfig,
   Embedder,
+  ForgetOptions,
+  ForgetResult,
   IndexedSourceChunk,
   IndexSourceChunksOptions,
   PristineLocalConfig,
+  RecalledMemory,
+  RecallOptions,
   RevealResult,
   SearchSourceChunksOptions,
   SecureAndRedactResult,
@@ -35,7 +45,9 @@ type PublicRootTypes = [
   SourceChunkSearchHit,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
+  StoredMemory,
   StoredSourceChunk,
+  StoreOptions,
 ];
 
 const publicRootTypesFixture: PublicRootTypes | null = null;

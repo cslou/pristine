@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PristineLocal, type DeleteSourceChunksResult } from '../src/client.js';
+import { PristineLocal, type ForgetResult } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import { EmbedderError, InvalidArgumentError } from '../src/core/errors.js';
 import type { Embedder } from '../src/core/interfaces.js';
@@ -83,10 +83,28 @@ describe('PristineLocal', () => {
     expect('searcher' in client).toBe(false);
   });
 
-  it('indexSourceChunks embeds and writes source chunks synchronously', async () => {
+  it('keeps source-chunk method names as deprecated compatibility aliases', async () => {
+    vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1)]);
+    vi.mocked(deps.embedder.embed).mockResolvedValueOnce(vector(1));
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    const chunks = await client.indexSourceChunks(
+    await expect(
+      client.indexSourceChunks([{ text: 'legacy alias memory', chunkId: 'legacy' }], {
+        projectId: 'project-a',
+      }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      client.searchSourceChunks('legacy alias', { projectId: 'project-a', limit: 1 }),
+    ).resolves.toHaveLength(1);
+    expect(client.deleteSourceChunks(['legacy'], { projectId: 'project-a' })).toEqual({
+      deletedCount: 1,
+    });
+  });
+
+  it('store embeds and writes source chunks synchronously', async () => {
+    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+
+    const chunks = await client.store(
       [
         {
           text: 'source pointer architecture cleanup',
@@ -124,16 +142,16 @@ describe('PristineLocal', () => {
     ).toEqual({ project_id: 'project-a', chunk_id: 'chunk-1' });
   });
 
-  it('indexSourceChunks replaces duplicate chunk ids within a project and isolates projects', async () => {
+  it('store replaces duplicate chunk ids within a project and isolates projects', async () => {
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks([{ text: 'before', chunkId: 'stable' }], {
+    await client.store([{ text: 'before', chunkId: 'stable' }], {
       projectId: 'project-a',
     });
-    await client.indexSourceChunks([{ text: 'after', chunkId: 'stable' }], {
+    await client.store([{ text: 'after', chunkId: 'stable' }], {
       projectId: 'project-a',
     });
-    await client.indexSourceChunks([{ text: 'other project', chunkId: 'stable' }], {
+    await client.store([{ text: 'other project', chunkId: 'stable' }], {
       projectId: 'project-b',
     });
 
@@ -156,17 +174,17 @@ describe('PristineLocal', () => {
     ).toEqual([{ project_id: 'project-a', chunk_id: 'stable' }]);
   });
 
-  it('indexSourceChunks validates before embedding and rolls back the whole batch on vector failure', async () => {
+  it('store validates before embedding and rolls back the whole batch on vector failure', async () => {
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
     await expect(
-      client.indexSourceChunks([{ text: '   ', chunkId: 'invalid' }], { projectId: 'project-a' }),
+      client.store([{ text: '   ', chunkId: 'invalid' }], { projectId: 'project-a' }),
     ).rejects.toThrow(InvalidArgumentError);
     expect(deps.embedder.embedBatch).not.toHaveBeenCalled();
 
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(0.1), [0.1]]);
     await expect(
-      client.indexSourceChunks(
+      client.store(
         [
           { text: 'valid before failure', chunkId: 'batch-1' },
           { text: 'invalid vector', chunkId: 'batch-2' },
@@ -177,13 +195,13 @@ describe('PristineLocal', () => {
     expectSourceIndexRowCounts(deps.db, 0);
   });
 
-  it('indexSourceChunks does not write source or vector rows when embedBatch rejects', async () => {
+  it('store does not write source or vector rows when embedBatch rejects', async () => {
     const embedderFailure = new Error('embedder unavailable');
     vi.mocked(deps.embedder.embedBatch).mockRejectedValueOnce(embedderFailure);
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
     await expect(
-      client.indexSourceChunks(
+      client.store(
         [
           { text: 'first valid chunk', chunkId: 'embed-fail-1' },
           { text: 'second valid chunk', chunkId: 'embed-fail-2' },
@@ -194,12 +212,12 @@ describe('PristineLocal', () => {
     expectSourceIndexRowCounts(deps.db, 0);
   });
 
-  it('indexSourceChunks rejects embedBatch count mismatches before writing rows', async () => {
+  it('store rejects embedBatch count mismatches before writing rows', async () => {
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1)]);
     await expect(
-      client.indexSourceChunks(
+      client.store(
         [
           { text: 'first count mismatch', chunkId: 'count-mismatch-1' },
           { text: 'second count mismatch', chunkId: 'count-mismatch-2' },
@@ -211,7 +229,7 @@ describe('PristineLocal', () => {
 
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1), vector(2), vector(3)]);
     await expect(
-      client.indexSourceChunks(
+      client.store(
         [
           { text: 'first extra embedding', chunkId: 'extra-embedding-1' },
           { text: 'second extra embedding', chunkId: 'extra-embedding-2' },
@@ -222,7 +240,7 @@ describe('PristineLocal', () => {
     expectSourceIndexRowCounts(deps.db, 0);
   });
 
-  it('indexSourceChunks rejects invalid IDs and pointer fields before embedding', async () => {
+  it('store rejects invalid IDs and pointer fields before embedding', async () => {
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
     const invalidInputs = [
       { text: 'empty chunk id', chunkId: '' },
@@ -236,7 +254,7 @@ describe('PristineLocal', () => {
 
     for (const input of invalidInputs) {
       await expect(
-        client.indexSourceChunks([input as unknown as { text: string }], {
+        client.store([input as unknown as { text: string }], {
           projectId: 'project-a',
         }),
       ).rejects.toThrow(InvalidArgumentError);
@@ -245,7 +263,7 @@ describe('PristineLocal', () => {
     expectSourceIndexRowCounts(deps.db, 0);
   });
 
-  it('indexSourceChunks rejects malformed Ollama payloads without source-index writes', async () => {
+  it('store rejects malformed Ollama payloads without source-index writes', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi
       .fn()
@@ -259,7 +277,7 @@ describe('PristineLocal', () => {
       });
 
       await expect(
-        client.indexSourceChunks([{ text: 'malformed ollama payload', chunkId: 'ollama-bad' }], {
+        client.store([{ text: 'malformed ollama payload', chunkId: 'ollama-bad' }], {
           projectId: 'project-a',
         }),
       ).rejects.toThrow(EmbedderError);
@@ -269,37 +287,31 @@ describe('PristineLocal', () => {
     }
   });
 
-  it('deleteSourceChunks removes stale chunks and vectors within a project', async () => {
+  it('forget removes stale chunks and vectors within a project', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValue([vector(1)]);
     vi.mocked(deps.embedder.embed).mockResolvedValue(vector(1));
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks([{ text: 'delete stale pointer', chunkId: 'stale' }], {
+    await client.store([{ text: 'delete stale pointer', chunkId: 'stale' }], {
       projectId: 'project-a',
     });
-    await client.indexSourceChunks([{ text: 'keep pointer', chunkId: 'stale' }], {
+    await client.store([{ text: 'keep pointer', chunkId: 'stale' }], {
       projectId: 'project-b',
     });
 
-    expect(client.deleteSourceChunks(['stale'], { projectId: 'project-a' })).toEqual({
+    expect(client.forget(['stale'], { projectId: 'project-a' })).toEqual({
       deletedCount: 1,
     });
-    await expect(client.searchSourceChunks('stale', { projectId: 'project-a' })).resolves.toEqual(
-      [],
-    );
-    await expect(
-      client.searchSourceChunks('stale', { projectId: 'project-b' }),
-    ).resolves.toHaveLength(1);
-    expect(() => client.deleteSourceChunks([], { projectId: 'project-a' })).toThrow(
-      InvalidArgumentError,
-    );
+    await expect(client.recall('stale', { projectId: 'project-a' })).resolves.toEqual([]);
+    await expect(client.recall('stale', { projectId: 'project-b' })).resolves.toHaveLength(1);
+    expect(() => client.forget([], { projectId: 'project-a' })).toThrow(InvalidArgumentError);
   });
 
-  it('deleteSourceChunks reports nonexistent and mixed IDs without mutating invalid calls', async () => {
+  it('forget reports nonexistent and mixed IDs without mutating invalid calls', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValue([vector(1), vector(2)]);
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks(
+    await client.store(
       [
         { text: 'delete edge first', chunkId: 'delete-1' },
         { text: 'delete edge second', chunkId: 'delete-2' },
@@ -308,26 +320,26 @@ describe('PristineLocal', () => {
     );
     expectSourceIndexRowCounts(deps.db, 2);
 
-    expect(client.deleteSourceChunks(['missing'], { projectId: 'project-a' })).toEqual({
+    expect(client.forget(['missing'], { projectId: 'project-a' })).toEqual({
       deletedCount: 0,
     });
     expectSourceIndexRowCounts(deps.db, 2);
 
-    expect(client.deleteSourceChunks(['delete-1', 'missing'], { projectId: 'project-a' })).toEqual({
+    expect(client.forget(['delete-1', 'missing'], { projectId: 'project-a' })).toEqual({
       deletedCount: 1,
     });
     expectSourceIndexRowCounts(deps.db, 1);
 
-    const invalidDeletes: Array<() => DeleteSourceChunksResult> = [
+    const invalidDeletes: Array<() => ForgetResult> = [
       () =>
-        client.deleteSourceChunks('delete-2' as unknown as readonly string[], {
+        client.forget('delete-2' as unknown as readonly string[], {
           projectId: 'project-a',
         }),
-      () => client.deleteSourceChunks([42 as unknown as string], { projectId: 'project-a' }),
-      () => client.deleteSourceChunks([''], { projectId: 'project-a' }),
-      () => client.deleteSourceChunks(['delete-2'], null as unknown as { projectId: string }),
-      () => client.deleteSourceChunks(['delete-2'], [] as unknown as { projectId: string }),
-      () => client.deleteSourceChunks(['delete-2'], { projectId: '' }),
+      () => client.forget([42 as unknown as string], { projectId: 'project-a' }),
+      () => client.forget([''], { projectId: 'project-a' }),
+      () => client.forget(['delete-2'], null as unknown as { projectId: string }),
+      () => client.forget(['delete-2'], [] as unknown as { projectId: string }),
+      () => client.forget(['delete-2'], { projectId: '' }),
     ];
 
     for (const invalidDelete of invalidDeletes) {
@@ -336,7 +348,7 @@ describe('PristineLocal', () => {
     }
   });
 
-  it('searchSourceChunks returns source pointer hits with full and minimal metadata', async () => {
+  it('recall returns source pointer hits with full and minimal metadata', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([
       vector(1),
       vector(0, 1),
@@ -345,7 +357,7 @@ describe('PristineLocal', () => {
     vi.mocked(deps.embedder.embed).mockResolvedValueOnce(vector(1));
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks(
+    await client.store(
       [
         {
           text: 'pi source pointer hit',
@@ -366,7 +378,7 @@ describe('PristineLocal', () => {
       { projectId: 'project-a' },
     );
 
-    const hits = await client.searchSourceChunks('pointer', { projectId: 'project-a', limit: 3 });
+    const hits = await client.recall('pointer', { projectId: 'project-a', limit: 3 });
 
     expect(hits.map((hit) => hit.chunkId)).toEqual(['full-pointer', 'minimal', 'other']);
     expect(hits[0]).toMatchObject({
@@ -396,12 +408,12 @@ describe('PristineLocal', () => {
     expect(hits.every((hit) => hit.score > 0 && hit.score <= 1)).toBe(true);
   });
 
-  it('indexSourceChunks generates unique searchable IDs for minimal chunks', async () => {
+  it('store generates unique searchable IDs for minimal chunks', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1), vector(0.5)]);
     vi.mocked(deps.embedder.embed).mockResolvedValueOnce(vector(1));
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    const indexed = await client.indexSourceChunks(
+    const indexed = await client.store(
       [{ text: 'generated id first' }, { text: 'generated id second' }],
       { projectId: 'project-a' },
     );
@@ -412,49 +424,47 @@ describe('PristineLocal', () => {
     expect(chunkIds.every((chunkId) => chunkId.length > 0)).toBe(true);
     expectSourceIndexRowCounts(deps.db, 2);
     await expect(
-      client.searchSourceChunks('generated id', { projectId: 'project-a', limit: 2 }),
+      client.recall('generated id', { projectId: 'project-a', limit: 2 }),
     ).resolves.toHaveLength(2);
   });
 
-  it('searchSourceChunks enforces project isolation and validates arguments', async () => {
+  it('recall enforces project isolation and validates arguments', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValue([vector(1)]);
     vi.mocked(deps.embedder.embed).mockResolvedValue(vector(1));
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks([{ text: 'project scoped', chunkId: 'scoped' }], {
+    await client.store([{ text: 'project scoped', chunkId: 'scoped' }], {
       projectId: 'project-a',
     });
 
-    await expect(client.searchSourceChunks('', { projectId: 'project-a' })).rejects.toThrow(
+    await expect(client.recall('', { projectId: 'project-a' })).rejects.toThrow(
       InvalidArgumentError,
     );
-    await expect(client.searchSourceChunks('x', { projectId: '', limit: 1 })).rejects.toThrow(
+    await expect(client.recall('x', { projectId: '', limit: 1 })).rejects.toThrow(
       InvalidArgumentError,
     );
     expect(deps.embedder.embed).toHaveBeenCalledTimes(0);
+    await expect(client.recall('x', { projectId: 'project-a', limit: 0 })).rejects.toThrow(
+      InvalidArgumentError,
+    );
     await expect(
-      client.searchSourceChunks('x', { projectId: 'project-a', limit: 0 }),
+      client.recall('x', { projectId: 'project-a', limit: null } as never),
     ).rejects.toThrow(InvalidArgumentError);
-    await expect(
-      client.searchSourceChunks('x', { projectId: 'project-a', limit: null } as never),
-    ).rejects.toThrow(InvalidArgumentError);
-    await expect(
-      client.searchSourceChunks('x', { projectId: 'project-a', limit: 1001 }),
-    ).rejects.toThrow(InvalidArgumentError);
-    await expect(client.searchSourceChunks('x', { projectId: 'project-b' })).resolves.toEqual([]);
-    await expect(
-      client.searchSourceChunks('x', { projectId: 'project-a', limit: 1 }),
-    ).resolves.toHaveLength(1);
+    await expect(client.recall('x', { projectId: 'project-a', limit: 1001 })).rejects.toThrow(
+      InvalidArgumentError,
+    );
+    await expect(client.recall('x', { projectId: 'project-b' })).resolves.toEqual([]);
+    await expect(client.recall('x', { projectId: 'project-a', limit: 1 })).resolves.toHaveLength(1);
   });
 
-  it('searchSourceChunks trims queries and defaults to a limit of 10', async () => {
+  it('recall trims queries and defaults to a limit of 10', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValue(
       Array.from({ length: 12 }, (_, index) => vector(index + 1)),
     );
     vi.mocked(deps.embedder.embed).mockResolvedValue(vector(1));
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks(
+    await client.store(
       Array.from({ length: 12 }, (_, index) => ({
         text: `default limit chunk ${index}`,
         chunkId: `default-limit-${index}`,
@@ -462,24 +472,24 @@ describe('PristineLocal', () => {
       { projectId: 'project-a' },
     );
 
-    const hits = await client.searchSourceChunks('  default limit  ', { projectId: 'project-a' });
+    const hits = await client.recall('  default limit  ', { projectId: 'project-a' });
 
     expect(deps.embedder.embed).toHaveBeenCalledWith('default limit');
     expect(hits).toHaveLength(10);
   });
 
-  it('searchSourceChunks rejects query embedding dimension mismatches', async () => {
+  it('recall rejects query embedding dimension mismatches', async () => {
     vi.mocked(deps.embedder.embedBatch).mockResolvedValueOnce([vector(1)]);
     vi.mocked(deps.embedder.embed).mockResolvedValueOnce([1]);
     const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
 
-    await client.indexSourceChunks([{ text: 'dimension guard', chunkId: 'dim' }], {
+    await client.store([{ text: 'dimension guard', chunkId: 'dim' }], {
       projectId: 'project-a',
     });
 
-    await expect(
-      client.searchSourceChunks('dimension', { projectId: 'project-a' }),
-    ).rejects.toThrow(InvalidArgumentError);
+    await expect(client.recall('dimension', { projectId: 'project-a' })).rejects.toThrow(
+      InvalidArgumentError,
+    );
   });
 
   it('privacy APIs remain available', async () => {

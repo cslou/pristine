@@ -345,7 +345,7 @@ Harness-specific windowing is a reference concern. For Pi, `examples/pi-dev/exte
 client.recall(query: string, opts: { projectId: string; limit?: number }): Promise<RecalledMemory[]>
 ```
 
-Recall options support project scope plus optional source metadata filters when present (for example source kind, source URI, entry ID, timestamp range, or harness-specific metadata fields accepted by the public contract). A recalled memory returns `chunkId`, snippet/indexed text preview, score/rank, and optional source pointer fields. It never requires `conversationId`, `messageIds`, or raw-message joins.
+Recall options currently support project scope and an optional result limit. A recalled memory returns `chunkId`, snippet/indexed text preview, score/rank, and optional source pointer fields. It never requires `conversationId`, `messageIds`, or raw-message joins. Source metadata filters are a future extension unless added through a typed public API change.
 
 FTS, hybrid, session-vector, and SQL retrieval from the raw-conversation design are not target primitives unless adapted to source chunks in a later reviewed design. The default Sprint 023 cleanup removes them when they depend on `conversations`, `messages`, `messages_fts`, `vec_sessions`, or raw transcript public views.
 

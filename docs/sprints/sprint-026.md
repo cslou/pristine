@@ -142,16 +142,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** new SDK user, **I want** README and integration docs to teach `store`, `recall`, and `forget`, **so that** I start with the canonical memory primitives and understand that source-pointer semantics still apply.
 - **Dependencies:** Stories 1 and 2
 - **Acceptance criteria:**
-  - [ ] `README.md` quickstart, public documentation map, Core API headings, source-memory cleanup text, and removed-API note use `store`, `recall`, and `forget` as the canonical memory primitive names.
-  - [ ] `README.md` includes a short compatibility note that `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` are deprecated aliases during the transition, if those aliases remain in code.
-  - [ ] `docs/agent-integration.md` describes host integrations in terms of `PristineLocal.store()`, `recall()`, and `forget()`.
-  - [ ] `docs/specs/implementation-spec-005.md` §0.3/§5.1 and relevant target-architecture references name the core SDK primitives as `store`, `recall`, and `forget` while preserving the explanation that inputs/results are source-owned chunks and pointers.
+  - [x] `README.md` quickstart, public documentation map, Core API headings, source-memory cleanup text, and removed-API note use `store`, `recall`, and `forget` as the canonical memory primitive names. Evidence: README updated; docs verification passed.
+  - [x] `README.md` includes a short compatibility note that `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` are deprecated aliases during the transition, if those aliases remain in code. Evidence: compatibility note added under Core API.
+  - [x] `docs/agent-integration.md` describes host integrations in terms of `PristineLocal.store()`, `recall()`, and `forget()`. Evidence: document updated; docs verification passed.
+  - [x] `docs/specs/implementation-spec-005.md` §0.3/§5.1 and relevant target-architecture references name the core SDK primitives as `store`, `recall`, and `forget` while preserving the explanation that inputs/results are source-owned chunks and pointers. Evidence: spec updated; stale-name grep limited to README compatibility note.
 - **Functional verification:**
-  - [ ] Run `npm run verify:docs` and confirm README snippets, package import snippets, and local links remain valid.
-  - [ ] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks" README.md docs/agent-integration.md docs/specs/implementation-spec-005.md` and confirm any remaining hits are intentional deprecated-alias or historical-context references.
+  - [x] Run `npm run verify:docs` and confirm README snippets, package import snippets, and local links remain valid. Evidence: passed.
+  - [x] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks" README.md docs/agent-integration.md docs/specs/implementation-spec-005.md` and confirm any remaining hits are intentional deprecated-alias or historical-context references. Evidence: one remaining README compatibility-note hit, intentional.
 - **Regression verification:**
-  - [ ] Run `npm run test:smoke` and confirm documentation/API naming changes did not break package smoke behavior.
-  - [ ] Run `npm run typecheck` and confirm doc/spec edits did not accompany broken public API types.
+  - [x] Run `npm run test:smoke` and confirm documentation/API naming changes did not break package smoke behavior. Evidence: passed, 5 smoke tests.
+  - [x] Run `npm run typecheck` and confirm doc/spec edits did not accompany broken public API types. Evidence: passed.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: rename memory primitives in public docs`

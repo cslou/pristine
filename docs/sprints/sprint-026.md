@@ -267,3 +267,68 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
+
+
+## Final Review
+
+**Mergeability:** 5/5
+
+## Sprint objective + accomplishments
+
+**Objective:** Rename the public memory primitives to `store`, `recall`, and `forget` across the SDK, docs, tests, and examples while preserving source-pointer semantics and proving full regression passes.
+
+**What was accomplished:**
+- **Story 1 — Canonical Memory Verb Methods** — Added `PristineLocal.store`, `recall`, and `forget` as the canonical source-memory verbs while keeping `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` as deprecated compatibility aliases. Source-memory tests were split into focused modules and preserve validation-before-embedding, project/limit guards, replacement, delete, and compatibility coverage.
+- **Story 2 — Public API Type & Smoke Coverage** — Updated public smoke/config/integration coverage to exercise `store`, `recall`, and `forget` through source, dist/package, configured-dimension, and real-local-embedder paths. Public type fixtures now cover canonical types and deprecated compatibility types.
+- **Story 3 — Public Docs & Spec Naming Migration** — Updated README, agent integration docs, and implementation spec sections so public onboarding and architecture references teach `store`, `recall`, and `forget` while retaining explicit source-pointer semantics.
+- **Story 4 — Reference Example Audit & Alignment** — Audited Pi examples and example tests for stale old method names. No example code/docs directly used the renamed SDK methods, Pi tool names remained unchanged, and example tests stayed green.
+- **Story 5 — Stale Name Guard & Migration Audit** — Ran a repo-wide stale-name audit and categorized every remaining old-name reference as compatibility alias, compatibility test, deprecated-alias doc, current sprint planning/evidence, or immutable historical sprint record. Deprecated type exports are now clearly grouped as compatibility exports.
+- **Final Story — Sprint Verification & Completion** — Ran all recorded story verification plus the full regression tier. Full regression passed with lint, typecheck, unit, build, smoke, deterministic integration, e2e, full real-model integration, and source-index real-model smoke all green.
+
+## Verification delta
+
+| Verification type | Before sprint | Added this sprint | Removed | Pending / not yet run | After sprint | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| Unit | 0 | +6 | 0 | 0 | 6 | Source-memory verb unit coverage, compatibility alias coverage, configured-dimension coverage, examples audit tests, and stale-name audit unit regression. |
+| Integration / contract | 0 | +1 | 0 | 0 | 1 | Real local embedder source-index integration now exercises `store`/`recall`; full integration passed. |
+| E2E / smoke | 0 | +2 | 0 | 0 | 2 | Public API smoke and package-entrypoint smoke now exercise canonical memory verbs; source-index real-model smoke passed in full regression. |
+| Simulator / device | 0 | +0 | 0 | 0 | 0 | Not applicable for this Node SDK sprint. |
+| AI / model evals | 0 | +0 | 0 | 0 | 0 | No LLM/judge evals added; real local embedding integration is counted under Integration / contract. |
+| Static / local checks | 0 | +7 | 0 | 0 | 7 | Public type fixture, docs verification, stale-name greps, lint/typecheck/build, and full regression gate. |
+| Performance / load | 0 | +0 | 0 | 0 | 0 | No performance/load behavior changed. |
+| Security / dependency | 0 | +0 | 0 | 0 | 0 | No dependency or security-policy changes. |
+| Accessibility / visual | 0 | +0 | 0 | 0 | 0 | Not applicable for this SDK sprint. |
+| Manual-only | 0 | +0 | 0 | 0 | 0 | No manual-only verification required. |
+| Other verification | 0 | +0 | 0 | 0 | 0 | No uncategorized verification used. |
+| **Total** | **0** | **+16** | **0** | **0** | **16** |  |
+
+Counting basis: sprint-specific verification checklist rows and verification surfaces added or materially changed by Sprint 026, not total repository test cases. Zero-count rows are included for every canonical verification type.
+Regression summary: 0 existing regression verifications pending/not yet run; full regression tier ran 9/9 configured checks with 0 skipped/not configured checks.
+
+## Why ready
+- All Story 1–5 acceptance criteria are checked with implementation evidence in `docs/sprints/sprint-026.md`.
+- All sprint functional verification items are checked; new/changed coverage includes focused source-memory unit tests, public type fixture coverage, public smoke/package-entrypoint smoke, docs verification, examples audit, and stale-name audit.
+- Full regression passed: `.checks/regression.sh --tier=full` reported green, regression score 5/5, 9/9 checks passed.
+- Story PRs #215–#219 each ran Pi review/review-fix gates and merged into `sprint-026`; Final Verification Story PR will run the same gates before merge.
+
+## Open for your decision
+- None — fully automated verification.
+
+## Delivered
+
+| Story | Item | Status | Evidence |
+|---|---|---|---|
+| Story 1 — Canonical Memory Verb Methods | `store`, `recall`, and `forget` added with deprecated compatibility aliases | ✅ | `src/client.ts`, `src/index.ts`, PR #215 |
+| Story 1 — Canonical Memory Verb Methods | Source-memory unit and compatibility coverage | ✅ | `tests/client/source-memory-*.test.ts`, `npm run test:unit -- tests/client.test.ts tests/client/` |
+| Story 2 — Public API Type & Smoke Coverage | Public type/smoke/config/integration tests use canonical verbs | ✅ | `tests/smoke/*`, `tests/client-config-dim.test.ts`, `tests/integration/embedder.test.ts`, PR #216 |
+| Story 3 — Public Docs & Spec Naming Migration | README, agent integration doc, and spec use canonical primitive names | ✅ | `README.md`, `docs/agent-integration.md`, `docs/specs/implementation-spec-005.md`, PR #217 |
+| Story 4 — Reference Example Audit & Alignment | Examples contain no stale old public method names | ✅ | `rg` zero hits under `examples tests/examples/pi-dev`, PR #218 |
+| Story 5 — Stale Name Guard & Migration Audit | Repo-wide stale old-name references categorized and compatibility types clarified | ✅ | `src/index.ts`, `tests/smoke/public-api-types-fixture.mts`, PR #219 |
+| Final Story — Sprint Verification & Completion | Full regression passed | ✅ | `.checks/regression.sh --tier=full` — 9/9 checks passed, regression score 5/5 |
+
+## Drift from spec
+- The implementation spec was intentionally updated to make `store`, `recall`, and `forget` the canonical public primitive names while retaining source-pointer semantics.
+- No runtime architecture drift: source-owned chunks/pointers, local embeddings, project scoping, and privacy APIs remain unchanged.
+
+## New Dependencies
+- None

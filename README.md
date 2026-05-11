@@ -20,7 +20,7 @@ import { PristineLocal } from '@pristine/shield-local';
 const client = await PristineLocal.create();
 
 try {
-  await client.indexSourceChunks(
+  await client.store(
     [
       {
         text: 'Pi JSONL source pointer architecture cleanup notes',
@@ -34,7 +34,7 @@ try {
     { projectId: 'my-project' },
   );
 
-  const hits = await client.searchSourceChunks('source pointer cleanup', {
+  const hits = await client.recall('source pointer cleanup', {
     projectId: 'my-project',
     limit: 5,
   });
@@ -51,7 +51,7 @@ try {
   //   ...
   // }
 
-  await client.deleteSourceChunks(['session-1:line-42'], { projectId: 'my-project' });
+  await client.forget(['session-1:line-42'], { projectId: 'my-project' });
 } catch (error: unknown) {
   // AppError subclasses from Pristine include validation, config, and embedder failures.
   // Unknown errors should still be logged/handled by your application boundary.
@@ -64,7 +64,7 @@ try {
 
 ## Public documentation map
 
-- **Core SDK primitives:** `PristineLocal.create`, `indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`, `secureAndRedact`, `reveal`, and `scrubOutput` are the supported public package surface.
+- **Core SDK primitives:** `PristineLocal.create`, `store`, `recall`, `forget`, `secureAndRedact`, `reveal`, and `scrubOutput` are the supported public package surface.
 - **Reference implementations:** [`examples/`](examples/) includes `pi-dev`, one Pi JSONL integration built from the primitives. It is not required for normal SDK use.
 - **Historical design notes:** `docs/specs/` and `docs/sprints/` preserve planning context and may mention APIs removed before the current package surface; use this README as the public onboarding contract.
 
@@ -84,9 +84,9 @@ Creates a local client. Omit config to use the default local SQLite database and
 
 If both `db` and `embedder` are injected, Pristine skips `initPristine()` and does not create the default data/config directories. Keys still default to `~/.pristine/keys` unless `keysDir` is provided.
 
-### `indexSourceChunks(chunks, { projectId })`
+### `store(chunks, { projectId })`
 
-Indexes source-owned chunks. `text` is required; all source metadata is optional. Duplicate `(projectId, chunkId)` values replace the existing chunk and vector atomically. If `chunkId` is omitted, Pristine generates one.
+Stores source-owned chunks in the local semantic index. `text` is required; all source metadata is optional. Duplicate `(projectId, chunkId)` values replace the existing chunk and vector atomically. If `chunkId` is omitted, Pristine generates one.
 
 Validation highlights:
 
@@ -95,13 +95,15 @@ Validation highlights:
 - `metadata`, when provided, must be a JSON-serializable object up to 16 KiB.
 - Embeddings must match the configured embedder dimension.
 
-### `searchSourceChunks(query, { projectId, limit? })`
+### `recall(query, { projectId, limit? })`
 
 Runs vector search over indexed chunks and returns pointer-oriented hits. Results include `chunkId`, indexed text, score, nullable source fields, and metadata. Search is project-scoped and does not require raw conversation/message tables.
 
 `limit` defaults to `10` and must be a positive integer no greater than `1000`.
 
-### `deleteSourceChunks(chunkIds, { projectId })`
+Compatibility note: `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` remain available as deprecated aliases for the current transition; new code should use `store`, `recall`, and `forget`.
+
+### `forget(chunkIds, { projectId })`
 
 Deletes source chunks and their vector rows atomically within one project. Use this when the authoritative source system deletes, truncates, rotates, or supersedes records so Pristine does not return stale pointers/snippets. `chunkIds` must be a non-empty string array.
 
@@ -292,7 +294,7 @@ Pristine no longer exposes the previous raw-transcript ownership surface. These 
 - FTS, hybrid, and session-vector search APIs
 - ingest queue and embed-worker APIs
 
-Use `indexSourceChunks`, `searchSourceChunks`, and `deleteSourceChunks` against source-owned records instead.
+Use `store`, `recall`, and `forget` against source-owned records instead.
 
 ## Development and verification
 

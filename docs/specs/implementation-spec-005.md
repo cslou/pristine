@@ -55,7 +55,7 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 
 | Layer | Example |
 |---|---|
-| **Primitive** (core SDK) | `indexer.indexSourceChunks(chunks)` |
+| **Primitive** (core SDK) | `client.store(chunks)` |
 | **Reference** | Pi JSONL `jsonl-index` extension that feeds active-session snippets/windows |
 | **Primitive** | `searcher.vectorSearch(query, filters)` returning chunk IDs, snippets, scores, and source pointers |
 | **Reference** (documented example, replaceable) | `pristine_vector_search` / `search_memory` tool that wraps vector search for agent tool-use |
@@ -308,8 +308,9 @@ Primitives live in `src/`. Anything that wraps them for a specific host environm
 #### 5.1.1 Source-index storage
 
 ```
-indexer.indexSourceChunks(chunks: SourceChunkInput[], opts: { projectId: string }): Promise<IndexResult>
-indexer.deleteSourceChunks(selector: ChunkSelector, opts: { projectId: string }): Promise<DeleteResult>
+client.store(chunks: SourceChunkInput[], opts: { projectId: string }): Promise<StoredMemory[]>
+client.recall(query: string, opts: { projectId: string; limit?: number }): Promise<RecalledMemory[]>
+client.forget(chunkIds: string[], opts: { projectId: string }): Promise<ForgetResult>
 ```
 
 Source chunks are the storage contract. A chunk has required non-empty `text`, a generated or caller-supplied `chunkId`, an embedding, and optional source pointer fields. Pristine persists indexed text/snippet and pointer metadata, not raw conversation/thread/message ownership. Project scoping is required on all queries; the projectId source (git root vs. workspace dir vs. config) is discussed in §6.
@@ -393,7 +394,7 @@ This reference intentionally does not mirror raw Pi transcripts into a Pristine 
 
 - **`search_memory` / `pristine_vector_search` tool** — JSON-schema tool wrapper for Claude / Cursor / Pi / any tool-calling agent. Composes source-chunk vector search and formats snippets plus source pointers.
 - **Source-inspection helper or skill** — given a returned pointer, reads bounded context from the authoritative harness store (for example Pi JSONL via `search-session-history`).
-- **Harness indexing hook** — feeds source chunks into `indexSourceChunks` on a harness-specific event such as `agent_end`, session close, file save, or explicit user command.
+- **Harness indexing hook** — feeds source chunks into `store` on a harness-specific event such as `agent_end`, session close, file save, or explicit user command.
 - **`MEMORY.md` maintainer** — optional reference that writes timestamped summaries to a project-scoped markdown file or indexes summary text as source chunks with file pointers.
 - **Session-summary generator** — optional reference that calls a host LLM and then writes to a harness-owned source store or indexes generated summary chunks. LLM, prompt, and schema are consumer opinions.
 

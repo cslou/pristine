@@ -65,7 +65,7 @@ try {
 ## Public documentation map
 
 - **Core SDK primitives:** `PristineLocal.create`, `indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`, `secureAndRedact`, `reveal`, and `scrubOutput` are the supported public package surface.
-- **Reference implementations:** `examples/pi-dev/` shows one Pi JSONL integration built from the primitives. It is not required for normal SDK use.
+- **Reference implementations:** [`examples/`](examples/) includes `pi-dev`, one Pi JSONL integration built from the primitives. It is not required for normal SDK use.
 - **Historical design notes:** `docs/specs/` and `docs/sprints/` preserve planning context and may mention APIs removed before the current package surface; use this README as the public onboarding contract.
 
 ## Core API

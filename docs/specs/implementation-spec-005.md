@@ -64,7 +64,7 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 
 The previous raw-transcript primitives — `indexer.ingest(turns)`, `storeAsync(conversation)`, `buildSessionVector(conversationId)`, `searcher.ftsSearch`, `searcher.hybridSearch`, `searcher.sessionVectorSearch`, and `searcher.sql(rawSql, opts?)` over `messages_public` / `conversations_public` — are not part of the target architecture unless explicitly reintroduced over source-index tables. Sprint 023 removes the current `searcher.sql(...)` raw-transcript read primitive rather than preserving a SQL surface that implies Pristine owns conversations/messages. A future source-index-only SQL debug primitive may be designed later, but it must not expose harness-owned raw context.
 
-Reference implementations live in `examples/<harness>/<tool>/` (or as separately-versioned `@pristine/<harness>-<tool>` packages); see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). Each opens with: *"This is one way to use Pristine primitives. You can write your own."*
+Reference implementations live in `examples/<harness>/<artifact-type>/<tool>/` (or as separately-versioned `@pristine/<harness>-<tool>` packages); see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md). Each human-facing installable artifact README opens with: *"This is one way to use Pristine primitives. You can write your own."*
 
 This principle has teeth: if a feature requires an opinion (a file format, a hook matcher, a prompt shape, a tool schema), it is not a primitive. It is either a reference implementation or out of scope. Pristine may choose to ship any given reference or none; consumers are never blocked by the absence of one.
 
@@ -303,7 +303,7 @@ This section splits into primitives (what the core SDK exposes) and reference im
 
 ### 5.1 Core SDK primitives
 
-Primitives live in `src/`. Anything that wraps them for a specific host environment (a tool-calling agent, a harness hook, a CLI) is a **reference implementation**, not a primitive — see §5.2 for the layout convention (`examples/<harness>/<tool>/` source dirs, `@pristine/<harness>-<tool>` published packages).
+Primitives live in `src/`. Anything that wraps them for a specific host environment (a tool-calling agent, a harness hook, a CLI) is a **reference implementation**, not a primitive — see §5.2 for the layout convention (`examples/<harness>/<artifact-type>/<tool>/` source dirs, `@pristine/<harness>-<tool>` published packages).
 
 #### 5.1.1 Source-index storage
 
@@ -336,7 +336,7 @@ interface SourceChunkInput {
 
 Indexing embeds each chunk and writes text/snippet, vector, and metadata atomically. Project scope is required at the indexing call boundary (`opts.projectId`) but is not source metadata; minimal metadata still means a chunk can provide only non-empty `text` and receive a generated chunk ID. The primitive must support three metadata levels: full pointer metadata, partial metadata, and text-only indexing with a generated chunk ID. Stable source-pointer duplicate/replacement behavior is part of the primitive contract and must be deterministic: indexing the same stable source pointer can either replace the existing row or follow documented duplicate behavior, but tests must pin the choice.
 
-Harness-specific windowing is a reference concern. For Pi, `examples/pi-dev/jsonl-index/` indexes active-session JSONL user/assistant snippets/windows with Pi source pointers. Another harness may index message windows, file sections, log entries, or summaries, but Pristine's core API sees all of them as source chunks.
+Harness-specific windowing is a reference concern. For Pi, `examples/pi-dev/extensions/jsonl-index/` indexes active-session JSONL user/assistant snippets/windows with Pi source pointers. Another harness may index message windows, file sections, log entries, or summaries, but Pristine's core API sees all of them as source chunks.
 
 #### 5.1.3 Retrieval
 
@@ -363,10 +363,10 @@ The canonical layout convention lives at [`docs/conventions/reference-implementa
 
 Each reference lives **outside `src/`** so it is structurally distinct from the SDK primitives it composes. Two artifact shapes are supported:
 
-1. **Source-tree examples (initial form):** `examples/<harness>/<tool>/` — one directory per `(harness, tool)` pair. The `<harness>` segment names the host environment the reference targets (`pi-dev`, `claude-code`, `cursor`, ...). The `<tool>` segment names the reference itself (`search-memory`, `query-memory`, `session-start-hook`, `post-tool-use-ingest`, ...). Source examples are the entry shape — fastest to iterate, easiest to fork.
+1. **Source-tree examples (initial form):** `examples/<harness>/<artifact-type>/<tool>/` — one directory per installable reference artifact. The `<harness>` segment names the host environment the reference targets (`pi-dev`, `claude-code`, `cursor`, ...). The `<artifact-type>` segment names the host artifact category users recognize (`extensions`, `skills`, `hooks`, `commands`, ...). The `<tool>` segment names the reference itself (`search-memory`, `query-memory`, `session-start-hook`, `post-tool-use-ingest`, ...). Source examples are the entry shape — fastest to iterate, easiest to fork.
 2. **Published adapter packages (mature form):** `@pristine/<harness>-<tool>` — promoted from the source-tree example once the reference stabilises and a downstream consumer wants `npm install` rather than copy-paste. The promotion preserves the `(harness, tool)` axes from the source layout so the package boundary mirrors the directory boundary.
 
-The two shapes coexist: a reference can live as `examples/pi-dev/search-memory/` while still incubating, and graduate to `@pristine/pi-dev-search-memory` once it ships externally. Either way, the **boundary against the primitives is the same**: a reference depends on `@pristine/shield-local` (or its successors) the way any external consumer would, and never reaches into `src/` internals.
+The two shapes coexist: a reference can live as `examples/pi-dev/extensions/search-memory/` while still incubating, and graduate to `@pristine/pi-dev-search-memory` once it ships externally. Either way, the **boundary against the primitives is the same**: a reference depends on `@pristine/shield-local` (or its successors) the way any external consumer would, and never reaches into `src/` internals.
 
 This split mirrors the package convention proposed in PR #153 (Draft `implementation-spec-006.md` §13) for the privacy / tool-wrapper surface (`@pristine/privacy-core` engine + `@pristine/pi-privacy` adapter): primitives are runtime-agnostic; adapters are runtime-specific. The same axis applies to reference search/query tools — they are runtime-specific and never become canon for the SDK.
 
@@ -382,9 +382,9 @@ Each reference opens with *"This is one way to use Pristine primitives. You can 
 
 Sprint 022 adds a source-tree Pi reference under `examples/pi-dev/` before the core source-pointer cleanup. The flow keeps Pi JSONL as the source of truth and uses Pristine as a semantic index over source-owned records:
 
-1. `examples/pi-dev/jsonl-index/` parses the active Pi session JSONL on `agent_end` and `session_start` reconciliation, indexing user/assistant text snippets with `sourceKind: 'pi-jsonl'`, `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd`.
-2. `examples/pi-dev/search-memory/` exposes `pristine_vector_search`, which searches `~/.pi/pristine/pristine.db` (or `PRISTINE_DB_PATH`) and returns ranked hits plus JSONL source pointers.
-3. `examples/pi-dev/search-session-history/` is a Pi skill that uses the returned pointer to inspect bounded user/assistant context directly from the authoritative JSONL file with existing `bash`/`read`/jq tools.
+1. `examples/pi-dev/extensions/jsonl-index/` parses the active Pi session JSONL on `agent_end` and `session_start` reconciliation, indexing user/assistant text snippets with `sourceKind: 'pi-jsonl'`, `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd`.
+2. `examples/pi-dev/extensions/search-memory/` exposes `pristine_vector_search`, which searches `~/.pi/pristine/pristine.db` (or `PRISTINE_DB_PATH`) and returns ranked hits plus JSONL source pointers.
+3. `examples/pi-dev/skills/search-session-history/` is a Pi skill that uses the returned pointer to inspect bounded user/assistant context directly from the authoritative JSONL file with existing `bash`/`read`/jq tools.
 
 This reference intentionally does not mirror raw Pi transcripts into a Pristine conversation store. The evidence from this flow informs the later architecture cleanup that formalizes source-pointer indexing across hosts.
 
@@ -532,7 +532,7 @@ Repos whose patterns informed this architecture. See `docs/analysis/` for the fu
 - **Embedder Layer** (`src/embedder/`) — Nomic Embed v1.5 default via `@huggingface/transformers`; swappable `Embedder` interface
 - **Engine Layer** (`src/engine/`) — LLM clients used only by reference implementations that need an LLM (summary generator, etc.); **not** a core primitive
 - **Privacy Layer** (`src/privacy/`) — unchanged per spec-004 (secret redaction for developer use)
-- **Reference Implementations** (`examples/<harness>/<tool>/` or `@pristine/<harness>-<tool>` packages — see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md)) — `search_memory` tool, `SessionStart` hook for Claude Code, `MEMORY.md` maintainer, session-summary generator, PostToolUse ingestion script
+- **Reference Implementations** (`examples/<harness>/<artifact-type>/<tool>/` or `@pristine/<harness>-<tool>` packages — see [`docs/conventions/reference-implementation-layout.md`](../conventions/reference-implementation-layout.md)) — `search_memory` tool, `SessionStart` hook for Claude Code, `MEMORY.md` maintainer, session-summary generator, PostToolUse ingestion script
 
 ### 5.8 Historical repo structure (prior target)
 

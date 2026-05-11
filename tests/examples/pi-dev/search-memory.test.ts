@@ -7,12 +7,12 @@ import {
   seedPiJsonlIndexDb,
   type PiJsonlIndexSeedMessage,
 } from './helpers/pi-jsonl-index-fixture.js';
-import type { PiJsonlEmbedder } from '../../../examples/pi-dev/search-memory/lib/local-embedder.js';
+import type { PiJsonlEmbedder } from '../../../examples/pi-dev/extensions/search-memory/lib/local-embedder.js';
 import {
   createPristineVectorSearchTool,
   registerSearchMemoryExtension,
-} from '../../../examples/pi-dev/search-memory/index.js';
-import { PristinePiVectorSearcher } from '../../../examples/pi-dev/search-memory/lib/vector-search.js';
+} from '../../../examples/pi-dev/extensions/search-memory/index.js';
+import { PristinePiVectorSearcher } from '../../../examples/pi-dev/extensions/search-memory/lib/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
   public async embed(text: string): Promise<readonly number[]> {

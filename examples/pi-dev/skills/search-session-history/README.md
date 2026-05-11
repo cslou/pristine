@@ -14,7 +14,7 @@ Copy the skill into Pi's repo-local skill discovery path. Install `search-memory
 
 ```bash
 mkdir -p ~/projects/test-pristine/.pi/skills
-rsync -a --delete examples/pi-dev/search-session-history/. ~/projects/test-pristine/.pi/skills/search-session-history/
+rsync -a --delete examples/pi-dev/skills/search-session-history/. ~/projects/test-pristine/.pi/skills/search-session-history/
 ```
 
 ## Reset

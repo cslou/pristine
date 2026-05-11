@@ -11,9 +11,9 @@ This Pi extension indexes the active Pi session JSONL into a local Pristine-comp
 Copy the Pi dev reference into a repo-local `.pi` directory, including shared helpers used by the extension:
 
 ```bash
-mkdir -p .pi/extensions
-rsync -a --delete examples/pi-dev/shared/. .pi/extensions/shared/
-rsync -a --delete examples/pi-dev/jsonl-index/. .pi/extensions/jsonl-index/
+mkdir -p .pi/extensions .pi/shared
+rsync -a --delete examples/pi-dev/shared/. .pi/shared/
+rsync -a --delete examples/pi-dev/extensions/jsonl-index/. .pi/extensions/jsonl-index/
 ```
 
 Install runtime dependencies next to the copied extension:

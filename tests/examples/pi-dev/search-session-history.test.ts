@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
-const skillPath = 'examples/pi-dev/search-session-history/SKILL.md';
+const skillPath = 'examples/pi-dev/skills/search-session-history/SKILL.md';
 
 const visibleContextJq = String.raw`
   def text_blocks($m):

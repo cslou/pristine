@@ -7,7 +7,7 @@ import {
   PI_JSONL_CHUNK_COLUMNS,
   PI_JSONL_CHUNKS_TABLE,
   PI_JSONL_VECTOR_TABLE,
-} from '../../shared/lib/pi-jsonl-index-schema.js';
+} from '../../../shared/lib/pi-jsonl-index-schema.js';
 import type { PiJsonlParsedMessage, PiJsonlSourcePointer } from './pi-jsonl-parser.js';
 import type { PiJsonlEmbedder } from './local-embedder.js';
 

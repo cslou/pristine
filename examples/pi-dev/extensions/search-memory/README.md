@@ -11,8 +11,8 @@ Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/
 Copy this directory into a repo-local `.pi` extension location, then install runtime dependencies:
 
 ```bash
-mkdir -p ~/projects/test-pristine/.pi/extensions
-rsync -a --delete examples/pi-dev/shared/. ~/projects/test-pristine/.pi/extensions/shared/
+mkdir -p ~/projects/test-pristine/.pi/extensions ~/projects/test-pristine/.pi/shared
+rsync -a --delete examples/pi-dev/shared/. ~/projects/test-pristine/.pi/shared/
 rsync -a --delete examples/pi-dev/extensions/search-memory/. ~/projects/test-pristine/.pi/extensions/search-memory/
 cd ~/projects/test-pristine/.pi/extensions/search-memory
 npm install --omit=dev

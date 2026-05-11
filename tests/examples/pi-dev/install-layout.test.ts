@@ -1,0 +1,81 @@
+import { cpSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, extname, join, resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+const repoRoot = resolve(import.meta.dirname, '../../..');
+const piDevRoot = join(repoRoot, 'examples/pi-dev');
+
+const copyReferenceLayout = (targetRoot: string): void => {
+  cpSync(join(piDevRoot, 'shared'), join(targetRoot, '.pi/shared'), { recursive: true });
+  cpSync(
+    join(piDevRoot, 'extensions/jsonl-index'),
+    join(targetRoot, '.pi/extensions/jsonl-index'),
+    {
+      recursive: true,
+    },
+  );
+  cpSync(
+    join(piDevRoot, 'extensions/search-memory'),
+    join(targetRoot, '.pi/extensions/search-memory'),
+    {
+      recursive: true,
+    },
+  );
+  cpSync(
+    join(piDevRoot, 'skills/search-session-history'),
+    join(targetRoot, '.pi/skills/search-session-history'),
+    { recursive: true },
+  );
+};
+
+const relativeImportPattern = /from ['"](\.{1,2}\/[^'"]+)['"]/g;
+
+const resolveTypeScriptImport = (fromFile: string, specifier: string): string => {
+  const basePath = resolve(dirname(fromFile), specifier);
+  const candidates = extname(basePath) === '.js' ? [basePath.replace(/\.js$/, '.ts')] : [basePath];
+  const resolved = candidates.find((candidate) => {
+    try {
+      return statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+  if (resolved === undefined) {
+    throw new Error(`Unable to resolve ${specifier} from ${fromFile}`);
+  }
+  return resolved;
+};
+
+describe('Pi dev reference install layout', () => {
+  it('keeps documented copied extension imports resolvable', () => {
+    const targetRoot = mkdtempSync(join(tmpdir(), 'pristine-pi-dev-install-'));
+    try {
+      copyReferenceLayout(targetRoot);
+      const extensionFiles = [
+        join(targetRoot, '.pi/extensions/jsonl-index/index.ts'),
+        join(targetRoot, '.pi/extensions/jsonl-index/lib/extension-runtime.ts'),
+        join(targetRoot, '.pi/extensions/jsonl-index/lib/local-embedder.ts'),
+        join(targetRoot, '.pi/extensions/jsonl-index/lib/source-index.ts'),
+        join(targetRoot, '.pi/extensions/search-memory/index.ts'),
+        join(targetRoot, '.pi/extensions/search-memory/lib/local-embedder.ts'),
+        join(targetRoot, '.pi/extensions/search-memory/lib/vector-search.ts'),
+      ];
+
+      const resolvedImports = extensionFiles.flatMap((file) => {
+        const source = readFileSync(file, 'utf8');
+        return [...source.matchAll(relativeImportPattern)].map((match) =>
+          resolveTypeScriptImport(file, match[1]),
+        );
+      });
+
+      expect(resolvedImports).toContain(join(targetRoot, '.pi/shared/lib/db-path.ts'));
+      expect(resolvedImports).toContain(
+        join(targetRoot, '.pi/shared/lib/pi-jsonl-index-schema.ts'),
+      );
+    } finally {
+      rmSync(targetRoot, { recursive: true, force: true });
+    }
+  });
+});

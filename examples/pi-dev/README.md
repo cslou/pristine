@@ -15,9 +15,9 @@ Pi artifacts are grouped by the runtime shape users install: extensions live und
 | `examples/pi-dev/extensions/jsonl-index/` | `.pi/extensions/jsonl-index/` | Pi extension | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers. |
 | `examples/pi-dev/extensions/search-memory/` | `.pi/extensions/search-memory/` | Pi extension / custom tool | Registers `pristine_vector_search` for semantic vector search over indexed Pi snippets. |
 | `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
-| `examples/pi-dev/shared/` | `.pi/extensions/shared/` | Shared helper code | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool. |
+| `examples/pi-dev/shared/` | `.pi/shared/` | Shared helper code | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool. |
 
-Pi auto-discovers project-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md` when started from the repo root. `shared` is copied under `.pi/extensions/shared/` only so relative extension imports resolve.
+Pi auto-discovers project-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md` when started from the repo root. `shared` is copied under `.pi/shared/` only so relative extension imports resolve without making shared code look like a Pi extension.
 
 ## What agents should invoke
 
@@ -44,9 +44,9 @@ From the repo where you want Pi memory support, copy the reference artifacts int
 ```bash
 cd /path/to/your/repo
 
-mkdir -p .pi/extensions .pi/skills
+mkdir -p .pi/extensions .pi/skills .pi/shared
 
-rsync -a --delete /path/to/pristine/examples/pi-dev/shared/ .pi/extensions/shared/
+rsync -a --delete /path/to/pristine/examples/pi-dev/shared/ .pi/shared/
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/jsonl-index/ .pi/extensions/jsonl-index/
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/search-memory/ .pi/extensions/search-memory/
 rsync -a --delete /path/to/pristine/examples/pi-dev/skills/search-session-history/ .pi/skills/search-session-history/
@@ -77,7 +77,7 @@ If discovery is disabled or you want explicit settings, add paths like this to t
 }
 ```
 
-Project `.pi/settings.json` paths are relative to the `.pi` directory. Do not add `.pi/extensions/shared` as an extension. It is shared code imported by the extension packages, not a Pi extension entry point.
+Project `.pi/settings.json` paths are relative to the `.pi` directory. Do not add `.pi/shared` as an extension. It is shared code imported by the extension packages, not a Pi extension entry point.
 
 ## Embedding model and Nomic warmup
 
@@ -237,7 +237,7 @@ The chosen v1 ingestion contract is deterministic and active-session scoped:
 ## Install/runtime gotchas
 
 - Pi discovers repo-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md`; copying examples directly under `.pi/<name>` does not load them.
-- Copy `examples/pi-dev/shared/` to `.pi/extensions/shared/` because both extension examples import shared helpers.
+- Copy `examples/pi-dev/shared/` to `.pi/shared/` because both extension examples import shared helpers.
 - Run `npm install --omit=dev` separately in `.pi/extensions/jsonl-index` and `.pi/extensions/search-memory`; each copied extension owns its runtime dependencies.
 - Copied repo-local files are intentionally self-contained and do not import this repository's `src/` internals.
 - `session_start:startup` can occur before Pi creates a new session file; the index extension skips that startup-only missing-file case and indexes once the file exists on later lifecycle events.

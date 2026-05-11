@@ -111,16 +111,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** package consumer, **I want** the new memory verbs to be covered by public import/type and package smoke tests, **so that** the shipped package proves the new API is usable outside repo internals.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `tests/smoke/public-api-types-fixture.mts` imports and type-checks the new public type aliases for `store`, `recall`, and `forget` while retaining compatibility imports for the deprecated source-chunk names.
-  - [ ] `tests/smoke/public-api.smoke.test.ts` uses `client.store(...)` and `client.recall(...)` for the public API source-memory smoke path.
-  - [ ] `tests/smoke/package-entrypoint.smoke.test.ts` uses `client.store(...)`, `client.recall(...)`, and `client.forget(...)` against the built package entrypoint.
-  - [ ] `tests/client-config-dim.test.ts` and `tests/integration/embedder.test.ts` use the canonical new verbs for dimension/config and real-embedder source-memory coverage.
+  - [x] `tests/smoke/public-api-types-fixture.mts` imports and type-checks the new public type aliases for `store`, `recall`, and `forget` while retaining compatibility imports for the deprecated source-chunk names. Evidence: `npm run verify:public-api-types` passed.
+  - [x] `tests/smoke/public-api.smoke.test.ts` uses `client.store(...)` and `client.recall(...)` for the public API source-memory smoke path. Evidence: `npm run test:smoke` passed.
+  - [x] `tests/smoke/package-entrypoint.smoke.test.ts` uses `client.store(...)`, `client.recall(...)`, and `client.forget(...)` against the built package entrypoint. Evidence: `npm run test:smoke` passed.
+  - [x] `tests/client-config-dim.test.ts` and `tests/integration/embedder.test.ts` use the canonical new verbs for dimension/config and real-embedder source-memory coverage. Evidence: targeted unit and integration commands passed.
 - **Functional verification:**
-  - [ ] Run `npm run verify:public-api-types` and confirm public type imports compile with the new verb type aliases.
-  - [ ] Run `npm run test:smoke` and confirm package/public API smoke tests pass through `store`, `recall`, and `forget`.
+  - [x] Run `npm run verify:public-api-types` and confirm public type imports compile with the new verb type aliases. Evidence: passed.
+  - [x] Run `npm run test:smoke` and confirm package/public API smoke tests pass through `store`, `recall`, and `forget`. Evidence: passed, 5 smoke tests.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/client-config-dim.test.ts` and confirm configured embedder dimensions still control source-memory vector writes/searches.
-  - [ ] Run `SKIP_SLOW_TESTS=1 npm run test:integration -- tests/integration/embedder.test.ts` and confirm deterministic integration coverage remains green or explicitly document if the integration runner does not accept file filters.
+  - [x] Run `npm run test:unit -- tests/client-config-dim.test.ts` and confirm configured embedder dimensions still control source-memory vector writes/searches. Evidence: passed, 1 test.
+  - [x] Run `SKIP_SLOW_TESTS=1 npm run test:integration -- tests/integration/embedder.test.ts` and confirm deterministic integration coverage remains green or explicitly document if the integration runner does not accept file filters. Evidence: skipped under `SKIP_SLOW_TESTS=1` by design; full `npm run test:integration -- tests/integration/embedder.test.ts` passed, 3 real-model tests.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `test: cover canonical memory verbs in public API smoke tests`

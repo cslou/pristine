@@ -4,7 +4,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_vector_search`.
 
-`pristine_vector_search` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns a redacted snippet field plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
+`pristine_vector_search` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns a redacted snippet field plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
 
 ## Install
 
@@ -13,7 +13,7 @@ Copy this directory into a repo-local `.pi` extension location, then install run
 ```bash
 mkdir -p ~/projects/test-pristine/.pi/extensions
 rsync -a --delete examples/pi-dev/shared/. ~/projects/test-pristine/.pi/extensions/shared/
-rsync -a --delete examples/pi-dev/search-memory/. ~/projects/test-pristine/.pi/extensions/search-memory/
+rsync -a --delete examples/pi-dev/extensions/search-memory/. ~/projects/test-pristine/.pi/extensions/search-memory/
 cd ~/projects/test-pristine/.pi/extensions/search-memory
 npm install --omit=dev
 ```

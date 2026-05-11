@@ -1,6 +1,6 @@
 import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
-import { resolvePiPristineDbPath } from '../../shared/lib/db-path.js';
+import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import { LocalNomicEmbedder } from './local-embedder.js';
 import { parsePiSessionJsonlFile } from './pi-jsonl-parser.js';
 import {

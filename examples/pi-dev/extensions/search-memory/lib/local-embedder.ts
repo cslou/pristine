@@ -1,5 +1,5 @@
 import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
-import { embedTextsSequentially } from '../../shared/lib/local-embedding-batch.js';
+import { embedTextsSequentially } from '../../../shared/lib/local-embedding-batch.js';
 
 export interface PiJsonlEmbedder {
   embed(text: string): Promise<readonly number[]>;

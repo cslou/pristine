@@ -8,14 +8,14 @@ This README is written as an agent-facing runbook: a coding agent should be able
 
 ## Artifact map
 
-Pi does not treat every folder in `examples/pi-dev/` the same way.
+Pi artifacts are grouped by the runtime shape users install: extensions live under `extensions/`, skills live under `skills/`, and shared helper code stays outside both so it is not mistaken for a loadable Pi artifact.
 
-| Source path                               | Copy/install target in another repo  | Pi artifact type           | Purpose                                                                                                         |
-| ----------------------------------------- | ------------------------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `examples/pi-dev/jsonl-index/`            | `.pi/extensions/jsonl-index/`        | Pi extension               | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers.       |
-| `examples/pi-dev/search-memory/`          | `.pi/extensions/search-memory/`      | Pi extension / custom tool | Registers `pristine_vector_search` for semantic vector search over indexed Pi snippets.                         |
-| `examples/pi-dev/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill                   | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
-| `examples/pi-dev/shared/`                 | `.pi/extensions/shared/`             | Shared helper code         | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool.                    |
+| Source path | Copy/install target in another repo | Pi artifact type | Purpose |
+| --- | --- | --- | --- |
+| `examples/pi-dev/extensions/jsonl-index/` | `.pi/extensions/jsonl-index/` | Pi extension | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers. |
+| `examples/pi-dev/extensions/search-memory/` | `.pi/extensions/search-memory/` | Pi extension / custom tool | Registers `pristine_vector_search` for semantic vector search over indexed Pi snippets. |
+| `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
+| `examples/pi-dev/shared/` | `.pi/extensions/shared/` | Shared helper code | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool. |
 
 Pi auto-discovers project-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md` when started from the repo root. `shared` is copied under `.pi/extensions/shared/` only so relative extension imports resolve.
 
@@ -47,9 +47,9 @@ cd /path/to/your/repo
 mkdir -p .pi/extensions .pi/skills
 
 rsync -a --delete /path/to/pristine/examples/pi-dev/shared/ .pi/extensions/shared/
-rsync -a --delete /path/to/pristine/examples/pi-dev/jsonl-index/ .pi/extensions/jsonl-index/
-rsync -a --delete /path/to/pristine/examples/pi-dev/search-memory/ .pi/extensions/search-memory/
-rsync -a --delete /path/to/pristine/examples/pi-dev/search-session-history/ .pi/skills/search-session-history/
+rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/jsonl-index/ .pi/extensions/jsonl-index/
+rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/search-memory/ .pi/extensions/search-memory/
+rsync -a --delete /path/to/pristine/examples/pi-dev/skills/search-session-history/ .pi/skills/search-session-history/
 ```
 
 Install runtime dependencies next to each copied extension:

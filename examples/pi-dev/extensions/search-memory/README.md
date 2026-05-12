@@ -2,9 +2,11 @@ This is one way to use Pristine primitives. You can write your own.
 
 # Pi Dev Search Memory Reference
 
-Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_vector_search`.
+Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_recall`.
 
-`pristine_vector_search` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns a redacted snippet field plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
+`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns a redacted snippet field plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
+
+Compatibility note: the extension also registers `pristine_vector_search` as a deprecated alias for existing copied installs and prompts. New code should call `pristine_recall`.
 
 ## Install
 
@@ -58,7 +60,7 @@ Each result includes:
 ## Known phrase verification
 
 1. Use `jsonl-index` to index a session containing a unique phrase such as `known phrase sapphire bridge`.
-2. Ask Pi to call `pristine_vector_search` with `{ "query": "sapphire bridge", "limit": 5 }`.
+2. Ask Pi to call `pristine_recall` with `{ "query": "sapphire bridge", "limit": 5 }`.
 3. Pass condition: one result ranks the known phrase chunk and returns a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`; the `snippet` field is redacted by default.
 4. Follow the pointer with `search-session-history` to inspect nearby raw JSONL context.
 

@@ -9,6 +9,7 @@ import {
 } from './helpers/pi-jsonl-index-fixture.js';
 import type { PiJsonlEmbedder } from '../../../examples/pi-dev/extensions/search-memory/lib/local-embedder.js';
 import {
+  createPristineRecallTool,
   createPristineVectorSearchTool,
   registerSearchMemoryExtension,
 } from '../../../examples/pi-dev/extensions/search-memory/index.js';
@@ -289,7 +290,7 @@ describe('PristinePiVectorSearcher', () => {
     );
   });
 
-  it('registers a reusable Pi tool wrapper with expected response shape', async () => {
+  it('registers reusable Pi recall tools with expected response shape', async () => {
     const calls: unknown[] = [];
     const searcher = {
       async search(input: unknown) {
@@ -311,25 +312,34 @@ describe('PristinePiVectorSearcher', () => {
         };
       },
     };
-    const tool = createPristineVectorSearchTool(searcher);
+    const tool = createPristineRecallTool(searcher);
+    const legacyTool = createPristineVectorSearchTool(searcher);
 
     const result = await tool.execute('tool-call-1', { query: 'sapphire', limit: 1 });
 
     await expect(tool.execute('tool-call-2', { query: 123 })).rejects.toThrow(
-      'query must be a non-empty string',
+      'pristine_recall query must be a non-empty string',
+    );
+    await expect(legacyTool.execute('tool-call-3', { query: 123 })).rejects.toThrow(
+      'pristine_vector_search query must be a non-empty string',
     );
 
+    expect(tool.name).toBe('pristine_recall');
+    expect(legacyTool.name).toBe('pristine_vector_search');
     expect(calls).toEqual([{ query: 'sapphire', limit: 1 }]);
     expect(result.content[0]?.type).toBe('text');
     expect(result.content[0]?.text).toContain('known phrase sapphire bridge');
     expect(result.details.results).toHaveLength(1);
 
-    const registered: unknown[] = [];
+    const registered: { readonly name: string }[] = [];
     registerSearchMemoryExtension(
       { registerTool: (registeredTool) => registered.push(registeredTool) },
       () => searcher,
     );
-    expect(registered).toHaveLength(1);
+    expect(registered.map((registeredTool) => registeredTool.name)).toEqual([
+      'pristine_recall',
+      'pristine_vector_search',
+    ]);
   });
 
   it('returns clear negative-case errors and empty-index messages', async () => {

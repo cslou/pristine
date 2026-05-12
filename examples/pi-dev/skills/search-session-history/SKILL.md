@@ -1,7 +1,7 @@
 ---
 name: search-session-history
-description: Inspect authoritative Pi JSONL session context around a Pristine vector-search hit. Use after `pristine_vector_search` returns a `sourcePointer`, or use `pristine_vector_search` first when the target session is unknown.
-allowed-tools: pristine_vector_search bash read
+description: Inspect authoritative Pi JSONL session context around a Pristine vector-search hit. Use after `pristine_recall` returns a `sourcePointer`, or use `pristine_recall` first when the target session is unknown.
+allowed-tools: pristine_recall bash read
 ---
 
 # search-session-history
@@ -10,11 +10,11 @@ Use this skill when the user asks about prior Pi session history, previous decis
 
 ## Workflow
 
-This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_vector_search` is the discovery layer; `search-session-history` inspects the authoritative Pi JSONL file named by the returned pointer.
+This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_recall` is the discovery layer; `search-session-history` inspects the authoritative Pi JSONL file named by the returned pointer.
 
 ### Pointer-known mode
 
-Use this mode when the user or a prior `pristine_vector_search` result provides a `sourcePointer`.
+Use this mode when the user or a prior `pristine_recall` result provides a `sourcePointer`.
 
 1. Do not search globally. Inspect only `sourcePointer.sourceUri`.
 2. Validate that `sourcePointer.sourceUri` exists and that either `entryId` or `lineNumber` is present.
@@ -28,7 +28,7 @@ Use this mode when the user or a prior `pristine_vector_search` result provides 
 
 Use this mode when the target session/pointer is unknown.
 
-1. Call `pristine_vector_search` first with the user's semantic query.
+1. Call `pristine_recall` first with the user's semantic query.
 2. Pick the best hit with a usable `sourcePointer.sourceUri` plus either `lineNumber` or `entryId`.
 3. Switch immediately to pointer-known mode.
 
@@ -45,7 +45,7 @@ test -f "$SOURCE_URI" || { echo "Missing Pi JSONL file: $SOURCE_URI"; exit 2; }
 test -n "${LINE_NUMBER:-}${ENTRY_ID:-}" || { echo "Invalid pointer: need lineNumber or entryId"; exit 2; }
 ```
 
-If the file is missing or the pointer is invalid, report the limitation and try the next `pristine_vector_search` hit when available.
+If the file is missing or the pointer is invalid, report the limitation and try the next `pristine_recall` hit when available.
 
 ## Shared visible-message jq program
 

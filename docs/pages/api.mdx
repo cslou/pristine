@@ -38,7 +38,7 @@ Restores known redaction placeholders for a local user when vault and key access
 
 ### `scrubOutput(text, allowlist?)`
 
-Removes sensitive values from output text before it crosses a boundary where those values should not appear. Pass an optional allowlist for values that are safe to keep.
+Removes sensitive values from output text before it crosses a boundary where those values should not appear. The second parameter is named `allowlist` in the current TypeScript signature for compatibility, but its values are scrubbed from output; pass revealed or sensitive values that must be removed.
 
 ## Types
 

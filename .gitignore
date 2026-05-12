@@ -11,8 +11,7 @@ npm-debug.log*
 .claude/
 
 # Internal planning/process docs are not tracked in the public repo
-docs/sprints/*
-!docs/sprints/sprint-027.md
+docs/sprints/
 docs/specs/
 docs/stories/
 docs/security-audits/

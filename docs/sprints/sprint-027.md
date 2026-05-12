@@ -16,7 +16,7 @@
 ### Sprint-Wide Context
 
 - **Sprint type:** Docs / Tooling / Cleanup
-- **Shared context:** `docs/` becomes the public Vocs documentation root. Vocs pages should live directly under `docs/` (`docs/index.mdx`, `docs/quickstart.mdx`, etc.) with `vocs.config.ts` at the repo root. Internal docs are removed from tracked Git and protected with targeted `.gitignore` entries; public-worthy information from internal docs may be rewritten into public docs, but the original internal files should not remain tracked. Because AGENTS.md requires the active sprint audit file at `docs/sprints/sprint-027.md`, this sprint preserves that one file through sprint completion as a temporary workflow exception and records the exception in final review. This sprint creates buildable in-repo docs only; it does not add hosting/deployment.
+- **Shared context:** `docs/` becomes the public Vocs documentation root. Vocs pages should live directly under `docs/` (`docs/index.mdx`, `docs/quickstart.mdx`, etc.) with `vocs.config.ts` at the repo root. Internal docs are removed from tracked Git and protected with targeted `.gitignore` entries; public-worthy information from internal docs may be rewritten into public docs, but the original internal files should not remain tracked. Because AGENTS.md requires the active sprint audit file at `docs/sprints/sprint-027.md`, this sprint preserves that one file through sprint completion as a temporary workflow exception, records final evidence there on the sprint branch, then removes it in the Final Story before the sprint-integration PR so no sprint docs remain tracked in the public target. This sprint creates buildable in-repo docs only; it does not add hosting/deployment.
 - **Non-goals:** Deploying docs to GitHub Pages, Vercel, Netlify, or a custom domain; changing SDK runtime behavior or public API semantics; publishing a package release; preserving historical sprint/spec/security-audit files in the public repository; adding generated API documentation beyond what can be maintained and verified in this sprint.
 
 ### Expected Touch List
@@ -59,7 +59,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 ### Sprint Doc Review
 
 - **Pass 1:** Mergeability 2/5. P1 findings: Story 3 attempted to remove/ignore `docs/sprints/` before the active sprint doc could receive final review evidence; the template DoD referenced folding new flows into an implementation spec while this sprint has no spec and removes `docs/specs/`. P2 findings: Story 2 needed a factual content-accuracy check for docs claims; Story 4 needed an observable threshold for “concise”; Final Story needed the exact canonical verification delta rows from `handle-sprint-completion.md`.
-- **Resolution:** Preserved `docs/sprints/sprint-027.md` as a temporary workflow exception through final completion, clarified that the new docs-build flow is documented in package/public docs/final review rather than a removed implementation spec, added docs content-accuracy verification, made README concision measurable, and updated the final verification delta row list to the exact canonical rows.
+- **Resolution:** Preserved `docs/sprints/sprint-027.md` as a temporary workflow exception through final completion, required Final Story cleanup to remove that active sprint doc before sprint integration while copying final audit evidence into the sprint-integration PR body, clarified that the new docs-build flow is documented in package/public docs/final review rather than a removed implementation spec, added docs content-accuracy verification, made README concision measurable, and updated the final verification delta row list to the exact canonical rows.
 - **Pass 2:** Mergeability 5/5. No per-story or cross-story findings.
 
 ### Stories
@@ -86,7 +86,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] Minimal placeholder pages exist directly under `docs/` as `.mdx` files: `index.mdx`, `quickstart.mdx`, `concepts.mdx`, `api.mdx`, `privacy.mdx`, `pi-dev.mdx`, `configuration.mdx`, and `examples.mdx`. **Pass condition:** no Vocs content pages are placed under `docs/pages/` in this sprint.
 - **Functional verification:**
   - [ ] Run `npm run docs:build`. **Pass condition:** Vocs completes a production build with exit code 0 and no missing-page/sidebar errors.
-  - [ ] Run `node -e "const pkg = require('./package.json'); if (!pkg.devDependencies?.vocs || /^[~^]/.test(pkg.devDependencies.vocs)) process.exit(1);"`. **Pass condition:** Vocs exists as an exact devDependency.
+  - [ ] Run `node -e "const semver = /^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/; const pkg = require('./package.json'); if (!semver.test(pkg.devDependencies?.vocs ?? '')) process.exit(1);"`. **Pass condition:** Vocs exists as an exact semver devDependency, not a range/tag such as `^`, `~`, `latest`, `*`, or `>=`.
 - **Regression verification:**
   - [ ] Run `npm run typecheck`. **Pass condition:** adding `vocs.config.ts` and docs scripts does not break TypeScript checking for the package.
   - [ ] Run `npm run build`. **Pass condition:** SDK package build still succeeds after adding docs tooling.
@@ -147,13 +147,13 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
   - [ ] Remove tracked internal docs directories with `git rm -r`: `docs/specs/`, `docs/stories/`, `docs/security-audits/`, `docs/analysis/`, `docs/architecture/`, `docs/research/`, and `docs/conventions/`; remove historical sprint docs under `docs/sprints/` while preserving active `docs/sprints/sprint-027.md` through final completion. **Pass condition:** no files under those internal paths remain in `git ls-files` except `docs/sprints/sprint-027.md`.
-  - [ ] Add targeted `.gitignore` entries for the removed internal docs paths and do not ignore the whole `docs/` directory; add a temporary negation for `docs/sprints/sprint-027.md` if needed so the active audit file remains tracked. **Pass condition:** `git check-ignore docs/sprints/example.md docs/specs/example.md docs/stories/example.md docs/security-audits/example.md docs/analysis/example.md docs/architecture/example.md docs/research/example.md docs/conventions/example.md` reports ignored paths, while `git check-ignore docs/index.mdx` and `git check-ignore docs/sprints/sprint-027.md` exit non-zero.
+  - [ ] Add targeted `.gitignore` entries for the removed internal docs paths and do not ignore the whole `docs/` directory; add a temporary negation for `docs/sprints/sprint-027.md` if needed so the active audit file remains tracked until the Final Story removes it. **Pass condition:** `git check-ignore docs/sprints/example.md docs/specs/example.md docs/stories/example.md docs/security-audits/example.md docs/analysis/example.md docs/architecture/example.md docs/research/example.md docs/conventions/example.md` reports ignored paths, while `git check-ignore --no-index docs/index.mdx` and `git check-ignore --no-index docs/sprints/sprint-027.md` exit non-zero during Story 3.
   - [ ] Keep public Vocs docs tracked directly under `docs/`. **Pass condition:** `git ls-files docs/*.mdx` includes all expected public docs pages.
   - [ ] Update docs verification inputs so removed internal docs are not required by `npm run verify:docs` or other public docs checks. **Pass condition:** docs verification succeeds after the internal directories are removed.
 - **Functional verification:**
   - [ ] Run `git ls-files docs/sprints docs/specs docs/stories docs/security-audits docs/analysis docs/architecture docs/research docs/conventions`. **Pass condition:** command returns only `docs/sprints/sprint-027.md`; any other returned path fails the audit.
   - [ ] Run `git check-ignore docs/sprints/example.md docs/specs/example.md docs/stories/example.md docs/security-audits/example.md docs/analysis/example.md docs/architecture/example.md docs/research/example.md docs/conventions/example.md`. **Pass condition:** every path is printed as ignored.
-  - [ ] Run `git check-ignore docs/index.mdx; test $? -eq 1` and `git check-ignore docs/sprints/sprint-027.md; test $? -eq 1`. **Pass condition:** public Vocs docs and the active sprint audit file are not ignored.
+  - [ ] Run `git check-ignore --no-index docs/index.mdx; test $? -eq 1` and `git check-ignore --no-index docs/sprints/sprint-027.md; test $? -eq 1`. **Pass condition:** public Vocs docs and the active sprint audit file are not ignored during Story 3.
 - **Regression verification:**
   - [ ] Run `npm run verify:docs`. **Pass condition:** public docs verification no longer depends on removed internal dirs and exits 0.
   - [ ] Run `npm run docs:build`. **Pass condition:** Vocs site still builds after internal docs are removed.
@@ -210,7 +210,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] The sprint’s new functional verification is identified as future regression verification: Vocs build, public docs verification, stale/internal public-doc audit, and internal-doc tracked-file/gitignore audit.
   - [ ] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals. Include every canonical row from `workflow-prompts/handle-sprint-completion.md` even when the count is zero: Unit, Integration / contract, E2E / smoke, Simulator / device, AI / model evals, Static / local checks, Performance / load, Security / dependency, Accessibility / visual, Manual-only, Other verification, and Total. **Pass condition:** `Unknown` is not used as a row; any unknown counts are noted in the counting-basis text with a reason.
   - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
-  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
+  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability before cleanup, and the same final review evidence is copied into the sprint-integration PR body because this sprint removes the active sprint doc before public integration.
+  - [ ] After final review evidence is recorded, `docs/sprints/sprint-027.md` is removed from the sprint branch before opening the sprint-integration PR. **Pass condition:** `git ls-files docs/sprints` returns no files in the sprint-integration diff, and the sprint-integration PR body contains the final review evidence copied from the removed sprint doc.
 - **Functional verification:**
   - [ ] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
@@ -219,7 +220,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: complete sprint 027 verification`
-- **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc. Record Vocs as a new dependency in `## Final Review` if it is added.
+  2. `docs: remove active sprint audit file before public integration`
+- **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is appended to the sprint doc on the sprint branch, copied into the sprint-integration PR body for durable public auditability, and then `docs/sprints/sprint-027.md` is removed before public integration. Record Vocs as a new dependency in `## Final Review` if it is added.
 
 ### Rules
 - Use the sprint-branch workflow from AGENTS.md: `sprint-NNN` branches from target, story branches fork from `sprint-NNN`, and story PRs target `sprint-NNN`.
@@ -236,6 +238,6 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Failed, ambiguous, manual-only, or unrun verification items are documented in `## Final Review`.
 - `## Final Review` includes a verification delta table showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals by canonical verification type.
 - Sprint doc status is `🟢 Complete` only when completion criteria are met.
-- Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
+- Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None` before the final cleanup commit removes the active sprint doc from the public integration diff; the same final review content is copied into the sprint-integration PR body.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new product/runtime flows, they are folded into the implementation spec before sprint integration. For this sprint, no implementation spec exists and `docs/specs/` is removed; the docs-build developer verification flow must instead be documented in `package.json`, public docs, and `## Final Review` with this rationale.

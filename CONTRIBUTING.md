@@ -28,7 +28,7 @@ npm run test:unit
 npm run test:smoke
 SKIP_SLOW_TESTS=1 npm run test:integration
 npm run test:e2e
-npm run verify:docs
+npm run docs:build
 npm run verify:package
 ```
 
@@ -43,6 +43,10 @@ Maintainers use the local regression wrapper when preparing merges/releases:
 - `SKIP_SLOW_TESTS=1 npm run test:integration` runs deterministic integration coverage and skips real-model checks.
 - `npm run test:integration` may run local model integration tests when the model cache is available.
 - `.checks/regression.sh --tier=full` is the maintainer full regression path and may load local models.
+
+## Secret audits
+
+Secret-audit helper scripts are maintainer-local and ignored by the public repository. Before release-sensitive changes, run a local secret scanner or maintainer-local audit script against the working tree and Git history; do not commit the scanner script, generated reports, credentials, tokens, or private keys.
 
 ## Coding conventions
 
@@ -65,9 +69,9 @@ A PR should include:
 Before requesting review, confirm:
 
 ```bash
-npm run verify:docs
+npm run docs:build
 npm run verify:package
 .checks/pre-merge.sh
 ```
 
-`verify:package` builds the package and checks the clean package artifact contents. Do not publish from feature branches.
+`docs:build` validates the Vocs documentation site. `verify:package` builds the package and checks the clean package artifact contents. Do not publish from feature branches.

@@ -22,9 +22,6 @@ const publicDocPaths = [
   'CONTRIBUTING.md',
   'CHANGELOG.md',
   'SECURITY.md',
-  'docs/public-api.md',
-  'docs/release-checklist.md',
-  'docs/agent-integration.md',
   ...vocsPagePaths,
   'examples/pi-dev/README.md',
 ];

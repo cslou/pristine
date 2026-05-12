@@ -1,16 +1,16 @@
 # API
 
-The public SDK surface centers on a local client plus intent-named primitives.
+The public SDK surface centers on `PristineLocal` plus intent-named primitives.
 
 ## Client creation
 
-Use `createPristineLocal` to create a local SDK client for a user and database configuration.
+Use `PristineLocal.create()` to create a local SDK client for the default local configuration, or pass configuration options for database, key, embedder, and privacy behavior.
 
 ## Memory primitives
 
-- `store` writes source-owned memory chunks.
-- `recall` searches stored chunks by semantic query and returns source pointers.
-- `forget` deletes stored chunks by ID.
+- `store` writes source-owned memory chunks with a required `projectId` option.
+- `recall` searches stored chunks by semantic query and returns source-pointer hits.
+- `forget` deletes stored chunks by ID with a required `projectId` option.
 
 ## Privacy primitives
 

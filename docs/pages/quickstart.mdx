@@ -3,25 +3,27 @@
 Install Pristine, create a local client, store source-owned memories, recall them by semantic query, and forget them when they are no longer needed.
 
 ```ts
-import { createPristineLocal } from '@pristine/shield-local';
+import { PristineLocal } from '@pristine/shield-local';
 
-const pristine = await createPristineLocal({ userId: 'local-user' });
+const pristine = await PristineLocal.create();
+const projectId = 'local-project';
 
-await pristine.store([
-  {
-    id: 'note-1',
-    text: 'Pristine keeps memory local by default.',
-    source: {
-      kind: 'note',
-      uri: 'file:///notes/privacy.md',
+await pristine.store(
+  [
+    {
+      chunkId: 'note-1',
+      text: 'Pristine keeps memory local by default.',
+      sourceKind: 'note',
+      sourceUri: 'file:///notes/privacy.md',
     },
-  },
-]);
+  ],
+  { projectId },
+);
 
-const recalled = await pristine.recall('local memory privacy', { limit: 3 });
-await pristine.forget(['note-1']);
+const recalled = await pristine.recall('local memory privacy', { projectId, limit: 3 });
+await pristine.forget(['note-1'], { projectId });
 
-console.log(recalled.results);
+const recalledCount = recalled.length;
 ```
 
 Use the API and configuration pages for the complete launch documentation.

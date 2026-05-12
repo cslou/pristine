@@ -4,7 +4,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_recall`.
 
-`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns bounded matched snippets plus source pointers so an agent can judge relevance before inspecting the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
+`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns bounded matched snippets with obvious secrets sanitized, plus source pointers so an agent can judge relevance before inspecting the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
 
 ## Install
 
@@ -46,7 +46,7 @@ Each result includes:
 - `rank`
 - `score`
 - `chunkId`
-- `snippet` — bounded matched text for relevance judgment. Returned snippets are limited to 800 characters; longer snippets keep the first 799 characters and end with `…`.
+- `snippet` — bounded matched text for relevance judgment with obvious secrets sanitized. Returned snippets are limited to 800 Unicode characters; longer snippets keep the first 799 characters and end with `…`.
 - `sourcePointer.sourceKind` = `pi-jsonl`
 - `sourcePointer.sourceUri`
 - `sourcePointer.entryId`

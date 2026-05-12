@@ -265,10 +265,10 @@ describe('PristinePiVectorSearcher', () => {
     ).rejects.toThrow('embedding dimension mismatch');
   });
 
-  it('returns actual snippets bounded to 800 characters', async () => {
+  it('returns actual snippets bounded to 800 Unicode characters', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
-    const longSnippet = `Sapphire ${'x'.repeat(900)}`;
+    const longSnippet = `Sapphire ${'😀'.repeat(900)}`;
     await seedDb(dbPath, [
       message({
         text: longSnippet,
@@ -279,8 +279,28 @@ describe('PristinePiVectorSearcher', () => {
 
     const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
     const result = await searcher.search({ query: 'sapphire token' });
+    const snippet = result.results[0]?.snippet;
 
-    expect(result.results[0]?.snippet).toHaveLength(800);
-    expect(result.results[0]?.snippet).toBe(`${longSnippet.slice(0, 799)}…`);
+    expect(snippet).toBe(`${Array.from(longSnippet).slice(0, 799).join('')}…`);
+    expect(Array.from(snippet ?? '')).toHaveLength(800);
+  });
+
+  it('sanitizes obvious secrets while preserving relevance context', async () => {
+    const dir = await makeTempDir();
+    const dbPath = join(dir, 'pristine.db');
+    await seedDb(dbPath, [
+      message({
+        text: 'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 and dev@example.com remain relevant.',
+        entryId: 'entry-secret',
+        lineNumber: 4,
+      }),
+    ]);
+
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    const result = await searcher.search({ query: 'sapphire token' });
+
+    expect(result.results[0]?.snippet).toBe(
+      'Sapphire token [REDACTED_AUTH_TOKEN] and [REDACTED_EMAIL] remain relevant.',
+    );
   });
 });

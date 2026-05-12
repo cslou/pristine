@@ -1,42 +1,65 @@
 import type {
-  DeleteSourceChunksOptions,
-  DeleteSourceChunksResult,
   DeterministicClassifierConfig,
   Embedder,
-  IndexedSourceChunk,
-  IndexSourceChunksOptions,
+  ForgetOptions,
+  ForgetResult,
   PristineLocalConfig,
+  RecalledMemory,
+  RecallOptions,
   RevealResult,
-  SearchSourceChunksOptions,
   SecureAndRedactResult,
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
-  SourceChunkSearchHit,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
+  StoredMemory,
   StoredSourceChunk,
+  StoreOptions,
 } from '@pristine/shield-local';
 
-type PublicRootTypes = [
+// Deprecated compatibility exports for the pre-store/recall/forget memory API.
+// They stay importable for existing consumers, but new code should prefer the
+// canonical verb-oriented types above.
+import type {
   DeleteSourceChunksOptions,
   DeleteSourceChunksResult,
-  DeterministicClassifierConfig,
-  Embedder,
   IndexedSourceChunk,
   IndexSourceChunksOptions,
-  PristineLocalConfig,
-  RevealResult,
   SearchSourceChunksOptions,
+  SourceChunkSearchHit,
+} from '@pristine/shield-local';
+
+type CanonicalPublicRootTypes = [
+  DeterministicClassifierConfig,
+  Embedder,
+  ForgetOptions,
+  ForgetResult,
+  PristineLocalConfig,
+  RecalledMemory,
+  RecallOptions,
+  RevealResult,
   SecureAndRedactResult,
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
-  SourceChunkSearchHit,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
+  StoredMemory,
   StoredSourceChunk,
+  StoreOptions,
 ];
 
-const publicRootTypesFixture: PublicRootTypes | null = null;
-void publicRootTypesFixture;
+type DeprecatedCompatibilityTypes = [
+  DeleteSourceChunksOptions,
+  DeleteSourceChunksResult,
+  IndexedSourceChunk,
+  IndexSourceChunksOptions,
+  SearchSourceChunksOptions,
+  SourceChunkSearchHit,
+];
+
+const canonicalPublicRootTypesFixture: CanonicalPublicRootTypes | null = null;
+const deprecatedCompatibilityTypesFixture: DeprecatedCompatibilityTypes | null = null;
+void canonicalPublicRootTypesFixture;
+void deprecatedCompatibilityTypesFixture;

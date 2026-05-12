@@ -56,7 +56,7 @@ describe.skipIf(skipSlow)('source-index integration (real local embedder)', () =
 
     try {
       client = await PristineLocal.create({ db, embedder, keysDir: join(dir, 'keys') });
-      await client.indexSourceChunks(
+      await client.store(
         [
           {
             text: 'real model source-index integration remembers obsidian falcon',
@@ -66,7 +66,7 @@ describe.skipIf(skipSlow)('source-index integration (real local embedder)', () =
         ],
         { projectId: 'integration-source-index' },
       );
-      const hits = await client.searchSourceChunks('obsidian falcon memory', {
+      const hits = await client.recall('obsidian falcon memory', {
         projectId: 'integration-source-index',
         limit: 1,
       });

@@ -41,13 +41,13 @@ describe('package entrypoint smoke', () => {
     };
     const client = await PristineLocal.create({ db, embedder });
     try {
-      await client.indexSourceChunks([{ text: 'built package source index', chunkId: 'built-1' }], {
+      await client.store([{ text: 'built package source index', chunkId: 'built-1' }], {
         projectId: 'built-smoke',
       });
       await expect(
-        client.searchSourceChunks('source index', { projectId: 'built-smoke', limit: 1 }),
+        client.recall('source index', { projectId: 'built-smoke', limit: 1 }),
       ).resolves.toHaveLength(1);
-      expect(client.deleteSourceChunks(['built-1'], { projectId: 'built-smoke' })).toEqual({
+      expect(client.forget(['built-1'], { projectId: 'built-smoke' })).toEqual({
         deletedCount: 1,
       });
       expect('storeAsync' in client).toBe(false);

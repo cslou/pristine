@@ -11,11 +11,23 @@
 
 export { PristineLocal } from './client.js';
 export type {
+  ForgetOptions,
+  ForgetResult,
+  PristineLocalConfig,
+  RecalledMemory,
+  RecallOptions,
+  StoredMemory,
+  StoreOptions,
+} from './client.js';
+
+// Deprecated compatibility exports for the pre-`store`/`recall`/`forget` memory API.
+// New code should use StoreOptions, StoredMemory, RecallOptions, RecalledMemory,
+// ForgetOptions, and ForgetResult instead.
+export type {
   DeleteSourceChunksOptions,
   DeleteSourceChunksResult,
   IndexedSourceChunk,
   IndexSourceChunksOptions,
-  PristineLocalConfig,
   SearchSourceChunksOptions,
   SourceChunkSearchHit,
 } from './client.js';

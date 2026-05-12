@@ -156,16 +156,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As an** agent integrator, **I want** Pi-dev docs to explain snippets as the relevance-judgment layer and source pointers as the authority layer, **so that** agents use recall without blind pointer chasing.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] `examples/pi-dev/extensions/search-memory/README.md` documents that `snippet` contains bounded matched text for relevance judgment.
-  - [ ] `examples/pi-dev/skills/search-session-history/SKILL.md` continues to instruct agents to inspect `sourcePointer.sourceUri` for authoritative exact context after a useful recall hit.
-  - [ ] `examples/pi-dev/skills/search-session-history/README.md` describes `pristine_recall` as discovery using snippets plus source pointers, not redacted snippets.
-  - [ ] `examples/pi-dev/README.md` remains consistent with the snippet-first discovery and source-pointer follow-up workflow.
+  - [x] `examples/pi-dev/extensions/search-memory/README.md` documents that `snippet` contains bounded matched text for relevance judgment.
+  - [x] `examples/pi-dev/skills/search-session-history/SKILL.md` continues to instruct agents to inspect `sourcePointer.sourceUri` for authoritative exact context after a useful recall hit.
+  - [x] `examples/pi-dev/skills/search-session-history/README.md` describes `pristine_recall` as discovery using snippets plus source pointers, not redacted snippets.
+  - [x] `examples/pi-dev/README.md` remains consistent with the snippet-first discovery and source-pointer follow-up workflow.
 - **Functional verification:**
-  - [ ] Run `rg "bounded|snippet|sourcePointer" examples/pi-dev/extensions/search-memory/README.md examples/pi-dev/skills/search-session-history/README.md examples/pi-dev/README.md -n` and verify docs describe snippets for judgment and source pointers for exact context.
-  - [ ] Run `rg "redacted by default|snippet redacted" examples/pi-dev -n` and verify no stale redacted-snippet guidance remains.
+  - [x] Run `rg "bounded|snippet|sourcePointer" examples/pi-dev/extensions/search-memory/README.md examples/pi-dev/skills/search-session-history/README.md examples/pi-dev/skills/search-session-history/SKILL.md examples/pi-dev/README.md -n` and verify docs describe snippets for judgment and source pointers for exact context.
+  - [x] Run `rg "redacted by default|privacy-redacted|snippet redacted" examples/pi-dev --glob '*.md' -n` and verify no stale redacted-snippet guidance remains in Pi-dev docs.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify the skill still enforces directed `sourcePointer` inspection for exact context.
-  - [ ] Run `npm run docs:build` and verify public docs still build after Pi-dev wording updates.
+  - [x] Run `npm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify the skill still enforces directed `sourcePointer` inspection for exact context.
+  - [x] Run `npm run docs:build` and verify public docs still build after Pi-dev wording updates.
 - **Manual-only verification:** N/A — documentation assertions and docs build cover the guidance changes.
 - **Planned commits:**
   1. `docs: clarify pi recall snippets` — update Pi-dev extension and skill docs for snippet-first relevance judgment.

@@ -114,7 +114,7 @@ run_deep() {
 run_full() {
   run_deep
   run_check "integration-full-real-model" "Integration / contract" "npm run test:integration"
-  run_check "source-index-real-model-smoke" "E2E / smoke" "npm run test:smoke:real-model"
+  run_check "source-index-local-model-smoke" "E2E / smoke" "npm run test:smoke:local-model"
 }
 
 ROUTINE_EMPTY=0
@@ -133,8 +133,8 @@ case "$TIER" in
     ;;
   deep)
     run_deep
-    skip_check "integration-full-real-model" "Integration / contract" "skipped: real-model checks run in full tier"
-    skip_check "indexer-real-model-smoke" "E2E / smoke" "skipped: real-model smoke runs in full tier"
+    skip_check "integration-full-real-model" "Integration / contract" "skipped: local-model checks run in full tier"
+    skip_check "source-index-local-model-smoke" "E2E / smoke" "skipped: local-model smoke runs in full tier"
     ;;
   full)
     run_full

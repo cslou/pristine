@@ -6,7 +6,7 @@ import { createDatabase, PristineLocal } from '../../dist/index.js';
 
 const tempDirs: string[] = [];
 
-describe('real-model source-index smoke', () => {
+describe('local-model source-index smoke', () => {
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });

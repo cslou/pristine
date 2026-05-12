@@ -26,3 +26,6 @@ docs/release-checklist.md
 
 # Local-only benchmark experiments are not tracked in the public repo
 benchmarks/
+
+# Local-only maintainer security audit tooling
+scripts/audit-repository-secrets.mjs

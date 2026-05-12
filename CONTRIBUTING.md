@@ -28,7 +28,6 @@ npm run test:unit
 npm run test:smoke
 SKIP_SLOW_TESTS=1 npm run test:integration
 npm run test:e2e
-npm run verify:docs
 npm run verify:package
 ```
 
@@ -65,7 +64,6 @@ A PR should include:
 Before requesting review, confirm:
 
 ```bash
-npm run verify:docs
 npm run verify:package
 .checks/pre-merge.sh
 ```

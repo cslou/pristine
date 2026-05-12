@@ -44,6 +44,10 @@ Maintainers use the local regression wrapper when preparing merges/releases:
 - `npm run test:integration` may run local model integration tests when the model cache is available.
 - `.checks/regression.sh --tier=full` is the maintainer full regression path and may load local models.
 
+## Secret audits
+
+Secret-audit helper scripts are maintainer-local and ignored by the public repository. Before release-sensitive changes, run a local secret scanner or maintainer-local audit script against the working tree and Git history; do not commit the scanner script, generated reports, credentials, tokens, or private keys.
+
 ## Coding conventions
 
 - TypeScript strict mode and ESM only.

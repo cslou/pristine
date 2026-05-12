@@ -55,7 +55,10 @@
     "verify:package": "npm run build && node scripts/verify-package-contents.mjs",
     "verify:docs": "npm run build && node scripts/verify-public-docs.mjs",
     "verify:public-api-types": "npx tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck tests/smoke/public-api-types-fixture.mts",
-    "db:reset": "rm -f ~/.pristine/data/pristine.db*"
+    "db:reset": "rm -f ~/.pristine/data/pristine.db*",
+    "docs:dev": "vocs dev",
+    "docs:build": "vocs build",
+    "docs:preview": "vocs preview"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
@@ -67,7 +70,8 @@
     "eslint-plugin-prettier": "5.5.0",
     "prettier": "3.5.3",
     "typescript": "5.8.3",
-    "vitest": "3.2.4"
+    "vitest": "3.2.4",
+    "vocs": "1.4.1"
   },
   "dependencies": {
     "@huggingface/transformers": "4.0.1",

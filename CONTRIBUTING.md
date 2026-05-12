@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Pristine. This repository is a local-first TypeScript SDK; changes should keep user data on device by default and preserve the public API boundary documented in `docs/public-api.md`.
+Thanks for helping improve Pristine. This repository is a local-first TypeScript SDK; changes should keep user data on device by default and preserve the public API boundary documented in the README and `docs/pages/api.mdx`.
 
 ## Setup
 
@@ -60,7 +60,7 @@ A PR should include:
 - A clear description of the story/change.
 - Acceptance criteria and verification evidence.
 - Automated tests or explicit rationale when a change is docs-only.
-- Notes for public API changes, including updates to `docs/public-api.md`, README, smoke tests, and CHANGELOG when applicable.
+- Notes for public API changes, including updates to README, Vocs docs under `docs/pages/`, smoke tests, and CHANGELOG when applicable.
 
 Before requesting review, confirm:
 

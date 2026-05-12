@@ -40,6 +40,58 @@ Restores known redaction placeholders for a local user when vault and key access
 
 Removes sensitive values from output text before it crosses a boundary where those values should not appear. The second parameter is named `allowlist` in the current TypeScript signature for compatibility, but its values are scrubbed from output; pass revealed or sensitive values that must be removed.
 
-## Types
+## Root exports
 
-The package exports public option and result types for the launch API, including `StoreOptions`, `StoredMemory`, `RecallOptions`, `RecalledMemory`, `ForgetOptions`, and `ForgetResult`.
+The package root is the supported import boundary. It exports the SDK client, domain errors, database helper, public types, and a small set of low-level source-index primitives for advanced local integrations.
+
+### Supported value exports
+
+| Export | Purpose |
+| --- | --- |
+| `PristineLocal` | Main local SDK client. |
+| `createDatabase` | Create or open a SQLite database with Pristine's sqlite-vec loading behavior. |
+| `AppError` | Base domain error class. |
+| `ConfigError` | Configuration error class. |
+| `EmbedderError` | Embedder failure class. |
+| `InvalidArgumentError` | Public validation error class. |
+| `SOURCE_CHUNK_METADATA_JSON_LIMIT` | Source chunk metadata size limit. |
+| `SOURCE_CHUNK_TEXT_LIMIT` | Source chunk text size limit. |
+| `SourceChunkStore` | Supported low-level source-index store for advanced local integrations and tests. |
+| `buildSourceChunkVectorDdl` | Builds source chunk vector table DDL for the configured dimension. |
+| `initSourceChunkTables` | Initializes source chunk tables owned by the source-index module. |
+| `normalizeSourceChunkInput` | Validates and normalizes source chunk input. |
+
+### Supported type exports
+
+The package exports public option and result types for the launch API:
+
+- `StoreOptions`
+- `StoredMemory`
+- `RecallOptions`
+- `RecalledMemory`
+- `ForgetOptions`
+- `ForgetResult`
+- `PristineLocalConfig`
+- `RevealResult`
+- `SecureAndRedactResult`
+- `SourceChunkInput`
+- `SourceChunkMetadata`
+- `Embedder`
+- `DeterministicClassifierConfig`
+- `SourceChunkNormalizeOptions`
+- `SourceChunkSearchOptions`
+- `SourceChunkStoreOptions`
+- `StoredSourceChunk`
+
+The root also keeps deprecated compatibility type exports for the pre-`store`/`recall`/`forget` memory API:
+
+- `DeleteSourceChunksOptions`
+- `DeleteSourceChunksResult`
+- `IndexedSourceChunk`
+- `IndexSourceChunksOptions`
+- `SearchSourceChunksOptions`
+- `SourceChunkSearchHit`
+
+## Internal boundary
+
+The package root does not export raw conversation storage, ingest queues, worker drains, SQL searchers, provider SDK clients, or benchmark-only helpers. Consumers should compose the supported source chunk and privacy primitives instead of importing internal paths.

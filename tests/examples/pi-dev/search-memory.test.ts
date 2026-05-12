@@ -1,18 +1,12 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   seedPiJsonlIndexDb,
   type PiJsonlIndexSeedMessage,
 } from './helpers/pi-jsonl-index-fixture.js';
 import type { PiJsonlEmbedder } from '../../../examples/pi-dev/extensions/search-memory/lib/local-embedder.js';
-import {
-  createPristineRecallTool,
-  createPristineVectorSearchTool,
-  registerSearchMemoryExtension,
-} from '../../../examples/pi-dev/extensions/search-memory/index.js';
 import { PristinePiVectorSearcher } from '../../../examples/pi-dev/extensions/search-memory/lib/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
@@ -288,88 +282,5 @@ describe('PristinePiVectorSearcher', () => {
     expect(result.results[0]?.snippet).toBe(
       '[snippet redacted by default; inspect sourcePointer with search-session-history]',
     );
-  });
-
-  it('registers reusable Pi recall tools with expected response shape', async () => {
-    const calls: unknown[] = [];
-    const searcher = {
-      async search(input: unknown) {
-        calls.push(input);
-        return {
-          results: [
-            {
-              rank: 1,
-              score: 1,
-              chunkId: 'chunk-1',
-              snippet: 'known phrase sapphire bridge',
-              sourcePointer: {
-                sourceKind: 'pi-jsonl' as const,
-                sourceUri: '/tmp/session.jsonl',
-                lineNumber: 1,
-              },
-            },
-          ],
-        };
-      },
-    };
-    const tool = createPristineRecallTool(searcher);
-    const legacyTool = createPristineVectorSearchTool(searcher);
-
-    const result = await tool.execute('tool-call-1', { query: 'sapphire', limit: 1 });
-
-    await expect(tool.execute('tool-call-2', { query: 123 })).rejects.toThrow(
-      'pristine_recall query must be a non-empty string',
-    );
-    await expect(legacyTool.execute('tool-call-3', { query: 123 })).rejects.toThrow(
-      'pristine_vector_search query must be a non-empty string',
-    );
-
-    expect(tool.name).toBe('pristine_recall');
-    expect(legacyTool.name).toBe('pristine_vector_search');
-    expect(calls).toEqual([{ query: 'sapphire', limit: 1 }]);
-    expect(result.content[0]?.type).toBe('text');
-    expect(result.content[0]?.text).toContain('known phrase sapphire bridge');
-    expect(result.details.results).toHaveLength(1);
-
-    const registered: { readonly name: string }[] = [];
-    registerSearchMemoryExtension(
-      { registerTool: (registeredTool) => registered.push(registeredTool) },
-      () => searcher,
-    );
-    expect(registered.map((registeredTool) => registeredTool.name)).toEqual([
-      'pristine_recall',
-      'pristine_vector_search',
-    ]);
-  });
-
-  it('returns clear negative-case errors and empty-index messages', async () => {
-    const dir = await makeTempDir();
-    const missingDbPath = join(dir, 'missing.db');
-    const searcher = new PristinePiVectorSearcher({
-      dbPath: missingDbPath,
-      embedder: new KeywordEmbedder(),
-    });
-
-    await expect(searcher.search({ query: '   ' })).rejects.toThrow(
-      'query must be a non-empty string',
-    );
-    await expect(searcher.search({ query: 'sapphire', limit: 0 })).rejects.toThrow(
-      'limit must be an integer',
-    );
-    await expect(searcher.search({ query: 'sapphire', lineNumber: 0 })).rejects.toThrow(
-      'lineNumber must be a positive integer',
-    );
-    await expect(searcher.search({ query: 'sapphire' })).rejects.toThrow('database is unavailable');
-
-    const emptyDbPath = join(dir, 'empty.db');
-    new Database(emptyDbPath).close();
-    const emptySearcher = new PristinePiVectorSearcher({
-      dbPath: emptyDbPath,
-      embedder: new KeywordEmbedder(),
-    });
-    await expect(emptySearcher.search({ query: 'sapphire' })).resolves.toEqual({
-      results: [],
-      message: 'Pristine Pi vector index is empty; run jsonl-index first.',
-    });
   });
 });

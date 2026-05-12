@@ -6,6 +6,7 @@ import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url } from './vault/base64url.js';
 import { toApprovedValue } from './vault/sqlite/index.js';
 import { createPrivacyPipeline } from './pipeline.js';
+export { createPrivacyPipeline } from './pipeline.js';
 import {
   createDeterministicPatternRuleSet,
   type DeterministicClassifierConfig,

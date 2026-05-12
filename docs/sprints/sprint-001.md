@@ -122,22 +122,22 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As an** agent using `pristine_recall`, **I want** each hit to include a bounded actual snippet, **so that** I can judge relevance before following the source pointer for authoritative context.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] `PristinePiVectorSearcher.search()` returns the stored snippet text for each hit instead of the fixed redaction placeholder.
-  - [ ] Returned snippets are bounded to a documented maximum length of 800 characters; snippets longer than 800 characters are deterministically truncated to the first 799 characters plus `…`.
-  - [ ] No `snippetPolicy`, reveal option, or other snippet behavior configuration is added.
-  - [ ] `sourcePointer` fields remain present and unchanged for each hit.
-  - [ ] `rg "snippet redacted by default|redacted by default" examples/pi-dev tests/examples/pi-dev` returns no stale behavior references.
+  - [x] `PristinePiVectorSearcher.search()` returns bounded matched snippet text for each hit instead of the fixed redaction placeholder, with obvious secrets sanitized before returning.
+  - [x] Returned snippets are bounded to a documented maximum length of 800 Unicode characters after sanitization; snippets longer than 800 Unicode characters are deterministically truncated to the first 799 characters plus `…`.
+  - [x] No `snippetPolicy`, reveal option, or other snippet behavior configuration is added.
+  - [x] `sourcePointer` fields remain present and unchanged for each hit.
+  - [x] `rg "snippet redacted by default|redacted by default" examples/pi-dev tests/examples/pi-dev` returns no stale behavior references.
 - **Functional verification:**
-  - [ ] Update and run `npm run test:unit -- tests/examples/pi-dev/search-memory.test.ts` and verify a semantic hit includes the expected stored snippet text.
-  - [ ] Add or update a unit test proving a snippet longer than 800 characters returns exactly 800 characters, preserves the first 799 characters, and ends with `…`.
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/search-memory-tool.test.ts` and verify the Pi tool still returns JSON-serializable recall results with snippets and source pointers.
+  - [x] Update and run `npm run test:unit -- tests/examples/pi-dev/search-memory.test.ts` and verify a semantic hit includes expected matched snippet text with obvious secrets sanitized.
+  - [x] Add or update a unit test proving a snippet longer than 800 Unicode characters returns exactly 800 Unicode characters, preserves the first 799 characters, and ends with `…`.
+  - [x] Run `npm run test:unit -- tests/examples/pi-dev/search-memory-tool.test.ts` and verify the Pi tool still returns JSON-serializable recall results with snippets and source pointers.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/search-memory-negative.test.ts` and verify empty index, missing DB, invalid query, and filter guard behavior still pass.
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts` and verify ingestion still stores snippets and source pointers correctly.
-  - [ ] Run `npm run test:smoke:local-model` and verify the source-index local-model smoke path still stores and recalls a semantic source pointer.
+  - [x] Run `npm run test:unit -- tests/examples/pi-dev/search-memory-negative.test.ts` and verify empty index, missing DB, invalid query, and filter guard behavior still pass.
+  - [x] Run `npm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts` and verify ingestion still stores snippets and source pointers correctly.
+  - [x] Run `npm run test:smoke:local-model` and verify the source-index local-model smoke path still stores and recalls a semantic source pointer.
 - **Manual-only verification:** N/A — recall output and truncation behavior are covered by unit and smoke tests.
 - **Planned commits:**
-  1. `feat: return bounded recall snippets` — replace hard-coded snippet redaction with bounded actual snippet mapping and update tests.
+  1. `feat: return bounded recall snippets` — replace hard-coded snippet redaction with bounded sanitized snippet mapping and update tests.
 - **Technical notes:** Keep truncation local to the Pi-dev search result mapper. Preserve database schema and ranking behavior.
 
 #### Story 4: Update Pi-dev recall guidance for snippet-first judgment

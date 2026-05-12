@@ -1,0 +1,21 @@
+# Pi-dev integration
+
+Pristine includes a reference Pi-dev integration for indexing Pi JSONL session history and recalling likely relevant source pointers.
+
+Start with the integration runbook:
+
+- [`examples/pi-dev/README.md`](../../examples/pi-dev/README.md)
+
+## Components
+
+- `jsonl-index` indexes Pi JSONL sessions into local Pristine storage.
+- `pristine_recall` performs semantic discovery over indexed snippets.
+- `search-session-history` inspects the authoritative JSONL source around returned pointers.
+
+## Recommended agent flow
+
+1. Use `pristine_recall` when the target session or exact phrase is unknown.
+2. Inspect returned `sourceUri`, `entryId`, and line metadata with `search-session-history` or ordinary file tools.
+3. Treat JSONL as the source of truth; treat recall results as pointers.
+
+Use `pristine_recall` as the only public Pi-dev recall tool name.

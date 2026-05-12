@@ -1,0 +1,45 @@
+# API
+
+The public SDK surface centers on `PristineLocal` plus intent-named primitives.
+
+## Client creation
+
+```ts
+import { PristineLocal } from '@pristine/shield-local';
+
+const pristine = await PristineLocal.create();
+```
+
+`PristineLocal.create` accepts optional configuration for local paths, an injected database, an injected embedder, and deterministic privacy classification.
+
+## Memory API
+
+### `store(chunks, { projectId })`
+
+Stores source-owned text chunks and returns stored memory records. Each chunk can include source metadata such as `chunkId`, `sourceKind`, `sourceUri`, `entryId`, line numbers, timestamp, and custom metadata.
+
+### `recall(query, { projectId, limit? })`
+
+Searches a project by semantic query and returns ranked memory hits. Returned hits include the stored source metadata and a score.
+
+### `forget(chunkIds, { projectId })`
+
+Deletes stored chunks by ID within one project and returns a deletion count.
+
+## Privacy API
+
+### `secureAndRedact(text, userId, classifier?)`
+
+Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default.
+
+### `reveal(redactedText, userId)`
+
+Restores known redaction placeholders for a local user when vault and key access allow it.
+
+### `scrubOutput(text, allowlist?)`
+
+Removes sensitive values from output text before it crosses a boundary where those values should not appear. The second parameter is named `allowlist` in the current TypeScript signature for compatibility, but its values are scrubbed from output; pass revealed or sensitive values that must be removed.
+
+## Types
+
+The package exports public option and result types for the launch API, including `StoreOptions`, `StoredMemory`, `RecallOptions`, `RecalledMemory`, `ForgetOptions`, and `ForgetResult`.

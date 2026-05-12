@@ -1,4 +1,0 @@
--- PRAGMA table_info(conversations_public) --
-{"cid":0,"name":"id","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}
-{"cid":1,"name":"project_id","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}
-{"cid":2,"name":"started_at","type":"INT","notnull":0,"dflt_value":null,"pk":0}

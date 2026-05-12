@@ -1,8 +1,0 @@
--- PRAGMA table_info(messages_public) --
-{"cid":0,"name":"id","type":"INTEGER","notnull":0,"dflt_value":null,"pk":0}
-{"cid":1,"name":"conversation_id","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}
-{"cid":2,"name":"turn_index","type":"INTEGER","notnull":0,"dflt_value":null,"pk":0}
-{"cid":3,"name":"role","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}
-{"cid":4,"name":"content","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}
-{"cid":5,"name":"timestamp","type":"INT","notnull":0,"dflt_value":null,"pk":0}
-{"cid":6,"name":"project_id","type":"TEXT","notnull":0,"dflt_value":null,"pk":0}

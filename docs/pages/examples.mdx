@@ -1,0 +1,45 @@
+# Examples
+
+## Memory flow
+
+```ts
+import { PristineLocal } from '@pristine/shield-local';
+
+const pristine = await PristineLocal.create();
+const projectId = 'example-project';
+
+await pristine.store(
+  [
+    {
+      chunkId: 'example-1',
+      text: 'Use source pointers to inspect the authoritative record.',
+      sourceKind: 'markdown',
+      sourceUri: 'file:///docs/example.md',
+      lineNumber: 12,
+    },
+  ],
+  { projectId },
+);
+
+const hits = await pristine.recall('authoritative record', { projectId, limit: 5 });
+const firstSourceUri = hits[0]?.sourceUri;
+```
+
+## Privacy flow
+
+```ts
+import { PristineLocal } from '@pristine/shield-local';
+
+const pristine = await PristineLocal.create();
+const userId = 'local-user';
+
+const secured = await pristine.secureAndRedact('token sk-test_1234567890abcdef', userId);
+if (secured.ok) {
+  const scrubbed = pristine.scrubOutput(secured.redactedText);
+  const safeText = scrubbed;
+}
+```
+
+## Pi-dev flow
+
+Use [`examples/pi-dev/README.md`](../../examples/pi-dev/README.md) to install the reference JSONL indexer, `pristine_recall` tool, and `search-session-history` skill.

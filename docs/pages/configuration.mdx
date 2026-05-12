@@ -1,0 +1,29 @@
+# Configuration
+
+Pristine configuration controls local storage, user isolation, and embedding behavior.
+
+## Default local setup
+
+```ts
+import { PristineLocal } from '@pristine/shield-local';
+
+const pristine = await PristineLocal.create();
+```
+
+The default setup initializes local paths for database and keys.
+
+## Local paths
+
+Use `baseDir` or `keysDir` when your application needs explicit storage locations. Keep those paths on the local device when preserving the default privacy model matters.
+
+## Injected database or embedder
+
+Advanced applications and tests can inject a `better-sqlite3` database or a custom embedder. If you inject an embedder, its vector dimension must match the vector storage initialized for the database.
+
+## Project IDs
+
+Pass a stable `projectId` to `store`, `recall`, and `forget`. A project ID is the boundary for memory search and deletion.
+
+## Offline operation
+
+If the default local embedder is used, prepare model cache behavior before production or offline use. Pre-cache model assets when first-use downloads are not acceptable.

@@ -4,9 +4,11 @@ Local-first privacy and memory SDK. No API calls, no server, no data leaving the
 
 ## Key References
 
-- **Implementation spec:** `docs/specs/implementation-spec-005.md`
-- **Sprint docs:** `docs/sprints/`
-- **Source repo for porting:** `~/projects/memory` (GitHub: `getlou-gh/memory`)
+- **Public docs:** `docs/pages/`
+- **Pi-dev integration runbook:** `examples/pi-dev/README.md`
+- **Source repo for historical porting context:** `~/projects/memory` (GitHub: `getlou-gh/memory`)
+
+Internal implementation specs, sprint histories, security audits, research notes, and convention drafts are intentionally not tracked in the public repository.
 
 ## Architecture
 

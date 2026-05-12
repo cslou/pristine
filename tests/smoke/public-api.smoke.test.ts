@@ -8,6 +8,7 @@ import {
   ConfigError,
   EmbedderError,
   PristineLocal,
+  SensitiveNotFoundError,
   createDatabase as createDatabaseFromBarrel,
 } from '../../src/index.js';
 
@@ -45,6 +46,7 @@ describe('public-API smoke — source chunk API', () => {
     expect(AppError).toBeTypeOf('function');
     expect(ConfigError).toBeTypeOf('function');
     expect(EmbedderError).toBeTypeOf('function');
+    expect(SensitiveNotFoundError).toBeTypeOf('function');
 
     expect(Object.keys(PristineBarrel).sort()).toEqual([
       'AppError',
@@ -54,6 +56,7 @@ describe('public-API smoke — source chunk API', () => {
       'PristineLocal',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
+      'SensitiveNotFoundError',
       'SourceChunkStore',
       'buildSourceChunkVectorDdl',
       'createDatabase',

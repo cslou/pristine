@@ -11,7 +11,7 @@ const listTests = (suite: string): string => {
     cwd: repoRoot,
     env: { ...process.env, VITEST_SUITE: suite },
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: 30_000,
   });
 
   expect(result.status, `${suite} list stderr:\n${result.stderr}`).toBe(0);

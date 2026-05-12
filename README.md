@@ -73,7 +73,7 @@ Canonical public documentation lives in [`docs/pages/`](docs/pages/):
 Build the Vocs docs locally:
 
 ```bash
-npm run docs:build
+pnpm run docs:build
 ```
 
 ## Pi-dev integration

@@ -87,6 +87,39 @@ describe('SqliteVaultStore', () => {
     expect(Buffer.isBuffer(entry.iv)).toBe(true);
     expect(Buffer.isBuffer(entry.authTag)).toBe(true);
   });
+
+  it('lists safe summaries without leaking secret-derived labels', async () => {
+    const results = await store.listEntries('user-1');
+
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sensitiveRef: 'ph-1', label: 'email_address-ph1' }),
+        expect.objectContaining({ sensitiveRef: 'ph-2', label: 'phone_number-ph2' }),
+      ]),
+    );
+    expect(results[0]!.alias).toBeUndefined();
+  });
+
+  it('gets and updates one safe summary by exact ref', async () => {
+    const before = await store.getEntry('user-1', 'ph-1');
+    expect(before?.label).toBe('email_address-ph1');
+    expect(before?.alias).toBeUndefined();
+
+    const updated = await store.updateEntry('user-1', 'ph-1', { alias: 'primary email secret' });
+    expect(updated.alias).toBe('primary email secret');
+    expect(updated.sensitiveRef).toBe('ph-1');
+
+    const after = await store.getEntry('user-1', 'ph-1');
+    expect(after?.alias).toBe('primary email secret');
+  });
+
+  it('deletes entries by exact refs and reports missing refs', async () => {
+    const result = await store.deleteEntries('user-1', ['ph-2', 'missing-ref']);
+
+    expect(result.deletedCount).toBe(1);
+    expect(result.missingSensitiveRefs).toEqual(['missing-ref']);
+    await expect(store.getEntry('user-1', 'ph-2')).resolves.toBeNull();
+  });
 });
 
 describe('SqlitePublicKeyStore', () => {

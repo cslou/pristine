@@ -94,27 +94,27 @@ skip_check() {
 }
 
 run_quick() {
-  run_check "lint" "Static / local checks" "npm run lint"
-  run_check "typecheck" "Static / local checks" "npm run typecheck"
+  run_check "lint" "Static / local checks" "pnpm run lint"
+  run_check "typecheck" "Static / local checks" "pnpm run typecheck"
 }
 
 run_standard() {
   run_quick
-  run_check "unit" "Unit" "npm run test:unit"
+  run_check "unit" "Unit" "pnpm run test:unit"
 }
 
 run_deep() {
   run_standard
-  run_check "build" "Static / local checks" "npm run build"
-  run_check "smoke" "E2E / smoke" "npm run test:smoke"
-  run_check "integration-deterministic" "Integration / contract" "SKIP_SLOW_TESTS=1 npm run test:integration"
-  run_check "e2e" "E2E / smoke" "npm run test:e2e"
+  run_check "build" "Static / local checks" "pnpm run build"
+  run_check "smoke" "E2E / smoke" "pnpm run test:smoke"
+  run_check "integration-deterministic" "Integration / contract" "SKIP_SLOW_TESTS=1 pnpm run test:integration"
+  run_check "e2e" "E2E / smoke" "pnpm run test:e2e"
 }
 
 run_full() {
   run_deep
-  run_check "integration-full-real-model" "Integration / contract" "npm run test:integration"
-  run_check "source-index-local-model-smoke" "E2E / smoke" "npm run test:smoke:local-model"
+  run_check "integration-full-real-model" "Integration / contract" "pnpm run test:integration"
+  run_check "source-index-local-model-smoke" "E2E / smoke" "pnpm run test:smoke:local-model"
 }
 
 ROUTINE_EMPTY=0

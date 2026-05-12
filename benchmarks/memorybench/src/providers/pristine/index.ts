@@ -1,9 +1,9 @@
-// Pristine Provider — disabled while the benchmark adapter is rebuilt.
+// Pristine Provider — disabled benchmark adapter stub.
 //
 // The prior implementation drove an older LOCOMO-aimed fact-extraction pipeline
-// that no longer matches Pristine's public source-pointer memory API. Rebuilding
-// this provider requires a benchmark adapter around the current store/recall/forget
-// primitives.
+// that no longer matches Pristine's public source-pointer memory API. This stub
+// fails loudly when selected so benchmark runs do not silently exercise stale
+// behavior.
 //
 // Until then, this stub satisfies the `Provider` interface (zero-arg
 // constructor + full method set) so the benchmarks package typechecks
@@ -16,7 +16,7 @@ import type { Provider, ProviderConfig, IngestOptions, IngestResult, SearchOptio
 import type { UnifiedSession } from "../../types/unified"
 
 const DEPRECATION_MESSAGE =
-  "PristineProvider is disabled while the benchmark adapter is rebuilt around " +
+  "PristineProvider is disabled because this benchmark adapter does not match " +
   "the current public source-pointer memory API."
 
 export class PristineProvider implements Provider {

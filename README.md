@@ -2,6 +2,8 @@
 
 Local-first privacy and source-pointer memory SDK for TypeScript. Pristine helps apps and agents store useful memory locally, recall it by semantic query, and keep sensitive text out of places it should not go.
 
+Pristine stores indexed chunks, snippets, embeddings, and source metadata; your application or harness remains the source of truth for full raw records.
+
 - No Pristine server required.
 - SQLite-backed local storage.
 - Local embedding configuration by default.
@@ -24,22 +26,26 @@ import { PristineLocal } from '@pristine/shield-local';
 const pristine = await PristineLocal.create();
 const projectId = 'local-project';
 
-await pristine.store(
-  [
-    {
-      chunkId: 'note-1',
-      text: 'Pristine keeps memory local by default.',
-      sourceKind: 'note',
-      sourceUri: 'file:///notes/privacy.md',
-    },
-  ],
-  { projectId },
-);
+try {
+  await pristine.store(
+    [
+      {
+        chunkId: 'note-1',
+        text: 'Pristine keeps memory local by default.',
+        sourceKind: 'note',
+        sourceUri: 'file:///notes/privacy.md',
+      },
+    ],
+    { projectId },
+  );
 
-const hits = await pristine.recall('local memory privacy', { projectId, limit: 3 });
-await pristine.forget(['note-1'], { projectId });
+  const hits = await pristine.recall('local memory privacy', { projectId, limit: 3 });
+  await pristine.forget(['note-1'], { projectId });
 
-const firstSourceUri = hits[0]?.sourceUri;
+  const firstSourceUri = hits[0]?.sourceUri;
+} finally {
+  await pristine.dispose();
+}
 ```
 
 ## Core API
@@ -54,7 +60,7 @@ const firstSourceUri = hits[0]?.sourceUri;
 
 ## Documentation
 
-Public docs source lives in [`docs/pages/`](docs/pages/):
+Canonical public documentation lives in [`docs/pages/`](docs/pages/):
 
 - [Quickstart](docs/pages/quickstart.mdx)
 - [Concepts](docs/pages/concepts.mdx)

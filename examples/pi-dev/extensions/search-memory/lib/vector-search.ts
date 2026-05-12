@@ -108,10 +108,13 @@ const euclideanDistance = (left: readonly number[], right: Buffer): number => {
   return Math.sqrt(sum);
 };
 
-const REDACTED_SNIPPET =
-  '[snippet redacted by default; inspect sourcePointer with search-session-history]';
+const MAX_RETURNED_SNIPPET_LENGTH = 800;
+const TRUNCATED_SNIPPET_SUFFIX = '…';
 
-const scrubSnippet = (_snippet: string): string => REDACTED_SNIPPET;
+const boundSnippet = (snippet: string): string => {
+  if (snippet.length <= MAX_RETURNED_SNIPPET_LENGTH) return snippet;
+  return `${snippet.slice(0, MAX_RETURNED_SNIPPET_LENGTH - TRUNCATED_SNIPPET_SUFFIX.length)}${TRUNCATED_SNIPPET_SUFFIX}`;
+};
 
 interface SearchRow extends PiJsonlIndexChunkRow {
   readonly distance: number;
@@ -175,7 +178,7 @@ const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit =>
     rank: index + 1,
     score: scoreFromDistance(row.distance),
     chunkId: row.chunk_id,
-    snippet: scrubSnippet(row.snippet),
+    snippet: boundSnippet(row.snippet),
     sourcePointer: {
       sourceKind: row.source_kind,
       sourceUri: row.source_uri,

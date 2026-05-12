@@ -94,7 +94,7 @@ describe('PristinePiVectorSearcher', () => {
     expect(result.results[0]).toMatchObject({
       rank: 1,
       chunkId: expect.any(String),
-      snippet: '[snippet redacted by default; inspect sourcePointer with search-session-history]',
+      snippet: 'The sprint 022 known phrase sapphire bridge belongs here.',
       sourcePointer: {
         sourceKind: 'pi-jsonl',
         sourceUri: '/tmp/session-a.jsonl',
@@ -265,13 +265,14 @@ describe('PristinePiVectorSearcher', () => {
     ).rejects.toThrow('embedding dimension mismatch');
   });
 
-  it('redacts returned snippets by default', async () => {
+  it('returns actual snippets bounded to 800 characters', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
+    const longSnippet = `Sapphire ${'x'.repeat(900)}`;
     await seedDb(dbPath, [
       message({
-        text: 'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 and dev@example.com should not leak.',
-        entryId: 'entry-secret',
+        text: longSnippet,
+        entryId: 'entry-long',
         lineNumber: 4,
       }),
     ]);
@@ -279,8 +280,7 @@ describe('PristinePiVectorSearcher', () => {
     const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
     const result = await searcher.search({ query: 'sapphire token' });
 
-    expect(result.results[0]?.snippet).toBe(
-      '[snippet redacted by default; inspect sourcePointer with search-session-history]',
-    );
+    expect(result.results[0]?.snippet).toHaveLength(800);
+    expect(result.results[0]?.snippet).toBe(`${longSnippet.slice(0, 799)}…`);
   });
 });

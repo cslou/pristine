@@ -4,7 +4,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_recall`.
 
-`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns bounded matched snippets with supported sensitive patterns replaced by placeholders, plus source pointers so an agent can judge relevance before inspecting the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
+`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns source pointers for authoritative follow-up. By default the `snippet` field is withheld; extension hosts that explicitly set `includeSnippetText` receive bounded matched snippets with supported sensitive patterns replaced by placeholders.
 
 ## Install
 
@@ -46,7 +46,7 @@ Each result includes:
 - `rank`
 - `score`
 - `chunkId`
-- `snippet` — bounded matched text for relevance judgment with supported sensitive patterns replaced by placeholders. Returned snippets are limited to 800 Unicode characters; longer snippets keep the first 799 characters and end with `…`.
+- `snippet` — withheld by default with source-pointer guidance. When an extension host explicitly sets `includeSnippetText`, snippets are bounded matched text for relevance judgment with supported sensitive patterns replaced by placeholders; returned snippets are limited to 800 Unicode characters, and longer snippets keep the first 799 characters and end with `…`.
 - `sourcePointer.sourceKind` = `pi-jsonl`
 - `sourcePointer.sourceUri`
 - `sourcePointer.entryId`
@@ -59,7 +59,7 @@ Each result includes:
 
 1. Use `jsonl-index` to index a session containing a unique phrase such as `known phrase sapphire bridge`.
 2. Ask Pi to call `pristine_recall` with `{ "query": "sapphire bridge", "limit": 5 }`.
-3. Pass condition: one result ranks the known phrase chunk and returns a bounded `snippet` plus a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`.
+3. Pass condition: one result ranks the known phrase chunk and returns a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`; default `snippet` output is withheld with guidance to inspect the pointer.
 4. Follow the pointer with `search-session-history` to inspect nearby authoritative JSONL context.
 
 ## Reset

@@ -16,7 +16,7 @@
 ### Sprint-Wide Context
 
 - **Sprint type:** Mixed
-- **Shared context:** No backward compatibility is required for `@pristine/shield-local`; this sprint should present `@pristine/sdk` as the only public package name. Pi-dev recall should return bounded actual snippets by default, not expose a snippet policy option.
+- **Shared context:** No backward compatibility is required for `@pristine/shield-local`; this sprint should present `@pristine/sdk` as the only public package name. Pi-dev recall should keep snippets withheld by default for safety, with explicitly configured bounded snippet previews available to trusted extension hosts.
 - **Non-goals:** Publishing to npm, adding compatibility aliases for `@pristine/shield-local`, renaming the `PristineLocal` class, changing database schema, changing embedding or vector ranking behavior, adding new snippet policy/configuration options, and broad product copy rewrites unrelated to the package rename or recall snippet behavior.
 
 ### Affected Flows
@@ -124,7 +124,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Acceptance criteria:**
   - [x] `PristinePiVectorSearcher.search()` returns bounded matched snippet text for each hit instead of the fixed redaction placeholder, with obvious secrets sanitized before returning.
   - [x] Returned snippets are bounded to a documented maximum length of 800 Unicode characters after sanitization; snippets longer than 800 Unicode characters are deterministically truncated to the first 799 characters plus `…`.
-  - [x] No `snippetPolicy`, reveal option, or other snippet behavior configuration is added.
+  - [x] No tool-input `snippetPolicy` or reveal option is added; sprint-integration review required a host-level `includeSnippetText` configuration while keeping default tool output withheld.
   - [x] `sourcePointer` fields remain present and unchanged for each hit.
   - [x] `rg "snippet redacted by default|redacted by default" examples/pi-dev tests/examples/pi-dev` returns no stale behavior references.
 - **Functional verification:**
@@ -229,7 +229,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 **What was accomplished:**
 - **Story 1: Rename package identity to `@pristine/sdk`** — The package metadata and lockfile now use `@pristine/sdk`, and the public API type fixture imports from the new package name. Verification lives in PR #234 and this sprint doc: package verification, smoke tests, typecheck, and no stale `shield-local` hits in package metadata/smoke fixtures all passed.
 - **Story 2: Update public docs and examples for `@pristine/sdk`** — README and Vocs pages now show `npm install @pristine/sdk` and imports from `@pristine/sdk`. Verification lives in PR #235 and this sprint doc: docs build, package verification, lint, and stale-reference searches passed.
-- **Story 3: Return bounded actual snippets from Pi-dev recall** — `pristine_recall` now returns bounded matched snippets after the Pristine privacy redaction pipeline, preserving source pointers as the authoritative follow-up path. The implementation added Unicode-safe truncation, safety-scan fallback, and table-driven redaction coverage for supported sensitive patterns; verification lives in PR #236 and this sprint doc.
+- **Story 3: Return bounded actual snippets from Pi-dev recall** — Sprint-integration review required keeping `pristine_recall` snippets withheld by default for safety, while allowing trusted extension hosts to explicitly configure bounded matched previews with supported sensitive patterns replaced by placeholders. The implementation added Unicode-safe truncation and table-driven coverage for supported sensitive patterns; verification lives in PR #236 and this sprint doc.
 - **Story 4: Update Pi-dev recall guidance for snippet-first judgment** — Pi-dev docs and the `search-session-history` skill now describe snippets as bounded matched previews for relevance judgment and `sourcePointer` inspection as the exact-context layer. Verification lives in PR #237 and this sprint doc: docs/static grep checks, docs build, and relevant Pi-dev tests passed.
 
 ## Verification delta
@@ -269,7 +269,7 @@ Regression summary: 0 existing regression verifications pending/not yet run; 9 f
 | Story 1 — Rename package identity | Package verification remains green | ✅ | `npm run verify:package` passed; final run package contents verified: 159 files |
 | Story 2 — Public docs/examples | README and Vocs docs use `@pristine/sdk` | ✅ | `rg "npm install @pristine/sdk|from '@pristine/sdk'" README.md docs/pages -n`; PR #235 |
 | Story 2 — Public docs/examples | Docs build remains green | ✅ | `npm run docs:build` passed in story and final verification |
-| Story 3 — Bounded recall snippets | Recall returns bounded matched snippets with source pointers | ✅ | `tests/examples/pi-dev/search-memory.test.ts`; PR #236 |
+| Story 3 — Bounded recall snippets | Recall withholds snippets by default and supports explicit bounded snippet previews with source pointers | ✅ | `tests/examples/pi-dev/search-memory.test.ts`; PR #236 and sprint-integration fixes |
 | Story 3 — Bounded recall snippets | Sensitive supported patterns become placeholders | ✅ | table-driven unit coverage in `tests/examples/pi-dev/search-memory.test.ts`; final unit suite passed 350 tests |
 | Story 3 — Bounded recall snippets | Local-model smoke still recalls source pointers | ✅ | `npm run test:smoke:local-model` passed in story and full regression |
 | Story 4 — Pi-dev guidance | Docs describe snippets for relevance and source pointers for authority | ✅ | Pi-dev docs and `SKILL.md`; static grep checks passed; PR #237 |
@@ -278,7 +278,7 @@ Regression summary: 0 existing regression verifications pending/not yet run; 9 f
 | Final Story — Sprint verification | Docs/package verification passed | ✅ | `npm run docs:build`; `npm run verify:package` |
 
 ## Drift from spec
-- None — no implementation spec exists for this sprint.
+- Sprint-integration review required a security adjustment from “bounded snippets by default” to “snippets withheld by default, bounded previews only when explicitly configured by a trusted extension host.” No implementation spec exists for this sprint.
 
 ## New Dependencies
 - None

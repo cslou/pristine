@@ -7,7 +7,10 @@ import {
   type PiJsonlIndexSeedMessage,
 } from './helpers/pi-jsonl-index-fixture.js';
 import type { PiJsonlEmbedder } from '../../../examples/pi-dev/extensions/search-memory/lib/local-embedder.js';
-import { formatRecallSnippet } from '../../../examples/pi-dev/extensions/search-memory/lib/snippet.js';
+import {
+  formatRecallSnippet,
+  REDACTED_RECALL_SNIPPET,
+} from '../../../examples/pi-dev/extensions/search-memory/lib/snippet.js';
 import { PristinePiVectorSearcher } from '../../../examples/pi-dev/extensions/search-memory/lib/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
@@ -100,7 +103,7 @@ describe('PristinePiVectorSearcher', () => {
     expect(result.results[0]).toMatchObject({
       rank: 1,
       chunkId: expect.any(String),
-      snippet: 'The sprint 022 known phrase sapphire bridge belongs here.',
+      snippet: REDACTED_RECALL_SNIPPET,
       sourcePointer: {
         sourceKind: 'pi-jsonl',
         sourceUri: '/tmp/session-a.jsonl',
@@ -271,7 +274,7 @@ describe('PristinePiVectorSearcher', () => {
     ).rejects.toThrow('embedding dimension mismatch');
   });
 
-  it('returns actual snippets bounded to 800 Unicode characters', async () => {
+  it('returns opt-in snippets bounded to 800 Unicode characters', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
     const longSnippet = `Sapphire ${'😀'.repeat(900)}`;
@@ -283,7 +286,11 @@ describe('PristinePiVectorSearcher', () => {
       }),
     ]);
 
-    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    const searcher = new PristinePiVectorSearcher({
+      dbPath,
+      embedder: new KeywordEmbedder(),
+      includeSnippetText: true,
+    });
     const result = await searcher.search({ query: 'sapphire token' });
     const snippet = result.results[0]?.snippet;
 
@@ -422,14 +429,14 @@ describe('PristinePiVectorSearcher', () => {
       `DEPLOYER_PRIVATE_KEY="0x${'a'.repeat(64)}"`,
       'private_key',
     ],
-  ])('sanitizes supported snippet pattern: %s', async (_name, snippet, sensitiveValue, type) => {
-    const formatted = await formatRecallSnippet(snippet);
+  ])('sanitizes supported snippet pattern: %s', (_name, snippet, sensitiveValue, type) => {
+    const formatted = formatRecallSnippet(snippet, { includeSnippetText: true });
 
-    expect(formatted).toContain(`SENSITIVE:${type}:`);
+    expect(formatted).toContain(`SENSITIVE:${type}`);
     expect(formatted).not.toContain(sensitiveValue);
   });
 
-  it('sanitizes obvious secrets while preserving relevance context', async () => {
+  it('returns redacted snippets by default and sanitized snippets when explicitly configured', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
     await seedDb(dbPath, [
@@ -440,13 +447,21 @@ describe('PristinePiVectorSearcher', () => {
       }),
     ]);
 
-    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
-    const result = await searcher.search({ query: 'sapphire token' });
+    const defaultSearcher = new PristinePiVectorSearcher({
+      dbPath,
+      embedder: new KeywordEmbedder(),
+    });
+    const defaultResult = await defaultSearcher.search({ query: 'sapphire token' });
+    expect(defaultResult.results[0]?.snippet).toBe(REDACTED_RECALL_SNIPPET);
 
-    expect(result.results[0]?.snippet).toEqual(
-      expect.stringMatching(
-        /^Sapphire token \[SENSITIVE:auth_token:[^\]]+\] and \[SENSITIVE:secret:[^\]]+\] remain relevant\.$/,
-      ),
+    const configuredSearcher = new PristinePiVectorSearcher({
+      dbPath,
+      embedder: new KeywordEmbedder(),
+      includeSnippetText: true,
+    });
+    const configuredResult = await configuredSearcher.search({ query: 'sapphire token' });
+    expect(configuredResult.results[0]?.snippet).toBe(
+      'Sapphire token [SENSITIVE:auth_token] and [SENSITIVE:secret] remain relevant.',
     );
   });
 });

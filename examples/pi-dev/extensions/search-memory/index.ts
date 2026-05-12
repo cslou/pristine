@@ -9,8 +9,10 @@ interface PiToolResultLike {
   readonly details: PristineVectorSearchResult;
 }
 
+type SearchToolName = 'pristine_recall' | 'pristine_vector_search';
+
 interface PiToolLike {
-  readonly name: 'pristine_vector_search';
+  readonly name: SearchToolName;
   readonly label: string;
   readonly description: string;
   readonly promptSnippet: string;
@@ -35,27 +37,25 @@ const optionalStringFields = [
   'cwd',
 ] as const;
 
-const toSearchInput = (params: unknown): PristineVectorSearchInput => {
+const toSearchInput = (params: unknown, toolName: SearchToolName): PristineVectorSearchInput => {
   if (typeof params !== 'object' || params === null || Array.isArray(params)) {
-    throw new Error('pristine_vector_search parameters must be an object');
+    throw new Error(`${toolName} parameters must be an object`);
   }
   const input = params as Record<string, unknown>;
   if (typeof input.query !== 'string') {
-    throw new Error('pristine_vector_search query must be a non-empty string');
+    throw new Error(`${toolName} query must be a non-empty string`);
   }
   const parsed: Record<string, unknown> = { query: input.query };
   for (const field of optionalStringFields) {
     const value = input[field];
     if (value === undefined) continue;
-    if (typeof value !== 'string')
-      throw new Error(`pristine_vector_search ${field} must be a string`);
+    if (typeof value !== 'string') throw new Error(`${toolName} ${field} must be a string`);
     parsed[field] = value;
   }
   for (const field of ['lineNumber', 'limit'] as const) {
     const value = input[field];
     if (value === undefined) continue;
-    if (typeof value !== 'number')
-      throw new Error(`pristine_vector_search ${field} must be a number`);
+    if (typeof value !== 'number') throw new Error(`${toolName} ${field} must be a number`);
     parsed[field] = value;
   }
   return parsed as unknown as PristineVectorSearchInput;
@@ -81,18 +81,23 @@ const parameters = {
   },
 } satisfies Record<string, unknown>;
 
-export const createPristineVectorSearchTool = (
-  searcher: PristineVectorSearcherLike = createPristinePiVectorSearcher(),
+const createSearchTool = (
+  searcher: PristineVectorSearcherLike,
+  toolName: SearchToolName,
 ): PiToolLike => ({
-  name: 'pristine_vector_search',
-  label: 'Pristine Vector Search',
+  name: toolName,
+  label: toolName === 'pristine_recall' ? 'Pristine Recall' : 'Pristine Vector Search',
   description:
-    'Semantic search over Pristine-indexed Pi JSONL snippets. Returns JSONL source pointers for follow-up inspection.',
+    toolName === 'pristine_recall'
+      ? 'Recall Pristine-indexed Pi JSONL snippets by semantic query. Returns JSONL source pointers for follow-up inspection.'
+      : 'Deprecated alias for pristine_recall. Semantic search over Pristine-indexed Pi JSONL snippets.',
   promptSnippet:
-    'pristine_vector_search: semantic search over indexed Pi JSONL snippets; returns sourceUri/entryId/lineNumber pointers.',
+    toolName === 'pristine_recall'
+      ? 'pristine_recall: recall indexed Pi JSONL snippets by semantic query; returns sourceUri/entryId/lineNumber pointers.'
+      : 'pristine_vector_search: deprecated alias for pristine_recall.',
   parameters,
   async execute(_toolCallId, params) {
-    const result = await searcher.search(toSearchInput(params));
+    const result = await searcher.search(toSearchInput(params, toolName));
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       details: result,
@@ -100,11 +105,21 @@ export const createPristineVectorSearchTool = (
   },
 });
 
+export const createPristineRecallTool = (
+  searcher: PristineVectorSearcherLike = createPristinePiVectorSearcher(),
+): PiToolLike => createSearchTool(searcher, 'pristine_recall');
+
+/** @deprecated Use createPristineRecallTool(). */
+export const createPristineVectorSearchTool = (
+  searcher: PristineVectorSearcherLike = createPristinePiVectorSearcher(),
+): PiToolLike => createSearchTool(searcher, 'pristine_vector_search');
+
 export const registerSearchMemoryExtension = (
   pi: PiExtensionApiLike,
   searcherFactory: () => PristineVectorSearcherLike = createPristinePiVectorSearcher,
 ): void => {
   const searcher = searcherFactory();
+  pi.registerTool(createPristineRecallTool(searcher));
   pi.registerTool(createPristineVectorSearchTool(searcher));
 };
 

@@ -94,8 +94,8 @@ describe('search-session-history skill', () => {
     expect(existsSync(skillPath)).toBe(true);
     const text = runBash(`cat ${skillPath}`);
 
-    expect(text).toContain('allowed-tools: pristine_vector_search bash read');
-    expect(text).toContain('pristine_vector_search');
+    expect(text).toContain('allowed-tools: pristine_recall bash read');
+    expect(text).toContain('pristine_recall');
     expect(text).toContain('Pointer-known mode');
     expect(text).toContain('Do not search globally');
     expect(text).toContain('Inspect only `sourcePointer.sourceUri`');

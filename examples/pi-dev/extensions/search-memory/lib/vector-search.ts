@@ -65,7 +65,7 @@ const validateLimit = (limit: number | undefined): number => {
   const resolved = limit ?? DEFAULT_LIMIT;
   if (!Number.isInteger(resolved) || resolved < 1 || resolved > MAX_LIMIT) {
     throw new Error(
-      `pristine_vector_search limit must be an integer in [1, ${MAX_LIMIT}], got ${resolved}`,
+      `Pristine Pi search limit must be an integer in [1, ${MAX_LIMIT}], got ${resolved}`,
     );
   }
   return resolved;
@@ -75,7 +75,7 @@ const validateLineNumber = (lineNumber: number | undefined): number | undefined 
   if (lineNumber === undefined) return undefined;
   if (!Number.isInteger(lineNumber) || lineNumber < 1) {
     throw new Error(
-      `pristine_vector_search lineNumber must be a positive integer, got ${lineNumber}`,
+      `Pristine Pi search lineNumber must be a positive integer, got ${lineNumber}`,
     );
   }
   return lineNumber;
@@ -84,7 +84,7 @@ const validateLineNumber = (lineNumber: number | undefined): number | undefined 
 const toEmbeddingBuffer = (vector: readonly number[]): Buffer => {
   if (!Number.isInteger(vector.length) || vector.length < 1 || vector.length > MAX_EMBEDDING_DIM) {
     throw new Error(
-      `pristine_vector_search embedding dimension must be in [1, ${MAX_EMBEDDING_DIM}], got ${vector.length}`,
+      `Pristine Pi search embedding dimension must be in [1, ${MAX_EMBEDDING_DIM}], got ${vector.length}`,
     );
   }
   const embedding = Float32Array.from(vector);
@@ -97,7 +97,7 @@ const euclideanDistance = (left: readonly number[], right: Buffer): number => {
   const values = new Float32Array(right.buffer, right.byteOffset, right.byteLength / 4);
   if (values.length !== left.length) {
     throw new Error(
-      `pristine_vector_search embedding dimension mismatch: query has ${left.length}, stored row has ${values.length}`,
+      `Pristine Pi search embedding dimension mismatch: query has ${left.length}, stored row has ${values.length}`,
     );
   }
   let sum = 0;
@@ -204,11 +204,11 @@ export class PristinePiVectorSearcher {
   public async search(input: PristineVectorSearchInput): Promise<PristineVectorSearchResult> {
     const query = input.query.trim();
     if (query.length === 0)
-      throw new Error('pristine_vector_search query must be a non-empty string');
+      throw new Error('Pristine Pi search query must be a non-empty string');
     const limit = validateLimit(input.limit);
     validateLineNumber(input.lineNumber);
     if (!existsSync(this.dbPath)) {
-      throw new Error(`pristine_vector_search database is unavailable: ${this.dbPath}`);
+      throw new Error(`Pristine Pi search database is unavailable: ${this.dbPath}`);
     }
 
     const db = new Database(this.dbPath, { readonly: true, fileMustExist: true });

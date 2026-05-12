@@ -13,7 +13,7 @@ Pi artifacts are grouped by the runtime shape users install: extensions live und
 | Source path | Copy/install target in another repo | Pi artifact type | Purpose |
 | --- | --- | --- | --- |
 | `examples/pi-dev/extensions/jsonl-index/` | `.pi/extensions/jsonl-index/` | Pi extension | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers. |
-| `examples/pi-dev/extensions/search-memory/` | `.pi/extensions/search-memory/` | Pi extension / custom tool | Registers `pristine_vector_search` for semantic vector search over indexed Pi snippets. |
+| `examples/pi-dev/extensions/search-memory/` | `.pi/extensions/search-memory/` | Pi extension / custom tool | Registers `pristine_recall` for semantic vector search over indexed Pi snippets. |
 | `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
 | `examples/pi-dev/shared/` | `.pi/shared/` | Shared helper code | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool. |
 
@@ -30,12 +30,12 @@ Use the search-session-history skill to find what we decided about Lantern Cache
 The agent should then:
 
 1. Load `search-session-history`.
-2. If no pointer is already known, call `pristine_vector_search` with the user's semantic query.
+2. If no pointer is already known, call `pristine_recall` with the user's semantic query.
 3. Use the returned `sourcePointer` (`sourceUri`, `entryId`, `lineNumber`).
 4. Inspect only `sourcePointer.sourceUri` for bounded user/assistant context.
 5. Avoid broad `rg`/grep over `~/.pi/agent/sessions` once a usable pointer exists.
 
-`pristine_vector_search` is the discovery layer. `search-session-history` is the exact-context layer.
+`pristine_recall` is the discovery layer. `search-session-history` is the exact-context layer. Compatibility note: `pristine_vector_search` remains registered as a deprecated alias during the transition; new examples and skills should call `pristine_recall`.
 
 ## Install into another repo
 
@@ -153,7 +153,7 @@ Use the search-session-history skill to answer: what did we decide about Lantern
 
 Pass condition:
 
-- The agent uses the skill, and the skill uses `pristine_vector_search` internally if no pointer is known.
+- The agent uses the skill, and the skill uses `pristine_recall` internally if no pointer is known.
 - The answer includes the Lantern Cache decisions.
 - The exact context comes from the returned `sourcePointer.sourceUri`.
 - The agent does not broad-grep all Pi sessions once it has a usable source pointer.

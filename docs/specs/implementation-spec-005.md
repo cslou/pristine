@@ -58,7 +58,7 @@ Pristine ships **primitives** — composable, opinion-free building blocks that 
 | **Primitive** (core SDK) | `client.store(chunks)` |
 | **Reference** | Pi JSONL `jsonl-index` extension that feeds active-session snippets/windows |
 | **Primitive** | `client.recall(query, opts)` returning recalled chunks/snippets, scores, and source pointers |
-| **Reference** (documented example, replaceable) | `pristine_vector_search` / `search_memory` tool that wraps vector search for agent tool-use |
+| **Reference** (documented example, replaceable) | `pristine_recall` / `search_memory` tool that wraps vector search for agent tool-use |
 | **Primitive** | embedder factory and configured vector dimension |
 | **Reference** | Nomic local embedder setup and warmup docs |
 
@@ -384,7 +384,7 @@ Each reference opens with *"This is one way to use Pristine primitives. You can 
 Sprint 022 adds a source-tree Pi reference under `examples/pi-dev/` before the core source-pointer cleanup. The flow keeps Pi JSONL as the source of truth and uses Pristine as a semantic index over source-owned records:
 
 1. `examples/pi-dev/extensions/jsonl-index/` parses the active Pi session JSONL on `agent_end` and `session_start` reconciliation, indexing user/assistant text snippets with `sourceKind: 'pi-jsonl'`, `sourceUri`, `entryId`, `parentId`, `lineNumber`, `timestamp`, and `cwd`.
-2. `examples/pi-dev/extensions/search-memory/` exposes `pristine_vector_search`, which searches `~/.pi/pristine/pristine.db` (or `PRISTINE_DB_PATH`) and returns ranked hits plus JSONL source pointers.
+2. `examples/pi-dev/extensions/search-memory/` exposes `pristine_recall`, which searches `~/.pi/pristine/pristine.db` (or `PRISTINE_DB_PATH`) and returns ranked hits plus JSONL source pointers.
 3. `examples/pi-dev/skills/search-session-history/` is a Pi skill that uses the returned pointer to inspect bounded user/assistant context directly from the authoritative JSONL file with existing `bash`/`read`/jq tools.
 
 This reference intentionally does not mirror raw Pi transcripts into a Pristine conversation store. The evidence from this flow informs the later architecture cleanup that formalizes source-pointer indexing across hosts.
@@ -392,7 +392,7 @@ This reference intentionally does not mirror raw Pi transcripts into a Pristine 
 
 #### Candidate reference set (each may or may not ship)
 
-- **`search_memory` / `pristine_vector_search` tool** — JSON-schema tool wrapper for Claude / Cursor / Pi / any tool-calling agent. Composes source-chunk vector search and formats snippets plus source pointers.
+- **`search_memory` / `pristine_recall` tool** — JSON-schema tool wrapper for Claude / Cursor / Pi / any tool-calling agent. Composes source-chunk vector search and formats snippets plus source pointers.
 - **Source-inspection helper or skill** — given a returned pointer, reads bounded context from the authoritative harness store (for example Pi JSONL via `search-session-history`).
 - **Harness indexing hook** — feeds source chunks into `store` on a harness-specific event such as `agent_end`, session close, file save, or explicit user command.
 - **`MEMORY.md` maintainer** — optional reference that writes timestamped summaries to a project-scoped markdown file or indexes summary text as source chunks with file pointers.

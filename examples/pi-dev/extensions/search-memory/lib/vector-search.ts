@@ -164,14 +164,14 @@ const buildFilterWhere = (
   return { clauses, params };
 };
 
-const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit => {
+const mapSearchRow = async (row: SearchRow, index: number): Promise<PristineVectorSearchHit> => {
   const lineNumber =
     typeof row.line_number === 'bigint' ? Number(row.line_number) : row.line_number;
   return {
     rank: index + 1,
     score: scoreFromDistance(row.distance),
     chunkId: row.chunk_id,
-    snippet: formatRecallSnippet(row.snippet),
+    snippet: await formatRecallSnippet(row.snippet),
     sourcePointer: {
       sourceKind: row.source_kind,
       sourceUri: row.source_uri,
@@ -238,7 +238,7 @@ export class PristinePiVectorSearcher {
           ? this.runKnn(db, embedding, limit)
           : this.runFilteredExact(db, vector, limit, filter);
       return {
-        results: rows.map(mapSearchRow),
+        results: await Promise.all(rows.map(mapSearchRow)),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
       };
     } finally {

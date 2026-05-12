@@ -7,6 +7,7 @@ import {
   type PiJsonlIndexSeedMessage,
 } from './helpers/pi-jsonl-index-fixture.js';
 import type { PiJsonlEmbedder } from '../../../examples/pi-dev/extensions/search-memory/lib/local-embedder.js';
+import { formatRecallSnippet } from '../../../examples/pi-dev/extensions/search-memory/lib/snippet.js';
 import { PristinePiVectorSearcher } from '../../../examples/pi-dev/extensions/search-memory/lib/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
@@ -285,6 +286,35 @@ describe('PristinePiVectorSearcher', () => {
     expect(Array.from(snippet ?? '')).toHaveLength(800);
   });
 
+  it.each([
+    ['GitHub token', 'Sapphire ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ token', 'api_key'],
+    ['OpenAI key', 'Sapphire sk-abcdefghijklmnopqrstuvwxyz123456789 key', 'api_key'],
+    ['Anthropic key', 'Sapphire sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 key', 'api_key'],
+    ['AWS access key', 'Sapphire AKIAABCDEFGHIJKLMNOP key', 'api_key'],
+    ['opaque bearer token', 'Sapphire Bearer abcdefghijklmnopqrstuvwxyz012345 token', 'auth_token'],
+    ['generic secret assignment', 'Sapphire password=correct-horse-battery note', 'secret'],
+    ['email address', 'Sapphire dev@example.com contact', 'secret'],
+    [
+      'private key block',
+      ['Sapphire key:', '-----BEGIN PRIVATE KEY-----', 'abc123', '-----END PRIVATE KEY-----'].join(
+        '\n',
+      ),
+      'private_key',
+    ],
+  ])('sanitizes supported snippet pattern: %s', async (_name, snippet, type) => {
+    const formatted = await formatRecallSnippet(snippet);
+
+    expect(formatted).toContain(`SENSITIVE:${type}:`);
+    expect(formatted).not.toContain('ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ');
+    expect(formatted).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456789');
+    expect(formatted).not.toContain('sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456');
+    expect(formatted).not.toContain('AKIAABCDEFGHIJKLMNOP');
+    expect(formatted).not.toContain('Bearer abcdefghijklmnopqrstuvwxyz012345');
+    expect(formatted).not.toContain('password=correct-horse-battery');
+    expect(formatted).not.toContain('dev@example.com');
+    expect(formatted).not.toContain('-----BEGIN PRIVATE KEY-----');
+  });
+
   it('sanitizes obvious secrets while preserving relevance context', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
@@ -299,8 +329,10 @@ describe('PristinePiVectorSearcher', () => {
     const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
     const result = await searcher.search({ query: 'sapphire token' });
 
-    expect(result.results[0]?.snippet).toBe(
-      'Sapphire token [REDACTED_AUTH_TOKEN] and [REDACTED_EMAIL] remain relevant.',
+    expect(result.results[0]?.snippet).toEqual(
+      expect.stringMatching(
+        /^Sapphire token \[SENSITIVE:auth_token:[^\]]+\] and \[SENSITIVE:secret:[^\]]+\] remain relevant\.$/,
+      ),
     );
   });
 });

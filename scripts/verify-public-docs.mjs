@@ -1,7 +1,21 @@
 #!/usr/bin/env node
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+
+const vocsPagePaths = existsSync('docs/pages')
+  ? readdirSync('docs/pages')
+      .filter((entry) => entry.endsWith('.mdx'))
+      .map((entry) => `docs/pages/${entry}`)
+      .sort()
+  : [];
 
 const publicDocPaths = [
   'README.md',
@@ -11,6 +25,7 @@ const publicDocPaths = [
   'docs/public-api.md',
   'docs/release-checklist.md',
   'docs/agent-integration.md',
+  ...vocsPagePaths,
   'examples/pi-dev/README.md',
 ];
 
@@ -24,6 +39,14 @@ const isExternalTarget = (target) =>
   target.startsWith('https://') ||
   target.startsWith('mailto:') ||
   target.startsWith('#');
+
+const resolveLocalTarget = (docPath, targetPath) => {
+  if (targetPath.startsWith('/')) {
+    const route = targetPath === '/' ? 'index' : targetPath.slice(1);
+    return join('docs/pages', `${route}.mdx`);
+  }
+  return join(dirname(docPath), targetPath);
+};
 
 for (const docPath of publicDocPaths) {
   if (!existsSync(docPath)) {
@@ -46,7 +69,7 @@ for (const docPath of publicDocPaths) {
     if (path.length === 0) {
       continue;
     }
-    const resolvedPath = join(dirname(docPath), path);
+    const resolvedPath = resolveLocalTarget(docPath, path);
     if (!existsSync(resolvedPath)) {
       failures.push(`Missing local link target in ${docPath}: ${target}`);
     }

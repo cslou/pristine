@@ -42,8 +42,11 @@ describe('real-model source-index smoke', () => {
         sourceUri: 'file:///tmp/source-smoke.txt',
       });
     } finally {
-      await client.dispose();
-      db.close();
+      try {
+        await client.dispose();
+      } finally {
+        db.close();
+      }
     }
   });
 });

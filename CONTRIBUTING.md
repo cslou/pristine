@@ -28,6 +28,7 @@ npm run test:unit
 npm run test:smoke
 SKIP_SLOW_TESTS=1 npm run test:integration
 npm run test:e2e
+npm run docs:build
 npm run verify:package
 ```
 
@@ -64,8 +65,9 @@ A PR should include:
 Before requesting review, confirm:
 
 ```bash
+npm run docs:build
 npm run verify:package
 .checks/pre-merge.sh
 ```
 
-`verify:package` builds the package and checks the clean package artifact contents. Do not publish from feature branches.
+`docs:build` validates the Vocs documentation site. `verify:package` builds the package and checks the clean package artifact contents. Do not publish from feature branches.

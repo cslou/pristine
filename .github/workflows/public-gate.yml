@@ -40,5 +40,8 @@ jobs:
       - name: Smoke tests
         run: npm run test:smoke
 
+      - name: Build docs
+        run: npm run docs:build
+
       - name: Verify package contents
         run: npm run verify:package

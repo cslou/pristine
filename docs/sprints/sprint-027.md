@@ -16,13 +16,13 @@
 ### Sprint-Wide Context
 
 - **Sprint type:** Docs / Tooling / Cleanup
-- **Shared context:** `docs/` becomes the public Vocs documentation root. Vocs pages should live directly under `docs/` (`docs/index.mdx`, `docs/quickstart.mdx`, etc.) with `vocs.config.ts` at the repo root. Internal docs are removed from tracked Git and protected with targeted `.gitignore` entries; public-worthy information from internal docs may be rewritten into public docs, but the original internal files should not remain tracked. Because AGENTS.md requires the active sprint audit file at `docs/sprints/sprint-027.md`, this sprint preserves that one file through sprint completion as a temporary workflow exception, records final evidence there on the sprint branch, then removes it in the Final Story before the sprint-integration PR so no sprint docs remain tracked in the public target. This sprint creates buildable in-repo docs only; it does not add hosting/deployment.
+- **Shared context:** `docs/` becomes the public Vocs documentation root. Vocs pages live under Vocs' required `docs/pages/` content directory (`docs/pages/index.mdx`, `docs/pages/quickstart.mdx`, etc.) with `vocs.config.ts` at the repo root and `rootDir: 'docs'`. Internal docs are removed from tracked Git and protected with targeted `.gitignore` entries; public-worthy information from internal docs may be rewritten into public docs, but the original internal files should not remain tracked. Because AGENTS.md requires the active sprint audit file at `docs/sprints/sprint-027.md`, this sprint preserves that one file through sprint completion as a temporary workflow exception, records final evidence there on the sprint branch, then removes it in the Final Story before the sprint-integration PR so no sprint docs remain tracked in the public target. This sprint creates buildable in-repo docs only; it does not add hosting/deployment.
 - **Non-goals:** Deploying docs to GitHub Pages, Vercel, Netlify, or a custom domain; changing SDK runtime behavior or public API semantics; publishing a package release; preserving historical sprint/spec/security-audit files in the public repository; adding generated API documentation beyond what can be maintained and verified in this sprint.
 
 ### Expected Touch List
 
 - **Docs tooling:** `package.json`, `package-lock.json`, `vocs.config.ts`, possible docs verification scripts.
-- **Public docs root:** `docs/index.mdx`, `docs/quickstart.mdx`, `docs/concepts.mdx`, `docs/api.mdx`, `docs/privacy.mdx`, `docs/pi-dev.mdx`, `docs/configuration.mdx`, `docs/examples.mdx`.
+- **Public docs root:** `docs/pages/index.mdx`, `docs/pages/quickstart.mdx`, `docs/pages/concepts.mdx`, `docs/pages/api.mdx`, `docs/pages/privacy.mdx`, `docs/pages/pi-dev.mdx`, `docs/pages/configuration.mdx`, `docs/pages/examples.mdx`.
 - **Internal docs removal:** `docs/sprints/`, `docs/specs/`, `docs/stories/`, `docs/security-audits/`, `docs/analysis/`, `docs/architecture/`, `docs/research/`, `docs/conventions/`.
 - **Repo presentation:** `.gitignore`, `README.md`.
 - **Verification:** `scripts/verify-public-docs.mjs`, `tests/smoke/public-api-types-fixture.mts`, existing lint/type/build/test scripts.
@@ -30,7 +30,7 @@
 ### Affected Flows
 
 - **Existing flows affected:** Developer reads README to understand/install/use Pristine; developer runs docs verification; maintainer reviews tracked docs for public-readiness; Pi-dev integrator discovers `examples/pi-dev/README.md` from public docs.
-- **New flows introduced:** Developer runs `npm run docs:build` to verify the public Vocs documentation site; public reader uses `docs/*.mdx` as the canonical documentation source. No product/runtime flow is introduced; because no implementation spec exists and `docs/specs/` is being removed, the new docs-build flow is documented in `package.json`, public docs, and the sprint final review rather than an implementation spec.
+- **New flows introduced:** Developer runs `npm run docs:build` to verify the public Vocs documentation site; public reader uses Vocs routes backed by `docs/pages/*.mdx` as the canonical documentation source. No product/runtime flow is introduced; because no implementation spec exists and `docs/specs/` is being removed, the new docs-build flow is documented in `package.json`, public docs, and the sprint final review rather than an implementation spec.
 
 ### Verification Strategy
 
@@ -80,16 +80,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** Vocs installed and configured with a minimal buildable docs site, **so that** public docs have deterministic tooling before content migration begins.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] `vocs` is added as an exact pinned `devDependency`, and `package-lock.json` records the dependency deterministically. **Pass condition:** `npm install` produces no unpinned Vocs dependency range in `package.json`, and `npm ci` can install the lockfile.
-  - [ ] `package.json` includes docs scripts for local development and verification, including `docs:dev` and `docs:build`; `docs:preview` may be added if supported by the chosen Vocs setup. **Pass condition:** `npm run docs:build` is the canonical noninteractive docs build command.
-  - [ ] `vocs.config.ts` exists at the repo root and defines a navigation/sidebar for the initial public docs pages: Intro, Quickstart, Concepts, API, Privacy, Pi-dev, Configuration, and Examples. **Pass condition:** the Vocs build includes those pages without unresolved route/config errors.
-  - [ ] Minimal placeholder pages exist directly under `docs/` as `.mdx` files: `index.mdx`, `quickstart.mdx`, `concepts.mdx`, `api.mdx`, `privacy.mdx`, `pi-dev.mdx`, `configuration.mdx`, and `examples.mdx`. **Pass condition:** no Vocs content pages are placed under `docs/pages/` in this sprint.
+  - [x] `vocs` is added as an exact pinned `devDependency`, and `package-lock.json` records the dependency deterministically. **Pass condition:** `npm install` produces no unpinned Vocs dependency range in `package.json`, and `npm ci` can install the lockfile. Evidence: `vocs` pinned to `1.4.1` in `package.json`; `npm ci` passed.
+  - [x] `package.json` includes docs scripts for local development and verification, including `docs:dev` and `docs:build`; `docs:preview` may be added if supported by the chosen Vocs setup. **Pass condition:** `npm run docs:build` is the canonical noninteractive docs build command. Evidence: `docs:dev`, `docs:build`, and `docs:preview` added; `npm run docs:build` passed.
+  - [x] `vocs.config.ts` exists at the repo root and defines a navigation/sidebar for the initial public docs pages: Intro, Quickstart, Concepts, API, Privacy, Pi-dev, Configuration, and Examples. **Pass condition:** the Vocs build includes those pages without unresolved route/config errors. Evidence: `vocs.config.ts`; `npm run docs:build` passed.
+  - [x] Minimal placeholder pages exist under Vocs' required `docs/pages/` directory as `.mdx` files: `index.mdx`, `quickstart.mdx`, `concepts.mdx`, `api.mdx`, `privacy.mdx`, `pi-dev.mdx`, `configuration.mdx`, and `examples.mdx`. **Pass condition:** Vocs routes for `/`, `/quickstart`, `/concepts`, `/api`, `/privacy`, `/pi-dev`, `/configuration`, and `/examples` build successfully. Evidence: pages added under `docs/pages/`; `npm run docs:build` passed.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`. **Pass condition:** Vocs completes a production build with exit code 0 and no missing-page/sidebar errors.
-  - [ ] Run `node -e "const semver = /^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/; const pkg = require('./package.json'); if (!semver.test(pkg.devDependencies?.vocs ?? '')) process.exit(1);"`. **Pass condition:** Vocs exists as an exact semver devDependency, not a range/tag such as `^`, `~`, `latest`, `*`, or `>=`.
+  - [x] Run `npm run docs:build`. **Pass condition:** Vocs completes a production build with exit code 0 and no missing-page/sidebar errors. Evidence: passed.
+  - [x] Run `node -e "const semver = /^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/; const pkg = require('./package.json'); if (!semver.test(pkg.devDependencies?.vocs ?? '')) process.exit(1);"`. **Pass condition:** Vocs exists as an exact semver devDependency, not a range/tag such as `^`, `~`, `latest`, `*`, or `>=`. Evidence: passed.
 - **Regression verification:**
-  - [ ] Run `npm run typecheck`. **Pass condition:** adding `vocs.config.ts` and docs scripts does not break TypeScript checking for the package.
-  - [ ] Run `npm run build`. **Pass condition:** SDK package build still succeeds after adding docs tooling.
+  - [x] Run `npm run typecheck`. **Pass condition:** adding `vocs.config.ts` and docs scripts does not break TypeScript checking for the package. Evidence: passed.
+  - [x] Run `npm run build`. **Pass condition:** SDK package build still succeeds after adding docs tooling. Evidence: passed.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: add vocs documentation scaffold`
@@ -111,17 +111,17 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** public SDK reader, **I want** user-journey docs for Pristine's install, concepts, APIs, privacy model, configuration, examples, and Pi-dev integration, **so that** I can adopt Pristine without reading internal sprint/spec documents.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `docs/index.mdx` explains what Pristine is, the local-first/privacy promise, supported package/runtime status, and links to Quickstart, API, Privacy, and Pi-dev pages. **Pass condition:** the page contains no references to sprint numbers, implementation-spec files, internal audits, or private planning process.
-  - [ ] `docs/quickstart.mdx` provides install and minimal SDK usage for `createPristineLocal`, `store`, `recall`, and `forget`. **Pass condition:** code snippets use the current public API names and do not mention deprecated source-chunk method names.
-  - [ ] `docs/concepts.mdx` explains source-owned memory, source pointers, project scoping, local embeddings, and SQLite storage at a public-reader level. **Pass condition:** it describes behavior without relying on internal schema/planning jargon.
-  - [ ] `docs/api.mdx` documents the public SDK surface needed for launch: creation/configuration, memory primitives, privacy primitives, key rotation/migration where public, and exported result shapes at a concise level. **Pass condition:** documented names match exports from `src/index.ts`.
-  - [ ] `docs/privacy.mdx` explains local-only operation, redaction/reveal/scrub flows, key storage expectations, and what data does or does not leave the device by default. **Pass condition:** no claim contradicts `README.md`, `SECURITY.md`, or current implementation behavior, verified by the content-accuracy checklist in functional verification.
-  - [ ] `docs/pi-dev.mdx` points Pi integrators to `examples/pi-dev/README.md` as the integration runbook and uses `pristine_recall` as the only Pi search tool name. **Pass condition:** the page contains no `pristine_vector_search` references.
-  - [ ] `docs/configuration.mdx` and `docs/examples.mdx` cover practical options, database paths, embedding configuration basics, and representative SDK/Pi examples. **Pass condition:** examples are compatible with the current public package surface.
+  - [ ] `docs/pages/index.mdx` explains what Pristine is, the local-first/privacy promise, supported package/runtime status, and links to Quickstart, API, Privacy, and Pi-dev pages. **Pass condition:** the page contains no references to sprint numbers, implementation-spec files, internal audits, or private planning process.
+  - [ ] `docs/pages/quickstart.mdx` provides install and minimal SDK usage for `createPristineLocal`, `store`, `recall`, and `forget`. **Pass condition:** code snippets use the current public API names and do not mention deprecated source-chunk method names.
+  - [ ] `docs/pages/concepts.mdx` explains source-owned memory, source pointers, project scoping, local embeddings, and SQLite storage at a public-reader level. **Pass condition:** it describes behavior without relying on internal schema/planning jargon.
+  - [ ] `docs/pages/api.mdx` documents the public SDK surface needed for launch: creation/configuration, memory primitives, privacy primitives, key rotation/migration where public, and exported result shapes at a concise level. **Pass condition:** documented names match exports from `src/index.ts`.
+  - [ ] `docs/pages/privacy.mdx` explains local-only operation, redaction/reveal/scrub flows, key storage expectations, and what data does or does not leave the device by default. **Pass condition:** no claim contradicts `README.md`, `SECURITY.md`, or current implementation behavior, verified by the content-accuracy checklist in functional verification.
+  - [ ] `docs/pages/pi-dev.mdx` points Pi integrators to `examples/pi-dev/README.md` as the integration runbook and uses `pristine_recall` as the only Pi search tool name. **Pass condition:** the page contains no `pristine_vector_search` references.
+  - [ ] `docs/pages/configuration.mdx` and `docs/pages/examples.mdx` cover practical options, database paths, embedding configuration basics, and representative SDK/Pi examples. **Pass condition:** examples are compatible with the current public package surface.
 - **Functional verification:**
   - [ ] Update or add docs verification so public docs snippets/links are checked where practical. **Pass condition:** `npm run verify:docs` reads the Vocs `.mdx` docs, validates local links, and verifies TypeScript package import snippets or delegates to `npm run verify:public-api-types` for compiled API snippets.
-  - [ ] Run a public docs content-accuracy checklist comparing `docs/concepts.mdx`, `docs/api.mdx`, `docs/privacy.mdx`, and `docs/configuration.mdx` against `src/index.ts`, `src/client.ts`, `README.md`, `SECURITY.md`, and existing public tests. **Pass condition:** each factual claim about API names, local-only behavior, storage, embeddings, privacy operations, and configuration is either supported by a cited file/test or rewritten/removed; the completed checklist is recorded in the story PR body.
-  - [ ] Run `rg "implementation-spec|docs/sprints|docs/specs|docs/security-audits|pristine_vector_search|indexSourceChunks|searchSourceChunks|deleteSourceChunks" docs/*.mdx`. **Pass condition:** command returns no unapproved public-doc hits; any intentional legacy API mention must be explicitly justified in the story PR body.
+  - [ ] Run a public docs content-accuracy checklist comparing `docs/pages/concepts.mdx`, `docs/pages/api.mdx`, `docs/pages/privacy.mdx`, and `docs/pages/configuration.mdx` against `src/index.ts`, `src/client.ts`, `README.md`, `SECURITY.md`, and existing public tests. **Pass condition:** each factual claim about API names, local-only behavior, storage, embeddings, privacy operations, and configuration is either supported by a cited file/test or rewritten/removed; the completed checklist is recorded in the story PR body.
+  - [ ] Run `rg "implementation-spec|docs/sprints|docs/specs|docs/security-audits|pristine_vector_search|indexSourceChunks|searchSourceChunks|deleteSourceChunks" docs/pages/*.mdx`. **Pass condition:** command returns no unapproved public-doc hits; any intentional legacy API mention must be explicitly justified in the story PR body.
 - **Regression verification:**
   - [ ] Run `npm run verify:public-api-types`. **Pass condition:** public API type fixture still compiles after docs/API wording updates.
   - [ ] Run `npm run docs:build`. **Pass condition:** authored `.mdx` content builds successfully in Vocs.
@@ -147,13 +147,13 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
   - [ ] Remove tracked internal docs directories with `git rm -r`: `docs/specs/`, `docs/stories/`, `docs/security-audits/`, `docs/analysis/`, `docs/architecture/`, `docs/research/`, and `docs/conventions/`; remove historical sprint docs under `docs/sprints/` while preserving active `docs/sprints/sprint-027.md` through final completion. **Pass condition:** no files under those internal paths remain in `git ls-files` except `docs/sprints/sprint-027.md`.
-  - [ ] Add targeted `.gitignore` entries for the removed internal docs paths and do not ignore the whole `docs/` directory; add a temporary negation for `docs/sprints/sprint-027.md` if needed so the active audit file remains tracked until the Final Story removes it. **Pass condition:** `git check-ignore docs/sprints/example.md docs/specs/example.md docs/stories/example.md docs/security-audits/example.md docs/analysis/example.md docs/architecture/example.md docs/research/example.md docs/conventions/example.md` reports ignored paths, while `git check-ignore --no-index docs/index.mdx` and `git check-ignore --no-index docs/sprints/sprint-027.md` exit non-zero during Story 3.
-  - [ ] Keep public Vocs docs tracked directly under `docs/`. **Pass condition:** `git ls-files docs/*.mdx` includes all expected public docs pages.
+  - [ ] Add targeted `.gitignore` entries for the removed internal docs paths and do not ignore the whole `docs/` directory; add a temporary negation for `docs/sprints/sprint-027.md` if needed so the active audit file remains tracked until the Final Story removes it. **Pass condition:** `git check-ignore docs/sprints/example.md docs/specs/example.md docs/stories/example.md docs/security-audits/example.md docs/analysis/example.md docs/architecture/example.md docs/research/example.md docs/conventions/example.md` reports ignored paths, while `git check-ignore --no-index docs/pages/index.mdx` and `git check-ignore --no-index docs/sprints/sprint-027.md` exit non-zero during Story 3.
+  - [ ] Keep public Vocs docs tracked directly under `docs/`. **Pass condition:** `git ls-files docs/pages/*.mdx` includes all expected public docs pages.
   - [ ] Update docs verification inputs so removed internal docs are not required by `npm run verify:docs` or other public docs checks. **Pass condition:** docs verification succeeds after the internal directories are removed.
 - **Functional verification:**
   - [ ] Run `git ls-files docs/sprints docs/specs docs/stories docs/security-audits docs/analysis docs/architecture docs/research docs/conventions`. **Pass condition:** command returns only `docs/sprints/sprint-027.md`; any other returned path fails the audit.
   - [ ] Run `git check-ignore docs/sprints/example.md docs/specs/example.md docs/stories/example.md docs/security-audits/example.md docs/analysis/example.md docs/architecture/example.md docs/research/example.md docs/conventions/example.md`. **Pass condition:** every path is printed as ignored.
-  - [ ] Run `git check-ignore --no-index docs/index.mdx; test $? -eq 1` and `git check-ignore --no-index docs/sprints/sprint-027.md; test $? -eq 1`. **Pass condition:** public Vocs docs and the active sprint audit file are not ignored during Story 3.
+  - [ ] Run `git check-ignore --no-index docs/pages/index.mdx; test $? -eq 1` and `git check-ignore --no-index docs/sprints/sprint-027.md; test $? -eq 1`. **Pass condition:** public Vocs docs and the active sprint audit file are not ignored during Story 3.
 - **Regression verification:**
   - [ ] Run `npm run verify:docs`. **Pass condition:** public docs verification no longer depends on removed internal dirs and exits 0.
   - [ ] Run `npm run docs:build`. **Pass condition:** Vocs site still builds after internal docs are removed.
@@ -179,19 +179,19 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
   - [ ] `README.md` is rewritten as a public landing page with: product summary, local-first/privacy promise, install command, minimal quickstart, core API overview, Pi-dev integration pointer, docs links, status, license, and security/reporting links. **Pass condition:** all listed sections are present, README stays under 220 lines, and deeper API/how-to detail links to Vocs instead of being duplicated inline.
-  - [ ] README links point only to existing public files/routes such as `docs/index.mdx`, `docs/quickstart.mdx`, `docs/api.mdx`, `docs/privacy.mdx`, `docs/pi-dev.mdx`, `examples/pi-dev/README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and `LICENSE`. **Pass condition:** `npm run verify:docs` reports no missing README links.
+  - [ ] README links point only to existing public files/routes such as `docs/pages/index.mdx`, `docs/pages/quickstart.mdx`, `docs/pages/api.mdx`, `docs/pages/privacy.mdx`, `docs/pages/pi-dev.mdx`, `examples/pi-dev/README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, and `LICENSE`. **Pass condition:** `npm run verify:docs` reports no missing README links.
   - [ ] README contains no links to removed internal paths and no internal planning terms such as sprint docs, implementation specs, story checklists, or security-audit files. **Pass condition:** `rg "docs/sprints|docs/specs|docs/stories|docs/security-audits|implementation-spec|Sprint [0-9]|Story Checklist" README.md` returns no hits.
   - [ ] README uses the current public memory and Pi tool names: `store`, `recall`, `forget`, and `pristine_recall`. **Pass condition:** README contains no `indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`, or `pristine_vector_search` references.
 - **Functional verification:**
   - [ ] Run `npm run verify:docs`. **Pass condition:** README and public docs links/snippets validate successfully.
-  - [ ] Run `rg "docs/sprints|docs/specs|docs/stories|docs/security-audits|implementation-spec|pristine_vector_search|indexSourceChunks|searchSourceChunks|deleteSourceChunks" README.md docs/*.mdx`. **Pass condition:** no unapproved stale/internal hits remain in public-facing docs.
+  - [ ] Run `rg "docs/sprints|docs/specs|docs/stories|docs/security-audits|implementation-spec|pristine_vector_search|indexSourceChunks|searchSourceChunks|deleteSourceChunks" README.md docs/pages/*.mdx`. **Pass condition:** no unapproved stale/internal hits remain in public-facing docs.
 - **Regression verification:**
   - [ ] Run `npm run verify:package`. **Pass condition:** package contents remain valid and do not accidentally include removed internal docs beyond the intended npm package files.
   - [ ] Run `npm run test:smoke`. **Pass condition:** public package entrypoint and public API smoke tests still pass after README/docs changes.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: refresh public readme`
-- **Technical notes:** Keep README short enough to serve as GitHub landing content; defer deeper explanation to Vocs pages. Do not duplicate every API detail from `docs/api.mdx`.
+- **Technical notes:** Keep README short enough to serve as GitHub landing content; defer deeper explanation to Vocs pages. Do not duplicate every API detail from `docs/pages/api.mdx`.
 
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

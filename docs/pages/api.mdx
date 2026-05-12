@@ -1,0 +1,21 @@
+# API
+
+The public SDK surface centers on `PristineLocal` plus intent-named primitives.
+
+## Client creation
+
+Use `PristineLocal.create()` to create a local SDK client for the default local configuration, or pass configuration options for database, key, embedder, and privacy behavior.
+
+## Memory primitives
+
+- `store` writes source-owned memory chunks with a required `projectId` option.
+- `recall` searches stored chunks by semantic query and returns source-pointer hits.
+- `forget` deletes stored chunks by ID with a required `projectId` option.
+
+## Privacy primitives
+
+- `secureAndRedact` detects sensitive values and stores encrypted originals.
+- `reveal` restores redacted placeholders when the caller is authorized.
+- `scrubOutput` removes sensitive values from generated output before it leaves the local boundary.
+
+Detailed reference text will stay aligned with the exported types from `src/index.ts`.

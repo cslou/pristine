@@ -1,0 +1,15 @@
+# Privacy
+
+Pristine is designed for local-first privacy: no server is required, and user data does not leave the device by default.
+
+## Redact and reveal
+
+`secureAndRedact` detects sensitive values, stores encrypted originals locally, and returns text with placeholders. `reveal` can restore those placeholders when the caller has local access to the vault and keys.
+
+## Scrub output
+
+`scrubOutput` is the safety layer for generated text. Use it before output crosses a boundary where sensitive values should not appear.
+
+## Local responsibility
+
+Applications remain responsible for where they store databases and keys, what they log, and whether they add any networked services around Pristine.

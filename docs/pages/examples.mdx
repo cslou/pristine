@@ -1,0 +1,22 @@
+# Examples
+
+Use these flows as starting points for public examples.
+
+## Memory flow
+
+1. Create a local client.
+2. Call `store` with source-owned chunks.
+3. Call `recall` with a semantic query.
+4. Follow returned source pointers to inspect authoritative context.
+5. Call `forget` when stored chunks should be removed.
+
+## Privacy flow
+
+1. Call `secureAndRedact` before untrusted text enters an agent or model context.
+2. Keep encrypted originals in the local vault.
+3. Call `reveal` only when local policy allows restoration.
+4. Call `scrubOutput` before generated text crosses an output boundary.
+
+## Pi-dev flow
+
+Use `examples/pi-dev/README.md` to install the reference JSONL indexer, `pristine_recall` tool, and `search-session-history` skill.

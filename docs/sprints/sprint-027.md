@@ -160,7 +160,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: remove internal documentation from public repo`
-- **Technical notes:** Do not blanket-ignore `docs/`. Use git history as the backup for removed internal docs; do not create a local archive or public sanitized historical subset in this sprint.
+- **Technical notes:** Do not blanket-ignore `docs/`. Use git history as the backup for removed internal docs; do not create a local archive or public sanitized historical subset in this sprint. Deleted raw-SQL recipe/spec guidance is intentionally retired from public docs because the launch public API is the typed SDK surface, not raw SQL recipes. Deleted reference-layout convention guidance is intentionally retired from tracked docs; durable public integration layout guidance lives in `examples/pi-dev/README.md` and `docs/pages/pi-dev.mdx`.
 
 #### Story 4: Public README Refresh
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

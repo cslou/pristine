@@ -75,9 +75,7 @@ const validateLimit = (limit: number | undefined): number => {
 const validateLineNumber = (lineNumber: number | undefined): number | undefined => {
   if (lineNumber === undefined) return undefined;
   if (!Number.isInteger(lineNumber) || lineNumber < 1) {
-    throw new Error(
-      `Pristine Pi search lineNumber must be a positive integer, got ${lineNumber}`,
-    );
+    throw new Error(`Pristine Pi search lineNumber must be a positive integer, got ${lineNumber}`);
   }
   return lineNumber;
 };
@@ -199,8 +197,7 @@ export class PristinePiVectorSearcher {
 
   public async search(input: PristineVectorSearchInput): Promise<PristineVectorSearchResult> {
     const query = input.query.trim();
-    if (query.length === 0)
-      throw new Error('Pristine Pi search query must be a non-empty string');
+    if (query.length === 0) throw new Error('Pristine Pi search query must be a non-empty string');
     const limit = validateLimit(input.limit);
     validateLineNumber(input.lineNumber);
     if (!existsSync(this.dbPath)) {

@@ -1,4 +1,4 @@
-import { createPrivacyPipeline } from '../../../../../src/privacy/pipeline.js';
+import { createPrivacyPipeline } from '../../../../../src/privacy/index.js';
 
 const MAX_RETURNED_SNIPPET_LENGTH = 800;
 const TRUNCATED_SNIPPET_SUFFIX = '…';

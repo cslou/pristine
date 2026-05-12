@@ -6,8 +6,6 @@ Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/
 
 `pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns a redacted snippet field plus source pointers so an agent can inspect the authoritative session file with `search-session-history` or ordinary `bash`/`read`/jq commands.
 
-Compatibility note: the extension also registers `pristine_vector_search` as a deprecated alias for existing copied installs and prompts. New code should call `pristine_recall`.
-
 ## Install
 
 Copy this directory into a repo-local `.pi` extension location, then install runtime dependencies:

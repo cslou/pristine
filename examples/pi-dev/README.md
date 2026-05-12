@@ -35,7 +35,7 @@ The agent should then:
 4. Inspect only `sourcePointer.sourceUri` for bounded user/assistant context.
 5. Avoid broad `rg`/grep over `~/.pi/agent/sessions` once a usable pointer exists.
 
-`pristine_recall` is the discovery layer. `search-session-history` is the exact-context layer. Compatibility note: `pristine_vector_search` remains registered as a deprecated alias during the transition; new examples and skills should call `pristine_recall`.
+`pristine_recall` is the discovery layer. `search-session-history` is the exact-context layer.
 
 ## Install into another repo
 

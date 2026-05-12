@@ -1,5 +1,0 @@
-
-> @pristine/shield-local@0.0.1 typecheck
-> tsc --noEmit
-
-Exit: 0

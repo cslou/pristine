@@ -9,3 +9,14 @@ npm-debug.log*
 
 # Claude Code session-state runtime artifacts
 .claude/
+
+# Internal planning/process docs are not tracked in the public repo
+docs/sprints/*
+!docs/sprints/sprint-027.md
+docs/specs/
+docs/stories/
+docs/security-audits/
+docs/analysis/
+docs/architecture/
+docs/research/
+docs/conventions/

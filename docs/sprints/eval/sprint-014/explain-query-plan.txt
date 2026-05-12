@@ -1,3 +1,0 @@
--- EXPLAIN QUERY PLAN for getRecentSummaries (50 rows seeded) --
-
-{"id":7,"parent":0,"notused":62,"detail":"SEARCH summaries USING INDEX ix_summaries_project_time (project_id=?)"}

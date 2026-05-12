@@ -1,7 +1,7 @@
 # Pristine — Sprint 001
 **Date:** 2026-05-12 – 2026-05-12
 **Goal:** Rename the public package to `@pristine/sdk` and make Pi-dev recall return judgment-useful snippets while preserving source-pointer follow-up and existing verification tiers.
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 
 ---
 
@@ -180,20 +180,20 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories
 - **Acceptance criteria:**
-  - [ ] Every story’s acceptance criteria are evaluated against implementation evidence.
-  - [ ] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
-  - [ ] Failed, ambiguous, manual-only, or unrun verification items are documented.
-  - [ ] The sprint’s new functional verification is identified as future regression verification.
-  - [ ] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with a row for every canonical verification type even when counts are zero and rationale for any `Unknown` values.
-  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
-  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
+  - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
+  - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
+  - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
+  - [x] The sprint’s new functional verification is identified as future regression verification.
+  - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with a row for every canonical verification type even when counts are zero and rationale for any `Unknown` values.
+  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
+  - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
-  - [ ] Run all functional verification items from every story and record pass/fail evidence.
+  - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
-  - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence.
+  - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
+  - [x] Run the full available regression verification suite and record pass/fail evidence.
 - **Manual-only verification:** N/A — no manual-only verification required
 - **Planned commits:**
   1. `docs: complete sprint 001 verification` — final verification evidence and sprint doc completion update.
@@ -217,3 +217,68 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
+
+## Final Review
+
+**Mergeability:** 5/5 based on the latest merged implementation-story review; Final Verification Story PR review runs as the next gate.
+
+## Sprint objective + accomplishments
+
+**Objective:** Rename the public package to `@pristine/sdk` and make Pi-dev recall return judgment-useful snippets while preserving source-pointer follow-up and existing verification tiers.
+
+**What was accomplished:**
+- **Story 1: Rename package identity to `@pristine/sdk`** — The package metadata and lockfile now use `@pristine/sdk`, and the public API type fixture imports from the new package name. Verification lives in PR #234 and this sprint doc: package verification, smoke tests, typecheck, and no stale `shield-local` hits in package metadata/smoke fixtures all passed.
+- **Story 2: Update public docs and examples for `@pristine/sdk`** — README and Vocs pages now show `npm install @pristine/sdk` and imports from `@pristine/sdk`. Verification lives in PR #235 and this sprint doc: docs build, package verification, lint, and stale-reference searches passed.
+- **Story 3: Return bounded actual snippets from Pi-dev recall** — `pristine_recall` now returns bounded matched snippets after the Pristine privacy redaction pipeline, preserving source pointers as the authoritative follow-up path. The implementation added Unicode-safe truncation, safety-scan fallback, and table-driven redaction coverage for supported sensitive patterns; verification lives in PR #236 and this sprint doc.
+- **Story 4: Update Pi-dev recall guidance for snippet-first judgment** — Pi-dev docs and the `search-session-history` skill now describe snippets as bounded matched previews for relevance judgment and `sourcePointer` inspection as the exact-context layer. Verification lives in PR #237 and this sprint doc: docs/static grep checks, docs build, and relevant Pi-dev tests passed.
+
+## Verification delta
+
+| Verification type | Before sprint | Added this sprint | Removed | Pending / not yet run | After sprint | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| Unit | 326 | +24 | 0 | 0 | 350 | Added table-driven recall snippet redaction coverage in `tests/examples/pi-dev/search-memory.test.ts`; final `npm run test:unit` passed 350 tests. |
+| Integration / contract | 19 | +0 | 0 | 0 | 19 | Existing deterministic and full integration suites passed; deterministic mode skips 3 embedder tests by design. |
+| E2E / smoke | 10 | +0 | 0 | 0 | 10 | Existing smoke, e2e, and local-model smoke tiers passed: smoke 5, e2e 4, local-model smoke 1. |
+| Simulator / device | 0 | +0 | 0 | 0 | 0 | No simulator/device verification exists for this TypeScript SDK. |
+| AI / model evals | 0 | +0 | 0 | 0 | 0 | No LLM judge/golden eval suite exists; local-model smoke is counted under E2E / smoke. |
+| Static / local checks | 7 | +3 | 0 | 0 | 10 | Existing lint/typecheck/build/docs/package checks passed; added static package-name and Pi-dev snippet-guidance grep checks plus lockfile name assertion. |
+| Performance / load | 0 | +0 | 0 | 0 | 0 | No performance/load suite exists for this sprint. |
+| Security / dependency | 0 | +0 | 0 | 0 | 0 | No separate security/dependency audit was added; security-sensitive recall behavior is covered by unit tests and review gates. |
+| Accessibility / visual | 0 | +0 | 0 | 0 | 0 | No accessibility/visual surface exists for this sprint. |
+| Manual-only | 0 | +0 | 0 | 0 | 0 | No manual-only verification required. |
+| Other verification | 0 | +0 | 0 | 0 | 0 | No other verification category used. |
+| **Total** | **362** | **+27** | **0** | **0** | **389** |  |
+
+Counting basis: automated Vitest test cases for Unit, Integration / contract, and E2E / smoke; static/local command checks for Static / local checks. No `Unknown` values.
+Regression summary: 0 existing regression verifications pending/not yet run; 9 full-regression surfaces ran in `.checks/regression.sh --tier=full`.
+
+## Why ready
+- All implementation-story acceptance criteria are checked and backed by merged PR evidence (#234, #235, #236, #237).
+- Sprint functional verification passed, including package-name checks, docs/package builds, recall snippet tests, and Pi-dev guidance grep checks.
+- Full regression passed: `.checks/regression.sh --tier=full` green, score 5/5, 9 checks passed, 0 failed, 0 skipped.
+- Review/mergeability gates passed for all implementation story PRs; Final Verification Story review remains the next PR gate.
+
+## Open for your decision
+- None — fully automated verification.
+
+## Delivered
+| Story | Item | Status | Evidence |
+|---|---|---|---|
+| Story 1 — Rename package identity | Package metadata is `@pristine/sdk` | ✅ | `package.json`, `package-lock.json`; PR #234 |
+| Story 1 — Rename package identity | Public API type fixture imports `@pristine/sdk` | ✅ | `npm run test:smoke` passed; PR #234 |
+| Story 1 — Rename package identity | Package verification remains green | ✅ | `npm run verify:package` passed; final run package contents verified: 159 files |
+| Story 2 — Public docs/examples | README and Vocs docs use `@pristine/sdk` | ✅ | `rg "npm install @pristine/sdk|from '@pristine/sdk'" README.md docs/pages -n`; PR #235 |
+| Story 2 — Public docs/examples | Docs build remains green | ✅ | `npm run docs:build` passed in story and final verification |
+| Story 3 — Bounded recall snippets | Recall returns bounded matched snippets with source pointers | ✅ | `tests/examples/pi-dev/search-memory.test.ts`; PR #236 |
+| Story 3 — Bounded recall snippets | Sensitive supported patterns become placeholders | ✅ | table-driven unit coverage in `tests/examples/pi-dev/search-memory.test.ts`; final unit suite passed 350 tests |
+| Story 3 — Bounded recall snippets | Local-model smoke still recalls source pointers | ✅ | `npm run test:smoke:local-model` passed in story and full regression |
+| Story 4 — Pi-dev guidance | Docs describe snippets for relevance and source pointers for authority | ✅ | Pi-dev docs and `SKILL.md`; static grep checks passed; PR #237 |
+| Story 4 — Pi-dev guidance | Search-session-history directed pointer behavior remains tested | ✅ | `npm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` passed |
+| Final Story — Sprint verification | Full regression suite passed | ✅ | `.checks/regression.sh --tier=full`: 9 passed, 0 failed, 0 skipped |
+| Final Story — Sprint verification | Docs/package verification passed | ✅ | `npm run docs:build`; `npm run verify:package` |
+
+## Drift from spec
+- None — no implementation spec exists for this sprint.
+
+## New Dependencies
+- None

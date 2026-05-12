@@ -140,7 +140,7 @@ describe('regression.sh tier contract', () => {
       'npm|run test:integration|SKIP=1',
       'npm|run test:e2e|SKIP=',
       'npm|run test:integration|SKIP=',
-      'npm|run test:smoke:real-model|SKIP=',
+      'npm|run test:smoke:local-model|SKIP=',
     ]);
   });
 

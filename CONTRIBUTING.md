@@ -38,10 +38,11 @@ Maintainers use the local regression wrapper when preparing merges/releases:
 .checks/pre-merge.sh
 ```
 
-## Slow and real-model tests
+## Slow and local-model tests
 
-- `SKIP_SLOW_TESTS=1 npm run test:integration` runs deterministic integration coverage and skips real-model checks.
+- `SKIP_SLOW_TESTS=1 npm run test:integration` runs deterministic integration coverage and skips local-model checks.
 - `npm run test:integration` may run local model integration tests when the model cache is available.
+- `npm run test:smoke:local-model` runs optional smoke coverage against the default local embedder. It may download or load model assets and is intended for maintainer/full-tier verification, not default CI.
 - `.checks/regression.sh --tier=full` is the maintainer full regression path and may load local models.
 
 ## Secret audits

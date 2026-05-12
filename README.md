@@ -13,7 +13,7 @@ Pristine stores indexed chunks, snippets, embeddings, and source metadata; your 
 ## Install
 
 ```bash
-npm install @pristine/shield-local
+npm install @pristine/sdk
 ```
 
 Requires Node.js 22 or newer.
@@ -21,7 +21,7 @@ Requires Node.js 22 or newer.
 ## Quickstart
 
 ```ts
-import { PristineLocal } from '@pristine/shield-local';
+import { PristineLocal } from '@pristine/sdk';
 
 const pristine = await PristineLocal.create();
 const projectId = 'local-project';

@@ -91,16 +91,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** documentation reader, **I want** install and import examples to use `@pristine/sdk`, **so that** the public docs match the new package identity.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `README.md` install and import snippets use `@pristine/sdk`.
-  - [ ] Vocs docs in `docs/pages/` use `@pristine/sdk` for install and import snippets.
-  - [ ] `rg "@pristine/shield-local|shield-local" README.md docs/pages examples tests --glob '!docs/dist/**'` returns no public-facing stale package-name matches, excluding any intentionally retained historical references recorded in this sprint doc.
-  - [ ] Documentation still describes Pristine as a privacy and memory SDK, not only a shield.
+  - [x] `README.md` install and import snippets use `@pristine/sdk`.
+  - [x] Vocs docs in `docs/pages/` use `@pristine/sdk` for install and import snippets.
+  - [x] `rg "@pristine/shield-local|shield-local" README.md docs/pages examples tests --glob '!docs/dist/**'` returns no public-facing stale package-name matches, excluding any intentionally retained historical references recorded in this sprint doc.
+  - [x] Documentation still describes Pristine as a privacy and memory SDK, not only a shield.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build` and verify Vocs builds successfully with the updated package examples.
-  - [ ] Run `rg "npm install @pristine/sdk|from '@pristine/sdk'" README.md docs/pages -n` and verify the updated install/import snippets are present.
+  - [x] Run `npm run docs:build` and verify Vocs builds successfully with the updated package examples.
+  - [x] Run `rg "npm install @pristine/sdk|from '@pristine/sdk'" README.md docs/pages -n` and verify the updated install/import snippets are present.
 - **Regression verification:**
-  - [ ] Run `npm run verify:package` and verify documentation/package file inclusion still succeeds after docs changes.
-  - [ ] Run `npm run lint` and verify docs-related test fixtures and examples still satisfy lint rules where applicable.
+  - [x] Run `npm run verify:package` and verify documentation/package file inclusion still succeeds after docs changes.
+  - [x] Run `npm run lint` and verify docs-related test fixtures and examples still satisfy lint rules where applicable.
 - **Manual-only verification:** N/A — docs references and docs build are automated.
 - **Planned commits:**
   1. `docs: update package name references` — update README, Vocs pages, and examples from `@pristine/shield-local` to `@pristine/sdk`.

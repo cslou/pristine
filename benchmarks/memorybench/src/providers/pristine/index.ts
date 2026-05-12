@@ -1,14 +1,9 @@
-// Pristine Provider — DEPRECATED under spec-005 Phase 1.
+// Pristine Provider — disabled while the benchmark adapter is rebuilt.
 //
-// The prior implementation drove the LOCOMO-aimed fact-extraction pipeline
-// via PristineLocal.store() and PristineLocal.search() / orchestrator.ingest().
-// sprint-013 (spec-005 Phase 1) removed the pipeline entirely:
-//   - client.store() / client.search() deleted
-//   - client.orchestrator is null on every construction path
-//   - findConversationByMessages() / deleteConversation() deleted
-//
-// Rebuilding this provider requires the Phase-2 indexer and Phase-3/4
-// searcher primitives (spec-005 §5.1). It will return once those land.
+// The prior implementation drove an older LOCOMO-aimed fact-extraction pipeline
+// that no longer matches Pristine's public source-pointer memory API. Rebuilding
+// this provider requires a benchmark adapter around the current store/recall/forget
+// primitives.
 //
 // Until then, this stub satisfies the `Provider` interface (zero-arg
 // constructor + full method set) so the benchmarks package typechecks
@@ -21,11 +16,8 @@ import type { Provider, ProviderConfig, IngestOptions, IngestResult, SearchOptio
 import type { UnifiedSession } from "../../types/unified"
 
 const DEPRECATION_MESSAGE =
-  "PristineProvider is disabled under spec-005 Phase 1 (sprint-013). " +
-  "The LOCOMO-aimed fact-pipeline that this provider drove was removed; " +
-  "the provider will return once the Phase-2 indexer + Phase-3/4 searcher " +
-  "primitives land. See docs/specs/implementation-spec-005.md §5.1 and " +
-  "docs/sprints/sprint-013.md for context."
+  "PristineProvider is disabled while the benchmark adapter is rebuilt around " +
+  "the current public source-pointer memory API."
 
 export class PristineProvider implements Provider {
   public readonly name = "pristine"

@@ -1,5 +1,21 @@
 # API
 
-The public API centers on `createPristineLocal`, memory primitives (`store`, `recall`, `forget`), and privacy primitives (`secureAndRedact`, `reveal`, `scrubOutput`).
+The public SDK surface centers on a local client plus intent-named primitives.
 
-Detailed API content will be authored in the public documentation story.
+## Client creation
+
+Use `createPristineLocal` to create a local SDK client for a user and database configuration.
+
+## Memory primitives
+
+- `store` writes source-owned memory chunks.
+- `recall` searches stored chunks by semantic query and returns source pointers.
+- `forget` deletes stored chunks by ID.
+
+## Privacy primitives
+
+- `secureAndRedact` detects sensitive values and stores encrypted originals.
+- `reveal` restores redacted placeholders when the caller is authorized.
+- `scrubOutput` removes sensitive values from generated output before it leaves the local boundary.
+
+Detailed reference text will stay aligned with the exported types from `src/index.ts`.

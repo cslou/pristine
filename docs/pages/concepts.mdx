@@ -1,5 +1,15 @@
 # Concepts
 
-Pristine combines local embeddings, SQLite storage, source pointers, and privacy primitives so applications can keep memory on the user's device.
+Pristine is built around local-first memory and privacy primitives.
 
-Detailed concepts content will be authored in the public documentation story.
+## Source-owned memory
+
+Stored memory keeps a pointer back to the source that produced it. A recall result should help an agent or application inspect the authoritative source instead of treating retrieved snippets as the only truth.
+
+## Project scoping
+
+Memory operations can be scoped by project so unrelated workspaces do not share recall results.
+
+## Local embeddings and storage
+
+Pristine uses local embeddings and SQLite-backed storage so applications can build semantic memory without sending user data to a hosted service by default.

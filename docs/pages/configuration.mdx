@@ -1,5 +1,15 @@
 # Configuration
 
-Pristine can be configured for local database paths, project scoping, and embedding behavior.
+Pristine configuration controls local storage, user isolation, and embedding behavior.
 
-Detailed configuration content will be authored in the public documentation story.
+## Local database
+
+Use a per-user SQLite database path that fits your application or development environment. Keep the database on the local device when preserving the default privacy model matters.
+
+## User and project scope
+
+Create clients with the intended user identity, and scope memory operations by project when one database stores multiple workspaces.
+
+## Embeddings
+
+Embedding configuration should match the vector dimensions expected by the local store. Keep model downloads and cache locations explicit in production applications.

@@ -80,16 +80,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** Vocs installed and configured with a minimal buildable docs site, **so that** public docs have deterministic tooling before content migration begins.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] `vocs` is added as an exact pinned `devDependency`, and `package-lock.json` records the dependency deterministically. **Pass condition:** `npm install` produces no unpinned Vocs dependency range in `package.json`, and `npm ci` can install the lockfile.
-  - [ ] `package.json` includes docs scripts for local development and verification, including `docs:dev` and `docs:build`; `docs:preview` may be added if supported by the chosen Vocs setup. **Pass condition:** `npm run docs:build` is the canonical noninteractive docs build command.
-  - [ ] `vocs.config.ts` exists at the repo root and defines a navigation/sidebar for the initial public docs pages: Intro, Quickstart, Concepts, API, Privacy, Pi-dev, Configuration, and Examples. **Pass condition:** the Vocs build includes those pages without unresolved route/config errors.
-  - [ ] Minimal placeholder pages exist under Vocs' required `docs/pages/` directory as `.mdx` files: `index.mdx`, `quickstart.mdx`, `concepts.mdx`, `api.mdx`, `privacy.mdx`, `pi-dev.mdx`, `configuration.mdx`, and `examples.mdx`. **Pass condition:** Vocs routes for `/`, `/quickstart`, `/concepts`, `/api`, `/privacy`, `/pi-dev`, `/configuration`, and `/examples` build successfully.
+  - [x] `vocs` is added as an exact pinned `devDependency`, and `package-lock.json` records the dependency deterministically. **Pass condition:** `npm install` produces no unpinned Vocs dependency range in `package.json`, and `npm ci` can install the lockfile. Evidence: `vocs` pinned to `1.4.1` in `package.json`; `npm ci` passed.
+  - [x] `package.json` includes docs scripts for local development and verification, including `docs:dev` and `docs:build`; `docs:preview` may be added if supported by the chosen Vocs setup. **Pass condition:** `npm run docs:build` is the canonical noninteractive docs build command. Evidence: `docs:dev`, `docs:build`, and `docs:preview` added; `npm run docs:build` passed.
+  - [x] `vocs.config.ts` exists at the repo root and defines a navigation/sidebar for the initial public docs pages: Intro, Quickstart, Concepts, API, Privacy, Pi-dev, Configuration, and Examples. **Pass condition:** the Vocs build includes those pages without unresolved route/config errors. Evidence: `vocs.config.ts`; `npm run docs:build` passed.
+  - [x] Minimal placeholder pages exist under Vocs' required `docs/pages/` directory as `.mdx` files: `index.mdx`, `quickstart.mdx`, `concepts.mdx`, `api.mdx`, `privacy.mdx`, `pi-dev.mdx`, `configuration.mdx`, and `examples.mdx`. **Pass condition:** Vocs routes for `/`, `/quickstart`, `/concepts`, `/api`, `/privacy`, `/pi-dev`, `/configuration`, and `/examples` build successfully. Evidence: pages added under `docs/pages/`; `npm run docs:build` passed.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`. **Pass condition:** Vocs completes a production build with exit code 0 and no missing-page/sidebar errors.
-  - [ ] Run `node -e "const semver = /^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/; const pkg = require('./package.json'); if (!semver.test(pkg.devDependencies?.vocs ?? '')) process.exit(1);"`. **Pass condition:** Vocs exists as an exact semver devDependency, not a range/tag such as `^`, `~`, `latest`, `*`, or `>=`.
+  - [x] Run `npm run docs:build`. **Pass condition:** Vocs completes a production build with exit code 0 and no missing-page/sidebar errors. Evidence: passed.
+  - [x] Run `node -e "const semver = /^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/; const pkg = require('./package.json'); if (!semver.test(pkg.devDependencies?.vocs ?? '')) process.exit(1);"`. **Pass condition:** Vocs exists as an exact semver devDependency, not a range/tag such as `^`, `~`, `latest`, `*`, or `>=`. Evidence: passed.
 - **Regression verification:**
-  - [ ] Run `npm run typecheck`. **Pass condition:** adding `vocs.config.ts` and docs scripts does not break TypeScript checking for the package.
-  - [ ] Run `npm run build`. **Pass condition:** SDK package build still succeeds after adding docs tooling.
+  - [x] Run `npm run typecheck`. **Pass condition:** adding `vocs.config.ts` and docs scripts does not break TypeScript checking for the package. Evidence: passed.
+  - [x] Run `npm run build`. **Pass condition:** SDK package build still succeeds after adding docs tooling. Evidence: passed.
 - **Manual-only verification:** N/A — no manual-only verification required.
 - **Planned commits:**
   1. `docs: add vocs documentation scaffold`

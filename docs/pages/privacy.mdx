@@ -1,15 +1,23 @@
 # Privacy
 
-Pristine is designed for local-first privacy: no server is required, and user data does not leave the device by default.
+Pristine is designed for local-first privacy: no Pristine server is required, and user data does not leave the device by default.
 
-## Redact and reveal
+## Redact before sharing context
 
-`secureAndRedact` detects sensitive values, stores encrypted originals locally, and returns text with placeholders. `reveal` can restore those placeholders when the caller has local access to the vault and keys.
+`secureAndRedact` detects sensitive values, stores encrypted originals locally, and returns text with placeholders. This is useful before an application places text into an agent or model context.
 
-## Scrub output
+## Reveal locally
+
+`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation.
+
+## Scrub generated output
 
 `scrubOutput` is the safety layer for generated text. Use it before output crosses a boundary where sensitive values should not appear.
 
-## Local responsibility
+## Keys and storage
 
-Applications remain responsible for where they store databases and keys, what they log, and whether they add any networked services around Pristine.
+Pristine stores privacy vault data locally. Applications remain responsible for filesystem permissions, backup policy, logging policy, and any network services they add around the SDK.
+
+## Network behavior
+
+The SDK does not call a Pristine-hosted API. The default embedder may download model files on first use unless model assets are pre-cached or the runtime is configured for offline operation.

@@ -59,17 +59,17 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** package consumer, **I want** the published package identity to be `@pristine/sdk`, **so that** the name reflects the full privacy and memory SDK without implying a separate non-local product.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] `package.json` has `"name": "@pristine/sdk"`.
-  - [ ] `package-lock.json` root package name is `@pristine/sdk`.
-  - [ ] `rg "@pristine/shield-local|shield-local" package.json package-lock.json tests/smoke` returns no matches.
-  - [ ] No compatibility export, alias package, or deprecation shim for `@pristine/shield-local` is added.
+  - [x] `package.json` has `"name": "@pristine/sdk"`.
+  - [x] `package-lock.json` root package name is `@pristine/sdk`.
+  - [x] `rg "@pristine/shield-local|shield-local" package.json package-lock.json tests/smoke` returns no matches.
+  - [x] No compatibility export, alias package, or deprecation shim for `@pristine/shield-local` is added.
 - **Functional verification:**
-  - [ ] Run `npm install --package-lock-only --ignore-scripts` and verify `package-lock.json` records `@pristine/sdk` as the root package name.
-  - [ ] Run `npm run verify:package` and verify the package builds and contains the expected distributable files under the new package name.
-  - [ ] Run `npm run test:smoke` and verify the public API type fixture imports from `@pristine/sdk` successfully.
+  - [x] Run `npm install --package-lock-only --ignore-scripts` and verify `package-lock.json` records `@pristine/sdk` as the root package name.
+  - [x] Run `npm run verify:package` and verify the package builds and contains the expected distributable files under the new package name.
+  - [x] Run `npm run test:smoke` and verify the public API type fixture imports from `@pristine/sdk` successfully.
 - **Regression verification:**
-  - [ ] Run `npm run typecheck` and verify source and tests typecheck after the package rename.
-  - [ ] Run `npm run test:unit -- tests/smoke/package-entrypoint.smoke.test.ts` and verify the built package entrypoint still exports the expected SDK symbols.
+  - [x] Run `npm run typecheck` and verify source and tests typecheck after the package rename.
+  - [x] Run `npm run test:smoke` and verify the built package entrypoint still exports the expected SDK symbols and public API type fixture passes.
 - **Manual-only verification:** N/A — package identity behavior is covered by package metadata, smoke, and package verification commands.
 - **Planned commits:**
   1. `chore: rename package to pristine sdk` — update package metadata, lockfile, and public API smoke import fixture.

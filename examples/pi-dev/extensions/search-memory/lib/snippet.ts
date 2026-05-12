@@ -4,7 +4,7 @@ const MAX_RETURNED_SNIPPET_LENGTH = 800;
 const TRUNCATED_SNIPPET_SUFFIX = '…';
 const TRUNCATED_SNIPPET_SUFFIX_LENGTH = Array.from(TRUNCATED_SNIPPET_SUFFIX).length;
 const SAFETY_SCAN_REDACTED_SNIPPET =
-  '[sensitive snippet withheld after safety scan; inspect sourcePointer with search-session-history]';
+  '[snippet redacted after safety scan; inspect sourcePointer with search-session-history]';
 
 const recallSnippetPrivacyPipeline = createPrivacyPipeline({
   classifier: {

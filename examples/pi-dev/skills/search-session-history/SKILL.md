@@ -10,7 +10,7 @@ Use this skill when the user asks about prior Pi session history, previous decis
 
 ## Workflow
 
-This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_recall` is the discovery layer; use its bounded, privacy-redacted snippets for first-pass relevance judgment, then use `search-session-history` to inspect the authoritative Pi JSONL file named by the returned pointer.
+This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_recall` is the discovery layer; use its bounded matched snippets for first-pass relevance judgment, then use `search-session-history` to inspect the authoritative Pi JSONL file named by the returned pointer.
 
 ### Pointer-known mode
 

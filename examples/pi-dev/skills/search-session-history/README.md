@@ -6,7 +6,7 @@ Type: Pi skill. Install target: `.pi/skills/search-session-history/`. Entry poin
 
 `search-session-history` is a Pi skill for directed pointer inspection around a `pristine_recall` hit. Pi JSONL remains the source of truth; Pristine returns bounded snippets for first-pass relevance judgment plus source pointers, and this skill uses existing Pi tools (`bash`, `read`, grep, jq) to inspect the authoritative session file.
 
-`pristine_recall` is the discovery layer. Its snippets help choose a hit, but they are privacy-redacted previews rather than authoritative full context. This skill is the exact-context layer: once a `sourcePointer` is available, inspect only `sourcePointer.sourceUri` and do not run broad grep over all Pi sessions. `rg`/grep is used only inside the pointed file for exact pointer validation unless vector search is unavailable, the index is empty, the pointer file is missing, you are debugging index correctness, or the user explicitly asks for raw exact search.
+`pristine_recall` is the discovery layer. Its bounded snippets help choose a hit, but they are matched previews rather than authoritative full context. This skill is the exact-context layer: once a `sourcePointer` is available, inspect only `sourcePointer.sourceUri` and do not run broad grep over all Pi sessions. `rg`/grep is used only inside the pointed file for exact pointer validation unless vector search is unavailable, the index is empty, the pointer file is missing, you are debugging index correctness, or the user explicitly asks for raw exact search.
 
 ## Install
 

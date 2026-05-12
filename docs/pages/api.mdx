@@ -28,17 +28,17 @@ Deletes stored chunks by ID within one project and returns a deletion count.
 
 ## Privacy API
 
-### `secureAndRedact(input, context)`
+### `secureAndRedact(text, userId, classifier?)`
 
-Detects sensitive values, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds.
+Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default.
 
-### `reveal(text, context)`
+### `reveal(redactedText, userId)`
 
-Restores known redaction placeholders when local vault and key access allow it.
+Restores known redaction placeholders for a local user when vault and key access allow it.
 
-### `scrubOutput(text, context)`
+### `scrubOutput(text, allowlist?)`
 
-Removes sensitive values from output text before it crosses a boundary where those values should not appear.
+Removes sensitive values from output text before it crosses a boundary where those values should not appear. Pass an optional allowlist for values that are safe to keep.
 
 ## Types
 

@@ -1,24 +1,41 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
-  scripts?: Record<string, string>;
-};
-const scripts = packageJson.scripts ?? {};
+const vitestBin = resolve(repoRoot, 'node_modules/vitest/vitest.mjs');
 
-describe('Vitest suite command boundaries', () => {
-  it('keeps unit tests separate from smoke, integration, and e2e tests', () => {
-    expect(scripts['test:unit']).toContain('VITEST_SUITE=unit');
-    expect(scripts['test:unit']).toContain('vitest run');
-    expect(scripts['test:integration']).toContain('VITEST_SUITE=integration');
-    expect(scripts['test:e2e']).toContain('VITEST_SUITE=e2e');
+const listTests = (suite: string): string => {
+  const result = spawnSync(process.execPath, [vitestBin, 'list', '--run'], {
+    cwd: repoRoot,
+    env: { ...process.env, VITEST_SUITE: suite },
+    encoding: 'utf8',
+    timeout: 10_000,
   });
 
-  it('keeps deterministic smoke separate from optional local-model smoke', () => {
-    expect(scripts['test:smoke']).toContain('VITEST_SUITE=smoke');
-    expect(scripts['test:smoke:local-model']).toContain('VITEST_SUITE=local-model-smoke');
+  expect(result.status, `${suite} list stderr:\n${result.stderr}`).toBe(0);
+  return result.stdout;
+};
+
+describe('Vitest suite discovery boundaries', () => {
+  it('discovers unit and deterministic smoke tests without crossing suite boundaries', () => {
+    const unitTests = listTests('unit');
+    expect(unitTests).toContain('tests/scripts/vitest-config-boundaries.test.ts');
+    expect(unitTests).not.toContain('tests/smoke/public-api.smoke.test.ts');
+    expect(unitTests).not.toContain('tests/integration/privacy.test.ts');
+    expect(unitTests).not.toContain('tests/e2e/privacy-pipeline.test.ts');
+
+    const smokeTests = listTests('smoke');
+    expect(smokeTests).toContain('tests/smoke/public-api.smoke.test.ts');
+    expect(smokeTests).not.toContain('tests/smoke/source-index-local-model.local-model.test.ts');
+  });
+
+  it('discovers local-model smoke, integration, and e2e tests on explicit suite selectors', () => {
+    expect(listTests('local-model-smoke')).toContain(
+      'tests/smoke/source-index-local-model.local-model.test.ts',
+    );
+    expect(listTests('integration')).toContain('tests/integration/privacy.test.ts');
+    expect(listTests('e2e')).toContain('tests/e2e/privacy-pipeline.test.ts');
   });
 });

@@ -26,16 +26,6 @@ interface PristineVectorSearcherLike {
   search(input: PristineVectorSearchInput): Promise<PristineVectorSearchResult>;
 }
 
-export interface PristineRecallExtensionConfig {
-  readonly includeSnippetText?: boolean;
-  readonly env?: NodeJS.ProcessEnv;
-}
-
-const shouldIncludeSnippetText = (config: PristineRecallExtensionConfig): boolean => {
-  if (config.includeSnippetText !== undefined) return config.includeSnippetText;
-  return config.env?.PRISTINE_RECALL_INCLUDE_SNIPPET_TEXT === 'true';
-};
-
 const optionalStringFields = [
   'sourceUri',
   'entryId',
@@ -116,16 +106,6 @@ export const registerSearchMemoryExtension = (
   pi.registerTool(createPristineRecallTool(searcher));
 };
 
-export const createSearchMemoryExtension = (
-  config: PristineRecallExtensionConfig = {},
-  searcherFactory: (config: {
-    readonly includeSnippetText: boolean;
-  }) => PristineVectorSearcherLike = createPristinePiVectorSearcher,
-): ((pi: PiExtensionApiLike) => void) => {
-  const includeSnippetText = shouldIncludeSnippetText(config);
-  return (pi) => registerSearchMemoryExtension(pi, () => searcherFactory({ includeSnippetText }));
-};
-
 export default function searchMemoryExtension(pi: PiExtensionApiLike): void {
-  createSearchMemoryExtension({ env: process.env })(pi);
+  registerSearchMemoryExtension(pi);
 }

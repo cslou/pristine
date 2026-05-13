@@ -7,7 +7,6 @@ import {
   type PiJsonlIndexSeedMessage,
 } from './helpers/pi-jsonl-index-fixture.js';
 import type { PiJsonlEmbedder } from '../../../examples/pi-dev/extensions/search-memory/lib/local-embedder.js';
-import { REDACTED_RECALL_SNIPPET } from '../../../examples/pi-dev/extensions/search-memory/lib/snippet.js';
 import { PristinePiVectorSearcher } from '../../../examples/pi-dev/extensions/search-memory/lib/vector-search.js';
 
 class KeywordEmbedder implements PiJsonlEmbedder {
@@ -95,7 +94,7 @@ describe('PristinePiVectorSearcher', () => {
     expect(result.results[0]).toMatchObject({
       rank: 1,
       chunkId: expect.any(String),
-      snippet: REDACTED_RECALL_SNIPPET,
+      snippet: 'The sprint 022 known phrase sapphire bridge belongs here.',
       sourcePointer: {
         sourceKind: 'pi-jsonl',
         sourceUri: '/tmp/session-a.jsonl',
@@ -266,7 +265,7 @@ describe('PristinePiVectorSearcher', () => {
     ).rejects.toThrow('embedding dimension mismatch');
   });
 
-  it('returns opt-in snippets bounded to 800 Unicode characters', async () => {
+  it('returns actual snippets bounded to 800 Unicode characters', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
     const longSnippet = `token ${'token '.repeat(900)}`;
@@ -278,11 +277,7 @@ describe('PristinePiVectorSearcher', () => {
       }),
     ]);
 
-    const searcher = new PristinePiVectorSearcher({
-      dbPath,
-      embedder: new KeywordEmbedder(),
-      includeSnippetText: true,
-    });
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
     const result = await searcher.search({ query: 'sapphire token' });
     const snippet = result.results[0]?.snippet;
 
@@ -290,55 +285,22 @@ describe('PristinePiVectorSearcher', () => {
     expect(Array.from(snippet ?? '')).toHaveLength(800);
   });
 
-  it('minimizes unrecognized opt-in snippet text instead of returning raw content', async () => {
+  it('returns actual snippets without memory-side redaction', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
-    const unrecognizedSecret = 'custom-secret-value-12345';
+    const rawSnippet =
+      'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 and dev@example.com remain relevant.';
     await seedDb(dbPath, [
       message({
-        text: `Sapphire ${unrecognizedSecret} token remains relevant.`,
-        entryId: 'entry-unknown-secret',
-        lineNumber: 4,
-      }),
-    ]);
-
-    const searcher = new PristinePiVectorSearcher({
-      dbPath,
-      embedder: new KeywordEmbedder(),
-      includeSnippetText: true,
-    });
-    const result = await searcher.search({ query: 'sapphire token' });
-
-    expect(result.results[0]?.snippet).toBe('[TEXT] token remains relevant.');
-    expect(result.results[0]?.snippet).not.toContain(unrecognizedSecret);
-  });
-
-  it('returns redacted snippets by default and sanitized snippets when explicitly configured', async () => {
-    const dir = await makeTempDir();
-    const dbPath = join(dir, 'pristine.db');
-    await seedDb(dbPath, [
-      message({
-        text: 'Sapphire token Bearer abcdefghijklmnopqrstuvwxyz012345 and dev@example.com remain relevant.',
+        text: rawSnippet,
         entryId: 'entry-secret',
         lineNumber: 4,
       }),
     ]);
 
-    const defaultSearcher = new PristinePiVectorSearcher({
-      dbPath,
-      embedder: new KeywordEmbedder(),
-    });
-    const defaultResult = await defaultSearcher.search({ query: 'sapphire token' });
-    expect(defaultResult.results[0]?.snippet).toBe(REDACTED_RECALL_SNIPPET);
+    const searcher = new PristinePiVectorSearcher({ dbPath, embedder: new KeywordEmbedder() });
+    const result = await searcher.search({ query: 'sapphire token' });
 
-    const configuredSearcher = new PristinePiVectorSearcher({
-      dbPath,
-      embedder: new KeywordEmbedder(),
-      includeSnippetText: true,
-    });
-    const configuredResult = await configuredSearcher.search({ query: 'sapphire token' });
-    expect(configuredResult.results[0]?.snippet).toBe(
-      '[TEXT] token [SENSITIVE:auth_token] and [SENSITIVE:secret] remain relevant.',
-    );
+    expect(result.results[0]?.snippet).toBe(rawSnippet);
   });
 });

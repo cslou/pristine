@@ -55,7 +55,6 @@ export interface PristineVectorSearchConfig {
   readonly env?: NodeJS.ProcessEnv;
   readonly homeDir?: string;
   readonly embedder?: PiJsonlEmbedder;
-  readonly includeSnippetText?: boolean;
 }
 
 const MAX_LIMIT = 20;
@@ -163,18 +162,14 @@ const buildFilterWhere = (
   return { clauses, params };
 };
 
-const mapSearchRow = (
-  row: SearchRow,
-  index: number,
-  options: { readonly includeSnippetText: boolean },
-): PristineVectorSearchHit => {
+const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit => {
   const lineNumber =
     typeof row.line_number === 'bigint' ? Number(row.line_number) : row.line_number;
   return {
     rank: index + 1,
     score: scoreFromDistance(row.distance),
     chunkId: row.chunk_id,
-    snippet: formatRecallSnippet(row.snippet, options),
+    snippet: formatRecallSnippet(row.snippet),
     sourcePointer: {
       sourceKind: row.source_kind,
       sourceUri: row.source_uri,
@@ -190,8 +185,6 @@ const mapSearchRow = (
 export class PristinePiVectorSearcher {
   private readonly dbPath: string;
   private readonly embedder: PiJsonlEmbedder;
-  private readonly includeSnippetText: boolean;
-
   public constructor(config: PristineVectorSearchConfig = {}) {
     this.dbPath = resolvePiPristineDbPath({
       explicitPath: config.dbPath,
@@ -199,7 +192,6 @@ export class PristinePiVectorSearcher {
       homeDir: config.homeDir,
     });
     this.embedder = config.embedder ?? new LocalNomicEmbedder();
-    this.includeSnippetText = config.includeSnippetText ?? false;
   }
 
   public async search(input: PristineVectorSearchInput): Promise<PristineVectorSearchResult> {
@@ -242,9 +234,7 @@ export class PristinePiVectorSearcher {
           ? this.runKnn(db, embedding, limit)
           : this.runFilteredExact(db, vector, limit, filter);
       return {
-        results: rows.map((row, index) =>
-          mapSearchRow(row, index, { includeSnippetText: this.includeSnippetText }),
-        ),
+        results: rows.map((row, index) => mapSearchRow(row, index)),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
       };
     } finally {

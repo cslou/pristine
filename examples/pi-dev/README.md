@@ -31,12 +31,12 @@ The agent should then:
 
 1. Load `search-session-history`.
 2. If no pointer is already known, call `pristine_recall` with the user's semantic query.
-3. Use score, filters, and any explicitly enabled bounded minimized `snippet` previews for first-pass relevance judgment; default `snippet` output is withheld.
+3. Use score, filters, and bounded `snippet` previews for first-pass relevance judgment.
 4. Use the selected hit's `sourcePointer` (`sourceUri`, `entryId`, `lineNumber`).
 5. Inspect only `sourcePointer.sourceUri` for bounded user/assistant context.
 6. Avoid broad `rg`/grep over `~/.pi/agent/sessions` once a usable pointer exists.
 
-`pristine_recall` is the discovery layer: it returns ranked source pointers and may include explicitly enabled bounded minimized snippet previews. `search-session-history` is the exact-context layer.
+`pristine_recall` is the discovery layer: it returns ranked source pointers and bounded snippet previews. `search-session-history` is the exact-context layer.
 
 ## Install into another repo
 

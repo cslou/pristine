@@ -4,7 +4,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_recall`.
 
-`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns source pointers for authoritative follow-up. By default the `snippet` field is withheld; extension hosts that explicitly set `includeSnippetText` receive bounded minimized previews that preserve safe context words and supported sensitive placeholders while replacing other raw text with `[TEXT]`.
+`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns bounded matched snippets plus source pointers for authoritative follow-up.
 
 ## Install
 
@@ -18,7 +18,7 @@ cd ~/projects/test-pristine/.pi/extensions/search-memory
 npm install --omit=dev
 ```
 
-The tool reads the same DB as `jsonl-index`: explicit config when wired by an extension host, `PRISTINE_DB_PATH`, then `~/.pi/pristine/pristine.db`. To enable minimized preview snippets without exposing a tool input, a trusted host can call `createSearchMemoryExtension({ includeSnippetText: true })` or set `PRISTINE_RECALL_INCLUDE_SNIPPET_TEXT=true` before loading the default extension.
+The tool reads the same DB as `jsonl-index`: explicit config when wired by an extension host, `PRISTINE_DB_PATH`, then `~/.pi/pristine/pristine.db`.
 
 ## Tool input
 
@@ -46,7 +46,7 @@ Each result includes:
 - `rank`
 - `score`
 - `chunkId`
-- `snippet` — withheld by default with source-pointer guidance. When an extension host explicitly sets `includeSnippetText`, snippets are bounded minimized previews for relevance judgment: safe context words and supported sensitive placeholders are preserved, while other raw text is replaced with `[TEXT]`; returned snippets are limited to 800 Unicode characters, and longer snippets keep the first 799 characters and end with `…`.
+- `snippet` — bounded matched text for relevance judgment. Returned snippets are limited to 800 Unicode characters; longer snippets keep the first 799 characters and end with `…`.
 - `sourcePointer.sourceKind` = `pi-jsonl`
 - `sourcePointer.sourceUri`
 - `sourcePointer.entryId`
@@ -59,7 +59,7 @@ Each result includes:
 
 1. Use `jsonl-index` to index a session containing a unique phrase such as `known phrase sapphire bridge`.
 2. Ask Pi to call `pristine_recall` with `{ "query": "sapphire bridge", "limit": 5 }`.
-3. Pass condition: one result ranks the known phrase chunk and returns a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`; default `snippet` output is withheld with guidance to inspect the pointer.
+3. Pass condition: one result ranks the known phrase chunk and returns a bounded `snippet` plus a `sourcePointer` with `sourceUri`, `entryId`, and `lineNumber`.
 4. Follow the pointer with `search-session-history` to inspect nearby authoritative JSONL context.
 
 ## Reset

@@ -21,9 +21,9 @@ Requires Node.js 22 or newer.
 ## Quickstart
 
 ```ts
-import { PristineLocal } from '@pristine/sdk';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 const projectId = 'local-project';
 
 try {
@@ -50,7 +50,7 @@ try {
 
 ## Core API
 
-- `PristineLocal.create(config?)` — create a local client.
+- `Pristine.create(config?)` — create a local client.
 - `store(chunks, { projectId })` — store source-owned memory chunks.
 - `recall(query, { projectId, limit? })` — semantically search one project.
 - `forget(chunkIds, { projectId })` — delete stored chunks in one project.

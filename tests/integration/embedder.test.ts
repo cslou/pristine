@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDatabase } from '../../src/core/database.js';
-import { PristineLocal } from '../../src/client.js';
+import { Pristine } from '../../src/client.js';
 import { LocalEmbedder } from '../../src/embedder/local/index.js';
 
 // These tests download the real Nomic Embed model (~300 MB) on first run.
@@ -52,10 +52,10 @@ describe.skipIf(skipSlow)('source-index integration (real local embedder)', () =
     const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-integration-'));
     const db = createDatabase(join(dir, 'source-index.db'));
     const embedder = new LocalEmbedder();
-    let client: PristineLocal | undefined;
+    let client: Pristine | undefined;
 
     try {
-      client = await PristineLocal.create({ db, embedder, keysDir: join(dir, 'keys') });
+      client = await Pristine.create({ db, embedder, keysDir: join(dir, 'keys') });
       await client.store(
         [
           {

@@ -66,7 +66,7 @@ export type DeleteSourceChunksResult = ForgetResult;
 /** @deprecated Use RecalledMemory. */
 export type SourceChunkSearchHit = RecalledMemory;
 
-export interface PristineLocalConfig {
+export interface PristineConfig {
   readonly baseDir?: string;
   readonly keysDir?: string;
   readonly db?: Database.Database;
@@ -105,7 +105,7 @@ const toPublicChunk = (chunk: {
       : (JSON.parse(chunk.metadataJson) as SourceChunkInput['metadata']),
 });
 
-export class PristineLocal {
+export class Pristine {
   private readonly sourceChunkStore: SourceChunkStore;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
@@ -138,7 +138,7 @@ export class PristineLocal {
     this.privacyClassifierConfig = deps.privacyClassifierConfig;
   }
 
-  public static async create(config: PristineLocalConfig = {}): Promise<PristineLocal> {
+  public static async create(config: PristineConfig = {}): Promise<Pristine> {
     const fullyInjected = config.db !== undefined && config.embedder !== undefined;
     const init = fullyInjected ? null : initPristine(config.baseDir);
     const ownsDb = config.db === undefined;
@@ -154,7 +154,7 @@ export class PristineLocal {
     const kekManager = new KekManager(db, keyManager);
     const vaultStore = createSqliteVaultStore(db);
 
-    return new PristineLocal({
+    return new Pristine({
       sourceChunkStore,
       db,
       embedder,

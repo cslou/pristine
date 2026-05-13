@@ -21,6 +21,7 @@ describe('package entrypoint smoke', () => {
       'normalizeSourceChunkInput',
     ]);
     expect(pkg.Pristine).toBeTypeOf('function');
+    expect(pkg).not.toHaveProperty('PristineLocal');
     expect(pkg.createDatabase).toBeTypeOf('function');
     expect(pkg.SourceChunkStore).toBeTypeOf('function');
     expect(pkg.initSourceChunkTables).toBeTypeOf('function');

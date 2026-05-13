@@ -10,7 +10,7 @@ Use this skill when the user asks about prior Pi session history, previous decis
 
 ## Workflow
 
-This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_recall` is the discovery layer; use ranked hits and any explicitly enabled bounded snippets for first-pass relevance judgment, then use `search-session-history` to inspect the authoritative Pi JSONL file named by the returned pointer.
+This skill is the exact-context layer, not a second discovery/search mechanism. `pristine_recall` is the discovery layer; use ranked hits and any explicitly enabled bounded minimized snippets for first-pass relevance judgment, then use `search-session-history` to inspect the authoritative Pi JSONL file named by the returned pointer.
 
 ### Pointer-known mode
 
@@ -29,7 +29,7 @@ Use this mode when the user or a prior `pristine_recall` result provides a `sour
 Use this mode when the target session/pointer is unknown.
 
 1. Call `pristine_recall` first with the user's semantic query.
-2. Pick the best hit using score, filters, any explicitly enabled bounded `snippet`, and a usable `sourcePointer.sourceUri` plus either `lineNumber` or `entryId`.
+2. Pick the best hit using score, filters, any explicitly enabled bounded minimized `snippet`, and a usable `sourcePointer.sourceUri` plus either `lineNumber` or `entryId`.
 3. Switch immediately to pointer-known mode.
 
 ### Global grep fallback

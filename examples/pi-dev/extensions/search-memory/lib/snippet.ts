@@ -1,6 +1,7 @@
 const MAX_RETURNED_SNIPPET_LENGTH = 800;
 const TRUNCATED_SNIPPET_SUFFIX = '…';
 const TRUNCATED_SNIPPET_SUFFIX_LENGTH = Array.from(TRUNCATED_SNIPPET_SUFFIX).length;
+const REDACTED_TEXT_TOKEN = '[TEXT]';
 
 export const REDACTED_RECALL_SNIPPET =
   '[snippet withheld by default; inspect sourcePointer with search-session-history]';
@@ -57,11 +58,84 @@ const SENSITIVE_SNIPPET_PATTERNS: readonly SensitiveSnippetPattern[] = [
   },
 ];
 
+const SAFE_CONTEXT_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'by',
+  'for',
+  'from',
+  'in',
+  'into',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+  'without',
+  'remain',
+  'remains',
+  'relevant',
+  'token',
+  'tokens',
+  'key',
+  'keys',
+  'note',
+  'contact',
+  'project',
+  'sprint',
+  'phrase',
+  'bridge',
+  'known',
+  'here',
+  'belongs',
+]);
+
+const SENSITIVE_PLACEHOLDER_PATTERN = /(\[SENSITIVE:[a-z_]+\])/g;
+const TOKEN_PATTERN = /[\p{L}\p{N}_-]+|[^\p{L}\p{N}_-]+/gu;
+const WORD_PATTERN = /^[\p{L}\p{N}_-]+$/u;
+const SAFE_SEPARATOR_PATTERN = /^[\s.,;:!?()[\]{}<>/\\'"`|+=*&^%$#@~-]+$/u;
+
 const sanitizeSnippet = (snippet: string): string =>
   SENSITIVE_SNIPPET_PATTERNS.reduce(
     (sanitized, rule) => sanitized.replace(rule.pattern, `[SENSITIVE:${rule.type}]`),
     snippet,
   );
+
+const queryTermsFrom = (query: string | undefined): ReadonlySet<string> => {
+  if (query === undefined) return new Set();
+  const terms = query.toLocaleLowerCase().match(/[\p{L}\p{N}_-]{3,}/gu) ?? [];
+  return new Set(terms);
+};
+
+const minimizeSnippetText = (snippet: string, query: string | undefined): string => {
+  const queryTerms = queryTermsFrom(query);
+  return snippet
+    .split(SENSITIVE_PLACEHOLDER_PATTERN)
+    .map((part) => {
+      if (part.startsWith('[SENSITIVE:')) return part;
+      TOKEN_PATTERN.lastIndex = 0;
+      return Array.from(part.matchAll(TOKEN_PATTERN), ([token]) => {
+        if (WORD_PATTERN.test(token)) {
+          const normalized = token.toLocaleLowerCase();
+          return SAFE_CONTEXT_WORDS.has(normalized) || queryTerms.has(normalized)
+            ? token
+            : REDACTED_TEXT_TOKEN;
+        }
+        return SAFE_SEPARATOR_PATTERN.test(token) ? token : REDACTED_TEXT_TOKEN;
+      }).join('');
+    })
+    .join('')
+    .replace(/(?:\[TEXT\][\s.,;:!?-]*){2,}/g, `${REDACTED_TEXT_TOKEN} `)
+    .trim();
+};
 
 const boundSnippet = (snippet: string): string => {
   let characterCount = 0;
@@ -88,6 +162,7 @@ const boundSnippet = (snippet: string): string => {
 
 export interface FormatRecallSnippetOptions {
   readonly includeSnippetText?: boolean;
+  readonly query?: string;
 }
 
 export const formatRecallSnippet = (
@@ -95,5 +170,5 @@ export const formatRecallSnippet = (
   options: FormatRecallSnippetOptions = {},
 ): string => {
   if (options.includeSnippetText !== true) return REDACTED_RECALL_SNIPPET;
-  return boundSnippet(sanitizeSnippet(snippet));
+  return boundSnippet(minimizeSnippetText(sanitizeSnippet(snippet), options.query));
 };

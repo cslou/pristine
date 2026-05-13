@@ -10,12 +10,12 @@ This README is written as an agent-facing runbook: a coding agent should be able
 
 Pi artifacts are grouped by the runtime shape users install: extensions live under `extensions/`, skills live under `skills/`, and shared helper code stays outside both so it is not mistaken for a loadable Pi artifact.
 
-| Source path | Copy/install target in another repo | Pi artifact type | Purpose |
-| --- | --- | --- | --- |
-| `examples/pi-dev/extensions/jsonl-index/` | `.pi/extensions/jsonl-index/` | Pi extension | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers. |
-| `examples/pi-dev/extensions/search-memory/` | `.pi/extensions/search-memory/` | Pi extension / custom tool | Registers `pristine_recall` for semantic vector search over indexed Pi snippets. |
-| `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
-| `examples/pi-dev/shared/` | `.pi/shared/` | Shared helper code | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool. |
+| Source path                                      | Copy/install target in another repo  | Pi artifact type           | Purpose                                                                                                         |
+| ------------------------------------------------ | ------------------------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `examples/pi-dev/extensions/jsonl-index/`        | `.pi/extensions/jsonl-index/`        | Pi extension               | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers.       |
+| `examples/pi-dev/extensions/search-memory/`      | `.pi/extensions/search-memory/`      | Pi extension / custom tool | Registers `pristine_recall` for semantic vector search over indexed Pi snippets.                                |
+| `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill                   | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
+| `examples/pi-dev/shared/`                        | `.pi/shared/`                        | Shared helper code         | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool.                    |
 
 Pi auto-discovers project-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md` when started from the repo root. `shared` is copied under `.pi/shared/` only so relative extension imports resolve without making shared code look like a Pi extension.
 
@@ -31,12 +31,12 @@ The agent should then:
 
 1. Load `search-session-history`.
 2. If no pointer is already known, call `pristine_recall` with the user's semantic query.
-3. Use score, filters, and any explicitly enabled bounded `snippet` previews for first-pass relevance judgment; default `snippet` output is withheld.
+3. Use score, filters, and any explicitly enabled bounded minimized `snippet` previews for first-pass relevance judgment; default `snippet` output is withheld.
 4. Use the selected hit's `sourcePointer` (`sourceUri`, `entryId`, `lineNumber`).
 5. Inspect only `sourcePointer.sourceUri` for bounded user/assistant context.
 6. Avoid broad `rg`/grep over `~/.pi/agent/sessions` once a usable pointer exists.
 
-`pristine_recall` is the discovery layer: it returns ranked source pointers and may include explicitly enabled bounded snippet previews. `search-session-history` is the exact-context layer.
+`pristine_recall` is the discovery layer: it returns ranked source pointers and may include explicitly enabled bounded minimized snippet previews. `search-session-history` is the exact-context layer.
 
 ## Install into another repo
 

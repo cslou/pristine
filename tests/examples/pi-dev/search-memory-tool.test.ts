@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createPristineRecallTool,
+  createSearchMemoryExtension,
   registerSearchMemoryExtension,
 } from '../../../examples/pi-dev/extensions/search-memory/index.js';
 
@@ -36,6 +37,25 @@ describe('search-memory Pi tool wrappers', () => {
     );
 
     expect(registered.map((registeredTool) => registeredTool.name)).toEqual(['pristine_recall']);
+  });
+
+  it('passes host-level snippet preview configuration without exposing a tool input', () => {
+    const configs: { readonly includeSnippetText: boolean }[] = [];
+    const searcher = { search: async (_input: SearchInput) => makeSearchResult() };
+    const registered: { readonly name: string }[] = [];
+    const extension = createSearchMemoryExtension(
+      { env: { PRISTINE_RECALL_INCLUDE_SNIPPET_TEXT: 'true' } },
+      (config) => {
+        configs.push(config);
+        return searcher;
+      },
+    );
+
+    extension({ registerTool: (registeredTool) => registered.push(registeredTool) });
+
+    expect(configs).toEqual([{ includeSnippetText: true }]);
+    expect(registered.map((registeredTool) => registeredTool.name)).toEqual(['pristine_recall']);
+    expect(registered[0]).not.toHaveProperty('includeSnippetText');
   });
 
   it('validates canonical tool inputs', async () => {

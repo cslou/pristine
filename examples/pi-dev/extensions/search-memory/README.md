@@ -4,7 +4,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_recall`.
 
-`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns source pointers for authoritative follow-up. By default the `snippet` field is withheld; extension hosts that explicitly set `includeSnippetText` receive bounded matched snippets with supported sensitive patterns replaced by placeholders.
+`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns source pointers for authoritative follow-up. By default the `snippet` field is withheld; extension hosts that explicitly set `includeSnippetText` receive bounded minimized previews that preserve query terms, safe context words, and supported sensitive placeholders while replacing other raw text with `[TEXT]`.
 
 ## Install
 
@@ -18,7 +18,7 @@ cd ~/projects/test-pristine/.pi/extensions/search-memory
 npm install --omit=dev
 ```
 
-The tool reads the same DB as `jsonl-index`: explicit config when wired by an extension host, `PRISTINE_DB_PATH`, then `~/.pi/pristine/pristine.db`.
+The tool reads the same DB as `jsonl-index`: explicit config when wired by an extension host, `PRISTINE_DB_PATH`, then `~/.pi/pristine/pristine.db`. To enable minimized preview snippets without exposing a tool input, a trusted host can call `createSearchMemoryExtension({ includeSnippetText: true })` or set `PRISTINE_RECALL_INCLUDE_SNIPPET_TEXT=true` before loading the default extension.
 
 ## Tool input
 
@@ -46,7 +46,7 @@ Each result includes:
 - `rank`
 - `score`
 - `chunkId`
-- `snippet` — withheld by default with source-pointer guidance. When an extension host explicitly sets `includeSnippetText`, snippets are bounded matched text for relevance judgment with supported sensitive patterns replaced by placeholders; returned snippets are limited to 800 Unicode characters, and longer snippets keep the first 799 characters and end with `…`.
+- `snippet` — withheld by default with source-pointer guidance. When an extension host explicitly sets `includeSnippetText`, snippets are bounded minimized previews for relevance judgment: query terms, safe context words, and supported sensitive placeholders are preserved, while other raw text is replaced with `[TEXT]`; returned snippets are limited to 800 Unicode characters, and longer snippets keep the first 799 characters and end with `…`.
 - `sourcePointer.sourceKind` = `pi-jsonl`
 - `sourcePointer.sourceUri`
 - `sourcePointer.entryId`

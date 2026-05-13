@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createDatabase, PristineLocal } from '../../dist/index.js';
+import { createDatabase, Pristine } from '../../dist/index.js';
 
 const tempDirs: string[] = [];
 
@@ -17,7 +17,7 @@ describe('local-model source-index smoke', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-smoke-'));
     tempDirs.push(dir);
     const db = createDatabase(join(dir, 'pristine.db'));
-    const client = await PristineLocal.create({ db, baseDir: dir, keysDir: join(dir, 'keys') });
+    const client = await Pristine.create({ db, baseDir: dir, keysDir: join(dir, 'keys') });
 
     try {
       await client.store(

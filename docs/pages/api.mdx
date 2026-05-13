@@ -1,16 +1,16 @@
 # API
 
-The public SDK surface centers on `PristineLocal` plus intent-named primitives.
+The public SDK surface centers on `Pristine` plus intent-named primitives.
 
 ## Client creation
 
 ```ts
-import { PristineLocal } from '@pristine/sdk';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 ```
 
-`PristineLocal.create` accepts optional configuration for local paths, an injected database, an injected embedder, and deterministic privacy classification.
+`Pristine.create` accepts optional configuration for local paths, an injected database, an injected embedder, and deterministic privacy classification.
 
 ## Memory API
 
@@ -48,7 +48,7 @@ The package root is the supported import boundary. It exports the SDK client, do
 
 | Export | Purpose |
 | --- | --- |
-| `PristineLocal` | Main local SDK client. |
+| `Pristine` | Main local SDK client. |
 | `createDatabase` | Create or open a SQLite database with Pristine's sqlite-vec loading behavior. |
 | `AppError` | Base domain error class. |
 | `ConfigError` | Configuration error class. |
@@ -71,7 +71,7 @@ The package exports public option and result types for the launch API:
 - `RecalledMemory`
 - `ForgetOptions`
 - `ForgetResult`
-- `PristineLocalConfig`
+- `PristineConfig`
 - `RevealResult`
 - `SecureAndRedactResult`
 - `SourceChunkInput`

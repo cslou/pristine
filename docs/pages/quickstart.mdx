@@ -11,9 +11,9 @@ Pristine requires Node.js 22 or newer.
 ## Store, recall, and forget
 
 ```ts
-import { PristineLocal } from '@pristine/sdk';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 const projectId = 'local-project';
 
 await pristine.store(

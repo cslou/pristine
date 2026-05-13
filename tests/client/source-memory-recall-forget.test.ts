@@ -8,7 +8,7 @@ import {
   withSourceMemoryClient,
 } from './source-memory-helpers.js';
 
-describe('PristineLocal recall and forget memory verbs', () => {
+describe('Pristine recall and forget memory verbs', () => {
   const { getDeps } = withSourceMemoryClient();
 
   it('forget removes stale chunks and vectors within a project', async () => {

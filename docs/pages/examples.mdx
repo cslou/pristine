@@ -3,9 +3,9 @@
 ## Memory flow
 
 ```ts
-import { PristineLocal } from '@pristine/sdk';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 const projectId = 'example-project';
 
 await pristine.store(
@@ -28,9 +28,9 @@ const firstSourceUri = hits[0]?.sourceUri;
 ## Privacy flow
 
 ```ts
-import { PristineLocal } from '@pristine/sdk';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 const userId = 'local-user';
 
 const secured = await pristine.secureAndRedact('token sk-test_1234567890abcdef', userId);

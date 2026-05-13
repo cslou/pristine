@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
-import { PristineLocal } from '../../src/client.js';
+import { Pristine } from '../../src/client.js';
 import { createDatabase } from '../../src/core/database.js';
 import type { Embedder } from '../../src/core/interfaces.js';
 
@@ -74,4 +74,4 @@ export const withSourceMemoryClient = (): {
 
 export const createClient = async (
   deps: ReturnType<typeof createSourceMemoryTestDeps>,
-): Promise<PristineLocal> => PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+): Promise<Pristine> => Pristine.create({ db: deps.db, embedder: deps.embedder });

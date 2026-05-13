@@ -1,4 +1,4 @@
-# Pristine — Sprint 001
+# Pristine — Sprint 028
 **Date:** 2026-05-12 – 2026-05-12
 **Goal:** Rename the public package to `@pristine/sdk` and make Pi-dev recall return judgment-useful snippets while preserving source-pointer follow-up and existing verification tiers.
 **Status:** 🟢 Complete

@@ -109,15 +109,8 @@ const sanitizeSnippet = (snippet: string): string =>
     snippet,
   );
 
-const queryTermsFrom = (query: string | undefined): ReadonlySet<string> => {
-  if (query === undefined) return new Set();
-  const terms = query.toLocaleLowerCase().match(/[\p{L}\p{N}_-]{3,}/gu) ?? [];
-  return new Set(terms);
-};
-
-const minimizeSnippetText = (snippet: string, query: string | undefined): string => {
-  const queryTerms = queryTermsFrom(query);
-  return snippet
+const minimizeSnippetText = (snippet: string): string =>
+  snippet
     .split(SENSITIVE_PLACEHOLDER_PATTERN)
     .map((part) => {
       if (part.startsWith('[SENSITIVE:')) return part;
@@ -125,9 +118,7 @@ const minimizeSnippetText = (snippet: string, query: string | undefined): string
       return Array.from(part.matchAll(TOKEN_PATTERN), ([token]) => {
         if (WORD_PATTERN.test(token)) {
           const normalized = token.toLocaleLowerCase();
-          return SAFE_CONTEXT_WORDS.has(normalized) || queryTerms.has(normalized)
-            ? token
-            : REDACTED_TEXT_TOKEN;
+          return SAFE_CONTEXT_WORDS.has(normalized) ? token : REDACTED_TEXT_TOKEN;
         }
         return SAFE_SEPARATOR_PATTERN.test(token) ? token : REDACTED_TEXT_TOKEN;
       }).join('');
@@ -135,7 +126,6 @@ const minimizeSnippetText = (snippet: string, query: string | undefined): string
     .join('')
     .replace(/(?:\[TEXT\][\s.,;:!?-]*){2,}/g, `${REDACTED_TEXT_TOKEN} `)
     .trim();
-};
 
 const boundSnippet = (snippet: string): string => {
   let characterCount = 0;
@@ -162,7 +152,6 @@ const boundSnippet = (snippet: string): string => {
 
 export interface FormatRecallSnippetOptions {
   readonly includeSnippetText?: boolean;
-  readonly query?: string;
 }
 
 export const formatRecallSnippet = (
@@ -170,5 +159,5 @@ export const formatRecallSnippet = (
   options: FormatRecallSnippetOptions = {},
 ): string => {
   if (options.includeSnippetText !== true) return REDACTED_RECALL_SNIPPET;
-  return boundSnippet(minimizeSnippetText(sanitizeSnippet(snippet), options.query));
+  return boundSnippet(minimizeSnippetText(sanitizeSnippet(snippet)));
 };

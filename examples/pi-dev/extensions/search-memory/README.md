@@ -4,7 +4,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 Type: Pi extension / custom tool. Install target: `.pi/extensions/search-memory/`. Entry point: `.pi/extensions/search-memory/index.ts`. Registers tool: `pristine_recall`.
 
-`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns source pointers for authoritative follow-up. By default the `snippet` field is withheld; extension hosts that explicitly set `includeSnippetText` receive bounded minimized previews that preserve query terms, safe context words, and supported sensitive placeholders while replacing other raw text with `[TEXT]`.
+`pristine_recall` is a Pi custom tool that semantically searches the Pi JSONL snippets indexed by `examples/pi-dev/extensions/jsonl-index/`. Pi JSONL remains the source of truth; this tool returns source pointers for authoritative follow-up. By default the `snippet` field is withheld; extension hosts that explicitly set `includeSnippetText` receive bounded minimized previews that preserve safe context words and supported sensitive placeholders while replacing other raw text with `[TEXT]`.
 
 ## Install
 
@@ -46,7 +46,7 @@ Each result includes:
 - `rank`
 - `score`
 - `chunkId`
-- `snippet` — withheld by default with source-pointer guidance. When an extension host explicitly sets `includeSnippetText`, snippets are bounded minimized previews for relevance judgment: query terms, safe context words, and supported sensitive placeholders are preserved, while other raw text is replaced with `[TEXT]`; returned snippets are limited to 800 Unicode characters, and longer snippets keep the first 799 characters and end with `…`.
+- `snippet` — withheld by default with source-pointer guidance. When an extension host explicitly sets `includeSnippetText`, snippets are bounded minimized previews for relevance judgment: safe context words and supported sensitive placeholders are preserved, while other raw text is replaced with `[TEXT]`; returned snippets are limited to 800 Unicode characters, and longer snippets keep the first 799 characters and end with `…`.
 - `sourcePointer.sourceKind` = `pi-jsonl`
 - `sourcePointer.sourceUri`
 - `sourcePointer.entryId`

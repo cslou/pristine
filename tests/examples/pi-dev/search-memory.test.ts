@@ -269,7 +269,7 @@ describe('PristinePiVectorSearcher', () => {
   it('returns opt-in snippets bounded to 800 Unicode characters', async () => {
     const dir = await makeTempDir();
     const dbPath = join(dir, 'pristine.db');
-    const longSnippet = `Sapphire ${'sapphire '.repeat(900)}`;
+    const longSnippet = `token ${'token '.repeat(900)}`;
     await seedDb(dbPath, [
       message({
         text: longSnippet,
@@ -309,7 +309,7 @@ describe('PristinePiVectorSearcher', () => {
     });
     const result = await searcher.search({ query: 'sapphire token' });
 
-    expect(result.results[0]?.snippet).toBe('Sapphire [TEXT] token remains relevant.');
+    expect(result.results[0]?.snippet).toBe('[TEXT] token remains relevant.');
     expect(result.results[0]?.snippet).not.toContain(unrecognizedSecret);
   });
 
@@ -338,7 +338,7 @@ describe('PristinePiVectorSearcher', () => {
     });
     const configuredResult = await configuredSearcher.search({ query: 'sapphire token' });
     expect(configuredResult.results[0]?.snippet).toBe(
-      'Sapphire token [SENSITIVE:auth_token] and [SENSITIVE:secret] remain relevant.',
+      '[TEXT] token [SENSITIVE:auth_token] and [SENSITIVE:secret] remain relevant.',
     );
   });
 });

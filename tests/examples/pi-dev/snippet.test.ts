@@ -14,13 +14,12 @@ describe('formatRecallSnippet', () => {
     expect(formatRecallSnippet('Sapphire context')).toBe(REDACTED_RECALL_SNIPPET);
   });
 
-  it('minimizes opt-in previews to query terms, safe context words, and placeholders', () => {
+  it('minimizes opt-in previews to safe context words and placeholders', () => {
     const formatted = formatRecallSnippet('Sapphire Alice custom-secret-value-12345 token', {
       includeSnippetText: true,
-      query: 'sapphire token',
     });
 
-    expect(formatted).toBe('Sapphire [TEXT] token');
+    expect(formatted).toBe('[TEXT] token');
     expect(formatted).not.toContain('Alice');
     expect(formatted).not.toContain('custom-secret-value-12345');
   });
@@ -159,7 +158,6 @@ describe('formatRecallSnippet', () => {
   ])('sanitizes supported snippet pattern: %s', (_name, snippet, sensitiveValue, type) => {
     const formatted = formatRecallSnippet(snippet, {
       includeSnippetText: true,
-      query: 'sapphire token',
     });
 
     expect(formatted).toContain(`SENSITIVE:${type}`);

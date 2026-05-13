@@ -166,7 +166,7 @@ const buildFilterWhere = (
 const mapSearchRow = (
   row: SearchRow,
   index: number,
-  options: { readonly includeSnippetText: boolean; readonly query: string },
+  options: { readonly includeSnippetText: boolean },
 ): PristineVectorSearchHit => {
   const lineNumber =
     typeof row.line_number === 'bigint' ? Number(row.line_number) : row.line_number;
@@ -243,7 +243,7 @@ export class PristinePiVectorSearcher {
           : this.runFilteredExact(db, vector, limit, filter);
       return {
         results: rows.map((row, index) =>
-          mapSearchRow(row, index, { includeSnippetText: this.includeSnippetText, query }),
+          mapSearchRow(row, index, { includeSnippetText: this.includeSnippetText }),
         ),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
       };

@@ -257,19 +257,26 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** SDK developer or docs maintainer, **I want** reference/configuration pages and lightweight docs evidence checks aligned with the new structure, **so that** the docs remain navigable and public API details stay accurate after the restructure.
 - **Dependencies:** Story 1, Story 2, Story 3, Story 4, Story 5
 - **Acceptance criteria:**
-  - [ ] API and Configuration pages live under the Reference navigation while existing `/api` and `/configuration` URLs continue to build.
-  - [ ] Reference pages link back to Memory, Privacy, and Integrations pages where users need conceptual context.
-  - [ ] A lightweight docs verification checklist or scriptable command set is recorded in the sprint doc or docs contribution notes for grouped sidebar, compatibility routes, prompt presence, and stale-name checks.
-  - [ ] No generated `docs/dist` artifacts are committed as part of docs source edits unless the repository already expects them in the sprint workflow.
+  - [x] API and Configuration pages live under the Reference navigation while existing `/api` and `/configuration` URLs continue to build.
+  - [x] Reference pages link back to Memory, Privacy, and Integrations pages where users need conceptual context.
+  - [x] A lightweight docs verification checklist or scriptable command set is recorded in the sprint doc or docs contribution notes for grouped sidebar, compatibility routes, prompt presence, and stale-name checks.
+  - [x] No generated `docs/dist` artifacts are committed as part of docs source edits unless the repository already expects them in the sprint workflow.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`; pass condition: Reference pages and compatibility routes build successfully.
-  - [ ] Run `rg "/memory|/privacy|/pi-dev|/integrations" docs/pages/api.mdx docs/pages/configuration.mdx`; pass condition: Reference pages link back to Memory, Privacy, and integration context where relevant.
-  - [ ] Run `rg "docs verification|sidebar|compatibility routes|prompt presence|PristineLocal" docs/sprints/sprint-029.md docs/pages`; pass condition: a lightweight docs verification checklist or command set is recorded for the new docs structure.
-  - [ ] Run `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`; pass condition: no stale public name or placeholder markers remain in public docs source.
+  - [x] Run `npm run docs:build`; pass condition: Reference pages and compatibility routes build successfully.
+  - [x] Run `rg "/memory|/privacy|/pi-dev|/integrations" docs/pages/api.mdx docs/pages/configuration.mdx`; pass condition: Reference pages link back to Memory, Privacy, and integration context where relevant.
+  - [x] Run `rg "docs verification|sidebar|compatibility routes|prompt presence|PristineLocal" docs/sprints/sprint-029.md docs/pages`; pass condition: a lightweight docs verification checklist or command set is recorded for the new docs structure.
+  - [x] Run `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`; pass condition: no stale public name or placeholder markers remain in public docs source.
 - **Regression verification:**
-  - [ ] Run `npm run verify:public-api-types`; pass condition: reference examples remain aligned with exported public types.
-  - [ ] Run `git status --short docs/dist`; pass condition: no generated docs artifacts are staged or modified for commit unless intentionally documented.
+  - [x] Run `npm run verify:public-api-types`; pass condition: reference examples remain aligned with exported public types.
+  - [x] Run `git status --short docs/dist`; pass condition: no generated docs artifacts are staged or modified for commit unless intentionally documented.
 - **Manual-only verification:** N/A — docs build, grep checks, and public API type verification cover this story.
+- **Implementation evidence:**
+  - `npm run docs:build` passed; log: `/tmp/pristine-story6-docs-build.log`.
+  - Reference back-link grep passed; log: `/tmp/pristine-story6-reference-links.log`.
+  - Docs verification command-set grep passed; log: `/tmp/pristine-story6-docs-verification.log`.
+  - Stale-name/placeholder check passed: `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`.
+  - `npm run verify:public-api-types` passed; log: `/tmp/pristine-story6-public-api-types.log`.
+  - Generated docs artifact check passed; log: `/tmp/pristine-story6-docs-dist-status.log`.
 - **Planned commits:**
   1. `docs: align reference pages with new structure` — update Reference navigation/content links and record docs evidence checks.
 - **Technical notes:** Prefer source docs and config changes only. If Vocs generates `docs/dist` during verification, leave generated changes unstaged unless repository policy requires otherwise.

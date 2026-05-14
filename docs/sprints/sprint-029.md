@@ -133,20 +133,28 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness integrator, **I want** Memory docs that explain source-owned memory, how memory works, and the store/recall/forget lifecycle, **so that** I can wire Pristine into an agent without confusing recall snippets with authoritative source records.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `docs/pages/memory.mdx` exists and explains local source-pointer memory, project scoping, and what data remains owned by the host harness/application.
-  - [ ] `docs/pages/memory/how-it-works.mdx` exists with a conceptual lifecycle diagram or step list covering host event → chunk/index → local SQLite/vector store → recall → source inspection.
-  - [ ] `docs/pages/memory/store-recall-forget.mdx` exists with a Memory guide for store/recall/forget and links to API/reference details.
-  - [ ] Existing `/concepts` content is either updated as a compatibility/overview page or linked into the new Memory pillar without contradictory duplicate explanations.
+  - [x] `docs/pages/memory.mdx` exists and explains local source-pointer memory, project scoping, and what data remains owned by the host harness/application.
+  - [x] `docs/pages/memory/how-it-works.mdx` exists with a conceptual lifecycle diagram or step list covering host event → chunk/index → local SQLite/vector store → recall → source inspection.
+  - [x] `docs/pages/memory/store-recall-forget.mdx` exists with a Memory guide for store/recall/forget and links to API/reference details.
+  - [x] Existing `/concepts` content is either updated as a compatibility/overview page or linked into the new Memory pillar without contradictory duplicate explanations.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`; pass condition: Memory pages build successfully.
-  - [ ] Run `rg "source-pointer memory|project scoping|host harness|source of truth" docs/pages/memory.mdx`; pass condition: Memory overview contains the required source-ownership concepts.
-  - [ ] Run `rg "host event|chunk|local SQLite|vector|recall|source inspection" docs/pages/memory/how-it-works.mdx`; pass condition: Memory how-it-works contains the required lifecycle steps.
-  - [ ] Run `rg "store|recall|forget|projectId|API|Reference" docs/pages/memory/store-recall-forget.mdx`; pass condition: Memory guide contains the required operation and reference-link language.
-  - [ ] Run `rg "Memory|source pointer|source of truth|docs/pages/memory|/memory" docs/pages/concepts.mdx`; pass condition: `/concepts` is visibly aligned with or routes readers to the Memory pillar and does not contain a conflicting source-ownership explanation.
+  - [x] Run `npm run docs:build`; pass condition: Memory pages build successfully.
+  - [x] Run `rg "source-pointer memory|project scoping|host harness|source of truth" docs/pages/memory.mdx`; pass condition: Memory overview contains the required source-ownership concepts.
+  - [x] Run `rg "host event|chunk|local SQLite|vector|recall|source inspection" docs/pages/memory/how-it-works.mdx`; pass condition: Memory how-it-works contains the required lifecycle steps.
+  - [x] Run `rg "store|recall|forget|projectId|API|Reference" docs/pages/memory/store-recall-forget.mdx`; pass condition: Memory guide contains the required operation and reference-link language.
+  - [x] Run `rg "Memory|source pointer|source of truth|docs/pages/memory|/memory" docs/pages/concepts.mdx`; pass condition: `/concepts` is visibly aligned with or routes readers to the Memory pillar and does not contain a conflicting source-ownership explanation.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/client/source-memory-store.test.ts tests/client/source-memory-recall-forget.test.ts`; pass condition: documented memory operations still match existing client behavior.
-  - [ ] Run `! rg "PristineLocal" docs/pages`; pass condition: no stale public client name appears in docs pages.
+  - [x] Run `npm run test:unit -- tests/client/source-memory-store.test.ts tests/client/source-memory-recall-forget.test.ts`; pass condition: documented memory operations still match existing client behavior.
+  - [x] Run `! rg "PristineLocal" docs/pages`; pass condition: no stale public client name appears in docs pages.
 - **Manual-only verification:** N/A — docs build, grep checks, and focused unit tests cover this story.
+- **Implementation evidence:**
+  - `npm run docs:build` passed; log: `/tmp/pristine-story3-docs-build.log`.
+  - Memory overview grep passed; log: `/tmp/pristine-story3-memory-overview.log`.
+  - Memory how-it-works grep passed; log: `/tmp/pristine-story3-memory-how.log`.
+  - Memory guide grep passed; log: `/tmp/pristine-story3-memory-guide.log`.
+  - Concepts compatibility grep passed; log: `/tmp/pristine-story3-concepts.log`.
+  - Focused memory unit tests passed; log: `/tmp/pristine-story3-memory-unit.log`.
+  - Stale-name check passed: `! rg "PristineLocal" docs/pages`.
 - **Planned commits:**
   1. `docs: add memory docs pillar` — create/update Memory overview, how-it-works, and guide pages.
 - **Technical notes:** Keep implementation internals concise; link to Reference for exact signatures and configuration.

@@ -6,14 +6,31 @@ Use Pristine privacy APIs to protect sensitive text before it enters an agent or
 
 `secureAndRedact` detects sensitive values, stores encrypted originals in the local vault, and returns redacted text with placeholders.
 
+```ts
+const secured = await pristine.secureAndRedact(
+  'Email Ada at ada@example.com about the invoice.',
+  'local-user',
+);
+
+const modelSafeText = secured.text;
+```
+
 ## scrubOutput
 
 `scrubOutput` scans generated output before it crosses a sensitive boundary. Use it as a final safety check for text produced by tools, agents, or models.
+
+```ts
+const scrubbed = pristine.scrubOutput(modelSafeText, ['ada@example.com']);
+```
 
 ## reveal
 
 `reveal` restores placeholders when the caller has local access to the vault and keys and the application policy allows restoration.
 
-## Reference
+```ts
+const revealed = await pristine.reveal(modelSafeText, 'local-user');
+```
 
-See the [API reference](/api) and [configuration reference](/configuration) for exact options.
+## API and Reference
+
+See the [API reference](/api) for exact `secureAndRedact`, `reveal`, and `scrubOutput` signatures, and the [configuration reference](/configuration) for local storage, classifier, and embedder options.

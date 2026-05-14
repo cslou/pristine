@@ -1,14 +1,23 @@
 # Privacy
 
-Pristine is designed for local-first privacy: no Pristine server is required, and user data does not leave the device by default.
+Pristine is designed for local-first privacy: no Pristine-hosted API is required, and user data does not leave the device by default unless your application adds a remote service, remote embedder, or network wrapper.
+
+## Privacy vault vs source-index memory
+
+The privacy vault and source-index memory have different jobs:
+
+- **Privacy vault:** encrypted local storage for sensitive originals captured by `secureAndRedact`, used later by privileged local `reveal` flows.
+- **Source-index memory:** searchable local chunks, embeddings, snippets, and source metadata used by `store`, `recall`, and `forget`.
+
+Do not treat the source-index memory database as a plaintext-safe cache. It is optimized for search and source pointers, not for hiding every indexed snippet from local readers.
 
 ## Redact before sharing context
 
-`secureAndRedact` detects sensitive values, stores encrypted originals locally, and returns text with placeholders. This is useful before an application places text into an agent or model context.
+`secureAndRedact` detects sensitive values, stores encrypted originals locally in the privacy vault, and returns text with placeholders. Use it before an application places text into an agent or model context.
 
 ## Reveal locally
 
-`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation.
+`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation controlled by your application policy.
 
 ## Scrub generated output
 
@@ -16,14 +25,8 @@ Pristine is designed for local-first privacy: no Pristine server is required, an
 
 ## Threat model notes
 
-Pristine stores source-index chunks, snippets, embeddings, and source metadata in the local SQLite database as searchable index data. Treat that database as sensitive: it is not a plaintext-safe public cache, and it is not the authoritative full raw source store.
+Pristine stores source-index chunks, snippets, embeddings, and source metadata in the local SQLite database as searchable index data. Treat local database sensitivity seriously: it is not a public cache, and it is not the authoritative full raw source store.
 
 Privacy vault entries are encrypted locally, but database backups and key backups must be managed together. Backing up encrypted vault data without the matching keys can make reveal impossible; backing up keys without protecting them can weaken the local privacy boundary.
 
-## Keys and storage
-
-Pristine stores privacy vault data locally. Applications remain responsible for filesystem permissions, backup policy, logging policy, and any network services they add around the SDK.
-
-## Network behavior
-
-The SDK does not call a Pristine-hosted API. The default embedder may download model files on first use unless model assets are pre-cached or the runtime is configured for offline operation. If an application injects a remote embedder or wraps Pristine with network services, that application owns the resulting data-flow and privacy review.
+The default embedder may perform model downloads on first use unless model assets are pre-cached or the runtime is configured for offline operation. Applications remain responsible for filesystem permissions, backup policy, logging policy, model configuration, and any network wrappers they add around the SDK.

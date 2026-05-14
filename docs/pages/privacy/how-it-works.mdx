@@ -1,14 +1,22 @@
 # How privacy works
 
-Pristine privacy helpers reduce the chance that sensitive values cross an application or agent boundary in plaintext.
+Pristine privacy helpers reduce the chance that sensitive values cross an application, agent, or model boundary in plaintext.
 
 ## Lifecycle
 
+```text
+raw text
+  → classify + redact
+  → agent/model boundary with placeholders
+  → scrub output
+  → optional local reveal
+```
+
 1. Raw text enters the host application.
-2. `secureAndRedact` classifies sensitive values and stores encrypted originals locally.
-3. The redacted text can cross an agent or model boundary with placeholders instead of sensitive values.
+2. `secureAndRedact` asks the classifier to classify sensitive values, stores encrypted originals locally, and returns redacted text.
+3. The redacted text can cross an agent/model boundary with placeholders instead of sensitive values.
 4. `scrubOutput` checks generated output before it leaves a sensitive boundary.
-5. `reveal` can restore placeholders locally when caller policy allows it.
+5. `reveal` can perform optional local reveal when caller policy allows it and local vault/key access is available.
 
 ## Boundary
 

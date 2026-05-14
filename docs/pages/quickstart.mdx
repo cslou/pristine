@@ -75,7 +75,7 @@ Detailed next steps: [Pi-dev integration](/pi-dev), [examples index](/examples),
 ### Privacy setup prompt
 
 ```text
-Add Pristine privacy boundaries to this local agent harness. Read docs/pages/privacy.mdx, docs/pages/privacy/secure-redact-reveal.mdx, docs/pages/configuration.mdx, and examples/pi-dev/README.md. Use secureAndRedact before sensitive text enters agent/model context, reveal only in approved local flows, and scrubOutput before generated text crosses the configured boundary. Do not add a Pristine-hosted API or send secrets to Pristine; document the local key, database, logging, and backup responsibilities.
+Add Pristine privacy boundaries to this local agent harness. Read docs/pages/privacy.mdx, docs/pages/privacy/secure-redact-reveal.mdx, docs/pages/configuration.mdx, and examples/pi-dev/README.md. Use secureAndRedact before sensitive text enters agent/model context, reveal only in approved local flows, and scrubOutput before generated text crosses the configured boundary. Do not add hosted Pristine services or route secrets outside local policy; document the local key, database, logging, and backup responsibilities.
 ```
 
 **Expected outcome:** sensitive text is redacted before agent/model context, reveal remains a local privileged operation, generated output is scrubbed before crossing boundaries, and the harness documents its local storage/key responsibilities.

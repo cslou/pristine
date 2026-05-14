@@ -1,6 +1,6 @@
 # Pi-dev integration
 
-Pristine includes a reference Pi-dev integration for indexing Pi JSONL session history and recalling relevant source pointers. The detailed runbook lives at `examples/pi-dev/README.md`.
+Pristine includes a reference Pi-dev integration for indexing Pi JSONL session history and recalling relevant source pointers. The detailed runbook lives at [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
 
 ## Prerequisite
 
@@ -8,7 +8,7 @@ Use this page when you run Pi from a local repository and can install project-lo
 
 ## Setup path
 
-1. Read `examples/pi-dev/README.md`.
+1. Read [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
 2. Copy the reference artifacts into the target repo's `.pi/extensions`, `.pi/skills`, and `.pi/shared` layout.
 3. Install extension dependencies as described in the runbook.
 4. Start Pi from the target repo root so it discovers the local extensions and skill.
@@ -35,4 +35,4 @@ After setup, Pi can answer memory/history questions by using `search-session-his
 
 ## Smoke check
 
-Run the end-to-end TUI verification in `examples/pi-dev/README.md`. Pass condition: the agent uses `search-session-history`, gets a relevant `pristine_recall` pointer, answers from the source JSONL, and avoids broad session greps after it has a usable pointer.
+Run the end-to-end TUI verification in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the agent uses `search-session-history`, gets a relevant `pristine_recall` pointer, answers from the source JSONL, and avoids broad session greps after it has a usable pointer.

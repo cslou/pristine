@@ -59,18 +59,22 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness adopter, **I want** the docs sidebar grouped by Start, Memory, Privacy, Integrations, Agent setup, and Reference, **so that** I can find the adoption path without scanning a flat miscellaneous page list.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] `vocs.config.ts` sidebar contains top-level groups for Start, Memory, Privacy, Integrations, Agent setup, and Reference.
-  - [ ] Existing public docs routes `/`, `/quickstart`, `/concepts`, `/api`, `/privacy`, `/pi-dev`, `/configuration`, and `/examples` remain present as pages or intentionally linked compatibility pages.
-  - [ ] New nested page paths needed by later stories are represented in the sidebar without dead links.
-  - [ ] Navigation labels do not claim unsupported Claude Code or Codex integrations as production-ready.
+  - [x] `vocs.config.ts` sidebar contains top-level groups for Start, Memory, Privacy, Integrations, Agent setup, and Reference.
+  - [x] Existing public docs routes `/`, `/quickstart`, `/concepts`, `/api`, `/privacy`, `/pi-dev`, `/configuration`, and `/examples` remain present as pages or intentionally linked compatibility pages.
+  - [x] New nested page paths needed by later stories are represented in the sidebar without dead links.
+  - [x] Navigation labels do not claim unsupported Claude Code or Codex integrations as production-ready.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`; pass condition: Vocs builds successfully with the grouped sidebar and no route-generation failure.
-  - [ ] Manually inspect `vocs.config.ts`; pass condition: each top-level group and all current compatibility routes are present exactly once in the intended navigation model.
-  - [ ] Manually inspect integration labels in `vocs.config.ts`; pass condition: unsupported Claude Code, Codex, or custom-harness entries are either omitted or labeled as future/custom patterns, not production-ready integrations.
+  - [x] Run `npm run docs:build`; pass condition: Vocs builds successfully with the grouped sidebar and no route-generation failure.
+  - [x] Manually inspect `vocs.config.ts`; pass condition: each top-level group and all current compatibility routes are present exactly once in the intended navigation model.
+  - [x] Manually inspect integration labels in `vocs.config.ts`; pass condition: unsupported Claude Code, Codex, or custom-harness entries are either omitted or labeled as future/custom patterns, not production-ready integrations.
 - **Regression verification:**
-  - [ ] Run `npm run docs:build`; pass condition: existing pages still compile after sidebar changes.
-  - [ ] Run `test -f docs/pages/quickstart.mdx && test -f docs/pages/api.mdx && test -f docs/pages/privacy.mdx && test -f docs/pages/pi-dev.mdx`; pass condition: existing public route source files still exist.
+  - [x] Run `npm run docs:build`; pass condition: existing pages still compile after sidebar changes.
+  - [x] Run `test -f docs/pages/quickstart.mdx && test -f docs/pages/api.mdx && test -f docs/pages/privacy.mdx && test -f docs/pages/pi-dev.mdx`; pass condition: existing public route source files still exist.
 - **Manual-only verification:** Inspect `vocs.config.ts` sidebar and integration labels; pass condition: top-level groups/routes are present and unsupported integrations are omitted or labeled future/custom, not production-ready.
+- **Implementation evidence:**
+  - `npm run docs:build` passed; log: `/tmp/pristine-story1-docs-build.log`.
+  - Manual sidebar inspection passed: Start, Memory, Privacy, Integrations, Agent setup, and Reference groups are present; existing compatibility routes remain linked exactly once; unsupported Claude Code/Codex labels are omitted from `vocs.config.ts`.
+  - Compatibility source check passed: `test -f docs/pages/quickstart.mdx && test -f docs/pages/api.mdx && test -f docs/pages/privacy.mdx && test -f docs/pages/pi-dev.mdx`.
 - **Planned commits:**
   1. `docs: group vocs navigation` — update sidebar structure and add placeholder page shells only where required to prevent dead links.
 - **Technical notes:** Preserve current URLs first; add nested pages for clarity rather than moving existing pages unless a compatibility page remains.

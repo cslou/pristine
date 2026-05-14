@@ -1,0 +1,15 @@
+# How privacy works
+
+Pristine privacy helpers reduce the chance that sensitive values cross an application or agent boundary in plaintext.
+
+## Lifecycle
+
+1. Raw text enters the host application.
+2. `secureAndRedact` classifies sensitive values and stores encrypted originals locally.
+3. The redacted text can cross an agent or model boundary with placeholders instead of sensitive values.
+4. `scrubOutput` checks generated output before it leaves a sensitive boundary.
+5. `reveal` can restore placeholders locally when caller policy allows it.
+
+## Boundary
+
+The SDK provides local primitives. Your application still owns filesystem permissions, backup policy, logging policy, model configuration, and any network wrappers around Pristine.

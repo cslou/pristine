@@ -1,0 +1,19 @@
+# Store, recall, forget
+
+The core memory flow is `store` → `recall` → source inspection → `forget`.
+
+## Store
+
+Use `store` to index chunks with stable IDs and source metadata. Scope memory with `projectId` so independent projects do not share recall results accidentally.
+
+## Recall
+
+Use `recall` with a query and `projectId` to retrieve ranked hits. Treat each hit as a pointer back to host-owned context.
+
+## Forget
+
+Use `forget` with chunk IDs and `projectId` to remove indexed chunks from local recall.
+
+## Reference
+
+See the [API reference](/api) for signatures and the [quickstart](/quickstart) for an end-to-end example.

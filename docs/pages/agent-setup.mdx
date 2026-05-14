@@ -1,0 +1,11 @@
+# Agent setup prompts
+
+Use this section when you want a coding agent to wire Pristine into a local harness. Start with the SDK quickstart, then send the agent to the integration guide for the harness it is configuring.
+
+## Pi-dev
+
+For Pi development environments, use the [Pi-dev integration guide](/pi-dev) and the [`examples/pi-dev` runbook](../../examples/pi-dev/README.md). The guide explains how Pristine indexes Pi JSONL session history, recalls source pointers, and routes inspection back to the authoritative session source.
+
+## SDK baseline
+
+If the harness is not Pi, start from the [quickstart](/quickstart) and [API reference](/api). The host application owns the integration boundary and decides which files, sessions, or records are safe to index.

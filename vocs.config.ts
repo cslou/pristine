@@ -9,13 +9,47 @@ export default defineConfig({
     { text: 'GitHub', link: 'https://github.com/getlou-gh/pristine' },
   ],
   sidebar: [
-    { text: 'Intro', link: '/' },
-    { text: 'Quickstart', link: '/quickstart' },
-    { text: 'Concepts', link: '/concepts' },
-    { text: 'API', link: '/api' },
-    { text: 'Privacy', link: '/privacy' },
-    { text: 'Pi-dev', link: '/pi-dev' },
-    { text: 'Configuration', link: '/configuration' },
-    { text: 'Examples', link: '/examples' },
+    {
+      text: 'Start',
+      items: [
+        { text: 'Overview', link: '/' },
+        { text: 'Quickstart', link: '/quickstart' },
+        { text: 'Concepts', link: '/concepts' },
+      ],
+    },
+    {
+      text: 'Memory',
+      items: [
+        { text: 'Overview', link: '/memory' },
+        { text: 'How it works', link: '/memory/how-it-works' },
+        { text: 'Store, recall, forget', link: '/memory/store-recall-forget' },
+      ],
+    },
+    {
+      text: 'Privacy',
+      items: [
+        { text: 'Overview', link: '/privacy' },
+        { text: 'How it works', link: '/privacy/how-it-works' },
+        { text: 'Secure, redact, reveal', link: '/privacy/secure-redact-reveal' },
+      ],
+    },
+    {
+      text: 'Integrations',
+      items: [
+        { text: 'Pi-dev', link: '/pi-dev' },
+        { text: 'Examples', link: '/examples' },
+      ],
+    },
+    {
+      text: 'Agent setup',
+      items: [{ text: 'Agent setup prompts', link: '/agent-setup' }],
+    },
+    {
+      text: 'Reference',
+      items: [
+        { text: 'API', link: '/api' },
+        { text: 'Configuration', link: '/configuration' },
+      ],
+    },
   ],
 });

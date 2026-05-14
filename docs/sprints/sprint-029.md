@@ -175,19 +175,26 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** privacy-conscious harness integrator, **I want** Privacy docs that explain redaction, reveal, scrub output, and the local threat model, **so that** I know where Pristine reduces risk and where my application still owns policy.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `docs/pages/privacy.mdx` states no Pristine-hosted API is required and clearly separates privacy vault behavior from source-index memory behavior.
-  - [ ] `docs/pages/privacy/how-it-works.mdx` exists with a conceptual lifecycle diagram or step list covering raw text → classify/redact → agent/model boundary → scrub output → optional local reveal.
-  - [ ] `docs/pages/privacy/secure-redact-reveal.mdx` documents secureAndRedact, reveal, and scrubOutput usage with links to API/reference details.
-  - [ ] Threat model notes remain explicit about local database sensitivity, key backups, model downloads, and caller-owned network wrappers.
+  - [x] `docs/pages/privacy.mdx` states no Pristine-hosted API is required and clearly separates privacy vault behavior from source-index memory behavior.
+  - [x] `docs/pages/privacy/how-it-works.mdx` exists with a conceptual lifecycle diagram or step list covering raw text → classify/redact → agent/model boundary → scrub output → optional local reveal.
+  - [x] `docs/pages/privacy/secure-redact-reveal.mdx` documents secureAndRedact, reveal, and scrubOutput usage with links to API/reference details.
+  - [x] Threat model notes remain explicit about local database sensitivity, key backups, model downloads, and caller-owned network wrappers.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`; pass condition: Privacy pages build successfully.
-  - [ ] Run `rg "no Pristine-hosted API|required|privacy vault|source-index memory|database sensitivity|key backups|model downloads|network wrappers" docs/pages/privacy.mdx`; pass condition: Privacy overview contains required local-first and threat-model language.
-  - [ ] Run `rg "raw text|classify|redact|agent/model boundary|scrub output|local reveal" docs/pages/privacy/how-it-works.mdx`; pass condition: Privacy how-it-works contains the required lifecycle steps.
-  - [ ] Run `rg "secureAndRedact|reveal|scrubOutput|API|Reference" docs/pages/privacy/secure-redact-reveal.mdx`; pass condition: Privacy guide contains the required API and reference-link language.
+  - [x] Run `npm run docs:build`; pass condition: Privacy pages build successfully.
+  - [x] Run `rg "no Pristine-hosted API|required|privacy vault|source-index memory|database sensitivity|key backups|model downloads|network wrappers" docs/pages/privacy.mdx`; pass condition: Privacy overview contains required local-first and threat-model language.
+  - [x] Run `rg "raw text|classify|redact|agent/model boundary|scrub output|local reveal" docs/pages/privacy/how-it-works.mdx`; pass condition: Privacy how-it-works contains the required lifecycle steps.
+  - [x] Run `rg "secureAndRedact|reveal|scrubOutput|API|Reference" docs/pages/privacy/secure-redact-reveal.mdx`; pass condition: Privacy guide contains the required API and reference-link language.
 - **Regression verification:**
-  - [ ] Run `npm run test:e2e -- tests/e2e/privacy-pipeline.test.ts`; pass condition: documented privacy flow still matches deterministic e2e behavior.
-  - [ ] Run `! rg "requires a Pristine server|requires a Pristine API key|send(s)? .* to Pristine|Pristine cloud" docs/pages`; pass condition: no public docs page uses forbidden phrasing that implies a hosted Pristine service is required.
+  - [x] Run `npm run test:e2e -- tests/e2e/privacy-pipeline.test.ts`; pass condition: documented privacy flow still matches deterministic e2e behavior.
+  - [x] Run `! rg "requires a Pristine server|requires a Pristine API key|send(s)? .* to Pristine|Pristine cloud" docs/pages`; pass condition: no public docs page uses forbidden phrasing that implies a hosted Pristine service is required.
 - **Manual-only verification:** N/A — docs build, grep checks, and focused e2e tests cover this story.
+- **Implementation evidence:**
+  - `npm run docs:build` passed; logs: `/tmp/pristine-story4-docs-build.log`, `/tmp/pristine-story4-docs-build-final.log`.
+  - Privacy overview grep passed; log: `/tmp/pristine-story4-privacy-overview.log`.
+  - Privacy how-it-works grep passed; log: `/tmp/pristine-story4-privacy-how.log`.
+  - Privacy guide grep passed; log: `/tmp/pristine-story4-privacy-guide.log`.
+  - Focused privacy e2e passed; log: `/tmp/pristine-story4-privacy-e2e.log`.
+  - Forbidden hosted-service phrasing check passed: `! rg "requires a Pristine server|requires a Pristine API key|send(s)? .* to Pristine|Pristine cloud" docs/pages`.
 - **Planned commits:**
   1. `docs: add privacy docs pillar` — create/update Privacy overview, how-it-works, guide, and threat-model content.
 - **Technical notes:** Do not overpromise privacy: distinguish SDK guarantees from filesystem, backup, logging, remote embedder, and wrapper-service responsibilities.

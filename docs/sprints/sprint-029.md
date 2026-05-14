@@ -1,7 +1,7 @@
 # Pristine — Sprint 029
 **Date:** 2026-05-14 – TBD
 **Goal:** Reorganize the public Vocs docs so agent/harness adopters can understand Pristine, complete an SDK memory quickstart, and reach Pi memory/privacy integration prompts without relying on the current flat sidebar.
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 
 ---
 
@@ -297,21 +297,21 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories
 - **Acceptance criteria:**
-  - [ ] Every story’s acceptance criteria are evaluated against implementation evidence.
-  - [ ] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
-  - [ ] Failed, ambiguous, manual-only, or unrun verification items are documented.
-  - [ ] The sprint’s new functional verification is identified as future regression verification.
-  - [ ] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals.
-  - [ ] The verification delta table includes every canonical verification type row, including zero-count rows.
-  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
-  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
+  - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
+  - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
+  - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
+  - [x] The sprint’s new functional verification is identified as future regression verification.
+  - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals.
+  - [x] The verification delta table includes every canonical verification type row, including zero-count rows.
+  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
+  - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
-  - [ ] Run all functional verification items from every story and record pass/fail evidence.
+  - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
-  - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence.
+  - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
+  - [x] Run the full available regression verification suite and record pass/fail evidence.
 - **Manual-only verification:** N/A — no manual-only verification required
 - **Planned commits:**
   1. `docs: complete sprint 029 verification` — final verification evidence and sprint doc completion update.
@@ -335,3 +335,36 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
+
+## Final Review
+
+Sprint 029 is complete. Public Vocs docs are reorganized around Start, Memory, Privacy, Integrations, Agent setup, and Reference; existing public routes remain present; SDK quickstart and Pi setup prompts are documented; Memory and Privacy pillars are expanded; Pi/Claude Code integration examples are labeled according to support status; and Reference pages link back to conceptual context.
+
+### Verification evidence
+
+- Functional docs verification passed: `npm run docs:build` (`/tmp/pristine-final-docs-build.log`) plus all story content/structure checks (`/tmp/pristine-final-*`).
+- Full available regression suite passed: `npm test` (`/tmp/pristine-final-full-test.log`).
+- Public API type verification passed: `npm run verify:public-api-types` (`/tmp/pristine-final-public-api-types.log`).
+- Pre-merge gate passed: `.checks/pre-merge.sh` (`/tmp/pristine-final-pre-merge.log`).
+- Generated docs artifact check passed: `git status --short docs/dist` produced no output (`/tmp/pristine-final-docs-dist-status.log`).
+- Failed, ambiguous, or unrun verification: None.
+- Manual-only verification: Story 1 sidebar/integration-label inspection and Story 5 harness/example page inspection were completed and recorded in story evidence.
+
+### Verification delta
+
+| Canonical verification type | Before sprint | Added this sprint | Removed | Pending/not yet run | After sprint |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Static / local checks | 2 | 1 | 0 | 0 | 3 |
+| Unit | 1 | 2 | 0 | 0 | 3 |
+| Integration / contract | 1 | 0 | 0 | 0 | 1 |
+| E2E / smoke | 2 | 2 | 0 | 0 | 4 |
+| Docs build / content checks | 0 | 18 | 0 | 0 | 18 |
+| Public API type checks | 1 | 1 | 0 | 0 | 2 |
+| Manual-only checks | 0 | 2 | 0 | 0 | 2 |
+| Simulator / browser / device | 0 | 0 | 0 | 0 | 0 |
+
+New functional verification promoted to future regression: grouped sidebar checks, compatibility route source checks, quickstart prompt presence checks, Memory/Privacy pillar content checks, Pi/Claude Code integration labeling checks, Reference back-link checks, stale-name/placeholder checks, hosted-service forbidden-phrase checks, docs artifact cleanliness checks.
+
+### New Dependencies
+
+None.

@@ -263,8 +263,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] No generated `docs/dist` artifacts are committed as part of docs source edits unless the repository already expects them in the sprint workflow.
 - **Functional verification:**
   - [x] Run `npm run docs:build`; pass condition: Reference pages and compatibility routes build successfully.
-  - [x] Run `rg "/memory|/privacy|/pi-dev|/integrations" docs/pages/api.mdx docs/pages/configuration.mdx`; pass condition: Reference pages link back to Memory, Privacy, and integration context where relevant.
-  - [x] Run `rg "docs verification|sidebar|compatibility routes|prompt presence|PristineLocal" docs/sprints/sprint-029.md docs/pages`; pass condition: a lightweight docs verification checklist or command set is recorded for the new docs structure.
+  - [x] Run `node -e "const fs=require('fs'); for (const file of ['docs/pages/api.mdx','docs/pages/configuration.mdx']) { const s=fs.readFileSync(file,'utf8'); for (const link of ['/memory','/privacy','/pi-dev']) { if (!s.includes(link)) throw new Error(file+' missing '+link); } }"`; pass condition: API and Configuration each link to Memory, Privacy, and Pi integration context.
+  - [x] Run the recorded docs verification command set: sidebar groups check against `vocs.config.ts`, compatibility route source-file checks, prompt presence checks against `docs/pages/quickstart.mdx`, and `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`; pass condition: each command exits 0.
   - [x] Run `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`; pass condition: no stale public name or placeholder markers remain in public docs source.
 - **Regression verification:**
   - [x] Run `npm run verify:public-api-types`; pass condition: reference examples remain aligned with exported public types.
@@ -272,8 +272,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Manual-only verification:** N/A — docs build, grep checks, and public API type verification cover this story.
 - **Implementation evidence:**
   - `npm run docs:build` passed; log: `/tmp/pristine-story6-docs-build.log`.
-  - Reference back-link grep passed; log: `/tmp/pristine-story6-reference-links.log`.
-  - Docs verification command-set grep passed; log: `/tmp/pristine-story6-docs-verification.log`.
+  - Reference per-page link assertion passed; log: `/tmp/pristine-story6-reference-links-fix.log`.
+  - Docs verification command set passed; logs: `/tmp/pristine-story6-sidebar-check.log`, `/tmp/pristine-story6-compat-routes.log`, `/tmp/pristine-story6-prompt-presence.log`, `/tmp/pristine-story6-stale-placeholder.log`.
   - Stale-name/placeholder check passed: `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`.
   - `npm run verify:public-api-types` passed; log: `/tmp/pristine-story6-public-api-types.log`.
   - Generated docs artifact check passed; log: `/tmp/pristine-story6-docs-dist-status.log`.

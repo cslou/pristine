@@ -1,18 +1,18 @@
 # Pristine
 
-Pristine is a local-first privacy and source-pointer memory SDK for TypeScript. It helps applications and agents store useful memory locally, recall it by semantic query, and trace results back to their source.
+Pristine is local-first memory and privacy for agent harnesses. It gives TypeScript applications a small SDK for source-pointer memory, local redaction/reveal, and output scrubbing without requiring a Pristine server.
 
-## Why Pristine
+## What Pristine gives you
 
-- **Local-first by default:** no Pristine server is required.
-- **Privacy primitives included:** redact sensitive text, reveal it locally when allowed, and scrub generated output before it crosses a boundary.
-- **Source-pointer memory:** recall results include metadata that points back to the source record, file, session, or line that produced the memory.
-- **TypeScript SDK:** strict ESM package with typed public APIs.
+- **Local-first memory:** store chunks locally, recall them by semantic query, and inspect the source pointer before acting on the result.
+- **Privacy boundaries:** redact sensitive text before agent/model context, reveal locally when policy allows, and scrub generated output before it crosses a boundary.
+- **Harness-friendly primitives:** integrate Pristine into Pi or another host harness while the host remains the source of truth for files, sessions, and records.
+- **Typed SDK:** use the `Pristine` client from a strict TypeScript ESM package.
 
 ## Start here
 
-- [Quickstart](/quickstart) — install and run the core memory flow.
-- [Concepts](/concepts) — understand source-owned memory, project scoping, and local storage.
-- [API](/api) — learn the launch API surface.
-- [Privacy](/privacy) — understand redaction, reveal, and scrub behavior.
-- [Pi-dev integration](/pi-dev) — wire Pristine into a Pi development environment.
+- [SDK quickstart](/quickstart) — install the package and run the base `Pristine` memory flow.
+- [Pi quickstart prompts](/quickstart#pi-quickstart-prompts) — copy prompts for agent-assisted Pi memory and privacy setup.
+- [Memory](/memory) — understand source-pointer memory and source inspection.
+- [Privacy](/privacy) — understand redaction, reveal, scrub output, and local threat-model boundaries.
+- [Pi-dev integration](/pi-dev) — follow the Pi runbook once you are ready to wire a harness.

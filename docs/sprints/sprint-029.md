@@ -95,18 +95,24 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness adopter, **I want** the homepage and quickstart to explain what Pristine gives me and then get me to SDK memory plus Pi setup prompts quickly, **so that** I can decide whether Pristine fits my agent workflow and delegate setup to my coding agent.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] `docs/pages/index.mdx` positions Pristine as local-first memory and privacy for agent harnesses, and links to SDK quickstart, Pi quickstart/prompt, Memory, and Privacy sections.
-  - [ ] `docs/pages/quickstart.mdx` keeps a base SDK flow for install → create `Pristine` → store → recall → inspect source pointer → forget.
-  - [ ] `docs/pages/quickstart.mdx` includes a clearly labeled Pi quickstart section that explains users need harness integration for agent memory behavior.
-  - [ ] The Pi quickstart section includes copy-paste prompts for memory setup and privacy setup, with expected outcomes and links to detailed example/reference pages.
+  - [x] `docs/pages/index.mdx` positions Pristine as local-first memory and privacy for agent harnesses, and links to SDK quickstart, Pi quickstart/prompt, Memory, and Privacy sections.
+  - [x] `docs/pages/quickstart.mdx` keeps a base SDK flow for install → create `Pristine` → store → recall → inspect source pointer → forget.
+  - [x] `docs/pages/quickstart.mdx` includes a clearly labeled Pi quickstart section that explains users need harness integration for agent memory behavior.
+  - [x] The Pi quickstart section includes copy-paste prompts for memory setup and privacy setup, with expected outcomes and links to detailed example/reference pages.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`; pass condition: updated homepage and quickstart render in the Vocs build.
-  - [ ] Run `rg "copy|prompt|Pi|Pristine|store|recall|forget|source pointer" docs/pages/index.mdx docs/pages/quickstart.mdx`; pass condition: output shows the homepage/quickstart include the required concepts and prompt language.
-  - [ ] Run `rg "Memory setup prompt|Privacy setup prompt|Expected outcome|examples/pi-dev/README.md|/pi-dev|/examples" docs/pages/quickstart.mdx`; pass condition: the quickstart contains distinct memory/privacy prompt blocks, expected outcomes, and detailed-page links.
+  - [x] Run `npm run docs:build`; pass condition: updated homepage and quickstart render in the Vocs build.
+  - [x] Run `rg "copy|prompt|Pi|Pristine|store|recall|forget|source pointer" docs/pages/index.mdx docs/pages/quickstart.mdx`; pass condition: output shows the homepage/quickstart include the required concepts and prompt language.
+  - [x] Run `rg "Memory setup prompt|Privacy setup prompt|Expected outcome|examples/pi-dev/README.md|/pi-dev|/examples" docs/pages/quickstart.mdx`; pass condition: the quickstart contains distinct memory/privacy prompt blocks, expected outcomes, and detailed-page links.
 - **Regression verification:**
-  - [ ] Run `npm run test:smoke`; pass condition: public API examples remain aligned with the built package and exported `Pristine` client.
-  - [ ] Run `! rg "PristineLocal" docs/pages/index.mdx docs/pages/quickstart.mdx`; pass condition: no stale `PristineLocal` reference is present.
+  - [x] Run `npm run test:smoke`; pass condition: public API examples remain aligned with the built package and exported `Pristine` client.
+  - [x] Run `! rg "PristineLocal" docs/pages/index.mdx docs/pages/quickstart.mdx`; pass condition: no stale `PristineLocal` reference is present.
 - **Manual-only verification:** N/A — docs build, grep checks, and smoke tests cover this story.
+- **Implementation evidence:**
+  - `npm run docs:build` passed; log: `/tmp/pristine-story2-docs-build.log`.
+  - Required homepage/quickstart concept grep passed; log: `/tmp/pristine-story2-keyterms.log`.
+  - Required Pi prompt/detail grep passed; log: `/tmp/pristine-story2-promptterms.log`.
+  - `npm run test:smoke` passed; log: `/tmp/pristine-story2-smoke.log`.
+  - Stale-name check passed: `! rg "PristineLocal" docs/pages/index.mdx docs/pages/quickstart.mdx`.
 - **Planned commits:**
   1. `docs: rewrite start and quickstart onboarding` — update homepage and quickstart content with SDK-first flow and Pi prompt sections.
 - **Technical notes:** Prompt text should instruct a coding agent to read repository-local Pristine/Pi example docs rather than pretending the SDK alone wires a harness.

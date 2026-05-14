@@ -35,11 +35,17 @@ await pristine.store(
 );
 
 const recalled = await pristine.recall('local memory privacy', { projectId, limit: 3 });
-const sourcePointer = recalled[0]?.sourceUri;
+const hit = recalled[0];
 
-if (sourcePointer) {
-  // Reopen the source record in your host application before treating recall as authoritative.
-  const authoritativeSource = sourcePointer;
+if (hit) {
+  const sourcePointer = {
+    sourceKind: hit.sourceKind,
+    sourceUri: hit.sourceUri,
+    entryId: hit.entryId,
+    lineStart: hit.lineStart,
+    lineEnd: hit.lineEnd,
+  };
+  // Reopen this source pointer in your host application before treating recall as authoritative.
 }
 
 await pristine.forget(['note-1'], { projectId });
@@ -64,7 +70,7 @@ Add Pristine-backed memory to this Pi development setup. Read the local Pristine
 
 **Expected outcome:** your Pi setup indexes local session history, `pristine_recall` returns memory hits with source pointer metadata, and the agent can inspect the authoritative session source before using recalled context.
 
-Detailed next steps: [Pi-dev integration](/pi-dev), [examples index](/examples), and [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/main/examples/pi-dev).
+Detailed next steps: [Pi-dev integration](/pi-dev), [examples index](/examples), and `examples/pi-dev/README.md` in this repository.
 
 ### Privacy setup prompt
 

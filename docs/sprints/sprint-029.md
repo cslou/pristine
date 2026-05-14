@@ -186,23 +186,25 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Ready for Lou
 - **Planning review:**
   - Findings: P1 from sprint-doc-reviewer: unsupported/future harness labeling and per-harness prerequisites/setup/outcome/verification coverage were not proven per page.
-  - Resolution: Narrowed Pi grep to integration/example pages and added manual per-page harness checklist plus unsupported-page labeling check.
+  - Resolution: Narrowed Pi grep to integration/example pages and added manual per-page harness checklist plus unsupported-page labeling check. Lou later requested a Claude Code section marked Coming soon; Story 5 AC and verification were updated accordingly.
 - **As a** harness adopter, **I want** examples organized by harness first and capability second, **so that** I can start from my environment and see what memory/privacy integration paths are supported.
 - **Dependencies:** Story 1, Story 2
 - **Acceptance criteria:**
   - [ ] The Integrations section includes a Pi page that points to `examples/pi-dev/README.md` and explains memory components, privacy prompt setup, expected outcomes, and source inspection flow.
   - [ ] `docs/pages/examples.mdx` becomes a harness-oriented examples index or compatibility page that routes to Pi memory/privacy examples and any honest future-placeholder pages.
-  - [ ] Claude Code, Codex, or custom-harness pages are either omitted or explicitly marked as future/custom patterns unless backed by current repository examples.
-  - [ ] Each harness/example page states prerequisites, setup path, expected behavior, and at least one verification or smoke-check signal.
+  - [ ] The Integrations or Examples section includes a Claude Code section/page explicitly marked `Coming soon`.
+  - [ ] Claude Code, Codex, or custom-harness pages are either omitted or explicitly marked as future/custom/coming-soon patterns unless backed by current repository examples.
+  - [ ] Each supported harness/example page states prerequisites, setup path, expected behavior, and at least one verification or smoke-check signal.
 - **Functional verification:**
   - [ ] Run `npm run docs:build`; pass condition: integration/example pages build successfully.
   - [ ] Run `rg "examples/pi-dev/README.md|pristine_recall|search-session-history|expected outcome|prerequisite" docs/pages/pi-dev.mdx docs/pages/examples.mdx`; pass condition: Pi integration/example pages contain required links and adoption details.
   - [ ] Manually inspect each harness/example page touched by this story; pass condition: every page states prerequisites, setup path, expected behavior, and a verification/smoke-check signal.
-  - [ ] Manually inspect any Claude Code, Codex, or custom-harness page touched by this story; pass condition: each unsupported page is omitted or explicitly labeled as a future/custom pattern, not fully supported.
+  - [ ] Run `rg "Claude Code|Coming soon" docs/pages`; pass condition: Claude Code appears in the docs and is explicitly labeled `Coming soon`.
+  - [ ] Manually inspect any Claude Code, Codex, or custom-harness page touched by this story; pass condition: each unsupported page is omitted or explicitly labeled as a future/custom/coming-soon pattern, not fully supported.
 - **Regression verification:**
   - [ ] Run `npm run test:unit -- tests/examples/pi-dev`; pass condition: referenced Pi-dev helper behavior still passes existing tests.
   - [ ] Run `test -f examples/pi-dev/README.md`; pass condition: linked Pi runbook exists.
-- **Manual-only verification:** Inspect each harness/example page touched by this story; pass condition: each page states prerequisites, setup path, expected behavior, and verification/smoke-check signal, and unsupported harness pages are omitted or labeled future/custom.
+- **Manual-only verification:** Inspect each harness/example page touched by this story; pass condition: each supported page states prerequisites, setup path, expected behavior, and verification/smoke-check signal, and unsupported harness pages are omitted or labeled future/custom/coming-soon.
 - **Planned commits:**
   1. `docs: organize integrations by harness` — update Pi integration and examples structure.
 - **Technical notes:** The quickstart can stay prompt-first; detailed command/runbook content should live in integration/example pages and the existing `examples/pi-dev/README.md`.

@@ -264,7 +264,9 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Functional verification:**
   - [x] Run `npm run docs:build`; pass condition: Reference pages and compatibility routes build successfully.
   - [x] Run `node -e "const fs=require('fs'); for (const file of ['docs/pages/api.mdx','docs/pages/configuration.mdx']) { const s=fs.readFileSync(file,'utf8'); for (const link of ['/memory','/privacy','/pi-dev']) { if (!s.includes(link)) throw new Error(file+' missing '+link); } }"`; pass condition: API and Configuration each link to Memory, Privacy, and Pi integration context.
-  - [x] Run the recorded docs verification command set: sidebar groups check against `vocs.config.ts`, compatibility route source-file checks, prompt presence checks against `docs/pages/quickstart.mdx`, and `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`; pass condition: each command exits 0.
+  - [x] Run `node --input-type=module -e "import fs from 'node:fs'; const s=fs.readFileSync('vocs.config.ts','utf8'); for (const g of ['Start','Memory','Privacy','Integrations','Agent setup','Reference']) if (!s.includes(\`text: '${g}'\`)) throw new Error('missing '+g);"`; pass condition: grouped sidebar labels are present.
+  - [x] Run `test -f docs/pages/index.mdx && test -f docs/pages/quickstart.mdx && test -f docs/pages/concepts.mdx && test -f docs/pages/api.mdx && test -f docs/pages/privacy.mdx && test -f docs/pages/pi-dev.mdx && test -f docs/pages/configuration.mdx && test -f docs/pages/examples.mdx`; pass condition: compatibility route source files exist.
+  - [x] Run `rg "Memory setup prompt|Privacy setup prompt|Expected outcome" docs/pages/quickstart.mdx`; pass condition: prompt presence is recorded in quickstart.
   - [x] Run `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`; pass condition: no stale public name or placeholder markers remain in public docs source.
 - **Regression verification:**
   - [x] Run `npm run verify:public-api-types`; pass condition: reference examples remain aligned with exported public types.
@@ -273,7 +275,9 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Implementation evidence:**
   - `npm run docs:build` passed; log: `/tmp/pristine-story6-docs-build.log`.
   - Reference per-page link assertion passed; log: `/tmp/pristine-story6-reference-links-fix.log`.
-  - Docs verification command set passed; logs: `/tmp/pristine-story6-sidebar-check.log`, `/tmp/pristine-story6-compat-routes.log`, `/tmp/pristine-story6-prompt-presence.log`, `/tmp/pristine-story6-stale-placeholder.log`.
+  - Sidebar verification command passed; log: `/tmp/pristine-story6-sidebar-check.log`.
+  - Compatibility route source-file command passed; log: `/tmp/pristine-story6-compat-routes.log`.
+  - Prompt presence command passed; log: `/tmp/pristine-story6-prompt-presence.log`.
   - Stale-name/placeholder check passed: `! rg "PristineLocal|TODO|TBD" docs/pages vocs.config.ts`.
   - `npm run verify:public-api-types` passed; log: `/tmp/pristine-story6-public-api-types.log`.
   - Generated docs artifact check passed; log: `/tmp/pristine-story6-docs-dist-status.log`.

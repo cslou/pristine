@@ -14,6 +14,7 @@ This project follows semantic versioning once it reaches `1.0.0`. Before `1.0.0`
 ### Changed
 
 - Public onboarding now describes the current source-pointer SDK surface instead of the removed raw-transcript ownership architecture.
+- Breaking pre-release API rename: import `Pristine` and `PristineConfig` from `@pristine/sdk` instead of the removed `PristineLocal` and `PristineLocalConfig` names.
 
 ### Security
 

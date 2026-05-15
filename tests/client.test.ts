@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PristineLocal } from '../src/client.js';
+import { Pristine } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import type { Embedder } from '../src/core/interfaces.js';
 
@@ -28,7 +28,7 @@ const createTestDeps = (): {
   embedder: createMockEmbedder(),
 });
 
-describe('PristineLocal', () => {
+describe('Pristine', () => {
   let deps: ReturnType<typeof createTestDeps>;
 
   beforeEach(() => {
@@ -40,9 +40,9 @@ describe('PristineLocal', () => {
   });
 
   it('creates a client with DI overrides and no raw conversation APIs', async () => {
-    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+    const client = await Pristine.create({ db: deps.db, embedder: deps.embedder });
 
-    expect(client).toBeInstanceOf(PristineLocal);
+    expect(client).toBeInstanceOf(Pristine);
     expect('storeAsync' in client).toBe(false);
     expect('getConversation' in client).toBe(false);
     expect('drainEmbedQueue' in client).toBe(false);
@@ -53,7 +53,7 @@ describe('PristineLocal', () => {
   it('privacy APIs remain available', async () => {
     const keysDir = mkdtempSync(join(tmpdir(), 'pristine-client-keys-'));
     try {
-      const client = await PristineLocal.create({
+      const client = await Pristine.create({
         db: deps.db,
         embedder: deps.embedder,
         keysDir,
@@ -91,7 +91,7 @@ describe('PristineLocal', () => {
   });
 
   it('dispose does not dispose DI-provided resources', async () => {
-    const client = await PristineLocal.create({ db: deps.db, embedder: deps.embedder });
+    const client = await Pristine.create({ db: deps.db, embedder: deps.embedder });
     await client.dispose();
 
     expect(deps.embedder.dispose).not.toHaveBeenCalled();

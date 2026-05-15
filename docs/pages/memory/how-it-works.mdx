@@ -1,0 +1,23 @@
+# How memory works
+
+Pristine turns host-owned context into local recall pointers. The host application controls which events are indexed, which metadata becomes a source pointer, and how recalled pointers are inspected.
+
+## Lifecycle
+
+```text
+host event
+  → chunk + source metadata
+  → local SQLite + vector index
+  → recall by semantic query
+  → source inspection in the host harness
+```
+
+1. A host event, file, note, or agent session produces text worth indexing.
+2. The host splits that text into a chunk and attaches source metadata such as `sourceKind`, `sourceUri`, `entryId`, `lineStart`, and `lineEnd`.
+3. Pristine embeds the chunk and stores it in a local SQLite database with a vector index.
+4. A recall query searches the selected `projectId` and returns ranked hits with source pointer metadata.
+5. The host follows the source pointer for source inspection before acting on important context.
+
+## Boundary
+
+Recall snippets are not a replacement for source inspection. Treat them as ranked pointers that help the harness reopen the authoritative file, JSONL session, database row, or other source record.

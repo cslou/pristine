@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PristineLocal } from '../../src/client.js';
+import { Pristine } from '../../src/client.js';
 import { EmbedderError, InvalidArgumentError } from '../../src/core/errors.js';
 import { OllamaEmbedder } from '../../src/embedder/ollama/index.js';
 import {
@@ -10,7 +10,7 @@ import {
   withSourceMemoryClient,
 } from './source-memory-helpers.js';
 
-describe('PristineLocal store memory verb', () => {
+describe('Pristine store memory verb', () => {
   const { getDeps } = withSourceMemoryClient();
 
   it('keeps source-chunk method names as deprecated compatibility aliases', async () => {
@@ -207,7 +207,7 @@ describe('PristineLocal store memory verb', () => {
         mockFetchResponse({ embeddings: [[Number.NaN, ...Array.from({ length: 767 }, () => 0)]] }),
       );
     try {
-      const client = await PristineLocal.create({
+      const client = await Pristine.create({
         db: getDeps().db,
         embedder: new OllamaEmbedder({ model: 'nomic-embed-text', dim: 768 }),
       });

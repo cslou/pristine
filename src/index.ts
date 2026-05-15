@@ -9,11 +9,11 @@
  * files on first use unless pre-cached or configured offline.
  */
 
-export { PristineLocal } from './client.js';
+export { Pristine } from './client.js';
 export type {
   ForgetOptions,
   ForgetResult,
-  PristineLocalConfig,
+  PristineConfig,
   RecalledMemory,
   RecallOptions,
   StoredMemory,

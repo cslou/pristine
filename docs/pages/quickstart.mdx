@@ -1,19 +1,23 @@
 # Quickstart
 
+Start with the SDK memory flow. If you want agent memory inside Pi, use the Pi quickstart prompts after the SDK baseline so your coding agent wires Pristine into the harness instead of assuming the SDK alone changes agent behavior.
+
 ## Install
 
 ```bash
-pnpm add @pristine/shield-local
+pnpm add @pristine/sdk
 ```
 
 Pristine requires Node.js 22 or newer.
 
-## Store, recall, and forget
+## SDK memory flow
+
+Create a `Pristine` client, store source-owned text, recall likely matches, inspect the source pointer, and forget the chunk when it should leave the local index.
 
 ```ts
-import { PristineLocal } from '@pristine/shield-local';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 const projectId = 'local-project';
 
 await pristine.store(
@@ -23,23 +27,60 @@ await pristine.store(
       text: 'Pristine keeps memory local by default.',
       sourceKind: 'note',
       sourceUri: 'file:///notes/privacy.md',
+      lineStart: 1,
+      lineEnd: 1,
     },
   ],
   { projectId },
 );
 
 const recalled = await pristine.recall('local memory privacy', { projectId, limit: 3 });
-await pristine.forget(['note-1'], { projectId });
+const hit = recalled[0];
 
-const recalledCount = recalled.length;
+if (hit) {
+  const sourcePointer = {
+    sourceKind: hit.sourceKind,
+    sourceUri: hit.sourceUri,
+    entryId: hit.entryId,
+    lineStart: hit.lineStart,
+    lineEnd: hit.lineEnd,
+  };
+  // Reopen this source pointer in your host application before treating recall as authoritative.
+}
+
+await pristine.forget(['note-1'], { projectId });
 ```
 
 The memory flow is intentionally source-owned:
 
 1. `store` writes chunks with source metadata.
-2. `recall` returns ranked hits with the same source metadata.
+2. `recall` returns ranked hits with the same source pointer metadata.
 3. Your application follows the source pointer when it needs authoritative context.
 4. `forget` removes chunks by ID within a project.
+
+## Pi quickstart prompts
+
+Pi agent memory requires harness integration: Pristine provides local memory and privacy primitives, while the Pi extension/tooling decides when to index session history, when to call `pristine_recall`, and how to inspect source JSONL. Give these prompts to your coding agent from inside the repository or harness you want to configure.
+
+### Memory setup prompt
+
+```text
+Add Pristine-backed memory to this Pi development setup. Read the local Pristine docs first: docs/pages/quickstart.mdx, docs/pages/pi-dev.mdx, docs/pages/memory.mdx, and examples/pi-dev/README.md. Wire the Pi JSONL indexing and recall path described there without inventing a hosted service. Preserve JSONL/session files as the source of truth, expose or configure the pristine_recall flow, and include a smoke check that stores/indexes a sample session, recalls it, and inspects the returned source pointer.
+```
+
+**Expected outcome:** your Pi setup indexes local session history, `pristine_recall` returns memory hits with source pointer metadata, and the agent can inspect the authoritative session source before using recalled context.
+
+Detailed next steps: [Pi-dev integration](/pi-dev), [examples index](/examples), and `examples/pi-dev/README.md` in this repository.
+
+### Privacy setup prompt
+
+```text
+Add Pristine privacy boundaries to this local agent harness. Read docs/pages/privacy.mdx, docs/pages/privacy/secure-redact-reveal.mdx, docs/pages/configuration.mdx, and examples/pi-dev/README.md. Use secureAndRedact before sensitive text enters agent/model context, reveal only in approved local flows, and scrubOutput before generated text crosses the configured boundary. Do not add hosted Pristine services or route secrets outside local policy; document the local key, database, logging, and backup responsibilities.
+```
+
+**Expected outcome:** sensitive text is redacted before agent/model context, reveal remains a local privileged operation, generated output is scrubbed before crossing boundaries, and the harness documents its local storage/key responsibilities.
+
+Detailed next steps: [Privacy](/privacy), [Privacy API reference](/api), [Configuration](/configuration), and [Pi-dev integration](/pi-dev).
 
 ## Privacy flow
 

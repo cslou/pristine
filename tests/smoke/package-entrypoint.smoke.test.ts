@@ -11,7 +11,7 @@ describe('package entrypoint smoke', () => {
       'ConfigError',
       'EmbedderError',
       'InvalidArgumentError',
-      'PristineLocal',
+      'Pristine',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
       'SensitiveNotFoundError',
@@ -21,7 +21,8 @@ describe('package entrypoint smoke', () => {
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
     ]);
-    expect(pkg.PristineLocal).toBeTypeOf('function');
+    expect(pkg.Pristine).toBeTypeOf('function');
+    expect(pkg).not.toHaveProperty('PristineLocal');
     expect(pkg.createDatabase).toBeTypeOf('function');
     expect(pkg.SourceChunkStore).toBeTypeOf('function');
     expect(pkg.initSourceChunkTables).toBeTypeOf('function');
@@ -32,7 +33,7 @@ describe('package entrypoint smoke', () => {
     expect(pkg).not.toHaveProperty('InvalidSqlError');
     expect(pkg).not.toHaveProperty('QueryTimeoutError');
 
-    const { createDatabase, PristineLocal } = pkg as typeof import('../../dist/index.js');
+    const { createDatabase, Pristine } = pkg as typeof import('../../dist/index.js');
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const vector = [1, ...Array.from({ length: 767 }, () => 0)];
     const embedder = {
@@ -40,7 +41,7 @@ describe('package entrypoint smoke', () => {
       embed: vi.fn(async () => vector),
       embedBatch: vi.fn(async (texts: readonly string[]) => texts.map(() => vector)),
     };
-    const client = await PristineLocal.create({ db, embedder });
+    const client = await Pristine.create({ db, embedder });
     try {
       await client.store([{ text: 'built package source index', chunkId: 'built-1' }], {
         projectId: 'built-smoke',

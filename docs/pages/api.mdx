@@ -1,22 +1,22 @@
 # API
 
-The public SDK surface centers on `PristineLocal` plus intent-named primitives.
+The public SDK surface centers on `Pristine` plus intent-named primitives. Use this page as Reference material after reading the conceptual [Memory](/memory), [Privacy](/privacy), and [Pi-dev integration](/pi-dev) guides.
 
 ## Client creation
 
 ```ts
-import { PristineLocal } from '@pristine/shield-local';
+import { Pristine } from '@pristine/sdk';
 
-const pristine = await PristineLocal.create();
+const pristine = await Pristine.create();
 ```
 
-`PristineLocal.create` accepts optional configuration for local paths, an injected database, an injected embedder, and deterministic privacy classification.
+`Pristine.create` accepts optional configuration for local paths, an injected database, an injected embedder, and deterministic privacy classification.
 
 ## Memory API
 
 ### `store(chunks, { projectId })`
 
-Stores source-owned text chunks and returns stored memory records. Each chunk can include source metadata such as `chunkId`, `sourceKind`, `sourceUri`, `entryId`, line numbers, timestamp, and custom metadata.
+Stores source-owned text chunks and returns stored memory records. Each chunk can include source metadata such as `chunkId`, `sourceKind`, `sourceUri`, `entryId`, line numbers, timestamp, and custom metadata. See [Memory](/memory) for the source-of-truth model.
 
 ### `recall(query, { projectId, limit? })`
 
@@ -30,7 +30,7 @@ Deletes stored chunks by ID within one project and returns a deletion count.
 
 ### `secureAndRedact(text, userId, classifier?)`
 
-Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default.
+Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default. See [Privacy](/privacy) for threat-model boundaries.
 
 ### `reveal(redactedText, userId)`
 
@@ -48,7 +48,7 @@ The package root is the supported import boundary. It exports the SDK client, do
 
 | Export | Purpose |
 | --- | --- |
-| `PristineLocal` | Main local SDK client. |
+| `Pristine` | Main local SDK client. |
 | `createDatabase` | Create or open a SQLite database with Pristine's sqlite-vec loading behavior. |
 | `AppError` | Base domain error class. |
 | `ConfigError` | Configuration error class. |
@@ -71,7 +71,7 @@ The package exports public option and result types for the launch API:
 - `RecalledMemory`
 - `ForgetOptions`
 - `ForgetResult`
-- `PristineLocalConfig`
+- `PristineConfig`
 - `RevealResult`
 - `SecureAndRedactResult`
 - `SourceChunkInput`
@@ -94,4 +94,4 @@ The root also keeps deprecated compatibility type exports for the pre-`store`/`r
 
 ## Internal boundary
 
-The package root does not export raw conversation storage, ingest queues, worker drains, SQL searchers, provider SDK clients, or benchmark-only helpers. Consumers should compose the supported source chunk and privacy primitives instead of importing internal paths.
+The package root does not export raw conversation storage, ingest queues, worker drains, SQL searchers, provider SDK clients, or benchmark-only helpers. Consumers should compose the supported source chunk and privacy primitives instead of importing internal paths. Harness-specific setup should start from [Integrations](/pi-dev) and [Examples](/examples).

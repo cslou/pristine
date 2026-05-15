@@ -1,45 +1,37 @@
 # Examples
 
-## Memory flow
+Examples are organized by harness first, then by capability. Start with the environment you want to integrate, then choose memory, privacy, or both.
 
-```ts
-import { PristineLocal } from '@pristine/shield-local';
+## Pi-dev — supported reference
 
-const pristine = await PristineLocal.create();
-const projectId = 'example-project';
+The supported reference path is the Pi-dev example in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
 
-await pristine.store(
-  [
-    {
-      chunkId: 'example-1',
-      text: 'Use source pointers to inspect the authoritative record.',
-      sourceKind: 'markdown',
-      sourceUri: 'file:///docs/example.md',
-      lineNumber: 12,
-    },
-  ],
-  { projectId },
-);
+### Prerequisite
 
-const hits = await pristine.recall('authoritative record', { projectId, limit: 5 });
-const firstSourceUri = hits[0]?.sourceUri;
-```
+Use a local repository where Pi can discover project-local `.pi/extensions/*` and `.pi/skills/*` artifacts. Node dependencies are installed inside the copied extension directories as described by the runbook.
 
-## Privacy flow
+### Setup path
 
-```ts
-import { PristineLocal } from '@pristine/shield-local';
+- Read [Pi-dev integration](/pi-dev).
+- Follow [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev) to copy `jsonl-index`, `search-memory`, `search-session-history`, and shared helper code.
+- Start Pi from the target repo root and run the documented warmup/smoke prompts.
 
-const pristine = await PristineLocal.create();
-const userId = 'local-user';
+### Memory expected outcome
 
-const secured = await pristine.secureAndRedact('token sk-test_1234567890abcdef', userId);
-if (secured.ok) {
-  const scrubbed = pristine.scrubOutput(secured.redactedText);
-  const safeText = scrubbed;
-}
-```
+Pi session JSONL remains the source of truth. `jsonl-index` writes a local semantic index, `pristine_recall` returns ranked pointers, and `search-session-history` inspects the authoritative source before answering.
 
-## Pi-dev flow
+### Privacy expected outcome
 
-Use [`examples/pi-dev/README.md`](../../examples/pi-dev/README.md) to install the reference JSONL indexer, `pristine_recall` tool, and `search-session-history` skill.
+Use the [privacy setup prompt](/quickstart#privacy-setup-prompt) to add local redaction, privileged reveal, and output scrubbing around agent/model boundaries. The host harness owns key, database, backup, and logging policy.
+
+### Verification signal
+
+Run the end-to-end TUI verification from [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the response includes the expected remembered detail, uses `search-session-history`, and grounds exact context in the returned source pointer.
+
+## Claude Code — Coming soon
+
+Claude Code integration docs are Coming soon. This is a future/custom pattern placeholder, not a supported production-ready integration in this sprint.
+
+## Custom harnesses — future pattern
+
+Custom harnesses can use the SDK primitives directly today, but this docs set does not yet include a supported custom-harness integration guide. Start with [Memory](/memory), [Privacy](/privacy), and [API](/api) when designing your own adapter.

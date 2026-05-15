@@ -1,5 +1,5 @@
 {
-  "name": "@pristine/shield-local",
+  "name": "@pristine/sdk",
   "version": "0.0.1",
   "description": "Local-first privacy and source-pointer memory SDK — no server; no user data leaves by default",
   "license": "MIT",

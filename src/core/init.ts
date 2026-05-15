@@ -7,10 +7,10 @@ import { assertValidDim } from './vector-dim.js';
 import type { EmbedderConfig } from './embedder-config.js';
 
 // ---------------------------------------------------------------------------
-// PristineConfig — init-time SDK config (currently embedder-only)
+// PristineInitConfig — init-time SDK config (currently embedder-only)
 // ---------------------------------------------------------------------------
 
-export interface PristineConfig {
+export interface PristineInitConfig {
   readonly embedder?: EmbedderConfig;
 }
 
@@ -18,7 +18,7 @@ export interface PristineConfig {
 // canonical SDK default lives in `src/client.ts`; persisting `dim` here
 // would create a second default site and lock consumers onto whatever
 // value shipped at the time `models.json` was first written.
-export const DEFAULT_PRISTINE_CONFIG: PristineConfig = {
+export const DEFAULT_PRISTINE_CONFIG: PristineInitConfig = {
   embedder: { engine: 'local' },
 };
 
@@ -84,7 +84,7 @@ function validateEmbedderEntry(value: unknown): EmbedderConfig {
 // loadPristineConfig
 // ---------------------------------------------------------------------------
 
-export function loadPristineConfig(configDir?: string): PristineConfig {
+export function loadPristineConfig(configDir?: string): PristineInitConfig {
   const dir = configDir ?? join(homedir(), '.pristine');
   const filePath = join(dir, 'models.json');
 
@@ -124,7 +124,7 @@ export interface InitPristineResult {
   readonly baseDir: string;
   readonly configPath: string;
   readonly databasePath: string;
-  readonly config: PristineConfig;
+  readonly config: PristineInitConfig;
 }
 
 export function initPristine(baseDir?: string): InitPristineResult {

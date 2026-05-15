@@ -10,6 +10,7 @@ import {
   type PiJsonlIndexChunkRow,
 } from '../../../shared/lib/pi-jsonl-index-schema.js';
 import { LocalNomicEmbedder, type PiJsonlEmbedder } from './local-embedder.js';
+import { formatRecallSnippet } from './snippet.js';
 
 export interface PristineVectorSearchFilters {
   readonly sourceUri?: string;
@@ -74,9 +75,7 @@ const validateLimit = (limit: number | undefined): number => {
 const validateLineNumber = (lineNumber: number | undefined): number | undefined => {
   if (lineNumber === undefined) return undefined;
   if (!Number.isInteger(lineNumber) || lineNumber < 1) {
-    throw new Error(
-      `Pristine Pi search lineNumber must be a positive integer, got ${lineNumber}`,
-    );
+    throw new Error(`Pristine Pi search lineNumber must be a positive integer, got ${lineNumber}`);
   }
   return lineNumber;
 };
@@ -107,11 +106,6 @@ const euclideanDistance = (left: readonly number[], right: Buffer): number => {
   }
   return Math.sqrt(sum);
 };
-
-const REDACTED_SNIPPET =
-  '[snippet redacted by default; inspect sourcePointer with search-session-history]';
-
-const scrubSnippet = (_snippet: string): string => REDACTED_SNIPPET;
 
 interface SearchRow extends PiJsonlIndexChunkRow {
   readonly distance: number;
@@ -175,7 +169,7 @@ const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit =>
     rank: index + 1,
     score: scoreFromDistance(row.distance),
     chunkId: row.chunk_id,
-    snippet: scrubSnippet(row.snippet),
+    snippet: formatRecallSnippet(row.snippet),
     sourcePointer: {
       sourceKind: row.source_kind,
       sourceUri: row.source_uri,
@@ -191,7 +185,6 @@ const mapSearchRow = (row: SearchRow, index: number): PristineVectorSearchHit =>
 export class PristinePiVectorSearcher {
   private readonly dbPath: string;
   private readonly embedder: PiJsonlEmbedder;
-
   public constructor(config: PristineVectorSearchConfig = {}) {
     this.dbPath = resolvePiPristineDbPath({
       explicitPath: config.dbPath,
@@ -203,8 +196,7 @@ export class PristinePiVectorSearcher {
 
   public async search(input: PristineVectorSearchInput): Promise<PristineVectorSearchResult> {
     const query = input.query.trim();
-    if (query.length === 0)
-      throw new Error('Pristine Pi search query must be a non-empty string');
+    if (query.length === 0) throw new Error('Pristine Pi search query must be a non-empty string');
     const limit = validateLimit(input.limit);
     validateLineNumber(input.lineNumber);
     if (!existsSync(this.dbPath)) {
@@ -242,7 +234,7 @@ export class PristinePiVectorSearcher {
           ? this.runKnn(db, embedding, limit)
           : this.runFilteredExact(db, vector, limit, filter);
       return {
-        results: rows.map(mapSearchRow),
+        results: rows.map((row, index) => mapSearchRow(row, index)),
         message: rows.length === 0 ? 'No Pristine Pi vector hits found.' : undefined,
       };
     } finally {

@@ -13,7 +13,7 @@ vi.mock('@huggingface/transformers', () => ({
 const createExtractor = (dim: number): ReturnType<typeof vi.fn> =>
   vi.fn().mockResolvedValue({ data: new Float32Array(dim).fill(0.1) });
 
-describe('PristineLocal baseDir embedder config', () => {
+describe('Pristine baseDir embedder config', () => {
   const cleanupDirs: string[] = [];
 
   afterEach(() => {
@@ -32,9 +32,9 @@ describe('PristineLocal baseDir embedder config', () => {
       JSON.stringify({ embedder: { engine: 'local', model: 'test/local-64', dim: 64 } }),
     );
     mockPipeline.mockResolvedValue(createExtractor(64));
-    const { PristineLocal } = await import('../src/client.js');
+    const { Pristine } = await import('../src/client.js');
 
-    const client = await PristineLocal.create({ baseDir });
+    const client = await Pristine.create({ baseDir });
     try {
       await client.store([{ text: 'configured dimension chunk', chunkId: 'dim-64' }], {
         projectId: 'project-a',

@@ -5,7 +5,7 @@ import type {
   ForgetOptions,
   ForgetResult,
   ListSensitiveOptions,
-  PristineLocalConfig,
+  PristineConfig,
   RecalledMemory,
   RecallOptions,
   RevealResult,
@@ -21,7 +21,7 @@ import type {
   StoredSourceChunk,
   StoreOptions,
   UpdateSensitiveInput,
-} from '@pristine/shield-local';
+} from '@pristine/sdk';
 
 // Deprecated compatibility exports for the pre-store/recall/forget memory API.
 // They stay importable for existing consumers, but new code should prefer the
@@ -33,7 +33,7 @@ import type {
   IndexSourceChunksOptions,
   SearchSourceChunksOptions,
   SourceChunkSearchHit,
-} from '@pristine/shield-local';
+} from '@pristine/sdk';
 
 type CanonicalPublicRootTypes = [
   DeleteSensitiveResult,
@@ -42,7 +42,7 @@ type CanonicalPublicRootTypes = [
   ForgetOptions,
   ForgetResult,
   ListSensitiveOptions,
-  PristineLocalConfig,
+  PristineConfig,
   RecalledMemory,
   RecallOptions,
   RevealResult,

@@ -7,8 +7,8 @@ import {
   AppError,
   ConfigError,
   EmbedderError,
-  PristineLocal,
   SensitiveNotFoundError,
+  Pristine,
   createDatabase as createDatabaseFromBarrel,
 } from '../../src/index.js';
 
@@ -29,10 +29,10 @@ describe('public-API smoke — source chunk API', () => {
 
   it('create() succeeds with DI overrides (no model contact)', async () => {
     const db = createDatabase(':memory:');
-    const client = await PristineLocal.create({ db, embedder: makeEmbedderStub() });
+    const client = await Pristine.create({ db, embedder: makeEmbedderStub() });
 
     try {
-      expect(client).toBeInstanceOf(PristineLocal);
+      expect(client).toBeInstanceOf(Pristine);
       expect('pendingEmbedTasks' in client).toBe(false);
       await client.dispose();
     } finally {
@@ -41,7 +41,7 @@ describe('public-API smoke — source chunk API', () => {
   });
 
   it('src/index.ts public barrel exports the source-index surface', () => {
-    expect(PristineLocal).toBeTypeOf('function');
+    expect(Pristine).toBeTypeOf('function');
     expect(createDatabaseFromBarrel).toBeTypeOf('function');
     expect(AppError).toBeTypeOf('function');
     expect(ConfigError).toBeTypeOf('function');
@@ -53,7 +53,7 @@ describe('public-API smoke — source chunk API', () => {
       'ConfigError',
       'EmbedderError',
       'InvalidArgumentError',
-      'PristineLocal',
+      'Pristine',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
       'SensitiveNotFoundError',
@@ -67,7 +67,7 @@ describe('public-API smoke — source chunk API', () => {
 
   it('public surface indexes and searches a source chunk', async () => {
     const db = createDatabase(':memory:');
-    const client = await PristineLocal.create({ db, embedder: makeEmbedderStub() });
+    const client = await Pristine.create({ db, embedder: makeEmbedderStub() });
 
     try {
       await client.store(
@@ -91,7 +91,7 @@ describe('public-API smoke — source chunk API', () => {
     const db = createDatabase(':memory:');
     databases.push(db);
 
-    const client = await PristineLocal.create({ db, embedder: makeEmbedderStub() });
+    const client = await Pristine.create({ db, embedder: makeEmbedderStub() });
     const scrubbed = client.scrubOutput(
       'Hello [SENSITIVE:name:abc-123], here is your confirmation.',
       [],

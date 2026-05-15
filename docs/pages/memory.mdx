@@ -1,0 +1,24 @@
+# Memory
+
+Pristine memory is local source-pointer memory for applications and agent harnesses. The SDK keeps a searchable local index, but the host harness or application remains the source of truth for full files, sessions, notes, transcripts, and records.
+
+## Source-owned by design
+
+Pristine stores chunks, embeddings, and source metadata so recall can point back to the record, file, session, entry, or line that produced the memory. Recall results are retrieval hints: inspect the returned source pointer before treating the content as authoritative.
+
+The host harness owns:
+
+- which events or records are safe to index;
+- where full raw source records live;
+- how source pointers are reopened for inspection;
+- how retention, deletion, logging, and backups are handled.
+
+## Project scoping
+
+Every memory call uses `projectId` for project scoping. This keeps unrelated workspaces from sharing results when they use the same local database and lets a harness map each repository, workspace, or tenant to an explicit memory boundary.
+
+## Where to go next
+
+- [How memory works](/memory/how-it-works) — follow the lifecycle from host event to source inspection.
+- [Store, recall, forget](/memory/store-recall-forget) — use the core memory operations.
+- [API reference](/api) — check exact signatures for memory types and options.

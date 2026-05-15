@@ -1,0 +1,51 @@
+# Store, recall, forget
+
+The core Memory guide is `store` → `recall` → source inspection → `forget`. Use it when a harness or application already owns source records and needs a local semantic index over selected chunks.
+
+## Store
+
+Use `store` to index chunks with stable IDs and source metadata. Scope each call with `projectId` so independent projects do not share recall results accidentally.
+
+```ts
+await pristine.store(
+  [
+    {
+      chunkId: 'session-1:42',
+      text: 'The user prefers source pointers over copied memory blobs.',
+      sourceKind: 'pi-jsonl',
+      sourceUri: 'file:///sessions/session-1.jsonl',
+      entryId: '42',
+      lineStart: 42,
+      lineEnd: 42,
+    },
+  ],
+  { projectId: 'agent-harness' },
+);
+```
+
+## Recall
+
+Use `recall` with a query, `projectId`, and optional `limit` to retrieve ranked hits. Each hit carries the source metadata needed to inspect the host-owned record.
+
+```ts
+const hits = await pristine.recall('source pointer preference', {
+  projectId: 'agent-harness',
+  limit: 5,
+});
+```
+
+## Source inspection
+
+Before using a hit as context, reopen the source pointer in the host application or harness. For a file-backed source, that may mean reading `sourceUri` and the stored line range; for a Pi JSONL source, it may mean using the recorded entry ID and line metadata.
+
+## Forget
+
+Use `forget` with chunk IDs and `projectId` to remove indexed chunks from local recall.
+
+```ts
+await pristine.forget(['session-1:42'], { projectId: 'agent-harness' });
+```
+
+## API and Reference
+
+See the [API reference](/api) for exact signatures, the [configuration reference](/configuration) for storage/embedder options, and the [quickstart](/quickstart) for a complete install-to-recall example.

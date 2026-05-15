@@ -2,6 +2,8 @@
 
 Examples are organized by harness first, then by capability. Start with the environment you want to integrate, then choose memory, privacy, or both.
 
+Examples show ways to compose Pristine's minimal recall and privacy primitives into real harness workflows. Policy enforcement still belongs in the harness: if a workflow must be followed every time, implement it with hooks, checks, command guards, or approval gates. Use Pristine when the agent needs to search local context, inspect sources, protect sensitive text, and recover task-specific facts or relationships.
+
 ## Pi-dev — supported reference
 
 The supported reference path is the Pi-dev example in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
@@ -18,7 +20,7 @@ Use a local repository where Pi can discover project-local `.pi/extensions/*` an
 
 ### Memory expected outcome
 
-Pi session JSONL remains the source of truth. `jsonl-index` writes a local semantic index, `pristine_recall` returns ranked pointers, and `search-session-history` inspects the authoritative source before answering.
+Pi session JSONL remains the source of truth. `jsonl-index` writes a local semantic index, `pristine_recall` returns ranked source references, and `search-session-history` inspects the authoritative source before answering.
 
 ### Privacy expected outcome
 
@@ -26,7 +28,7 @@ Use the [privacy setup prompt](/quickstart#privacy-setup-prompt) to add local re
 
 ### Verification signal
 
-Run the end-to-end TUI verification from [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the response includes the expected remembered detail, uses `search-session-history`, and grounds exact context in the returned source pointer.
+Run the end-to-end TUI verification from [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the response includes the expected remembered detail, uses `search-session-history`, and grounds exact context in the returned source reference.
 
 ## Claude Code — Coming soon
 

@@ -1,10 +1,16 @@
 # Pi-dev integration
 
-Pristine includes a reference Pi-dev integration for indexing Pi JSONL session history and recalling relevant source pointers. The detailed runbook lives at [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
+Pristine includes a reference Pi-dev integration for indexing Pi JSONL session history and recalling relevant source references. The detailed runbook lives at [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
 
 ## Prerequisite
 
 Use this page when you run Pi from a local repository and can install project-local `.pi/extensions/*` and `.pi/skills/*` artifacts. Pristine stays local; Pi JSONL remains the source of truth.
+
+## What Pi enforces vs. what Pristine recalls
+
+Pi and the surrounding harness are responsible for deterministic policy: hooks, command guards, required checks, approval flows, and workflow enforcement. Those mechanisms reduce agent non-determinism when behavior must be reliable.
+
+Pristine handles recall. In this Pi-dev example, Pi JSONL remains the source of truth. The Pristine-backed components index selected session content, retrieve ranked matches with source references, and route the agent back to source inspection before answering.
 
 ## Setup path
 
@@ -17,7 +23,7 @@ Use this page when you run Pi from a local repository and can install project-lo
 
 - `jsonl-index` indexes Pi JSONL sessions into local Pristine storage.
 - `pristine_recall` performs semantic discovery over indexed snippets.
-- `search-session-history` inspects the authoritative JSONL source around returned pointers.
+- `search-session-history` inspects the authoritative JSONL source around returned references.
 
 ## Privacy prompt setup
 
@@ -25,14 +31,14 @@ For privacy boundaries, copy the privacy prompt from the [quickstart](/quickstar
 
 ## Expected outcome
 
-After setup, Pi can answer memory/history questions by using `search-session-history`, calling `pristine_recall` when no pointer is known, and then inspecting the returned `sourceUri`, `entryId`, and line metadata in the source JSONL.
+After setup, Pi can answer memory/history questions by using `search-session-history`, calling `pristine_recall` when no exact source is known, and then inspecting the returned `sourceUri`, `entryId`, and line metadata in the source JSONL.
 
 ## Source inspection flow
 
 1. Use `pristine_recall` when the target session or exact phrase is unknown.
 2. Inspect returned `sourceUri`, `entryId`, and line metadata with `search-session-history` or ordinary file tools.
-3. Treat JSONL as the source of truth; treat recall results as pointers.
+3. Treat JSONL as the source of truth; treat recall results as source references.
 
 ## Smoke check
 
-Run the end-to-end TUI verification in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the agent uses `search-session-history`, gets a relevant `pristine_recall` pointer, answers from the source JSONL, and avoids broad session greps after it has a usable pointer.
+Run the end-to-end TUI verification in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the agent uses `search-session-history`, gets a relevant `pristine_recall` source reference, answers from the source JSONL, and avoids broad session greps after it has a usable reference.

@@ -1,17 +1,17 @@
 # Store, recall, forget
 
-The core Memory guide is `store` → `recall` → source inspection → `forget`. Use it when a harness or application already owns source records and needs a local semantic index over selected chunks.
+The core Memory guide is `store` → `recall` → source inspection → `forget`. Use it when a harness or application already owns local conversations, notes, files, records, or derived memories and needs a semantic index over the parts an agent may need to find later.
 
 ## Store
 
-Use `store` to index chunks with stable IDs and source metadata. Scope each call with `projectId` so independent projects do not share recall results accidentally.
+Use `store` to index selected text with stable IDs and source metadata. Scope each call with `projectId` so independent projects do not share recall results accidentally.
 
 ```ts
 await pristine.store(
   [
     {
       chunkId: 'session-1:42',
-      text: 'The user prefers source pointers over copied memory blobs.',
+      text: 'The user prefers source references over copied memory blobs.',
       sourceKind: 'pi-jsonl',
       sourceUri: 'file:///sessions/session-1.jsonl',
       entryId: '42',
@@ -23,12 +23,14 @@ await pristine.store(
 );
 ```
 
+`chunkId` is the stable ID for the indexed text. The host chooses the ID, keeps the original source authoritative, and includes enough metadata for the agent to reopen that source later.
+
 ## Recall
 
-Use `recall` with a query, `projectId`, and optional `limit` to retrieve ranked hits. Each hit carries the source metadata needed to inspect the host-owned record.
+Use `recall` with a query, `projectId`, and optional `limit` to retrieve ranked matches. Each hit carries the source metadata needed to inspect the host-owned record.
 
 ```ts
-const hits = await pristine.recall('source pointer preference', {
+const hits = await pristine.recall('source reference preference', {
   projectId: 'agent-harness',
   limit: 5,
 });
@@ -36,11 +38,13 @@ const hits = await pristine.recall('source pointer preference', {
 
 ## Source inspection
 
-Before using a hit as context, reopen the source pointer in the host application or harness. For a file-backed source, that may mean reading `sourceUri` and the stored line range; for a Pi JSONL source, it may mean using the recorded entry ID and line metadata.
+Before using a hit as context, reopen the original source in the host application or harness. For a file-backed source, that may mean reading `sourceUri` and the stored line range; for a Pi JSONL source, it may mean using the recorded entry ID and line metadata.
+
+Recall narrows the search path. The agent, tool, skill, or subagent can inspect the original content, extract the facts or relationships needed for the current task, and optionally store that derived memory back into Pristine for future recall.
 
 ## Forget
 
-Use `forget` with chunk IDs and `projectId` to remove indexed chunks from local recall.
+Use `forget` with stable IDs and `projectId` to remove indexed text from local recall.
 
 ```ts
 await pristine.forget(['session-1:42'], { projectId: 'agent-harness' });

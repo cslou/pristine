@@ -2,6 +2,12 @@
 
 Pristine is designed for local-first privacy: no Pristine-hosted API is required, and user data does not leave the device by default unless your application adds a remote service, remote embedder, or network wrapper.
 
+## Boundary-focused privacy
+
+Pristine does not decide your entire privacy policy. It gives your application local operations for the moments where sensitive text approaches a boundary: redact before agent/model context, reveal only in approved local flows, and scrub generated output before it crosses the configured boundary.
+
+Because agents are non-deterministic, privacy rules that must always be followed should be made deterministic in the harness where possible. Use prompts, hooks, command guards, approval gates, logging controls, or local checks to enforce required behavior. Use Pristine's privacy primitives at the text boundaries those workflows create.
+
 ## Privacy vault vs source-index memory
 
 The privacy vault and source-index memory have different jobs:
@@ -9,7 +15,7 @@ The privacy vault and source-index memory have different jobs:
 - **Privacy vault:** encrypted local storage for sensitive originals captured by `secureAndRedact`, used later by privileged local `reveal` flows.
 - **Source-index memory:** searchable local chunks, embeddings, snippets, and source metadata used by `store`, `recall`, and `forget`.
 
-Do not treat the source-index memory database as a plaintext-safe cache. It is optimized for search and source pointers, not for hiding every indexed snippet from local readers.
+Do not treat the source-index memory database as a plaintext-safe cache. It is optimized for search and source references, not for hiding every indexed snippet from local readers.
 
 ## Redact before sharing context
 

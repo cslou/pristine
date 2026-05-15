@@ -1,18 +1,27 @@
 # Pristine
 
-Pristine is local-first memory and privacy for agent harnesses. It gives TypeScript applications a small SDK for source-pointer memory, local redaction/reveal, and output scrubbing without requiring a Pristine server.
+Pristine is a minimal local SDK for agent memory and privacy.
+It provides the essential building blocks for searchable local recall, redaction, reveal, and output scrubbing.
 
-## What Pristine gives you
+## Minimal by design
 
-- **Local-first memory:** store chunks locally, recall them by semantic query, and inspect the source pointer before acting on the result.
-- **Privacy boundaries:** redact sensitive text before agent/model context, reveal locally when policy allows, and scrub generated output before it crosses a boundary.
-- **Harness-friendly primitives:** integrate Pristine into Pi or another host harness while the host remains the source of truth for files, sessions, and records.
-- **Typed SDK:** use the `Pristine` client from a strict TypeScript ESM package.
+Those building blocks cover two local capabilities:
+
+- **Memory:** searchable local recall over stored content, with references back to the original.
+- **Privacy:** local redaction, reveal, and output scrubbing boundaries before sensitive text crosses agent, model, tool, or application boundaries.
+
+Pristine does not require a hosted service or prescribe your harness workflow. Your application decides what to index, what to redact, when to recall, when to reveal, and how to compose these primitives into tools, extensions, skills, or agents.
+
+## What Pristine gives your agents
+
+- **Local-first memory:** index local conversations, notes, files, and records, recall them by semantic search, and inspect the source reference directly.
+- **Privacy boundaries:** replace secrets with placeholders before text enters agent/model context, reveal originals only inside trusted local tool runners, and scrub tool results or generated output before they are written back into context or session history.
+- **Harness-friendly primitives:** Pristine provides the building blocks for customizing memory and privacy solutions for agent harnesses such as Pi.
 
 ## Start here
 
 - [SDK quickstart](/quickstart) — install the package and run the base `Pristine` memory flow.
 - [Pi quickstart prompts](/quickstart#pi-quickstart-prompts) — copy prompts for agent-assisted Pi memory and privacy setup.
-- [Memory](/memory) — understand source-pointer memory and source inspection.
+- [Memory](/memory) — understand searchable local recall, source references, and source inspection.
 - [Privacy](/privacy) — understand redaction, reveal, scrub output, and local threat-model boundaries.
 - [Pi-dev integration](/pi-dev) — follow the Pi runbook once you are ready to wire a harness.

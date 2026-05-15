@@ -1,16 +1,32 @@
 # Memory
 
-Pristine memory is local source-pointer memory for applications and agent harnesses. The SDK keeps a searchable local index, but the host harness or application remains the source of truth for full files, sessions, notes, transcripts, and records.
+Agent memory is often used to describe several different problems.
+
+Some of those problems are really policy: commands the agent must never run, approval flows it must respect, release processes it must follow, or checks it must complete before taking an action. Because agents are non-deterministic, those requirements should not depend on retrieval. They should be made deterministic in the harness through hooks, command guards, approval flows, checklists, or local checks.
+
+Pristine does not focus on policy enforcement. If something must always happen, it belongs in the harness.
+
+Pristine focuses on recall: context the agent may need depending on the task. Past conversations, local notes, source files, transcripts, decisions, debugging history, facts, and relationships are too large and situational to inject into every turn.
+
+Pristine builds a local semantic index over selected source content. At task time, the agent can search that index, get ranked matches, and inspect the original source before acting.
+
+## Recall, not ingestion-time interpretation
+
+Many memory systems run an LLM over each incoming message to extract facts, summaries, relationships, or preferences at ingestion time. That can be useful, but it assumes the system knows what future context will matter.
+
+Pristine takes a different approach: index first, interpret later. It retrieves relevant candidates when a real task creates real context. The returned match is not the final memory; it is a lead back to the source.
+
+An agent, tool, skill, or subagent can inspect the original content, extract the facts or relationships needed for the current task, and optionally store that derived memory back into Pristine for future recall.
 
 ## Source-owned by design
 
-Pristine stores chunks, embeddings, and source metadata so recall can point back to the record, file, session, entry, or line that produced the memory. Recall results are retrieval hints: inspect the returned source pointer before treating the content as authoritative.
+Pristine stores chunks, embeddings, and source metadata so recall can point back to the record, file, session, entry, or line that produced the memory. Recall results are retrieval hints: inspect the returned source reference before treating the content as authoritative.
 
 The host harness owns:
 
 - which events or records are safe to index;
 - where full raw source records live;
-- how source pointers are reopened for inspection;
+- how source references are reopened for inspection;
 - how retention, deletion, logging, and backups are handled.
 
 ## Project scoping

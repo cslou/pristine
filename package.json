@@ -80,6 +80,15 @@
     "better-sqlite3": "12.8.0",
     "sqlite-vec": "0.1.9"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp"
+    ]
+  },
   "overrides": {
     "protobufjs": "7.5.5"
   }

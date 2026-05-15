@@ -16,6 +16,7 @@ import type {
 } from '../../../core/types.js';
 
 const CLIENT_V2 = 'client_v2';
+const DEFAULT_LIST_SENSITIVE_LIMIT = 100;
 
 interface VaultRow {
   id: string;
@@ -304,16 +305,17 @@ export class SqliteVaultStore implements VaultStore {
 
     sql += ' ORDER BY COALESCE(m.updated_at, v.created_at) DESC, v.created_at DESC';
 
-    if (options.limit !== undefined) {
-      sql += ' LIMIT ?';
-      params.push(options.limit);
-    }
+    sql += ' LIMIT ?';
+    params.push(options.limit ?? DEFAULT_LIST_SENSITIVE_LIMIT);
 
     const rows = this.db.prepare(sql).all(...params) as SensitiveSummaryRow[];
     return rows.map(mapSensitiveSummaryRow);
   }
 
-  public async getEntry(userId: string, sensitiveRef: SensitiveRef): Promise<SensitiveSummary | null> {
+  public async getEntry(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+  ): Promise<SensitiveSummary | null> {
     const row = this.db
       .prepare(
         `
@@ -420,12 +422,12 @@ export class SqliteVaultStore implements VaultStore {
     const existingRows = this.db
       .prepare(
         `
-          SELECT placeholder_id
+          SELECT id, placeholder_id
           FROM vault_entries
           WHERE user_id = ? AND placeholder_id IN (${placeholders})
         `,
       )
-      .all(userId, ...uniqueRefs) as Array<{ placeholder_id: string | null }>;
+      .all(userId, ...uniqueRefs) as Array<{ id: string; placeholder_id: string | null }>;
 
     const existingRefs = new Set(
       existingRows
@@ -434,14 +436,24 @@ export class SqliteVaultStore implements VaultStore {
     );
     const missingSensitiveRefs = uniqueRefs.filter((ref) => !existingRefs.has(ref));
 
-    const deletedCount = this.db
-      .prepare(
-        `
-          DELETE FROM vault_entries
-          WHERE user_id = ? AND placeholder_id IN (${placeholders})
-        `,
-      )
-      .run(userId, ...uniqueRefs).changes;
+    const deletedCount = this.db.transaction(() => {
+      const entryIds = existingRows.map((row) => row.id);
+      if (entryIds.length > 0) {
+        const entryIdPlaceholders = entryIds.map(() => '?').join(', ');
+        this.db
+          .prepare(`DELETE FROM vault_entry_metadata WHERE entry_id IN (${entryIdPlaceholders})`)
+          .run(...entryIds);
+      }
+
+      return this.db
+        .prepare(
+          `
+            DELETE FROM vault_entries
+            WHERE user_id = ? AND placeholder_id IN (${placeholders})
+          `,
+        )
+        .run(userId, ...uniqueRefs).changes;
+    })();
 
     return { deletedCount, missingSensitiveRefs };
   }

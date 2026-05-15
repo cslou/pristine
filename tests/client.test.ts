@@ -76,9 +76,9 @@ describe('Pristine', () => {
       const fetched = await client.getSensitive('user-a', summaries[0]!.sensitiveRef);
       expect(fetched?.alias).toBe('primary client key');
 
-      await expect(client.resolveSensitive('user-a', summaries[0]!.sensitiveRef)).resolves.toContain(
-        secret,
-      );
+      await expect(
+        client.resolveSensitive('user-a', summaries[0]!.sensitiveRef),
+      ).resolves.toContain(secret);
 
       const deleted = await client.deleteSensitive('user-a', [summaries[0]!.sensitiveRef]);
       expect(deleted.deletedCount).toBe(1);

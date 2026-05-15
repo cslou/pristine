@@ -36,6 +36,26 @@ Detects sensitive values for a local user, stores encrypted originals in the loc
 
 Restores known redaction placeholders for a local user when vault and key access allow it.
 
+### `listSensitive(userId, options?)`
+
+Lists metadata-only summaries for locally vaulted sensitive values. Results include placeholder refs, sensitivity type, generated labels, optional caller-provided aliases, and timestamps; they do not include plaintext secret values. When `limit` is omitted, the SQLite vault applies a bounded default of 100 summaries. Options support `limit`, `sensitiveType`, `createdFrom`, and `createdTo`.
+
+### `getSensitive(userId, sensitiveRef)`
+
+Returns one metadata-only summary for a sensitive placeholder ref, or `null` when no entry exists for that user.
+
+### `updateSensitive(userId, sensitiveRef, input)`
+
+Updates caller-owned visible metadata for a sensitive placeholder ref. The current input supports `alias`, where `null` or an empty string clears the alias. Aliases are returned by `listSensitive` and `getSensitive`, so callers must treat aliases as visible metadata and must not put secret plaintext in them. Missing refs throw `SensitiveNotFoundError`.
+
+### `deleteSensitive(userId, sensitiveRefs)`
+
+Deletes vaulted entries by exact placeholder ref and returns `{ deletedCount, missingSensitiveRefs }`. Invalid caller input throws `InvalidArgumentError`.
+
+### `resolveSensitive(userId, sensitiveRef)`
+
+Returns the plaintext value for one sensitive placeholder ref when local vault and key access allow it. This is a privileged local operation; missing refs throw `SensitiveNotFoundError`.
+
 ### `scrubOutput(text, allowlist?)`
 
 Removes sensitive values from output text before it crosses a boundary where those values should not appear. The second parameter is named `allowlist` in the current TypeScript signature for compatibility, but its values are scrubbed from output; pass revealed or sensitive values that must be removed.
@@ -46,20 +66,21 @@ The package root is the supported import boundary. It exports the SDK client, do
 
 ### Supported value exports
 
-| Export | Purpose |
-| --- | --- |
-| `Pristine` | Main local SDK client. |
-| `createDatabase` | Create or open a SQLite database with Pristine's sqlite-vec loading behavior. |
-| `AppError` | Base domain error class. |
-| `ConfigError` | Configuration error class. |
-| `EmbedderError` | Embedder failure class. |
-| `InvalidArgumentError` | Public validation error class. |
-| `SOURCE_CHUNK_METADATA_JSON_LIMIT` | Source chunk metadata size limit. |
-| `SOURCE_CHUNK_TEXT_LIMIT` | Source chunk text size limit. |
-| `SourceChunkStore` | Supported low-level source-index store for advanced local integrations and tests. |
-| `buildSourceChunkVectorDdl` | Builds source chunk vector table DDL for the configured dimension. |
-| `initSourceChunkTables` | Initializes source chunk tables owned by the source-index module. |
-| `normalizeSourceChunkInput` | Validates and normalizes source chunk input. |
+| Export                             | Purpose                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------- |
+| `Pristine`                         | Main local SDK client.                                                            |
+| `createDatabase`                   | Create or open a SQLite database with Pristine's sqlite-vec loading behavior.     |
+| `AppError`                         | Base domain error class.                                                          |
+| `ConfigError`                      | Configuration error class.                                                        |
+| `EmbedderError`                    | Embedder failure class.                                                           |
+| `InvalidArgumentError`             | Public validation error class.                                                    |
+| `SensitiveNotFoundError`           | Missing sensitive placeholder error for privileged resolve/update flows.          |
+| `SOURCE_CHUNK_METADATA_JSON_LIMIT` | Source chunk metadata size limit.                                                 |
+| `SOURCE_CHUNK_TEXT_LIMIT`          | Source chunk text size limit.                                                     |
+| `SourceChunkStore`                 | Supported low-level source-index store for advanced local integrations and tests. |
+| `buildSourceChunkVectorDdl`        | Builds source chunk vector table DDL for the configured dimension.                |
+| `initSourceChunkTables`            | Initializes source chunk tables owned by the source-index module.                 |
+| `normalizeSourceChunkInput`        | Validates and normalizes source chunk input.                                      |
 
 ### Supported type exports
 
@@ -72,10 +93,15 @@ The package exports public option and result types for the launch API:
 - `ForgetOptions`
 - `ForgetResult`
 - `PristineConfig`
+- `DeleteSensitiveResult`
+- `ListSensitiveOptions`
 - `RevealResult`
 - `SecureAndRedactResult`
+- `SensitiveRef`
+- `SensitiveSummary`
 - `SourceChunkInput`
 - `SourceChunkMetadata`
+- `UpdateSensitiveInput`
 - `Embedder`
 - `DeterministicClassifierConfig`
 - `SourceChunkNormalizeOptions`

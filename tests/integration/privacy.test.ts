@@ -14,7 +14,7 @@ import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import type { KeyManager, PrivacyPipeline } from '../../src/core/interfaces.js';
 import type { ClassificationPipelineResult, SecureAndRedactResult } from '../../src/core/types.js';
-import { SensitiveNotFoundError } from '../../src/core/errors.js';
+import { InvalidArgumentError, SensitiveNotFoundError } from '../../src/core/errors.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 
@@ -196,6 +196,36 @@ describe('privacy pipeline end-to-end', () => {
         userId: 'user-sensitive-management',
       }),
     ).rejects.toBeInstanceOf(SensitiveNotFoundError);
+  });
+
+  it('rejects invalid sensitive-management inputs with domain errors', async () => {
+    await expect(
+      listSensitive(
+        { vaultStore, userId: 'user-invalid-sensitive-management' },
+        null as unknown as Parameters<typeof listSensitive>[1],
+      ),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+
+    await expect(
+      listSensitive(
+        { vaultStore, userId: 'user-invalid-sensitive-management' },
+        [] as unknown as Parameters<typeof listSensitive>[1],
+      ),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+
+    await expect(
+      deleteSensitive(null as unknown as Parameters<typeof deleteSensitive>[0], {
+        vaultStore,
+        userId: 'user-invalid-sensitive-management',
+      }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+
+    await expect(
+      deleteSensitive(['valid-ref', 123] as unknown as Parameters<typeof deleteSensitive>[0], {
+        vaultStore,
+        userId: 'user-invalid-sensitive-management',
+      }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
   });
 
   it('reveal returns text unchanged when no placeholders present', async () => {

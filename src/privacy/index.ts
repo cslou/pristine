@@ -239,6 +239,12 @@ export async function listSensitive(
 ): Promise<readonly SensitiveSummary[]> {
   assertNonEmptyUserId(config.userId, 'listSensitive');
 
+  if (
+    options !== undefined &&
+    (typeof options !== 'object' || options === null || Array.isArray(options))
+  ) {
+    throw new InvalidArgumentError('listSensitive: options must be an object');
+  }
   if (options?.limit !== undefined && (!Number.isInteger(options.limit) || options.limit <= 0)) {
     throw new InvalidArgumentError('listSensitive: options.limit must be a positive integer');
   }
@@ -265,12 +271,10 @@ export async function updateSensitive(
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
     throw new InvalidArgumentError('updateSensitive: input must be an object');
   }
-  if (
-    input.alias !== undefined &&
-    input.alias !== null &&
-    typeof input.alias !== 'string'
-  ) {
-    throw new InvalidArgumentError('updateSensitive: input.alias must be a string, null, or undefined');
+  if (input.alias !== undefined && input.alias !== null && typeof input.alias !== 'string') {
+    throw new InvalidArgumentError(
+      'updateSensitive: input.alias must be a string, null, or undefined',
+    );
   }
   return config.vaultStore.updateEntry(config.userId, sensitiveRef, input);
 }
@@ -280,6 +284,12 @@ export async function deleteSensitive(
   config: SensitiveConfig,
 ): Promise<DeleteSensitiveResult> {
   assertNonEmptyUserId(config.userId, 'deleteSensitive');
+  if (!Array.isArray(sensitiveRefs)) {
+    throw new InvalidArgumentError('deleteSensitive: sensitiveRefs must be an array');
+  }
+  if (sensitiveRefs.some((value) => typeof value !== 'string')) {
+    throw new InvalidArgumentError('deleteSensitive: sensitiveRefs must contain only strings');
+  }
   const normalizedRefs = sensitiveRefs.map((value) => value.trim());
   if (normalizedRefs.some((value) => value.length === 0)) {
     throw new InvalidArgumentError('deleteSensitive: sensitiveRefs must not contain empty strings');

@@ -1,23 +1,21 @@
 # How memory works
 
-Pristine turns host-owned context into local recall pointers. The host application controls which events are indexed, which metadata becomes a source pointer, and how recalled pointers are inspected.
+Pristine does not prescribe a memory workflow. Your harness, tool, extension, or skill decides when to index, when to recall, and how to inspect sources. Pristine provides the local building blocks: `store`, `recall`, and `forget`.
 
-## Lifecycle
+Those building blocks must be composed into harness logic before they change agent behavior. You can build that logic yourself or start from the supported examples, such as the [Pi-dev integration](/pi-dev).
 
-```text
-host event
-  → chunk + source metadata
-  → local SQLite + vector index
-  → recall by semantic query
-  → source inspection in the host harness
-```
+## Composed by the harness
 
-1. A host event, file, note, or agent session produces text worth indexing.
-2. The host splits that text into a chunk and attaches source metadata such as `sourceKind`, `sourceUri`, `entryId`, `lineStart`, and `lineEnd`.
-3. Pristine embeds the chunk and stores it in a local SQLite database with a vector index.
-4. A recall query searches the selected `projectId` and returns ranked hits with source pointer metadata.
-5. The host follows the source pointer for source inspection before acting on important context.
+A typical recall workflow:
 
-## Boundary
+1. A local source exists: a conversation, JSONL session, file, note, transcript, issue, or database record.
+2. The harness decides which text is worth indexing and attaches the metadata its workflow needs. Pristine supports common source fields such as `sourceKind`, `sourceUri`, `entryId`, `lineStart`, and `lineEnd`, plus custom metadata for harness-specific routing or inspection.
+3. The harness calls `store` to add that selected text to the local semantic index.
+4. Later, an agent, tool, skill, or subagent calls `recall` with the current task in mind.
+5. Pristine returns ranked matches with source references.
+6. The harness reopens the original source before the agent treats the result as authoritative.
+7. If the agent extracts a durable fact, relationship, summary, or decision, the harness can store that derived memory back into Pristine for future recall.
 
-Recall snippets are not a replacement for source inspection. Treat them as ranked pointers that help the harness reopen the authoritative file, JSONL session, database row, or other source record.
+## Recall is a lead, not the source
+
+Recall results are not a replacement for source inspection. Treat them as ranked leads that help the harness reopen the authoritative file, JSONL session, database row, note, transcript, or other source record.

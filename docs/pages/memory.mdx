@@ -1,21 +1,37 @@
 # Memory
 
-Pristine memory is local source-pointer memory for applications and agent harnesses. The SDK keeps a searchable local index, but the host harness or application remains the source of truth for full files, sessions, notes, transcripts, and records.
+Agent memory is often used to describe several different problems.
 
-## Source-owned by design
+Some of those problems are really policy: commands the agent must never run, approval flows it must respect, release processes it must follow, or checks it must complete before taking an action. Because agents are non-deterministic, those requirements should not depend on retrieval. They should be made deterministic in the harness through hooks, command guards, approval flows, checklists, or local checks.
 
-Pristine stores chunks, embeddings, and source metadata so recall can point back to the record, file, session, entry, or line that produced the memory. Recall results are retrieval hints: inspect the returned source pointer before treating the content as authoritative.
+Short-term memory is already handled by the agent's context window: the current prompt, active conversation, tool results, and nearby working state.
 
-The host harness owns:
+Pristine focuses on long-term memory: older conversations, notes, files, decisions, facts, relationships, and debugging history that may matter later but should not be injected into every turn. Pristine treats long-term memory as a recall process: the agent searches when the current task creates a need, receives ranked matches, and inspects the original source before using the result.
+
+Pristine builds a local semantic index over selected source content. When an agent or subagent recalls source material and extracts a useful fact, relationship, summary, or decision, that derived memory can be indexed again, making the search process for future recalls shorter.
+
+## Retrieve first, interpret when needed
+
+Many memory systems run an LLM over each incoming message to extract facts, summaries, relationships, or preferences at ingestion time. That can be useful, but it assumes the system knows what future context will matter.
+
+Pristine takes a different approach: it indexes selected source content first and retrieves relevant candidates when a real task creates real context. Pristine returns ranked matches with source references; the agent, tool, skill, or subagent decides what those sources mean for the current task.
+
+The returned match is not the final memory. It is a lead back to the source. After inspecting the source, the agent can extract the fact, relationship, summary, or decision it needs, and the harness can optionally store that derived memory back into Pristine for future recall.
+
+## The source remains authoritative
+
+Pristine stores selected text, embeddings, and source metadata so recall can point back to the record, file, session, entry, or line that produced the memory. Recall results are retrieval hints: inspect the returned source reference before treating the content as authoritative.
+
+The host harness owns source access:
 
 - which events or records are safe to index;
 - where full raw source records live;
-- how source pointers are reopened for inspection;
+- how source references are reopened for inspection;
 - how retention, deletion, logging, and backups are handled.
 
 ## Project scoping
 
-Every memory call uses `projectId` for project scoping. This keeps unrelated workspaces from sharing results when they use the same local database and lets a harness map each repository, workspace, or tenant to an explicit memory boundary.
+Every memory call uses `projectId` for project scoping. This keeps unrelated workspaces from sharing results when they use the same local database and lets a harness map each repository, workspace, or tenant to an explicit recall scope.
 
 ## Where to go next
 

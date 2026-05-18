@@ -28,7 +28,8 @@ const revealed = await pristine.reveal(modelSafeText, 'local-user');
 `scrubOutput` scans text before tool results or generated output are written back into agent/model context or session history. Use it as a final safety check after local tools run or after generated text may have reintroduced sensitive values.
 
 ```ts
-const scrubbed = pristine.scrubOutput(modelSafeText, ['ada@example.com']);
+const toolResult = 'Sent the invoice email to ada@example.com.';
+const scrubbed = pristine.scrubOutput(toolResult, ['ada@example.com']);
 ```
 
 ## API and Reference

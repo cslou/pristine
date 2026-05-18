@@ -1,10 +1,10 @@
 # Secure, redact, reveal
 
-Use Pristine privacy APIs to protect sensitive text before it enters an agent or model context and to restore it only in approved local flows.
+Use Pristine privacy APIs to keep secrets out of agent/model context and session history while still allowing trusted local execution to use the original values when needed.
 
 ## secureAndRedact
 
-`secureAndRedact` detects sensitive values, stores encrypted originals in the local vault, and returns redacted text with placeholders.
+`secureAndRedact` detects sensitive values, stores encrypted originals in the local vault, and returns redacted text with placeholders. Call it before text is sent to an agent or model so third-party LLM providers receive placeholders instead of original secrets.
 
 ```ts
 const secured = await pristine.secureAndRedact(
@@ -15,20 +15,20 @@ const secured = await pristine.secureAndRedact(
 const modelSafeText = secured.redactedText;
 ```
 
-## scrubOutput
-
-`scrubOutput` scans generated output before it crosses a sensitive boundary. Use it as a final safety check for text produced by tools, agents, or models.
-
-```ts
-const scrubbed = pristine.scrubOutput(modelSafeText, ['ada@example.com']);
-```
-
 ## reveal
 
-`reveal` restores placeholders when the caller has local access to the vault and keys and the application policy allows restoration.
+`reveal` restores placeholders when the caller has local access to the vault and keys. Use it inside trusted local tool runners that need originals to execute, not as text that is sent back to the model by default.
 
 ```ts
 const revealed = await pristine.reveal(modelSafeText, 'local-user');
+```
+
+## scrubOutput
+
+`scrubOutput` scans text before tool results or generated output are written back into agent/model context or session history. Use it as a final safety check after local tools run or after generated text may have reintroduced sensitive values.
+
+```ts
+const scrubbed = pristine.scrubOutput(modelSafeText, ['ada@example.com']);
 ```
 
 ## API and Reference

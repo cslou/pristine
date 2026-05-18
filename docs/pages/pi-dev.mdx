@@ -27,7 +27,7 @@ Pristine handles recall. In this Pi-dev example, Pi JSONL remains the source of 
 
 ## Privacy prompt setup
 
-For privacy boundaries, copy the privacy prompt from the [quickstart](/quickstart#privacy-setup-prompt). Expected outcome: sensitive text is redacted before agent/model context, local reveal remains privileged, and generated output is scrubbed before crossing the configured boundary.
+For privacy, copy the privacy prompt from the [quickstart](/quickstart#privacy-setup-prompt). Expected outcome: secrets are replaced with placeholders before agent/model context, trusted local tool runners can reveal originals when needed, and tool results or generated output are scrubbed before they return to context or session history.
 
 ## Expected outcome
 

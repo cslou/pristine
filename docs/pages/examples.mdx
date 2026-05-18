@@ -24,7 +24,7 @@ Pi session JSONL remains the source of truth. `jsonl-index` writes a local seman
 
 ### Privacy expected outcome
 
-Use the [privacy setup prompt](/quickstart#privacy-setup-prompt) to add local redaction, privileged reveal, and output scrubbing around agent/model boundaries. The host harness owns key, database, backup, and logging policy.
+Use the [privacy setup prompt](/quickstart#privacy-setup-prompt) to replace secrets with placeholders before agent/model context, reveal originals only inside trusted local tool runners, and scrub tool results or generated output before they return to context or session history. The host harness owns key, database, backup, and logging policy.
 
 ### Verification signal
 

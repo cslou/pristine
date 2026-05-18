@@ -8,14 +8,14 @@ It provides the essential building blocks for searchable local recall, redaction
 Those building blocks cover two local capabilities:
 
 - **Memory:** searchable local recall over stored content, with references back to the original.
-- **Privacy:** local redaction, reveal, and output scrubbing boundaries before sensitive text crosses agent, model, tool, or application boundaries.
+- **Privacy:** local redaction, trusted local reveal, and output scrubbing before secrets enter model context or session history.
 
 Pristine does not require a hosted service or prescribe your harness workflow. Your application decides what to index, what to redact, when to recall, when to reveal, and how to compose these primitives into tools, extensions, skills, or agents.
 
 ## What Pristine gives your agents
 
 - **Local-first memory:** index local conversations, notes, files, and records, recall them by semantic search, and inspect the source reference directly.
-- **Privacy boundaries:** replace secrets with placeholders before text enters agent/model context, reveal originals only inside trusted local tool runners, and scrub tool results or generated output before they are written back into context or session history.
+- **Secret handling:** replace secrets with placeholders before text enters agent/model context, reveal originals only inside trusted local tool runners, and scrub tool results or generated output before they are written back into context or session history.
 - **Harness-friendly primitives:** Pristine provides the building blocks for customizing memory and privacy solutions for agent harnesses such as Pi.
 
 ## Start here
@@ -23,5 +23,5 @@ Pristine does not require a hosted service or prescribe your harness workflow. Y
 - [SDK quickstart](/quickstart) — install the package and run the base `Pristine` memory flow.
 - [Pi quickstart prompts](/quickstart#pi-quickstart-prompts) — copy prompts for agent-assisted Pi memory and privacy setup.
 - [Memory](/memory) — understand searchable local recall, source references, and source inspection.
-- [Privacy](/privacy) — understand redaction, reveal, scrub output, and local threat-model boundaries.
+- [Privacy](/privacy) — understand redaction, trusted local reveal, output scrubbing, and local threat-model responsibilities.
 - [Pi-dev integration](/pi-dev) — follow the Pi runbook once you are ready to wire a harness.

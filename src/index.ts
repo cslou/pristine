@@ -33,10 +33,15 @@ export type {
 } from './client.js';
 
 export type {
+  DeleteSensitiveResult,
+  ListSensitiveOptions,
   RevealResult,
   SecureAndRedactResult,
+  SensitiveRef,
+  SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
+  UpdateSensitiveInput,
 } from './core/types.js';
 
 export type { Embedder } from './core/interfaces.js';
@@ -58,6 +63,12 @@ export type {
 
 export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
-export { AppError, ConfigError, EmbedderError, InvalidArgumentError } from './core/errors.js';
+export {
+  AppError,
+  ConfigError,
+  EmbedderError,
+  InvalidArgumentError,
+  SensitiveNotFoundError,
+} from './core/errors.js';
 
 export { createDatabase } from './core/database.js';

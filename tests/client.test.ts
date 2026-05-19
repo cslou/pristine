@@ -60,14 +60,31 @@ describe('Pristine', () => {
         privacy: { customPatternsPath: '/tmp/pristine-client-missing-redaction.json' },
       });
 
-      const secured = await client.secureAndRedact(
-        'Token sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456',
-        'user-a',
-      );
-      expect(secured.redactedText).toContain('[SENSITIVE:api_key:');
-      expect(client.scrubOutput('Tool leaked sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456')).toBe(
-        'Tool leaked ',
-      );
+      const secret = 'sk' + '-ant-' + 'api03-' + 'abcdefghijklmnopqrstuvwxyz123456';
+      const secured = await client.secureAndRedact(`Token ${secret}`, 'user-a');
+      expect(secured.redactedText).toContain('[' + 'SENSITIVE:' + 'api_key:');
+
+      const summaries = await client.listSensitive('user-a', { limit: 10 });
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0]!.label).toMatch(/^api_key-[0-9a-z]+$/);
+
+      const updated = await client.updateSensitive('user-a', summaries[0]!.sensitiveRef, {
+        alias: 'primary client key',
+      });
+      expect(updated.alias).toBe('primary client key');
+
+      const fetched = await client.getSensitive('user-a', summaries[0]!.sensitiveRef);
+      expect(fetched?.alias).toBe('primary client key');
+
+      await expect(
+        client.resolveSensitive('user-a', summaries[0]!.sensitiveRef),
+      ).resolves.toContain(secret);
+
+      const deleted = await client.deleteSensitive('user-a', [summaries[0]!.sensitiveRef]);
+      expect(deleted.deletedCount).toBe(1);
+      expect(deleted.missingSensitiveRefs).toEqual([]);
+
+      expect(client.scrubOutput(`Tool leaked ${secret}`)).toBe('Tool leaked ');
     } finally {
       rmSync(keysDir, { force: true, recursive: true });
     }

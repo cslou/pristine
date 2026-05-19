@@ -116,3 +116,10 @@ export class InvalidSqlError extends AppError {
     this.name = 'InvalidSqlError';
   }
 }
+
+export class SensitiveNotFoundError extends AppError {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'SensitiveNotFoundError';
+  }
+}

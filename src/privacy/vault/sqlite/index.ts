@@ -1,9 +1,14 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { decodeBase64Url, encodeBase64Url } from '../base64url.js';
-import { VaultEntryContractError } from '../../../core/errors.js';
+import { SensitiveNotFoundError, VaultEntryContractError } from '../../../core/errors.js';
 import type { VaultStore } from '../../../core/interfaces.js';
 import type {
+  DeleteSensitiveResult,
+  ListSensitiveOptions,
+  SensitiveRef,
+  SensitiveSummary,
+  UpdateSensitiveInput,
   VaultEntry,
   VaultEntryInput,
   ZkV2EncryptedValue,
@@ -11,6 +16,7 @@ import type {
 } from '../../../core/types.js';
 
 const CLIENT_V2 = 'client_v2';
+const DEFAULT_LIST_SENSITIVE_LIMIT = 100;
 
 interface VaultRow {
   id: string;
@@ -31,6 +37,16 @@ interface PublicKeyRow {
   public_key: string;
   fingerprint: string;
   created_at: string;
+}
+
+interface SensitiveSummaryRow {
+  entry_id: string;
+  user_id: string;
+  placeholder_id: string;
+  sensitive_type: string;
+  alias: string | null;
+  created_at: string;
+  updated_at: string | null;
 }
 
 const VAULT_DDL = `
@@ -57,6 +73,18 @@ CREATE TABLE IF NOT EXISTS user_public_keys (
   fingerprint TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS vault_entry_metadata (
+  entry_id TEXT PRIMARY KEY REFERENCES vault_entries(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  placeholder_id TEXT NOT NULL,
+  alias TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, placeholder_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vault_entry_metadata_user_placeholder
+  ON vault_entry_metadata(user_id, placeholder_id);
 `;
 
 const parseZkV2EncryptionMetadata = (value: unknown): ZkV2EncryptedValueMetadata => {
@@ -117,6 +145,21 @@ const mapRow = (row: VaultRow): VaultEntry => ({
   createdAt: row.created_at,
   encryptionMode: CLIENT_V2,
   encryptionMetadata: parseZkV2EncryptionMetadata(row.encryption_metadata),
+});
+
+const buildSafeLabel = (sensitiveType: string, sensitiveRef: SensitiveRef): string => {
+  const normalizedRef = sensitiveRef.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const suffix = normalizedRef.slice(-6) || 'saved';
+  return `${sensitiveType}-${suffix}`;
+};
+
+const mapSensitiveSummaryRow = (row: SensitiveSummaryRow): SensitiveSummary => ({
+  sensitiveRef: row.placeholder_id,
+  sensitiveType: row.sensitive_type,
+  label: buildSafeLabel(row.sensitive_type, row.placeholder_id),
+  alias: row.alias ?? undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at ?? row.created_at,
 });
 
 export const toApprovedValue = (entry: VaultEntry): ZkV2EncryptedValue => {
@@ -226,6 +269,193 @@ export class SqliteVaultStore implements VaultStore {
       .all(userId, ...placeholderIds) as VaultRow[];
 
     return rows.map(mapRow);
+  }
+
+  public async listEntries(
+    userId: string,
+    options: ListSensitiveOptions = {},
+  ): Promise<readonly SensitiveSummary[]> {
+    let sql = `
+      SELECT
+        v.id AS entry_id,
+        v.user_id,
+        v.placeholder_id,
+        v.sensitive_type,
+        m.alias,
+        v.created_at,
+        m.updated_at
+      FROM vault_entries v
+      LEFT JOIN vault_entry_metadata m ON m.entry_id = v.id
+      WHERE v.user_id = ? AND v.placeholder_id IS NOT NULL
+    `;
+    const params: Array<string | number> = [userId];
+
+    if (options.sensitiveType !== undefined) {
+      sql += ' AND v.sensitive_type = ?';
+      params.push(options.sensitiveType);
+    }
+    if (options.createdFrom !== undefined) {
+      sql += ' AND v.created_at >= ?';
+      params.push(options.createdFrom);
+    }
+    if (options.createdTo !== undefined) {
+      sql += ' AND v.created_at <= ?';
+      params.push(options.createdTo);
+    }
+
+    sql += ' ORDER BY COALESCE(m.updated_at, v.created_at) DESC, v.created_at DESC';
+
+    sql += ' LIMIT ?';
+    params.push(options.limit ?? DEFAULT_LIST_SENSITIVE_LIMIT);
+
+    const rows = this.db.prepare(sql).all(...params) as SensitiveSummaryRow[];
+    return rows.map(mapSensitiveSummaryRow);
+  }
+
+  public async getEntry(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+  ): Promise<SensitiveSummary | null> {
+    const row = this.db
+      .prepare(
+        `
+          SELECT
+            v.id AS entry_id,
+            v.user_id,
+            v.placeholder_id,
+            v.sensitive_type,
+            m.alias,
+            v.created_at,
+            m.updated_at
+          FROM vault_entries v
+          LEFT JOIN vault_entry_metadata m ON m.entry_id = v.id
+          WHERE v.user_id = ? AND v.placeholder_id = ?
+          LIMIT 1
+        `,
+      )
+      .get(userId, sensitiveRef) as SensitiveSummaryRow | undefined;
+
+    return row ? mapSensitiveSummaryRow(row) : null;
+  }
+
+  public async updateEntry(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+    input: UpdateSensitiveInput,
+  ): Promise<SensitiveSummary> {
+    const baseRow = this.db
+      .prepare(
+        `
+          SELECT id, user_id, placeholder_id
+          FROM vault_entries
+          WHERE user_id = ? AND placeholder_id = ?
+          LIMIT 1
+        `,
+      )
+      .get(userId, sensitiveRef) as
+      | { id: string; user_id: string; placeholder_id: string }
+      | undefined;
+
+    if (!baseRow) {
+      throw new SensitiveNotFoundError(`Sensitive entry not found for ref ${sensitiveRef}`);
+    }
+
+    const normalizedAlias =
+      input.alias === undefined
+        ? undefined
+        : input.alias === null || input.alias.trim().length === 0
+          ? null
+          : input.alias.trim();
+
+    const runUpdate = this.db.transaction(() => {
+      const existingMetadata = this.db
+        .prepare('SELECT entry_id FROM vault_entry_metadata WHERE entry_id = ? LIMIT 1')
+        .get(baseRow.id) as { entry_id: string } | undefined;
+
+      if (normalizedAlias === undefined) {
+        return;
+      }
+
+      if (existingMetadata) {
+        this.db
+          .prepare(
+            `
+              UPDATE vault_entry_metadata
+              SET alias = ?, updated_at = datetime('now')
+              WHERE entry_id = ?
+            `,
+          )
+          .run(normalizedAlias, baseRow.id);
+        return;
+      }
+
+      this.db
+        .prepare(
+          `
+            INSERT INTO vault_entry_metadata (
+              entry_id, user_id, placeholder_id, alias, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+          `,
+        )
+        .run(baseRow.id, baseRow.user_id, baseRow.placeholder_id, normalizedAlias);
+    });
+
+    runUpdate();
+
+    const summary = await this.getEntry(userId, sensitiveRef);
+    if (!summary) {
+      throw new SensitiveNotFoundError(`Sensitive entry not found for ref ${sensitiveRef}`);
+    }
+    return summary;
+  }
+
+  public async deleteEntries(
+    userId: string,
+    sensitiveRefs: readonly SensitiveRef[],
+  ): Promise<DeleteSensitiveResult> {
+    if (sensitiveRefs.length === 0) {
+      return { deletedCount: 0, missingSensitiveRefs: [] };
+    }
+
+    const uniqueRefs = [...new Set(sensitiveRefs)];
+    const placeholders = uniqueRefs.map(() => '?').join(', ');
+    const existingRows = this.db
+      .prepare(
+        `
+          SELECT id, placeholder_id
+          FROM vault_entries
+          WHERE user_id = ? AND placeholder_id IN (${placeholders})
+        `,
+      )
+      .all(userId, ...uniqueRefs) as Array<{ id: string; placeholder_id: string | null }>;
+
+    const existingRefs = new Set(
+      existingRows
+        .map((row) => row.placeholder_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    );
+    const missingSensitiveRefs = uniqueRefs.filter((ref) => !existingRefs.has(ref));
+
+    const deletedCount = this.db.transaction(() => {
+      const entryIds = existingRows.map((row) => row.id);
+      if (entryIds.length > 0) {
+        const entryIdPlaceholders = entryIds.map(() => '?').join(', ');
+        this.db
+          .prepare(`DELETE FROM vault_entry_metadata WHERE entry_id IN (${entryIdPlaceholders})`)
+          .run(...entryIds);
+      }
+
+      return this.db
+        .prepare(
+          `
+            DELETE FROM vault_entries
+            WHERE user_id = ? AND placeholder_id IN (${placeholders})
+          `,
+        )
+        .run(userId, ...uniqueRefs).changes;
+    })();
+
+    return { deletedCount, missingSensitiveRefs };
   }
 }
 

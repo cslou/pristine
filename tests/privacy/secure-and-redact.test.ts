@@ -7,6 +7,10 @@ import type { KekManager } from '../../src/privacy/kek/kek-manager.js';
 const unusedVaultStore = {
   addEntries: vi.fn(),
   getEntriesByPlaceholderIds: vi.fn(),
+  listEntries: vi.fn(),
+  getEntry: vi.fn(),
+  updateEntry: vi.fn(),
+  deleteEntries: vi.fn(),
 } satisfies VaultStore;
 
 const unusedKeyManager = {

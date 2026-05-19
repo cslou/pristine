@@ -103,6 +103,33 @@ export type SecureAndRedactResult =
       readonly safetyViolations: readonly DetectedEntity[];
     };
 
+export type SensitiveRef = string;
+
+export interface SensitiveSummary {
+  readonly sensitiveRef: SensitiveRef;
+  readonly sensitiveType: string;
+  readonly label: string;
+  readonly alias?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ListSensitiveOptions {
+  readonly sensitiveType?: string;
+  readonly limit?: number;
+  readonly createdFrom?: string;
+  readonly createdTo?: string;
+}
+
+export interface UpdateSensitiveInput {
+  readonly alias?: string | null;
+}
+
+export interface DeleteSensitiveResult {
+  readonly deletedCount: number;
+  readonly missingSensitiveRefs: readonly SensitiveRef[];
+}
+
 // ---------------------------------------------------------------------------
 // Sanitizer
 // ---------------------------------------------------------------------------

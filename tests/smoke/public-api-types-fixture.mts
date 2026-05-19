@@ -1,13 +1,17 @@
 import type {
+  DeleteSensitiveResult,
   DeterministicClassifierConfig,
   Embedder,
   ForgetOptions,
   ForgetResult,
+  ListSensitiveOptions,
   PristineConfig,
   RecalledMemory,
   RecallOptions,
   RevealResult,
   SecureAndRedactResult,
+  SensitiveRef,
+  SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
@@ -16,6 +20,7 @@ import type {
   StoredMemory,
   StoredSourceChunk,
   StoreOptions,
+  UpdateSensitiveInput,
 } from '@pristine/sdk';
 
 // Deprecated compatibility exports for the pre-store/recall/forget memory API.
@@ -31,15 +36,19 @@ import type {
 } from '@pristine/sdk';
 
 type CanonicalPublicRootTypes = [
+  DeleteSensitiveResult,
   DeterministicClassifierConfig,
   Embedder,
   ForgetOptions,
   ForgetResult,
+  ListSensitiveOptions,
   PristineConfig,
   RecalledMemory,
   RecallOptions,
   RevealResult,
   SecureAndRedactResult,
+  SensitiveRef,
+  SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
@@ -48,6 +57,7 @@ type CanonicalPublicRootTypes = [
   StoredMemory,
   StoredSourceChunk,
   StoreOptions,
+  UpdateSensitiveInput,
 ];
 
 type DeprecatedCompatibilityTypes = [

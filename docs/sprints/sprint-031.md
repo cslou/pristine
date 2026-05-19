@@ -1,7 +1,7 @@
 # Pristine — Sprint 031
 **Date:** 2026-05-18 – TBD
 **Goal:** Add a Pi-dev reference privacy input extension that composes Sprint 030's `detect`, `classify`, and `redact` primitives with a pluggable/subagent classifier callback so raw user-pasted secrets are classified from sanitized inputs and redacted before they reach Pi model context or session history.
-**Status:** 🟠 In Progress
+**Status:** 🟢 Complete — pending Lou's manual Pi smoke before integration merge
 
 ---
 
@@ -276,21 +276,21 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories
 - **Acceptance criteria:**
-  - [ ] Every story’s acceptance criteria are evaluated against implementation evidence.
-  - [ ] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
-  - [ ] Failed, ambiguous, manual-only, or unrun verification items are documented.
-  - [ ] The sprint’s new functional verification is identified as future regression verification.
-  - [ ] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with rows for every canonical verification type including zero-count rows and rationale for any `Unknown` values.
-  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
-  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
+  - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
+  - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
+  - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
+  - [x] The sprint’s new functional verification is identified as future regression verification.
+  - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with rows for every canonical verification type including zero-count rows and rationale for any `Unknown` values.
+  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
+  - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
-  - [ ] Run all functional verification items from every story and record pass/fail evidence.
+  - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
-  - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence.
-- **Manual-only verification:** Real Pi subagent smoke from Story 5 if not automated; otherwise `N/A — no manual-only verification required`.
+  - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
+  - [x] Run the full available regression verification suite and record pass/fail evidence.
+- **Manual-only verification:** Pending Lou manual real Pi smoke before sprint integration merge; automated fake/test classifier smoke passed and transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
 - **Planned commits:**
   1. `test: complete sprint 031 verification` — record final verification evidence and sprint completion state.
 - **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc.
@@ -313,3 +313,47 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
+
+## Final Review
+
+Sprint 031 is implementation-complete and ready for Lou's manual Pi smoke before the sprint integration merge.
+
+### What shipped
+
+- Added `examples/pi-dev/extensions/privacy-input/` as an input-only Pi reference extension.
+- Composed `detect` → `classify` → policy → `redact` in the runtime.
+- Added a replaceable sanitized classifier adapter with parser and label validation.
+- Added fail-closed classifier failure handling, timeout handling, and `uncertainPolicy` modes.
+- Documented install boundaries, input-only limitations, future tool-call reveal/future tool-result scrub scope, and smoke checks.
+
+### Verification delta
+
+| Type | Before Sprint | Added This Sprint | Removed | Pending / Not Yet Run | After Sprint |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unit | 37 files / 397 tests | + privacy-input runtime, policy, adapter, install-layout coverage | 0 | 0 | 37 files / 404 tests in final `pnpm run test` |
+| Integration | Existing privacy integration suite | 0 new integration files; runtime real primitive/vault round trip is unit-suite scoped | 0 | 0 | Existing integration suite passed via `pnpm run test` |
+| Smoke | Existing public/package smoke | + fake classifier privacy-input smoke transcript/procedure | 0 | Manual real Pi smoke pending Lou | `pnpm run test:smoke` passed |
+| E2E | Existing e2e suite | 0 | 0 | Manual real Pi smoke pending Lou | `pnpm run test:e2e` passed via `pnpm run test` |
+| Static / docs | Existing lint/type/docs checks | + docs/spec rg checks for input-only privacy reference | 0 | 0 | lint, typecheck, docs build passed |
+| Manual | None required before this sprint | Manual real Pi privacy-input smoke handoff | 0 | 1 pending Lou-run Pi smoke | Pending before integration merge |
+
+### Final verification evidence
+
+- `pnpm run test` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-test-XXXX.log.G7wxfxoHzS`.
+- `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-docs-XXXX.log.FkVTX4TvTb`.
+- Story-level functional and targeted regression evidence is recorded under each story's implementation notes.
+- Fake/test classifier smoke transcript: `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
+
+### Manual verification for Lou
+
+Run the documented manual Pi smoke only after copying/installing `privacy-input` and wiring `registerPrivacyInputExtension` with a configured runtime factory:
+
+```text
+My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK.
+```
+
+Pass condition: the turn is blocked or transformed before model context; transcript/session history contains a safe notification or `[SENSITIVE:api_key:<id>]` placeholder and does not contain the raw key.
+
+### New Dependencies
+
+None.

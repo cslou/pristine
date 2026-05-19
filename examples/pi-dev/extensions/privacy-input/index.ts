@@ -26,6 +26,7 @@ const isInputEventLike = (event: unknown): event is PrivacyInputEventLike =>
 
 const notifyInitFailure = (ctx: unknown, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
+  if (typeof ctx !== 'object' || ctx === null) return;
   const maybeContext = ctx as PiInputContextLike;
   maybeContext.ui?.notify(`Pristine privacy input failed to initialize: ${message}`, 'error');
 };

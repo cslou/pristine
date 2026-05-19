@@ -78,11 +78,14 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Implementation notes:**
   - Added `examples/pi-dev/extensions/privacy-input/index.ts`, `package.json`, README, and `lib/runtime.ts`.
   - `registerPrivacyInputExtension` registers one `input` handler plus shutdown cleanup; extension-origin messages continue before runtime construction.
-  - `PrivacyInputRuntime` accepts injected detector/classifier/redactor/policy/user/notification dependencies and no-candidate input exits before classifier/redactor calls.
+  - `PrivacyInputRuntime` accepts injected detector/classifier/redactor/policy/user/notification dependencies; no-candidate input exits before classifier/redactor calls, and non-empty candidate input fails closed until Story 2 redaction composition is implemented.
   - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-unit2-XXXX.log.3jp6p71udX`.
   - `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts tests/examples/pi-dev/search-memory-tool.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-reg2-XXXX.log.hIr3Etanea`.
   - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-lint2-XXXX.log.RqfTDfqcbN`.
-  - `pnpm run typecheck` passed; log: `/tmp/s31-story1-typecheck.log`.
+  - Review-fix coverage: initialization failure with and without context object continues safely; non-empty candidates return `handled` with a raw-value-free notification until redaction composition exists.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-fix2-unit-XXXX.log.ZwQppTEba1`.
+  - `pnpm run lint` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-fix2-lint-XXXX.log.1NvjSTwrom`.
+  - `pnpm run typecheck` passed after review fixes; log: `/tmp/s31-story1-fix2-typecheck.log`.
 
 #### Story 2: Compose `detect`, `classify`, policy, and `redact` in the input runtime
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

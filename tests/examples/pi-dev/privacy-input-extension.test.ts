@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { registerPrivacyInputExtension } from '../../../examples/pi-dev/extensions/privacy-input/index.js';
-import { PrivacyInputRuntime } from '../../../examples/pi-dev/extensions/privacy-input/lib/runtime.js';
+import {
+  PrivacyInputRuntime,
+  type PrivacyInputCandidateLike,
+} from '../../../examples/pi-dev/extensions/privacy-input/lib/runtime.js';
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
 
@@ -21,7 +24,7 @@ const inputHandlerFrom = (pi: FakePi): Handler => {
 };
 
 const createRuntime = () => {
-  const detect = vi.fn(async () => ({ candidates: [] }));
+  const detect = vi.fn(async () => ({ candidates: [] as PrivacyInputCandidateLike[] }));
   const classifier = { classify: vi.fn(async () => ({ decisions: [] })) };
   const redactor = { redact: vi.fn(async () => ({ text: 'unused', redactions: [] })) };
   const notifications = { notify: vi.fn() };
@@ -83,6 +86,63 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(detect).toHaveBeenCalledExactlyOnceWith('ordinary input');
     expect(classifier.classify).not.toHaveBeenCalled();
     expect(redactor.redact).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for detected candidates until redaction composition handles them', async () => {
+    const { runtime, detect, classifier, redactor, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [
+        {
+          candidateId: 'candidate-0001',
+          sourceSpan: { start: 6, end: 12 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token secret', source: 'interactive' }),
+    ).resolves.toEqual({
+      action: 'handled',
+    });
+
+    expect(classifier.classify).not.toHaveBeenCalled();
+    expect(redactor.redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.not.stringContaining('secret'),
+      'warning',
+    );
+  });
+
+  it('continues safely and notifies when runtime initialization fails', async () => {
+    const pi = new FakePi();
+    const notify = vi.fn();
+    registerPrivacyInputExtension(pi, () => {
+      throw new Error('missing config');
+    });
+
+    await expect(
+      inputHandlerFrom(pi)({ text: 'hello', source: 'interactive' }, { ui: { notify } }),
+    ).resolves.toEqual({
+      action: 'continue',
+    });
+
+    expect(notify).toHaveBeenCalledWith(
+      'Pristine privacy input failed to initialize: missing config',
+      'error',
+    );
+  });
+
+  it('continues safely when runtime initialization fails without a context object', async () => {
+    const pi = new FakePi();
+    registerPrivacyInputExtension(pi, () => {
+      throw new Error('missing config');
+    });
+
+    await expect(
+      inputHandlerFrom(pi)({ text: 'hello', source: 'interactive' }, null),
+    ).resolves.toEqual({
+      action: 'continue',
+    });
   });
 
   it('closes the active runtime on session shutdown', async () => {

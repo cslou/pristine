@@ -79,18 +79,19 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     const detected = await this.detect(event.text);
     if (detected.candidates.length === 0) return { action: 'continue' };
 
-    // Story 1 establishes the injectable runtime boundary. Story 2 composes
-    // classifier policy and redaction for non-empty candidate sets.
     await resolveUserId(this.userId);
     void this.classifier;
     void this.redactor;
     void this.policy;
-    this.notifications?.notify('Pristine privacy input found candidate secrets', 'info');
-    return { action: 'continue' };
+    this.notifications?.notify(
+      'Pristine privacy input blocked this message before model context because sensitive candidates were detected but redaction is not configured yet.',
+      'warning',
+    );
+    return { action: 'handled' };
   }
 
   public close(): void {
-    // No resources are owned by the Story 1 scaffold.
+    // Runtime dependencies are injected and owned by the host.
   }
 }
 

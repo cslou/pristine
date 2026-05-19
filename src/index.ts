@@ -25,6 +25,7 @@ export type {
 // ForgetOptions, and ForgetResult instead.
 export { classify } from './privacy/classifier/index.js';
 export { detect } from './privacy/detector/index.js';
+export { redact } from './privacy/redactor/index.js';
 
 export type {
   DeleteSourceChunksOptions,
@@ -63,10 +64,13 @@ export type {
   PrivacyHintFeatures,
   PrivacyHintFeatureValue,
   RedactConfirmedSecret,
+  RedactKeyManager,
+  RedactKekManager,
   RedactOptions,
   RedactPrimitive,
   RedactResult,
   RedactResultRedaction,
+  RedactVaultStore,
   RevealResult,
   SensitiveRef,
   SensitiveSummary,

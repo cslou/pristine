@@ -201,20 +201,28 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness integrator, **I want** a `redact` primitive for exact classifier-confirmed spans, **so that** the raw secret is stored only locally in the vault and the text entering model context contains Pristine placeholders.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] A new `redact(text, confirmed, userId, options?)` public primitive accepts original text, user/vault/key configuration, and confirmed secrets with `sourceSpan`/type/optional label, then returns redacted text and `sensitiveRef`s/placeholders while storing originals in the encrypted vault.
-  - [ ] `redact` slices raw values locally from the original text using `sourceSpan` offsets and does not require confirmed secret inputs to carry raw values.
-  - [ ] `redact` validates `sourceSpan` bounds, rejects or reports overlapping/invalid confirmed secrets with domain-specific errors or structured failure results, and preserves deterministic behavior for valid non-overlapping spans.
-  - [ ] Optional classifier-provided labels are persisted as visible metadata aliases for the resulting `sensitiveRef`s using the PR #240 sensitive CRUD/vault metadata path, with safe fallback aliases or no alias for unlabeled spans.
-  - [ ] `redact` result redaction metadata includes `candidateId` where available, `sensitiveRef`, placeholder, type, label, original `sourceSpan`, and `redactedSpan` in the returned text.
-  - [ ] `reveal` can restore values redacted by `redact`, and `resolveSensitive` can resolve each returned `sensitiveRef` for the same user.
+  - [x] A new `redact(text, confirmed, userId, options?)` public primitive accepts original text, user/vault/key configuration, and confirmed secrets with `sourceSpan`/type/optional label, then returns redacted text and `sensitiveRef`s/placeholders while storing originals in the encrypted vault.
+  - [x] `redact` slices raw values locally from the original text using `sourceSpan` offsets and does not require confirmed secret inputs to carry raw values.
+  - [x] `redact` validates `sourceSpan` bounds, rejects or reports overlapping/invalid confirmed secrets with domain-specific errors or structured failure results, and preserves deterministic behavior for valid non-overlapping spans.
+  - [x] Optional classifier-provided labels are persisted as visible metadata aliases for the resulting `sensitiveRef`s using the PR #240 sensitive CRUD/vault metadata path, with safe fallback aliases or no alias for unlabeled spans.
+  - [x] `redact` result redaction metadata includes `candidateId` where available, `sensitiveRef`, placeholder, type, label, original `sourceSpan`, and `redactedSpan` in the returned text.
+  - [x] `reveal` can restore values redacted by `redact`, and `resolveSensitive` can resolve each returned `sensitiveRef` for the same user.
 - **Functional verification:**
-  - [ ] Add integration tests for `redact`; pass condition: confirmed `sourceSpan`s are replaced with `[SENSITIVE:<type>:<id>]`, originals are absent from redacted text, `sensitiveRef`s/placeholder IDs are returned, `sourceSpan` and `redactedSpan` are correct, and vault entries exist.
-  - [ ] Add a reveal/resolve round-trip test; pass condition: `reveal` restores text redacted by `redact`, and `resolveSensitive` returns the original value for each returned `sensitiveRef` for the same user.
-  - [ ] Add validation tests for invalid, out-of-bounds, and overlapping `sourceSpan`s; pass condition: invalid input fails loudly without writing partial vault entries.
-  - [ ] Add label/alias tests; pass condition: supplied labels are persisted as visible aliases returned by `getSensitive`/`listSensitive`, unlabeled spans use the documented fallback/no-alias behavior, and aliases never contain raw secret values.
+  - [x] Add integration tests for `redact`; pass condition: confirmed `sourceSpan`s are replaced with `[SENSITIVE:<type>:<id>]`, originals are absent from redacted text, `sensitiveRef`s/placeholder IDs are returned, `sourceSpan` and `redactedSpan` are correct, and vault entries exist.
+  - [x] Add a reveal/resolve round-trip test; pass condition: `reveal` restores text redacted by `redact`, and `resolveSensitive` returns the original value for each returned `sensitiveRef` for the same user.
+  - [x] Add validation tests for invalid, out-of-bounds, and overlapping `sourceSpan`s; pass condition: invalid input fails loudly without writing partial vault entries.
+  - [x] Add label/alias tests; pass condition: supplied labels are persisted as visible aliases returned by `getSensitive`/`listSensitive`, unlabeled spans use the documented fallback/no-alias behavior, and aliases never contain raw secret values.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:integration -- tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts`; pass condition: existing reveal/scrub/vault lifecycle and PR #240 sensitive CRUD behavior remain green.
-  - [ ] Run `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: existing redaction and vault store behavior is unchanged.
+  - [x] Run `pnpm run test:integration -- tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts`; pass condition: existing reveal/scrub/vault lifecycle and PR #240 sensitive CRUD behavior remain green.
+  - [x] Run `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: existing redaction and vault store behavior is unchanged.
+- **Verification evidence:**
+  - `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-targeted-XXXX.log.Yucv8P4qVl`.
+  - `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts tests/privacy/primitive-contracts.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-unit-XXXX.log.4kvxYv5xc2`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-typecheck-XXXX.log.fRoRHmtqQw`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-lint-XXXX.log.nA3lSteHml`.
+  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-build-XXXX.log.JSN3Jps7hi`.
+  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-public-api-XXXX.log.Nqjave1zSo`.
+  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-smoke-XXXX.log.mh4s8NkQqI`.
 - **Manual-only verification:** N/A — integration and unit tests cover this story.
 - **Planned commits:**
   1. `feat: add redact privacy primitive` — add `redact`, validation, vault storage integration, alias persistence, and round-trip tests.

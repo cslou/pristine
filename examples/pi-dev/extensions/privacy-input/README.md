@@ -42,7 +42,9 @@ pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts -t "
 
 Pass condition: a fake API key becomes a `[SENSITIVE:api_key:<id>]` placeholder, the raw key is absent from transformed/model-facing text, classifier input contains `[CANDIDATE:<id>]` markers, and `reveal` restores the original value for the same user.
 
-Manual Pi smoke after copying into `.pi/extensions/privacy-input` and installing dependencies:
+The automated smoke transcript is recorded in `smoke-transcript.md`.
+
+Manual Pi smoke after copying into `.pi/extensions/privacy-input`, installing dependencies, and wiring a configured runtime factory:
 
 ```text
 My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK.

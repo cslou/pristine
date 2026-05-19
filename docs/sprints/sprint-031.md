@@ -265,7 +265,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `pnpm run verify:public-api-types` passed.
   - Documentation `rg` checks passed for privacy-input terms, input-only/future hook spec language, primitive schema names, and no `secureAndRedact` reintroduction in Pi privacy-input/public privacy docs.
   - Fake classifier smoke passed via `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts -t "uses real primitives to transform and reveal a confirmed secret"`.
-  - Manual real Pi smoke remains deferred to Lou after sprint handoff, per latest user instruction.
+  - Fake/test smoke transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`; manual real Pi smoke remains deferred to Lou after sprint handoff, per latest user instruction.
 
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

@@ -51,7 +51,6 @@ mkdir -p .pi/extensions .pi/skills .pi/shared
 rsync -a --delete /path/to/pristine/examples/pi-dev/shared/ .pi/shared/
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/jsonl-index/ .pi/extensions/jsonl-index/
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/search-memory/ .pi/extensions/search-memory/
-rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/privacy-input/ .pi/extensions/privacy-input/
 rsync -a --delete /path/to/pristine/examples/pi-dev/skills/search-session-history/ .pi/skills/search-session-history/
 ```
 
@@ -62,9 +61,6 @@ cd /path/to/your/repo/.pi/extensions/jsonl-index
 npm install --omit=dev
 
 cd /path/to/your/repo/.pi/extensions/search-memory
-npm install --omit=dev
-
-cd /path/to/your/repo/.pi/extensions/privacy-input
 npm install --omit=dev
 ```
 
@@ -78,16 +74,22 @@ If discovery is disabled or you want explicit settings, add paths like this to t
 
 ```json
 {
-  "extensions": [
-    "./extensions/jsonl-index",
-    "./extensions/search-memory",
-    "./extensions/privacy-input"
-  ],
+  "extensions": ["./extensions/jsonl-index", "./extensions/search-memory"],
   "skills": ["./skills/search-session-history"]
 }
 ```
 
 Project `.pi/settings.json` paths are relative to the `.pi` directory. Do not add `.pi/shared` as an extension. It is shared code imported by the extension packages, not a Pi extension entry point.
+
+`privacy-input` is not enabled by the default memory install because it requires host-wired detector, classifier, redactor, vault/key, and user ID dependencies. Copy and enable it only after adding a small wrapper that calls `registerPrivacyInputExtension` with a configured runtime factory:
+
+```bash
+rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/privacy-input/ .pi/extensions/privacy-input/
+cd /path/to/your/repo/.pi/extensions/privacy-input
+npm install --omit=dev
+```
+
+Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery.
 
 ## Embedding model and Nomic warmup
 

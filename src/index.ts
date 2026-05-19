@@ -23,6 +23,7 @@ export type {
 // Deprecated compatibility exports for the pre-`store`/`recall`/`forget` memory API.
 // New code should use StoreOptions, StoredMemory, RecallOptions, RecalledMemory,
 // ForgetOptions, and ForgetResult instead.
+export { classify } from './privacy/classifier/index.js';
 export { detect } from './privacy/detector/index.js';
 
 export type {

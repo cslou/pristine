@@ -88,12 +88,12 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-build-docfix-XXXX.log.llmmbvCG4z`.
   - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-public-api-types-docfix-XXXX.log.il4hxHKQwz`.
   - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-smoke-docfix-XXXX.log.1jYVYgzq7R`.
-  - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-docs-build-docfix-XXXX.log.SNl81T3pfK`.
-  - `! rg -n "secureAndRedact|SecureAndRedactResult" README.md docs/pages` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-public-docs-rg-docfix-XXXX.log.rRoGjBoFen`.
-  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-typecheck-docfix-XXXX.log.8dZj4Tis3e`.
-  - `pnpm run test:unit -- tests/privacy/primitive-contracts.test.ts tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-privacy-contracts-docfix-XXXX.log.SGzrNFsFMc`.
+  - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-docs-build-p2fix-XXXX.log.Sc6T9Y1Q6R`.
+  - `! rg -n "secureAndRedact|SecureAndRedactResult" README.md docs/pages` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-public-docs-rg-p2fix-XXXX.log.OSY1wwiKEw`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-typecheck-p2fix-XXXX.log.p2M3t6c2CC`.
+  - `pnpm run test:unit -- tests/client.test.ts tests/privacy/primitive-contracts.test.ts tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-unit-p2fix-XXXX.log.PJIchjX8Qa`.
   - `pnpm run test:unit` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-unit-docfix-XXXX.log.HJnE56cDeT`.
-  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-lint-docfix-XXXX.log.xTJDJIj7LL`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-lint-p2fix-XXXX.log.QD33SJ17vv`.
 - **Planned commits:**
   1. `feat: define privacy primitive contracts` — add `detect`/`classify`/`redact` contracts, type exports, and public-surface migration tests without runtime behavior changes.
 - **Technical notes:** Keep all module contracts in `src/core/interfaces.ts` and shared types in `src/core/types.ts` where they are general SDK contracts; privacy-specific helper exports can re-export from `src/privacy/` as needed. Do not add Anthropic/OpenAI SDK dependencies. Because the package is pre-1.0, `secureAndRedact` should be removed from root public exports and public docs; legacy internal code may remain only as an implementation detail if tests prove it is not user-facing.

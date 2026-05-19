@@ -6,23 +6,12 @@ Use Pristine privacy primitives to keep secrets out of agent/model context and s
 
 The primitive-first flow separates local candidate discovery, caller-owned classification policy, and vault-backed redaction:
 
-```ts
-const detected = detect(inputText);
-const classified = await classify(inputText, detected.candidates, classifierCallback);
-const confirmed = classified.decisions
-  .filter((decision) => decision.verdict === 'secret')
-  .map((decision) => ({
-    candidateId: decision.candidateId,
-    sourceSpan: decision.sourceSpan,
-    type: decision.type ?? 'secret',
-    label: decision.label,
-  }));
+1. `detect` produces candidate IDs, `sourceSpan`s, detector metadata, and safe `hint` fields without returning raw candidate values.
+2. `classify` presents sanitized context with candidate markers to caller-owned policy, which returns `secret`, `not_secret`, or `uncertain` decisions.
+3. The harness maps `secret` decisions to confirmed `{ sourceSpan, type, label }` inputs.
+4. `redact` stores only confirmed spans locally and returns model-safe text with `sensitiveRef` placeholders plus `sourceSpan` and `redactedSpan` metadata.
 
-const redacted = await redact(inputText, confirmed, 'local-user');
-const modelSafeText = redacted.text;
-```
-
-`classify` uses sanitized context and candidate markers; the caller owns policy for `secret`, `not_secret`, and `uncertain` decisions. `redact` stores only confirmed spans locally and returns `sensitiveRef` placeholders plus `sourceSpan` and `redactedSpan` metadata.
+The SDK owns safe local contracts and vault-backed storage; the harness owns classification policy, including how to handle `uncertain` decisions.
 
 ## reveal
 

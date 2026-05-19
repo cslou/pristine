@@ -6,10 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Pristine } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import type { Embedder } from '../src/core/interfaces.js';
-import { secureAndRedact as privacySecureAndRedact } from '../src/privacy/index.js';
-import { KekManager } from '../src/privacy/kek/kek-manager.js';
-import { FileSystemKeyManager } from '../src/privacy/keys/filesystem.js';
-import { createSqliteVaultStore } from '../src/privacy/vault/sqlite/index.js';
+import { seedClientSensitiveValue } from './client/privacy-seed-helpers.js';
 
 const vector = (first: number, second = 0): number[] => [
   first,
@@ -65,13 +62,12 @@ describe('Pristine', () => {
       });
 
       const secret = 'sk' + '-ant-' + 'api03-' + 'abcdefghijklmnopqrstuvwxyz123456';
-      const keyManager = new FileSystemKeyManager({ keysDir });
-      await privacySecureAndRedact(`Token ${secret}`, {
-        vaultStore: createSqliteVaultStore(deps.db),
-        keyManager,
-        kekManager: new KekManager(deps.db, keyManager),
+      await seedClientSensitiveValue({
+        db: deps.db,
+        keysDir,
         userId: 'user-a',
-        classifier: { customPatternsPath: '/tmp/pristine-client-missing-redaction.json' },
+        text: `Token ${secret}`,
+        customPatternsPath: '/tmp/pristine-client-missing-redaction.json',
       });
 
       const summaries = await client.listSensitive('user-a', { limit: 10 });

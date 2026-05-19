@@ -6,7 +6,7 @@ Pristine is designed for local-first privacy: no Pristine-hosted API is required
 
 Pristine does not decide your entire privacy policy. It gives your application local operations for the places where secrets can enter agent/model context or session history.
 
-Compose `detect` → `classify` → `redact` before sensitive text is sent to an agent or model, so third-party LLM providers see placeholders instead of original secrets. Use `reveal` only inside trusted local tool runners that need the original value to execute. Use `scrubOutput` before tool results or generated output are written back into agent/model context or session history.
+Compose `detect` → `classify` → `redact` before sensitive text is sent to an agent or model, so third-party LLM providers see placeholders instead of original secrets. `classify` sends sanitized context with `[CANDIDATE:<id>]` markers, raw-value-free `hint` metadata, and numeric `sourceSpan` offsets to a caller-owned `classifierCallback`; raw candidates are not sent to classifiers. Use `reveal` only inside trusted local tool runners that need the original value to execute. Use `scrubOutput` before tool results or generated output are written back into agent/model context or session history.
 
 Because agents are non-deterministic, privacy behavior that must always happen should be made deterministic in the harness where possible. Use prompts, hooks, command guards, approval gates, logging controls, or local checks to enforce required behavior. Use Pristine's privacy primitives at the text-handling points those workflows create.
 
@@ -21,11 +21,13 @@ Do not treat the source-index memory database as a plaintext-safe cache. It is o
 
 ## Redact before sharing context
 
-`detect` finds candidate spans, `classify` lets caller-owned policy decide which candidates are secrets from sanitized context, and `redact` stores confirmed originals locally in the privacy vault while returning text with placeholders. Use this composition before an application places text into an agent or model context.
+`detect` finds candidate spans, `classify` lets caller-owned policy decide which candidates are `secret`, `not_secret`, or `uncertain` from sanitized context, and `redact` stores confirmed originals locally in the privacy vault while returning text with placeholders, `sensitiveRef`s, original `sourceSpan`s, and output `redactedSpan`s. Use this composition before an application places text into an agent or model context.
+
+The SDK does not implement a hosted classifier or bundled LLM classifier. Deterministic regex-only behavior can be implemented as a local classifier callback, and uncertain handling belongs to the harness policy. `secureAndRedact` is a legacy internal composition for compatibility tests, not the primitive-first public API to build new integrations around.
 
 ## Reveal inside trusted local tools
 
-`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute.
+`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute. `resolveSensitive` can recover one `sensitiveRef` locally; `listSensitive`, `getSensitive`, `updateSensitive`, and `deleteSensitive` manage metadata-only sensitive refs. Classifier labels can become visible aliases through `updateSensitive`, so aliases must never contain raw secrets.
 
 ## Scrub before writing back
 

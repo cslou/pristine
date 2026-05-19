@@ -30,7 +30,11 @@ Deletes stored chunks by ID within one project and returns a deletion count.
 
 ### `detect`, `classify`, and `redact`
 
-The canonical privacy flow is primitive-first: `detect` finds local candidates with `sourceSpan` metadata, `classify` sends sanitized candidate markers and `hint` metadata to caller-owned policy, and `redact` stores confirmed spans in the local vault while returning `sensitiveRef` placeholders and `redactedSpan` metadata. See [Privacy](/privacy) for threat-model responsibilities.
+The canonical privacy flow is primitive-first: `detect` finds local candidates with `sourceSpan` metadata, `classify` sends sanitized candidate markers and safe `hint` metadata to caller-owned `classifierCallback` policy, and `redact` stores confirmed `{ sourceSpan, type, label? }` spans in the local vault while returning model-safe text plus `sensitiveRef`, placeholder, original `sourceSpan`, and output `redactedSpan` metadata. The SDK does not implement a hosted classifier or bundled LLM classifier; if you want deterministic regex-only behavior, implement it as your classifier callback or harness policy.
+
+`classify` can return `secret`, `not_secret`, or `uncertain`. The harness owns uncertain handling and any policy that maps secret decisions to confirmed redaction inputs. Raw candidate values are not sent to the callback; the request uses `[CANDIDATE:<id>]` markers and raw-value-free hints.
+
+`secureAndRedact` is not the preferred public flow. The migration for new integrations is primitive-first `detect` → `classify` → `redact`, then use `reveal`, `resolveSensitive`, and `scrubOutput` in trusted local flows. See [Privacy](/privacy) for threat-model responsibilities.
 
 ### `reveal(redactedText, userId)`
 
@@ -70,6 +74,9 @@ The package root is the supported import surface. It exports the SDK client, dom
 | ---------------------------------- | --------------------------------------------------------------------------------- |
 | `Pristine`                         | Main local SDK client.                                                            |
 | `createDatabase`                   | Create or open a SQLite database with Pristine's sqlite-vec loading behavior.     |
+| `detect`                           | Find raw-value-free sensitive candidates with `sourceSpan` and safe `hint` data.  |
+| `classify`                         | Build sanitized marker context and invoke a caller-owned classifier callback.     |
+| `redact`                           | Store confirmed spans in the local vault and return placeholder metadata.         |
 | `AppError`                         | Base domain error class.                                                          |
 | `ConfigError`                      | Configuration error class.                                                        |
 | `EmbedderError`                    | Embedder failure class.                                                           |
@@ -104,9 +111,12 @@ The package exports public option and result types for the launch API:
 - `ClassifyPrimitive`
 - `ClassifyResult`
 - `RedactConfirmedSecret`
+- `RedactKeyManager`
+- `RedactKekManager`
 - `RedactOptions`
 - `RedactPrimitive`
 - `RedactResult`
+- `RedactVaultStore`
 - `DeleteSensitiveResult`
 - `ListSensitiveOptions`
 - `RevealResult`

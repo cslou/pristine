@@ -244,26 +244,34 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** privacy API adopter, **I want** docs and examples that explain `detect` → `classify` → `redact` and the `secureAndRedact` migration, **so that** I can compose privacy policy explicitly instead of relying on an opinionated SDK wrapper.
 - **Dependencies:** Story 1, Story 2, Story 3, Story 4
 - **Acceptance criteria:**
-  - [ ] Public API docs describe short primitive names `detect`, `classify`, and `redact`, and clearly state that the SDK does not send raw candidates to any LLM or implement a hosted/bundled classifier.
-  - [ ] `docs/specs/implementation-spec-004.md` is updated with a dedicated section or addendum for the new `detect` → `classify` → `redact` primitive flow and explicitly marks the old composed `secureAndRedact` flow as removed from the root public API, with any legacy internal implementation treated as non-user-facing.
-  - [ ] Privacy guide docs show a concise composition example: `detect(text)` → `classify(text, candidates, classifierCallback)` → harness policy maps secret decisions to confirmed `{ sourceSpan, type, label }` inputs → `redact(text, confirmed, userId)`.
-  - [ ] Docs explain that deterministic regex-only behavior can be implemented as a user/example classifier callback composition, not as a privileged `secureAndRedact` SDK wrapper.
-  - [ ] Docs warn that classifier policy, including `uncertain` handling, belongs to the harness/tool/extension/skill using the primitives.
-  - [ ] Docs describe PR #240 sensitive CRUD primitives and state classifier labels are visible aliases stored via `updateSensitive`, never raw secrets.
-  - [ ] Public API type fixture and package build include the new exports and no longer encourage `secureAndRedact` for new consumers.
+  - [x] Public API docs describe short primitive names `detect`, `classify`, and `redact`, and clearly state that the SDK does not send raw candidates to any LLM or implement a hosted/bundled classifier.
+  - [x] `docs/specs/implementation-spec-004.md` is updated with a dedicated section or addendum for the new `detect` → `classify` → `redact` primitive flow and explicitly marks the old composed `secureAndRedact` flow as removed from the root public API, with any legacy internal implementation treated as non-user-facing.
+  - [x] Privacy guide docs show a concise composition example: `detect(text)` → `classify(text, candidates, classifierCallback)` → harness policy maps secret decisions to confirmed `{ sourceSpan, type, label }` inputs → `redact(text, confirmed, userId)`.
+  - [x] Docs explain that deterministic regex-only behavior can be implemented as a user/example classifier callback composition, not as a privileged `secureAndRedact` SDK wrapper.
+  - [x] Docs warn that classifier policy, including `uncertain` handling, belongs to the harness/tool/extension/skill using the primitives.
+  - [x] Docs describe PR #240 sensitive CRUD primitives and state classifier labels are visible aliases stored via `updateSensitive`, never raw secrets.
+  - [x] Public API type fixture and package build include the new exports and no longer encourage `secureAndRedact` for new consumers.
 - **Functional verification:**
-  - [ ] Run `pnpm run docs:build`; pass condition: updated API/privacy docs build successfully.
-  - [ ] Run individual `rg` checks for `detect`, `classify`, and `redact` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention each short primitive name.
-  - [ ] Run individual `rg` checks for `sourceSpan`, `redactedSpan`, `sensitiveRef`, and `sensitive refs` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec describe confirmed-secret `sourceSpan` inputs, `redact` output spans, and returned sensitive refs.
-  - [ ] Run individual `rg` checks for `sanitized`, `raw candidate`, `classifierCallback`, `hint`, and `marker` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain sanitized classifier callback input, candidate markers/hints, and that raw candidates are not sent to classifiers.
-  - [ ] Run individual `rg` checks for `uncertain` and `policy` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state uncertain handling belongs to harness policy.
-  - [ ] Run individual `rg` checks for `secureAndRedact`, `migration`, and `primitive-first` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain the `secureAndRedact` public API removal/migration and primitive-first replacement.
-  - [ ] Run individual `rg` checks for `hosted classifier`, `LLM classifier`, and `does not implement` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state the SDK does not provide a hosted classifier or bundled LLM classifier implementation.
-  - [ ] Run individual `rg` checks for `listSensitive`, `getSensitive`, `updateSensitive`, `deleteSensitive`, `resolveSensitive`, and `alias` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention every sensitive CRUD primitive and alias label handling.
-  - [ ] Run `pnpm run verify:public-api-types`; pass condition: external consumers can import new primitive types and existing supported types.
+  - [x] Run `pnpm run docs:build`; pass condition: updated API/privacy docs build successfully.
+  - [x] Run individual `rg` checks for `detect`, `classify`, and `redact` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention each short primitive name.
+  - [x] Run individual `rg` checks for `sourceSpan`, `redactedSpan`, `sensitiveRef`, and `sensitive refs` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec describe confirmed-secret `sourceSpan` inputs, `redact` output spans, and returned sensitive refs.
+  - [x] Run individual `rg` checks for `sanitized`, `raw candidate`, `classifierCallback`, `hint`, and `marker` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain sanitized classifier callback input, candidate markers/hints, and that raw candidates are not sent to classifiers.
+  - [x] Run individual `rg` checks for `uncertain` and `policy` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state uncertain handling belongs to harness policy.
+  - [x] Run individual `rg` checks for `secureAndRedact`, `migration`, and `primitive-first` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain the `secureAndRedact` public API removal/migration and primitive-first replacement.
+  - [x] Run individual `rg` checks for `hosted classifier`, `LLM classifier`, and `does not implement` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state the SDK does not provide a hosted classifier or bundled LLM classifier implementation.
+  - [x] Run individual `rg` checks for `listSensitive`, `getSensitive`, `updateSensitive`, `deleteSensitive`, `resolveSensitive`, and `alias` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention every sensitive CRUD primitive and alias label handling.
+  - [x] Run `pnpm run verify:public-api-types`; pass condition: external consumers can import new primitive types and existing supported types.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:smoke`; pass condition: package build and public API smoke tests remain green.
-  - [ ] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public client privacy APIs, scrub behavior, and sensitive CRUD behavior remain green after `secureAndRedact` migration.
+  - [x] Run `pnpm run test:smoke`; pass condition: package build and public API smoke tests remain green.
+  - [x] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public client privacy APIs, scrub behavior, and sensitive CRUD behavior remain green after `secureAndRedact` migration.
+- **Verification evidence:**
+  - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-docs-build2-XXXX.log.PLZPnqhrQt`.
+  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-public-api-XXXX.log.kRWxFp8t5s`.
+  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-smoke-XXXX.log.boQFlYxeaA`.
+  - `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-unit-XXXX.log.KdYDsLSIrn`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-typecheck-XXXX.log.uELVTHYRwg`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-lint-XXXX.log.te1uNP1CA8`.
+  - `rg` checks for `detect`, `classify`, `redact`, `sourceSpan`, `redactedSpan`, `sensitiveRef`, `sensitive refs`, `sanitized`, `raw candidate`, `classifierCallback`, `hint`, `marker`, `uncertain`, `policy`, `secureAndRedact`, `migration`, `primitive-first`, `hosted classifier`, `LLM classifier`, `does not implement`, `listSensitive`, `getSensitive`, `updateSensitive`, `deleteSensitive`, `resolveSensitive`, and `alias` passed against `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`.
 - **Manual-only verification:** N/A — docs build, grep checks, smoke tests, and focused unit tests cover this story.
 - **Planned commits:**
   1. `docs: document primitive-first privacy api` — update API/privacy docs, implementation spec, public type fixtures, and examples for `detect` → `classify` → `redact`, refined schema names (`hint`, `sourceSpan`, `redactedSpan`, `sensitiveRef`), and `secureAndRedact` migration.

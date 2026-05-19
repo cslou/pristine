@@ -28,9 +28,9 @@ Deletes stored chunks by ID within one project and returns a deletion count.
 
 ## Privacy API
 
-### `secureAndRedact(text, userId, classifier?)`
+### `detect`, `classify`, and `redact`
 
-Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default. See [Privacy](/privacy) for threat-model responsibilities.
+The canonical privacy flow is primitive-first: `detect` finds local candidates with `sourceSpan` metadata, `classify` sends sanitized candidate markers and `hint` metadata to caller-owned policy, and `redact` stores confirmed spans in the local vault while returning `sensitiveRef` placeholders and `redactedSpan` metadata. See [Privacy](/privacy) for threat-model responsibilities.
 
 ### `reveal(redactedText, userId)`
 
@@ -93,10 +93,23 @@ The package exports public option and result types for the launch API:
 - `ForgetOptions`
 - `ForgetResult`
 - `PristineConfig`
+- `DetectCandidate`
+- `DetectOptions`
+- `DetectPrimitive`
+- `DetectResult`
+- `ClassifierRequest`
+- `ClassifierCallbackDecision`
+- `ClassifyDecision`
+- `ClassifyOptions`
+- `ClassifyPrimitive`
+- `ClassifyResult`
+- `RedactConfirmedSecret`
+- `RedactOptions`
+- `RedactPrimitive`
+- `RedactResult`
 - `DeleteSensitiveResult`
 - `ListSensitiveOptions`
 - `RevealResult`
-- `SecureAndRedactResult`
 - `SensitiveRef`
 - `SensitiveSummary`
 - `SourceChunkInput`

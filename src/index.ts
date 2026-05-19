@@ -33,18 +33,56 @@ export type {
 } from './client.js';
 
 export type {
+  BuiltInDetectCandidateKind,
+  ClassifierCallback,
+  ClassifierCallbackDecision,
+  ClassifierCallbackResult,
+  ClassifierRequest,
+  ClassifierRequestCandidate,
+  ClassifierVerdict,
+  ClassifyDecision,
+  ClassifyOptions,
+  ClassifyPrimitive,
+  ClassifyResult,
+  NonSecretClassifierCallbackDecision,
+  NonSecretClassifyDecision,
+  SecretClassifierCallbackDecision,
+  SecretClassifyDecision,
+  DetectCandidate,
+  DetectCandidateKind,
+  DetectHint,
+  DetectOptions,
+  DetectPrimitive,
+  DetectResult,
+  DetectSensitivityPreset,
   DeleteSensitiveResult,
   ListSensitiveOptions,
+  PrivacyHintFeatures,
+  PrivacyHintFeatureValue,
+  RedactConfirmedSecret,
+  RedactOptions,
+  RedactPrimitive,
+  RedactResult,
+  RedactResultRedaction,
   RevealResult,
-  SecureAndRedactResult,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
+  SourceLocation,
+  SourceSpan,
+  SourceSurface,
+  SourceSurfaceMetadata,
+  TextSpan,
   UpdateSensitiveInput,
 } from './core/types.js';
 
-export type { Embedder } from './core/interfaces.js';
+export type {
+  Embedder,
+  PrivacyClassifier,
+  PrivacyDetector,
+  PrivacyRedactor,
+} from './core/interfaces.js';
 
 export {
   SOURCE_CHUNK_METADATA_JSON_LIMIT,

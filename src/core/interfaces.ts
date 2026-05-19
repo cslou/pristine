@@ -1,8 +1,17 @@
 import type {
   ClassificationPipelineResult,
+  ClassifierCallback,
+  ClassifyOptions,
+  ClassifyResult,
+  DetectCandidate,
+  DetectOptions,
+  DetectResult,
   DeleteSensitiveResult,
   KeyPairWithStatus,
   ListSensitiveOptions,
+  RedactConfirmedSecret,
+  RedactOptions,
+  RedactResult,
   SensitivityReport,
   SensitiveRef,
   SensitiveSummary,
@@ -39,6 +48,28 @@ export interface SensitivityClassifier {
 
 export interface PrivacyPipeline {
   classifyAndRedact(text: string): Promise<ClassificationPipelineResult>;
+}
+
+export interface PrivacyDetector {
+  detect(text: string, options?: DetectOptions): DetectResult;
+}
+
+export interface PrivacyClassifier {
+  classify(
+    text: string,
+    candidates: readonly DetectCandidate[],
+    classifierCallback: ClassifierCallback,
+    options?: ClassifyOptions,
+  ): Promise<ClassifyResult>;
+}
+
+export interface PrivacyRedactor {
+  redact(
+    text: string,
+    confirmed: readonly RedactConfirmedSecret[],
+    userId: string,
+    options?: RedactOptions,
+  ): Promise<RedactResult>;
 }
 
 // ---------------------------------------------------------------------------

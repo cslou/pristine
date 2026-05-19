@@ -34,6 +34,7 @@ describe('public-API smoke — source chunk API', () => {
     try {
       expect(client).toBeInstanceOf(Pristine);
       expect('pendingEmbedTasks' in client).toBe(false);
+      expect('secureAndRedact' in client).toBe(false);
       await client.dispose();
     } finally {
       db.close();
@@ -63,6 +64,7 @@ describe('public-API smoke — source chunk API', () => {
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
     ]);
+    expect(PristineBarrel).not.toHaveProperty('secureAndRedact');
   });
 
   it('public surface indexes and searches a source chunk', async () => {

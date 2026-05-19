@@ -1,19 +1,17 @@
-# Secure, redact, reveal
+# Detect, classify, redact, reveal
 
-Use Pristine privacy APIs to keep secrets out of agent/model context and session history while still allowing trusted local execution to use the original values when needed.
+Use Pristine privacy primitives to keep secrets out of agent/model context and session history while still allowing trusted local execution to use original values when needed.
 
-## secureAndRedact
+## detect → classify → redact
 
-`secureAndRedact` detects sensitive values, stores encrypted originals in the local vault, and returns redacted text with placeholders. Call it before text is sent to an agent or model so third-party LLM providers receive placeholders instead of original secrets.
+The primitive-first flow separates local candidate discovery, caller-owned classification policy, and vault-backed redaction:
 
-```ts
-const secured = await pristine.secureAndRedact(
-  'Email Ada at ada@example.com about the invoice.',
-  'local-user',
-);
+1. `detect` produces candidate IDs, `sourceSpan`s, detector metadata, and safe `hint` fields without returning raw candidate values.
+2. `classify` presents sanitized context with candidate markers to caller-owned policy, which returns `secret`, `not_secret`, or `uncertain` decisions.
+3. The harness maps `secret` decisions to confirmed `{ sourceSpan, type, label }` inputs.
+4. `redact` stores only confirmed spans locally and returns model-safe text with `sensitiveRef` placeholders plus `sourceSpan` and `redactedSpan` metadata.
 
-const modelSafeText = secured.redactedText;
-```
+The SDK owns safe local contracts and vault-backed storage; the harness owns classification policy, including how to handle `uncertain` decisions.
 
 ## reveal
 

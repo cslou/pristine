@@ -27,6 +27,7 @@ describe('package entrypoint smoke', () => {
     expect(pkg.SourceChunkStore).toBeTypeOf('function');
     expect(pkg.initSourceChunkTables).toBeTypeOf('function');
     expect(pkg.normalizeSourceChunkInput).toBeTypeOf('function');
+    expect(pkg).not.toHaveProperty('secureAndRedact');
     expect(pkg).not.toHaveProperty('storeAsync');
     expect(pkg).not.toHaveProperty('getConversation');
     expect(pkg).not.toHaveProperty('IngestQueueError');
@@ -52,6 +53,7 @@ describe('package entrypoint smoke', () => {
       expect(client.forget(['built-1'], { projectId: 'built-smoke' })).toEqual({
         deletedCount: 1,
       });
+      expect('secureAndRedact' in client).toBe(false);
       expect('storeAsync' in client).toBe(false);
       expect('getConversation' in client).toBe(false);
     } finally {

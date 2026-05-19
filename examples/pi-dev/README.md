@@ -14,8 +14,9 @@ Pi artifacts are grouped by the runtime shape users install: extensions live und
 | ------------------------------------------------ | ------------------------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `examples/pi-dev/extensions/jsonl-index/`        | `.pi/extensions/jsonl-index/`        | Pi extension               | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers.       |
 | `examples/pi-dev/extensions/search-memory/`      | `.pi/extensions/search-memory/`      | Pi extension / custom tool | Registers `pristine_recall` for semantic vector search over indexed Pi snippets.                                |
+| `examples/pi-dev/extensions/privacy-input/`      | `.pi/extensions/privacy-input/`      | Pi input extension         | Input-only privacy reference: detects/classifies/redacts user-pasted secrets before model context.              |
 | `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill                   | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
-| `examples/pi-dev/shared/`                        | `.pi/shared/`                        | Shared helper code         | Imported by the two extensions. It is not loaded directly by Pi and has no user-facing tool.                    |
+| `examples/pi-dev/shared/`                        | `.pi/shared/`                        | Shared helper code         | Imported by memory extensions. It is not loaded directly by Pi and has no user-facing tool.                     |
 
 Pi auto-discovers project-local extensions from `.pi/extensions/<name>/index.ts` and skills from `.pi/skills/<name>/SKILL.md` when started from the repo root. `shared` is copied under `.pi/shared/` only so relative extension imports resolve without making shared code look like a Pi extension.
 
@@ -80,6 +81,16 @@ If discovery is disabled or you want explicit settings, add paths like this to t
 
 Project `.pi/settings.json` paths are relative to the `.pi` directory. Do not add `.pi/shared` as an extension. It is shared code imported by the extension packages, not a Pi extension entry point.
 
+`privacy-input` is not enabled by the default memory install because it requires host-wired detector, classifier, redactor, vault/key, and user ID dependencies. Copy and enable it only after adding a small wrapper that calls `registerPrivacyInputExtension` with a configured runtime factory:
+
+```bash
+rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/privacy-input/ .pi/extensions/privacy-input/
+cd /path/to/your/repo/.pi/extensions/privacy-input
+npm install --omit=dev
+```
+
+Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery.
+
 ## Embedding model and Nomic warmup
 
 This reference uses `nomic-ai/nomic-embed-text-v1.5` through `@huggingface/transformers`.
@@ -97,6 +108,42 @@ pi -p "Reply exactly OK."
 ```
 
 Pass condition: Pi starts, loads the extensions/skill, and returns `OK` without Pristine startup errors.
+
+## Privacy input reference
+
+The `privacy-input` extension is an input-only v1 reference. It runs before skill/template expansion and composes:
+
+```text
+input hook → detect(text) → classify(text, candidates, classifierCallback) → policy → redact(text, confirmed, userId)
+```
+
+Classifier prompts/tasks receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only. They must never receive raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
+
+Policy modes:
+
+- `uncertainPolicy: "block"` is the default and stops the turn before model context when any candidate remains uncertain.
+- `uncertainPolicy: "redact"` stores/redacts uncertain candidates using detector `hint.suggestedType` or a fallback type.
+- `uncertainPolicy: "allow"` is an explicit unsafe opt-in; uncertain raw input can continue to model/session history and is excluded from the default no-raw-secret guarantee.
+
+The reference is limited to user input. Future tool-call reveal and future tool-result scrub hooks are intentionally not implemented in this v1.
+
+### Privacy-input smoke check
+
+Fake/test classifier mode is covered by the non-interactive test harness:
+
+```bash
+pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts -t "uses real primitives to transform and reveal a confirmed secret"
+```
+
+Pass condition: the sample fake API key is transformed to a `[SENSITIVE:api_key:<id>]` placeholder, the raw key is absent from model-facing text, the classifier request contains `[CANDIDATE:<id>]` markers instead of the raw key, and `reveal` restores the original value for the same user.
+
+Manual Pi smoke, only after copying/installing the extension and wiring `registerPrivacyInputExtension` with a configured runtime factory:
+
+```text
+My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK.
+```
+
+Pass condition: Pi blocks or transforms the input before the agent sees the raw key. The model-facing/session-history transcript should contain either a safe notification or a `[SENSITIVE:api_key:<id>]` placeholder and must not contain the raw key.
 
 ## DB path and reset
 

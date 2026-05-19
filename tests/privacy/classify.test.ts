@@ -28,6 +28,7 @@ const candidateFor = (
 const serializedRequest = async (
   text: string,
   candidates: readonly DetectCandidate[],
+  contextWindow?: number,
 ): Promise<{ request: ClassifierRequest; serialized: string }> => {
   let request: ClassifierRequest | undefined;
   await classify(
@@ -42,7 +43,11 @@ const serializedRequest = async (
         })),
       };
     },
-    { requestId: 'request-test', sourceSurface: { kind: 'user_message', uri: 'session://one' } },
+    {
+      requestId: 'request-test',
+      sourceSurface: { kind: 'user_message', uri: 'session://one' },
+      contextWindow,
+    },
   );
 
   if (!request) throw new Error('classifier callback was not invoked');
@@ -67,7 +72,7 @@ describe('classify privacy primitive', () => {
     const { request, serialized } = await serializedRequest(text, candidates);
 
     expect(request.requestId).toBe('request-test');
-    expect(request.sourceSurface).toEqual({ kind: 'user_message', uri: 'session://one' });
+    expect(request.sourceSurface).toEqual({ kind: 'user_message' });
     for (const candidate of request.candidates) {
       expect(candidate.marker).toBe(`[CANDIDATE:${candidate.candidateId}]`);
       expect(request.sanitizedContext).toContain(candidate.marker);
@@ -102,7 +107,7 @@ describe('classify privacy primitive', () => {
 
     expect(request).toMatchObject({
       requestId: 'request-test',
-      sourceSurface: { kind: 'user_message', uri: 'session://one' },
+      sourceSurface: { kind: 'user_message' },
       sanitizedContext: 'token=[CANDIDATE:candidate-shape]',
       candidates: [
         {
@@ -115,17 +120,16 @@ describe('classify privacy primitive', () => {
           location: { line: 1, column: 7 },
           hint: {
             suggestedType: 'api_key',
-            provider: 'custom-provider',
-            prefixFamily: 'custom-family',
             nearbyName: 'TOKEN',
-            positiveSignals: ['assignment_context'],
-            negativeSignals: ['example_like'],
             features: { entropyBucket: 'high' },
           },
         },
       ],
     });
     expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain('1234567890');
+    expect(serialized).not.toContain('custom-provider');
+    expect(serialized).not.toContain('custom-family');
   });
 
   it('preserves safe provider prefix-family hints but drops arbitrary raw-derived prefixes', async () => {
@@ -192,6 +196,26 @@ describe('classify privacy primitive', () => {
     for (const word of seedWords.split(' ')) {
       expect(serialized).not.toContain(word);
     }
+  });
+
+  it('honors context windows and does not invoke callbacks for empty candidate lists', async () => {
+    let emptyCallbackInvoked = false;
+    await expect(
+      classify('raw text without candidates', [], async () => {
+        emptyCallbackInvoked = true;
+        return { decisions: [] };
+      }),
+    ).resolves.toEqual({ decisions: [] });
+    expect(emptyCallbackInvoked).toBe(false);
+
+    const secret = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
+    const text = `prefix that should be trimmed before ${secret} after text that should be trimmed`;
+    const candidate = candidateFor(text, secret, { candidateId: 'windowed' });
+    const { request } = await serializedRequest(text, [candidate], 6);
+
+    expect(request.sanitizedContext).toBe('efore [CANDIDATE:windowed] after');
+    expect(request.sanitizedContext).not.toContain('prefix that should be trimmed');
+    expect(request.sanitizedContext).not.toContain('text that should be trimmed');
   });
 
   it('normalizes valid callback decisions back to original source spans', async () => {

@@ -289,7 +289,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
   - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [x] Run the full available regression verification suite and record pass/fail evidence.
+  - [ ] Run the full available regression verification suite and record pass/fail evidence. Automated full regression passed; manual real Pi smoke remains pending Lou.
 - **Manual-only verification:** Pending Lou manual real Pi smoke before sprint integration merge; automated fake/test classifier smoke passed and transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
 - **Planned commits:**
   1. `test: complete sprint 031 verification` — record final verification evidence and sprint completion state.

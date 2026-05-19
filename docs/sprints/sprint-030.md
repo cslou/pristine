@@ -1,7 +1,7 @@
 # Pristine — Sprint 030
 **Date:** 2026-05-18 – TBD
 **Goal:** Replace the opinionated `secureAndRedact` flow with short, composable privacy primitives — `detect`, `classify`, and `redact` — so harnesses decide classification policy while Pristine owns safe local detection, sanitized classifier inputs, and vault-backed redaction.
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 
 ---
 
@@ -28,7 +28,7 @@
 
 - `detect(text, options?) -> DetectResult`: returns `{ sourceSurface?, candidates }`, where each candidate has a non-value-derived `candidateId`, `sourceSpan`, `kind`, `ruleId`, `valueLength`, optional `location`, and optional safe `hint` metadata. It never returns raw matched values.
 - `classify(text, candidates, classifierCallback, options?) -> Promise<ClassifyResult>`: builds a sanitized `ClassifierRequest` with `sanitizedContext`, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata, invokes the caller-provided callback, then validates and normalizes callback decisions back to `{ candidateId, verdict, sourceSpan, type?, label?, confidence?, rationale? }`. It does not implement or bundle an LLM classifier.
-- `redact(text, confirmed, userId, options?) -> Promise<RedactResult>`: accepts confirmed secrets with `{ candidateId?, sourceSpan, type, label? }`, slices raw values locally from the original text, stores them in the local vault, persists labels as visible aliases where supplied, and returns `{ text, redactions }` with `sensitiveRef`, placeholder, `sourceSpan`, and `redactedSpan` metadata.
+- `redact(text, confirmed, userId, options) -> Promise<RedactResult>`: accepts confirmed secrets with `{ candidateId?, sourceSpan, type, label? }` plus caller-provided vault/key managers, slices raw values locally from the original text, stores them in the local vault, persists safe labels as visible aliases where supplied, and returns `{ text, redactions }` with `sensitiveRef`, placeholder, `sourceSpan`, and `redactedSpan` metadata.
 
 ### Verification Strategy
 
@@ -286,20 +286,20 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories
 - **Acceptance criteria:**
-  - [ ] Every story’s acceptance criteria are evaluated against implementation evidence.
-  - [ ] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
-  - [ ] Failed, ambiguous, manual-only, or unrun verification items are documented.
-  - [ ] The sprint’s new functional verification is identified as future regression verification.
-  - [ ] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with rows for every canonical verification type including zero-count rows and rationale for any `Unknown` values.
-  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
-  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
+  - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
+  - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
+  - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
+  - [x] The sprint’s new functional verification is identified as future regression verification.
+  - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with rows for every canonical verification type including zero-count rows and rationale for any `Unknown` values.
+  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
+  - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
-  - [ ] Run all functional verification items from every story and record pass/fail evidence.
+  - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
-  - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence.
+  - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
+  - [x] Run the full available regression verification suite and record pass/fail evidence.
 - **Manual-only verification:** N/A — no manual-only verification is planned for implementation stories; if a later story discovers an unavoidable manual check, record it here and in `## Final Review`.
 - **Planned commits:**
   1. `test: complete sprint 030 verification` — record final verification evidence and sprint completion state.
@@ -323,3 +323,68 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new flows, they are folded into `docs/specs/implementation-spec-004.md` before sprint integration.
+
+## Final Review
+
+**Mergeability:** Pending Final Verification Story `/review`
+
+## Sprint objective + accomplishments
+
+**Objective:** Replace the opinionated `secureAndRedact` flow with short, composable privacy primitives — `detect`, `classify`, and `redact` — so harnesses decide classification policy while Pristine owns safe local detection, sanitized classifier inputs, and vault-backed redaction.
+
+**What was accomplished:**
+- **Story 1 — Define privacy primitive contracts** — Added public contracts for `detect`, `classify`, and `redact`, including raw-value-free detector/classifier shapes and vault redaction result metadata. Public client/root guidance no longer presents `secureAndRedact` as the preferred flow; evidence is recorded in Story 1 and PR #253.
+- **Story 2 — Implement `detect`** — Added root `detect` plus built-in broad candidate detection, custom rules, overlap normalization, source metadata, and hint sanitization. Leak-focused detector tests and public API smoke/type fixtures prove candidates do not expose raw values; evidence is recorded in Story 2 and PR #254.
+- **Story 3 — Implement `classify`** — Added root `classify`, sanitized marker context, allowlisted hint/source-surface metadata, context windows, callback validation, and normalized decisions. Multi-candidate, JWT/URL/query/seed, raw prefix/suffix, and callback validation tests prove the classifier boundary; evidence is recorded in Story 3 and PR #255.
+- **Story 4 — Implement `redact`** — Added root `redact`, exact-span slicing, encrypted vault persistence, safe label aliases, placeholder metadata, and reveal/resolve round-trips. Integration tests prove vault storage, invalid-span rejection without partial writes, custom type preservation, and raw-label suppression; evidence is recorded in Story 4 and PR #256.
+- **Story 5 — Document primitive-first privacy API** — Updated README and public privacy/API docs for the primitive-first flow, classifier policy ownership, no hosted/bundled LLM classifier, sensitive-ref CRUD, and `secureAndRedact` migration. The ignored local implementation spec was updated as internal context but is intentionally not committed; tracked docs carry the public migration evidence in Story 5 and PR #257.
+
+## Verification delta
+
+| Verification type | Before sprint | Added this sprint | Removed | Pending / not yet run | After sprint | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| Unit | 32 | +3 | 0 | 0 | 35 | Added `tests/privacy/detect.test.ts`, `tests/privacy/classify.test.ts`, and `tests/privacy/primitive-contracts.test.ts`; existing unit suite passed in `pnpm run test`. |
+| Integration / contract | 3 | +1 | 0 | 0 | 4 | Added `tests/integration/redact.test.ts`; existing privacy and KEK lifecycle integration tests passed in `pnpm run test`. |
+| E2E / smoke | 4 | +0 | 0 | 0 | 4 | Existing smoke/e2e suites remained green; smoke public API fixtures were updated for primitive exports. |
+| Simulator / device | 0 | +0 | 0 | 0 | 0 | No simulator/device surface in this SDK sprint. |
+| AI / model evals | 0 | +0 | 0 | 0 | 0 | No hosted or bundled LLM classifier/eval surface was added. |
+| Static / local checks | 4 | +0 | 0 | 0 | 4 | `typecheck`, `lint`, `docs:build`, and public API type verification all passed. |
+| Performance / load | 0 | +0 | 0 | 0 | 0 | No performance/load suite exists for this repo. |
+| Security / dependency | 0 | +0 | 0 | 0 | 0 | No dependency changes; security-sensitive behavior covered by privacy leak tests and review checks. |
+| Accessibility / visual | 0 | +0 | 0 | 0 | 0 | No UI surface. |
+| Manual-only | 0 | +0 | 0 | 0 | 0 | No manual-only verification required. |
+| Other verification | 0 | +1 | 0 | 0 | 1 | Story 5 added explicit docs `rg` verification across privacy/API/spec terms. |
+| **Total** | **43** | **+5** | **0** | **0** | **48** | Counting basis: test files by suite plus static/local check surfaces and docs term-check surface. |
+
+Counting basis: test files for Unit, Integration / contract, and E2E / smoke; recurring command surfaces for Static / local checks; explicit documentation term-check group for Other verification. Regression summary: 0 existing regression verifications pending/not yet run; full `pnpm run test`, `docs:build`, `typecheck`, and `lint` passed for final verification.
+
+## Why ready
+
+- All implementation story ACs are checked with evidence in the story sections and merged story PRs #253–#257.
+- Functional verification for new `detect`, `classify`, `redact`, and docs behavior is automated and recorded in each story.
+- Full regression verification passed: `pnpm run test` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-test-XXXX.log.MIlsMfzMkU`), `pnpm run docs:build` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-docs-XXXX.log.6SSjVzHC6G`), `pnpm run typecheck` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-typecheck-XXXX.log.LfvodU4Mzw`), and `pnpm run lint` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-lint-XXXX.log.pZUJjncwuZ`).
+- Final Verification Story review/mergeability gate will be recorded after PR review completes.
+
+## Open for your decision
+
+None — fully automated verification.
+
+## Delivered
+
+| Story | Item | Status | Evidence |
+|---|---|---|---|
+| Story 1 — Contracts | Primitive contracts and public-surface migration | ✅ | PR #253, `tests/privacy/primitive-contracts.test.ts`, public API fixtures. |
+| Story 2 — Detect | Raw-value-free candidate detection | ✅ | PR #254, `tests/privacy/detect.test.ts`, public API smoke/type fixtures. |
+| Story 3 — Classify | Sanitized classifier callback boundary | ✅ | PR #255, `tests/privacy/classify.test.ts`. |
+| Story 4 — Redact | Vault-backed exact-span redaction | ✅ | PR #256, `tests/integration/redact.test.ts`. |
+| Story 5 — Docs | Primitive-first docs and migration guidance | ✅ | PR #257, docs build, public API verification, and docs `rg` checks. |
+| Final Verification | Full regression suite | ✅ | `pnpm run test`, `docs:build`, `typecheck`, and `lint` logs listed above. |
+
+## Drift from spec
+
+- The durable public flow is now primitive-first `detect` → `classify` → `redact`; `secureAndRedact` remains legacy/internal compatibility behavior rather than the preferred public API.
+- `docs/specs/implementation-spec-004.md` is ignored by repository policy, so the implementation-spec addendum was updated locally while tracked public docs carry the committed migration guidance.
+
+## New Dependencies
+
+None

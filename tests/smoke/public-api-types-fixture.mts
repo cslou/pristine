@@ -1,5 +1,6 @@
-import type {
-  BuiltInDetectCandidateKind,
+import {
+  detect,
+  type BuiltInDetectCandidateKind,
   ClassifierCallback,
   ClassifierCallbackDecision,
   ClassifierCallbackResult,
@@ -150,6 +151,7 @@ declare const pristineClient: Pristine;
 // @ts-expect-error secureAndRedact is intentionally removed from the public Pristine client surface.
 const removedClientSecureAndRedact = pristineClient.secureAndRedact;
 
+const detectResult = detect('no secrets here');
 const detectPrimitiveFixture: DetectPrimitive = (_text, options) =>
   options?.sourceSurface
     ? { sourceSurface: options.sourceSurface, candidates: [] }
@@ -167,6 +169,7 @@ const redactPrimitiveFixture: RedactPrimitive = async (_text, _confirmed, _userI
 const canonicalPublicRootTypesFixture: CanonicalPublicRootTypes | null = null;
 const deprecatedCompatibilityTypesFixture: DeprecatedCompatibilityTypes | null = null;
 const removedSecureAndRedactResultFixture: RemovedSecureAndRedactResult | null = null;
+void detectResult;
 void detectPrimitiveFixture;
 void classifyPrimitiveFixture;
 void redactPrimitiveFixture;

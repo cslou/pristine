@@ -10,6 +10,7 @@ import {
   SensitiveNotFoundError,
   Pristine,
   createDatabase as createDatabaseFromBarrel,
+  detect,
 } from '../../src/index.js';
 
 const makeEmbedderStub = (): Embedder => ({
@@ -48,6 +49,7 @@ describe('public-API smoke — source chunk API', () => {
     expect(ConfigError).toBeTypeOf('function');
     expect(EmbedderError).toBeTypeOf('function');
     expect(SensitiveNotFoundError).toBeTypeOf('function');
+    expect(detect).toBeTypeOf('function');
 
     expect(Object.keys(PristineBarrel).sort()).toEqual([
       'AppError',
@@ -61,6 +63,7 @@ describe('public-API smoke — source chunk API', () => {
       'SourceChunkStore',
       'buildSourceChunkVectorDdl',
       'createDatabase',
+      'detect',
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
     ]);

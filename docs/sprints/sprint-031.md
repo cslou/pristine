@@ -1,6 +1,6 @@
 # Pristine — Sprint 031
 **Date:** 2026-05-18 – TBD
-**Goal:** Add a Pi-dev reference privacy input extension that composes the Sprint 030 primitives with a pluggable/subagent classifier so raw user-pasted secrets are classified from sanitized packets and redacted before they reach Pi model context or session history.
+**Goal:** Add a Pi-dev reference privacy input extension that composes Sprint 030's `detect`, `classify`, and `redact` primitives with a pluggable/subagent classifier callback so raw user-pasted secrets are classified from sanitized inputs and redacted before they reach Pi model context or session history.
 **Status:** 🟡 Planning
 
 ---
@@ -10,19 +10,19 @@
 ### Project Context
 - **Repo:** `/Users/lou/projects/pristine`
 - **Tech stack:** TypeScript ESM SDK, Vitest, SQLite/better-sqlite3 privacy vault, Pi extension examples under `examples/pi-dev/`, Pi extension APIs from `@mariozechner/pi-coding-agent`
-- **Current state:** Sprint 030 is planned to add core Detector / Classifier / Redactor primitives: candidate detection, sanitized classifier packets, classifier verdict contracts, and confirmed-span vault redaction. Existing Pi-dev examples cover JSONL memory indexing/search but no privacy input hook. Pi supports an `input` extension event that can transform user text before skill/template expansion and before agent/model context.
+- **Current state:** Sprint 030 is planned to add core `detect`, `classify`, and `redact` primitives: candidate detection, sanitized classifier callback inputs, normalized classifier decisions, and vault-backed redaction for confirmed spans. Existing Pi-dev examples cover JSONL memory indexing/search but no privacy input hook. Pi supports an `input` extension event that can transform user text before skill/template expansion and before agent/model context.
 - **Implementation spec:** `docs/specs/implementation-spec-004.md` — Sprint 030 updates this spec with the primitive split; this sprint extends the Pi-dev reference section with an input-only privacy composition.
 
 ### Sprint-Wide Context
 
 - **Sprint type:** Feature
-- **Shared context:** This sprint depends on Sprint 030's primitives being merged before implementation starts. The Pi-dev reference should demonstrate one composition, not force a universal policy: detector and packet builder are SDK primitives, classifier/labeler is a harness adapter, policy is extension-owned, and redaction/vault storage remains local. The v1 Pi reference protects user input only.
-- **Non-goals:** No tool-call reveal hook, no tool-result scrub hook, no Claude Code or Codex integration, no background session scanning, no hosted Pristine classifier, no raw candidate values in subagent prompts, no model-provider-specific production routing beyond a reference subagent/adapter, and no replacement of the existing deterministic `secureAndRedact` convenience API.
+- **Shared context:** This sprint depends on Sprint 030's primitives being merged before implementation starts. The Pi-dev reference should demonstrate one composition, not force a universal policy: `detect` and `classify` are SDK primitives, the classifier/labeler callback is a harness adapter, policy is extension-owned, and `redact` keeps redaction/vault storage local. The v1 Pi reference protects user input only.
+- **Non-goals:** No tool-call reveal hook, no tool-result scrub hook, no Claude Code or Codex integration, no background session scanning, no hosted Pristine classifier, no raw candidate values in subagent prompts, no model-provider-specific production routing beyond a reference subagent/adapter, no `secureAndRedact` public-flow dependency, and no composed replacement convenience wrapper for `detect` → `classify` → `redact`.
 
 ### Affected Flows
 
 - **Existing flows affected:** Pi-dev example artifact map/install docs, examples/pi-dev unit tests, public Pi-dev docs, privacy primitive API usage, package/public API smoke tests.
-- **New flows introduced:** Pi user-input privacy flow: Pi `input` hook receives raw user text → SDK detector finds candidates locally → SDK packet builder creates sanitized classifier request → Pi classifier adapter/subagent returns verdict/type/label → extension policy handles confirmed/uncertain/failure states → confirmed spans are secured locally and redacted text is passed to Pi.
+- **New flows introduced:** Pi user-input privacy flow: Pi `input` hook receives raw user text → SDK `detect` finds candidates locally → SDK `classify` creates sanitized classifier input and calls the Pi classifier adapter/subagent → extension policy handles confirmed/uncertain/failure states → SDK `redact` secures confirmed spans locally and passes redacted text to Pi.
 
 ### Verification Strategy
 
@@ -62,21 +62,21 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] `examples/pi-dev/extensions/privacy-input/` exists with `index.ts`, `package.json`, README, and internal `lib/` modules matching existing Pi-dev example conventions.
   - [ ] The extension registers a Pi `input` handler and skips processing for `event.source === "extension"` to avoid recursion.
   - [ ] The extension delegates behavior to a testable runtime object so unit tests can invoke input handling without launching Pi.
-  - [ ] The runtime accepts injected detector, packet builder, classifier adapter, redactor, policy, user ID, and notification dependencies for tests and host-managed lifecycles.
-  - [ ] No candidates returns `{ action: "continue" }` and does not call classifier or redactor dependencies.
+  - [ ] The runtime accepts injected `detect`, `classify`/classifier adapter, `redact`, policy, user ID, and notification dependencies for tests and host-managed lifecycles.
+  - [ ] No candidates returns `{ action: "continue" }` and does not call `classify` or `redact` dependencies.
 - **Functional verification:**
   - [ ] Add `tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: extension registration wires exactly one `input` handler and delegates to the runtime.
   - [ ] Add runtime unit tests for extension-injected messages and no-candidate user messages; pass condition: injected messages continue unchanged and no-candidate input continues without classifier/redactor calls.
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: new scaffold/runtime tests pass.
+  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: new scaffold/runtime tests pass.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/install-layout.test.ts tests/examples/pi-dev/search-memory-tool.test.ts`; pass condition: existing Pi-dev extension discovery/install expectations and recall tool wrappers remain green.
-  - [ ] Run `npm run lint`; pass condition: new Pi-dev extension code has no lint errors or debug logging.
+  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts tests/examples/pi-dev/search-memory-tool.test.ts`; pass condition: existing Pi-dev extension discovery/install expectations and recall tool wrappers remain green.
+  - [ ] Run `pnpm run lint`; pass condition: new Pi-dev extension code has no lint errors or debug logging.
 - **Manual-only verification:** N/A — extension registration and runtime boundaries are covered by unit tests.
 - **Planned commits:**
   1. `feat: scaffold pi privacy input extension` — add extension directory, runtime shell, package metadata, README, and focused tests.
 - **Technical notes:** Follow the existing `jsonl-index` and `search-memory` example pattern: copied extension directories should be self-contained and should not rely on project-private test fixtures at runtime.
 
-#### Story 2: Compose detector, classifier packets, policy, and confirmed-span redaction in the input runtime
+#### Story 2: Compose `detect`, `classify`, policy, and `redact` in the input runtime
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -92,25 +92,25 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi user, **I want** confirmed input secrets redacted before my message reaches the model, **so that** I can paste sensitive values into Pi without storing or sending those raw values in model context.
 - **Dependencies:** Story 1; Sprint 030 merged
 - **Acceptance criteria:**
-  - [ ] The runtime composes Sprint 030 primitives in order: detect candidates → build sanitized classifier request → classify candidates → apply extension policy → secure confirmed spans → return transformed redacted text.
-  - [ ] Classifier verdicts with `verdict: "secret"` produce confirmed spans using classifier-provided type and label, then call the confirmed-span redactor with original text plus spans.
+  - [ ] The runtime composes Sprint 030 primitives in order: `detect(text)` → `classify(text, candidates, classifier)` with sanitized callback input → apply extension policy → `redact(text, confirmed, userId)` → return transformed redacted text.
+  - [ ] Classifier verdicts with `verdict: "secret"` produce confirmed spans using classifier-provided type and label, then call `redact` with original text plus spans.
   - [ ] `verdict: "not_secret"` candidates are not redacted when no other confirmed candidates overlap the same span.
   - [ ] Successful redaction returns `{ action: "transform", text: redactedText }` and the transformed text contains Pristine `[SENSITIVE:<type>:<id>]` placeholders but not the raw secret.
   - [ ] The runtime records safe details for rendering/logging that include candidate IDs, verdicts, types, labels, and placeholder IDs, but no raw candidate values.
 - **Functional verification:**
-  - [ ] Add runtime composition tests with fake detector/packet builder/classifier/redactor; pass condition: dependency calls occur in the expected order and receive original text only where local redaction requires it.
-  - [ ] Add a secret-input transform test using the real Sprint 030 detector/packet builder/redactor with a fake classifier; pass condition: raw secret is absent from transformed text, placeholder is present, and reveal restores the original value for the same user.
+  - [ ] Add runtime composition tests with fake `detect`/`classify`/`redact` dependencies and a fake classifier adapter; pass condition: dependency calls occur in the expected order and receive original text only where local detection/redaction requires it.
+  - [ ] Add a secret-input transform test using the real Sprint 030 `detect`, `classify`, and `redact` primitives with a fake classifier callback; pass condition: raw secret is absent from transformed text, placeholder is present, and reveal restores the original value for the same user.
   - [ ] Add a mixed verdict test; pass condition: `secret` verdict spans are redacted and `not_secret` spans remain unchanged.
   - [ ] Add a confirmed-secret safe-details leak test; pass condition: emitted runtime details include expected candidate IDs, verdicts, types, labels, and placeholder IDs, and serialized details do not contain raw candidate values.
 - **Regression verification:**
-  - [ ] Run `npm run test:integration -- tests/integration/privacy.test.ts`; pass condition: existing core `secureAndRedact` / `reveal` / `scrubOutput` behavior remains green.
-  - [ ] Run `npm run test:unit -- tests/client.test.ts tests/privacy/secure-and-redact.test.ts`; pass condition: public privacy client behavior and existing high-level redaction behavior remain green.
+  - [ ] Run `pnpm run test:integration -- tests/integration/privacy.test.ts`; pass condition: existing core `reveal`, `scrubOutput`, vault lifecycle, and sensitive CRUD behavior remains green.
+  - [ ] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public privacy client behavior, scrub behavior, and sensitive CRUD behavior remain green.
 - **Manual-only verification:** N/A — runtime composition and vault round-trip are covered by tests.
 - **Planned commits:**
-  1. `feat: compose pi input privacy redaction` — wire detector/packet/classifier/policy/redactor flow and add runtime/vault round-trip tests.
+  1. `feat: compose pi input privacy redaction` — wire `detect`/`classify`/classifier callback/policy/`redact` flow and add runtime/vault round-trip tests.
 - **Technical notes:** The extension should transform only the user input text; tool-call reveal and tool-result scrubbing are intentionally deferred to a later sprint.
 
-#### Story 3: Add reference subagent classifier and labeler adapter
+#### Story 3: Add reference subagent classifier callback and labeler adapter
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Follows sprint template
   - [x] Acceptance criteria are specific and testable
@@ -123,24 +123,25 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Planning review:**
   - Findings: P2 from sprint-doc-reviewer: prompt leak tests did not enumerate all risky fields named in the leak-prevention AC.
   - Resolution: Expanded prompt leak verification to require raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, and seed phrase words.
-- **As a** Pi extension author, **I want** a reference classifier/labeler adapter that consumes sanitized packets, **so that** I can see how to use Pi's harness LLM/subagent path without sending raw candidate values to it.
+- **As a** Pi extension author, **I want** a reference classifier/labeler adapter that consumes Sprint 030 `classify` sanitized callback inputs, **so that** I can see how to use Pi's harness LLM/subagent path without sending raw candidate values to it.
 - **Dependencies:** Story 1, Story 2; Sprint 030 merged
 - **Acceptance criteria:**
-  - [ ] A reference classifier adapter builds a classifier task/prompt from sanitized packet requests and never includes raw candidate strings, arbitrary raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
-  - [ ] The adapter expects structured JSON results containing candidate ID, verdict, sensitivity type, optional label, confidence, and rationale, and validates the response before policy uses it.
+  - [ ] A reference classifier adapter builds a classifier task/prompt from sanitized `classify` callback requests and never includes raw candidate strings, arbitrary raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
+  - [ ] The adapter returns structured classifier decisions containing candidate ID, verdict, sensitivity type, optional label, confidence, and rationale, and validates/parses the response before `classify` normalizes the decisions for policy use.
   - [ ] The reference supports `secret`, `not_secret`, and `uncertain` verdicts and preserves labels for `secret` verdicts when supplied.
+  - [ ] Classifier-provided labels are validated/normalized for Sprint 030 `redact` alias storage via the PR #240 sensitive alias path; invalid or unsafe labels are rejected with structured classifier errors or replaced by a documented safe fallback before policy/redaction uses them.
   - [ ] The adapter is replaceable: tests and README show how hosts can use a fake/local/manual classifier instead of the reference subagent classifier.
   - [ ] Malformed, missing, duplicate, or unknown candidate IDs in classifier output are reported as classifier failures rather than silently passing through.
 - **Functional verification:**
   - [ ] Add prompt-construction leak tests for realistic raw secrets, arbitrary raw prefixes/suffixes, JWT payload values, credential URL passwords, signed URL query secret values, and seed phrase words; pass condition: serialized prompts/tasks contain placeholders and metadata but none of those raw values.
   - [ ] Add response parser tests; pass condition: valid JSON verdicts parse to classifier results and malformed/duplicate/unknown-candidate outputs fail with structured classifier errors.
-  - [ ] Add label preservation tests; pass condition: `secret` verdict labels from classifier output are passed to the runtime confirmed-span flow.
+  - [ ] Add label preservation and validation tests; pass condition: `secret` verdict labels from classifier output are passed through `classify` to the runtime `redact` alias flow, invalid/unsafe labels produce the documented structured failure or fallback behavior, and serialized aliases/details do not contain raw secret values.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts`; pass condition: existing Pi-dev skill/tool examples remain green.
-  - [ ] Run `npm run typecheck`; pass condition: classifier adapter types compile cleanly with strict TypeScript.
+  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts`; pass condition: existing Pi-dev skill/tool examples remain green.
+  - [ ] Run `pnpm run typecheck`; pass condition: classifier adapter types compile cleanly with strict TypeScript.
 - **Manual-only verification:** N/A — reference prompt construction and parser behavior are covered by unit tests; real Pi smoke is planned in Story 5.
 - **Planned commits:**
-  1. `feat: add pi secret classifier adapter` — add reference prompt/task builder, structured result parser, adapter docs, and leak-focused tests.
+  1. `feat: add pi secret classifier adapter` — add reference prompt/task builder for `classify` callbacks, structured result parser, adapter docs, and leak-focused tests.
 - **Technical notes:** If direct subagent spawning is too brittle for the copied extension shape, keep the runtime adapter interface stable and provide a command/subprocess-backed reference implementation plus fake classifier tests. Do not add Anthropic/OpenAI SDK dependencies.
 
 #### Story 4: Implement policy and failure handling for uncertain or failed classification
@@ -160,17 +161,17 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Dependencies:** Story 2, Story 3
 - **Acceptance criteria:**
   - [ ] The extension policy supports configurable `uncertain` handling with explicit modes `block`, `redact`, and `allow`, and the documented default is `block`.
-  - [ ] Classifier timeout, thrown error, malformed response, unknown candidate ID, or duplicate candidate ID causes the input turn to be blocked and the user notified with a safe message that contains no raw candidate values.
+  - [ ] Classifier timeout, thrown error, malformed response, unknown candidate ID, or duplicate candidate ID causes the input turn to return `{ action: "handled" }` and sends exactly one safe notification that contains no raw candidate values.
   - [ ] `uncertainPolicy: "block"` blocks the turn and notifies the user when any candidate remains uncertain.
   - [ ] `uncertainPolicy: "redact"` redacts uncertain candidates using detector-suggested type/fallback label without sending raw values to the classifier or notification.
-  - [ ] `uncertainPolicy: "allow"` passes uncertain candidates through only when explicitly configured, and safe details record that policy decision without raw values.
+  - [ ] `uncertainPolicy: "allow"` passes uncertain candidates through only when explicitly configured, safe details record that policy decision without raw values, and docs/config warnings state this unsafe opt-in mode is excluded from the sprint's default no-raw-secret model/session-history guarantee.
 - **Functional verification:**
-  - [ ] Add failure-mode tests for classifier throw, timeout, malformed JSON, unknown candidate ID, and duplicate candidate ID; pass condition: runtime returns `{ action: "handled" }` or the chosen block representation, sends a safe notification, and does not transform raw text into model context.
-  - [ ] Add tests for all uncertain policy modes; pass condition: `block`, `redact`, and `allow` produce the documented behavior and safe details contain no raw candidate values.
+  - [ ] Add failure-mode tests for classifier throw, timeout, malformed JSON, unknown candidate ID, and duplicate candidate ID; pass condition: runtime returns exactly `{ action: "handled" }`, sends exactly one safe notification, and does not transform raw text into model context.
+  - [ ] Add tests for all uncertain policy modes; pass condition: `block`, `redact`, and `allow` produce the documented behavior, safe details contain no raw candidate values, and `allow` assertions/docs mark the raw-pass-through risk as explicit opt-in.
   - [ ] Add notification leak tests; pass condition: notification text and details do not contain raw candidate values.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts`; pass condition: core scrub/placeholder behavior remains green.
-  - [ ] Run `npm run lint`; pass condition: policy code has no lint errors or debug logging.
+  - [ ] Run `pnpm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts`; pass condition: core scrub/placeholder behavior remains green.
+  - [ ] Run `pnpm run lint`; pass condition: policy code has no lint errors or debug logging.
 - **Manual-only verification:** N/A — failure and policy behavior are covered by unit tests.
 - **Planned commits:**
   1. `feat: handle pi privacy classification failures` — add policy modes, failure handling, safe notifications, and leak tests.
@@ -198,14 +199,17 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [ ] `docs/specs/implementation-spec-004.md` is updated or amended so the Pi-dev reference flow clearly distinguishes Sprint 031's input-only v1 from future tool-call reveal and tool-result scrub hooks.
   - [ ] Documentation states that classifier prompts receive sanitized context and metadata only, never raw candidates.
   - [ ] A reproducible Pi smoke procedure is documented with explicit pass/fail conditions for a fake/test classifier mode and, where practical, a real subagent classifier mode.
+  - [ ] Smoke evidence includes a model-facing/session-history artifact or transcript proving the placeholder is present and the raw input secret is absent after the input hook runs.
 - **Functional verification:**
-  - [ ] Run `npm run docs:build`; pass condition: updated public docs build successfully.
+  - [ ] Run `pnpm run docs:build`; pass condition: updated public docs build successfully.
   - [ ] Run `rg "privacy-input|sanitized|raw candidate|uncertainPolicy|input hook|tool-call reveal" examples/pi-dev docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: docs mention the privacy-input extension, sanitized classifier prompts, policy modes, input hook behavior, and v1 limitations for tool-call reveal.
   - [ ] Run `rg "input-only|future tool-call|future tool-result|tool_call|tool_result" docs/specs/implementation-spec-004.md`; pass condition: the spec distinguishes Sprint 031's input-only v1 from future tool-call reveal and tool-result scrub work.
-  - [ ] Run the documented non-interactive smoke command or test harness for fake/test classifier mode; pass condition: a sample input containing a fake API key is transformed to a Pristine placeholder and the raw key is absent from the model-facing text.
+  - [ ] Run the documented non-interactive smoke command or test harness for fake/test classifier mode; pass condition: a sample input containing a fake API key is transformed to a Pristine placeholder and the raw key is absent from the model-facing text and recorded session-history/transcript artifact.
 - **Regression verification:**
-  - [ ] Run `npm run test:unit -- tests/examples/pi-dev`; pass condition: all Pi-dev example tests, including existing memory examples and new privacy-input tests, pass.
-  - [ ] Run `npm run test:smoke`; pass condition: package/public API smoke tests remain green after docs/example changes.
+  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev`; pass condition: all Pi-dev example tests, including existing memory examples and new privacy-input tests, pass.
+  - [ ] Run `pnpm run test:smoke`; pass condition: package/public API smoke tests remain green after docs/example changes.
+  - [ ] Run `pnpm run verify:public-api-types` and `rg "detect\(|classify\(|redact\(" examples/pi-dev docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: public type smoke and docs/examples use Sprint 030 primitive names.
+  - [ ] Run `rg "secureAndRedact" examples/pi-dev/extensions/privacy-input docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: no Pi privacy-input docs or public privacy docs reintroduce `secureAndRedact` as a callable public flow; any remaining mentions are limited to migration/non-use language.
 - **Manual-only verification:** If real Pi subagent smoke cannot be automated reliably, run `pi` from a copied reference repo with privacy-input enabled; pass condition: typing a sample fake key produces a safe block/transform result before the agent sees raw text, and document the log or transcript path in story evidence.
 - **Planned commits:**
   1. `docs: document pi privacy input reference` — update Pi-dev runbook, extension README, public docs, and smoke evidence.

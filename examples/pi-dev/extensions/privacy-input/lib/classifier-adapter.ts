@@ -29,6 +29,40 @@ const SAFE_LABEL = /^[A-Za-z0-9 _./:-]{1,80}$/;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const safeString = (value: unknown): string | undefined =>
+  typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(value) ? value : undefined;
+
+const safeSignalArray = (value: unknown): readonly string[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const safeValues = value.filter(
+    (item): item is string => typeof item === 'string' && /^[a-z0-9_:-]{1,80}$/.test(item),
+  );
+  return safeValues.length > 0 ? safeValues : undefined;
+};
+
+const sanitizeLocation = (
+  location: unknown,
+): { readonly line: number; readonly column: number } | undefined => {
+  if (!isRecord(location)) return undefined;
+  return typeof location.line === 'number' && typeof location.column === 'number'
+    ? { line: location.line, column: location.column }
+    : undefined;
+};
+
+const sanitizeHint = (hint: unknown): Record<string, unknown> | undefined => {
+  if (!isRecord(hint)) return undefined;
+  const sanitized = {
+    suggestedType: safeString(hint.suggestedType),
+    provider: safeString(hint.provider),
+    prefixFamily: safeString(hint.prefixFamily),
+    nearbyName: safeString(hint.nearbyName),
+    signals: safeSignalArray(hint.signals),
+    positiveSignals: safeSignalArray(hint.positiveSignals),
+    negativeSignals: safeSignalArray(hint.negativeSignals),
+  };
+  return Object.fromEntries(Object.entries(sanitized).filter((entry) => entry[1] !== undefined));
+};
+
 export const sanitizeClassifierLabel = (label: string | undefined): string | undefined => {
   if (label === undefined) return undefined;
   if (/\p{C}/u.test(label)) {
@@ -53,8 +87,8 @@ export const buildPrivacyInputClassifierTask = (
       ruleId: candidate.ruleId,
       sourceSpan: candidate.sourceSpan,
       valueLength: candidate.valueLength,
-      location: candidate.location,
-      hint: candidate.hint,
+      location: sanitizeLocation(candidate.location),
+      hint: sanitizeHint(candidate.hint),
     })),
   };
 
@@ -125,7 +159,10 @@ export const parsePrivacyInputClassifierResponse = (
       throw new PrivacyInputClassifierError('decision confidence must be between 0 and 1');
     }
 
-    const label = sanitizeClassifierLabel(typeof raw.label === 'string' ? raw.label : undefined);
+    if (raw.label !== undefined && typeof raw.label !== 'string') {
+      throw new PrivacyInputClassifierError('decision label must be a string');
+    }
+    const label = sanitizeClassifierLabel(raw.label);
     const rationale = typeof raw.rationale === 'string' ? raw.rationale : undefined;
     return {
       candidateId,

@@ -176,6 +176,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts` passed.
   - `pnpm run typecheck` passed.
   - `pnpm run lint` passed.
+  - Review-fix additions sanitize unknown hint/location metadata before prompt serialization, reject non-string labels, verify non-vacuous raw-value leak sentinels in unsafe request metadata, and cover adapter label flow through runtime redaction details.
+  - Review-fix reruns passed: `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts`, `pnpm run typecheck`, and `pnpm run lint`.
 
 #### Story 4: Implement policy and failure handling for uncertain or failed classification
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

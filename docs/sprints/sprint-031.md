@@ -151,23 +151,33 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi extension author, **I want** a reference classifier/labeler adapter that consumes Sprint 030 `classify` sanitized callback inputs with markers and hints, **so that** I can see how to use Pi's harness LLM/subagent path without sending raw candidate values to it.
 - **Dependencies:** Story 1, Story 2; Sprint 030 merged
 - **Acceptance criteria:**
-  - [ ] A reference classifier adapter builds a classifier task/prompt from sanitized `classify` callback requests containing `sanitizedContext`, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata, and never includes raw candidate strings, arbitrary raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
-  - [ ] The adapter returns structured classifier decisions containing candidate ID, verdict, sensitivity type, optional label, confidence, and rationale, and validates/parses the response before `classify` normalizes the decisions with `sourceSpan`s for policy use.
-  - [ ] The reference supports `secret`, `not_secret`, and `uncertain` verdicts and preserves labels for `secret` verdicts when supplied.
-  - [ ] Classifier-provided labels are validated/normalized for Sprint 030 `redact` alias storage via the PR #240 sensitive alias path; invalid or unsafe labels are rejected with structured classifier errors or replaced by a documented safe fallback before policy/redaction uses them.
-  - [ ] The adapter is replaceable: tests and README show how hosts can use a fake/local/manual classifier instead of the reference subagent classifier.
-  - [ ] Malformed, missing, duplicate, or unknown candidate IDs in classifier output are reported as classifier failures rather than silently passing through.
+  - [x] A reference classifier adapter builds a classifier task/prompt from sanitized `classify` callback requests containing `sanitizedContext`, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata, and never includes raw candidate strings, arbitrary raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
+  - [x] The adapter returns structured classifier decisions containing candidate ID, verdict, sensitivity type, optional label, confidence, and rationale, and validates/parses the response before `classify` normalizes the decisions with `sourceSpan`s for policy use.
+  - [x] The reference supports `secret`, `not_secret`, and `uncertain` verdicts and preserves labels for `secret` verdicts when supplied.
+  - [x] Classifier-provided labels are validated/normalized for Sprint 030 `redact` alias storage via the PR #240 sensitive alias path; invalid or unsafe labels are rejected with structured classifier errors or replaced by a documented safe fallback before policy/redaction uses them.
+  - [x] The adapter is replaceable: tests and README show how hosts can use a fake/local/manual classifier instead of the reference subagent classifier.
+  - [x] Malformed, missing, duplicate, or unknown candidate IDs in classifier output are reported as classifier failures rather than silently passing through.
 - **Functional verification:**
-  - [ ] Add prompt-construction leak tests for realistic raw secrets, arbitrary raw prefixes/suffixes, JWT payload values, credential URL passwords, signed URL query secret values, and seed phrase words; pass condition: serialized prompts/tasks contain `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata but none of those raw values.
-  - [ ] Add response parser tests; pass condition: valid JSON verdicts parse to classifier results and malformed/duplicate/unknown-candidate outputs fail with structured classifier errors before `classify` can normalize them.
-  - [ ] Add label preservation and validation tests; pass condition: `secret` verdict labels from classifier output are passed through `classify` decisions to the runtime `redact` alias flow, invalid/unsafe labels produce the documented structured failure or fallback behavior, and serialized aliases/details do not contain raw secret values.
+  - [x] Add prompt-construction leak tests for realistic raw secrets, arbitrary raw prefixes/suffixes, JWT payload values, credential URL passwords, signed URL query secret values, and seed phrase words; pass condition: serialized prompts/tasks contain `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata but none of those raw values.
+  - [x] Add response parser tests; pass condition: valid JSON verdicts parse to classifier results and malformed/duplicate/unknown-candidate outputs fail with structured classifier errors before `classify` can normalize them.
+  - [x] Add label preservation and validation tests; pass condition: `secret` verdict labels from classifier output are passed through `classify` decisions to the runtime `redact` alias flow, invalid/unsafe labels produce the documented structured failure or fallback behavior, and serialized aliases/details do not contain raw secret values.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts`; pass condition: existing Pi-dev skill/tool examples remain green.
-  - [ ] Run `pnpm run typecheck`; pass condition: classifier adapter types compile cleanly with strict TypeScript.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts`; pass condition: existing Pi-dev skill/tool examples remain green.
+  - [x] Run `pnpm run typecheck`; pass condition: classifier adapter types compile cleanly with strict TypeScript.
 - **Manual-only verification:** N/A — reference prompt construction and parser behavior are covered by unit tests; real Pi smoke is planned in Story 5.
 - **Planned commits:**
   1. `feat: add pi secret classifier adapter` — add reference prompt/task builder for `classify` callbacks with marker/hint inputs, structured result parser, adapter docs, and leak-focused tests.
 - **Technical notes:** If direct subagent spawning is too brittle for the copied extension shape, keep the runtime adapter interface stable and provide a command/subprocess-backed reference implementation plus fake classifier tests. Do not add Anthropic/OpenAI SDK dependencies.
+- **Implementation notes:**
+  - Added `lib/classifier-adapter.ts` with a sanitized task builder, response parser, safe-label validator, structured `PrivacyInputClassifierError`, and replaceable transport-backed callback factory.
+  - `tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts` covers prompt leak prevention for raw secrets/prefixes/JWT payload values/URL passwords/query secrets/seed words, parser rejection paths, label normalization/rejection, and fake transport replacement.
+  - `examples/pi-dev/extensions/privacy-input/README.md` documents the replaceable fake/local/manual classifier callback option and sanitized marker/hint task shape.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts` passed.
+  - `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts` passed.
+  - `pnpm run typecheck` passed.
+  - `pnpm run lint` passed.
+  - Review-fix additions sanitize unknown hint/location metadata before prompt serialization, reject non-string labels, verify non-vacuous raw-value leak sentinels in unsafe request metadata, and cover adapter label flow through runtime redaction details.
+  - Review-fix reruns passed: `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts`, `pnpm run typecheck`, and `pnpm run lint`.
 
 #### Story 4: Implement policy and failure handling for uncertain or failed classification
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

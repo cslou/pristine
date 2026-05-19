@@ -7,7 +7,7 @@ Pristine stores indexed chunks, snippets, embeddings, and source metadata; your 
 - No Pristine server required.
 - SQLite-backed local storage.
 - Local embedding configuration by default.
-- Privacy primitives for redact, reveal, and scrub flows.
+- Primitive-first privacy flow: `detect` → caller-owned `classify` policy → vault-backed `redact`, plus local reveal and scrub flows.
 - Source-pointer recall for inspecting authoritative context.
 
 ## Install
@@ -54,7 +54,8 @@ try {
 - `store(chunks, { projectId })` — store source-owned memory chunks.
 - `recall(query, { projectId, limit? })` — semantically search one project.
 - `forget(chunkIds, { projectId })` — delete stored chunks in one project.
-- `secureAndRedact(text, userId, classifier?)` — redact sensitive text and store encrypted originals locally.
+- `detect`, `classify`, `redact` — primitive-first privacy values for candidate detection, caller-owned classifier callbacks with sanitized marker context, and local vault-backed redaction.
+- `DetectPrimitive`, `ClassifyPrimitive`, `RedactPrimitive` — corresponding public privacy contracts.
 - `reveal(redactedText, userId)` — restore known placeholders locally.
 - `scrubOutput(text, allowlist?)` — remove sensitive/revealed values from output. The parameter is named `allowlist` for compatibility; its values are scrubbed.
 

@@ -3,8 +3,9 @@ import type Database from 'better-sqlite3';
 import type {
   DeleteSensitiveResult,
   ListSensitiveOptions,
+  RedactConfirmedSecret,
+  RedactResult,
   RevealResult,
-  SecureAndRedactResult,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
@@ -19,6 +20,7 @@ import { SourceChunkStore } from './memory/source-index/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
+import { redact as privacyRedact } from './privacy/redactor/index.js';
 import {
   deleteSensitive as privacyDeleteSensitive,
   getSensitive as privacyGetSensitive,
@@ -26,7 +28,6 @@ import {
   resolveSensitive as privacyResolveSensitive,
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
-  secureAndRedact as privacySecureAndRedact,
   updateSensitive as privacyUpdateSensitive,
 } from './privacy/index.js';
 import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
@@ -258,20 +259,6 @@ export class Pristine {
     return this.recall(query, options);
   }
 
-  public async secureAndRedact(
-    text: string,
-    userId: string,
-    classifier?: DeterministicClassifierConfig,
-  ): Promise<SecureAndRedactResult> {
-    return privacySecureAndRedact(text, {
-      vaultStore: this.vaultStore,
-      keyManager: this.keyManager,
-      kekManager: this.kekManager,
-      userId,
-      classifier: classifier ?? this.privacyClassifierConfig,
-    });
-  }
-
   public async listSensitive(
     userId: string,
     options?: ListSensitiveOptions,
@@ -322,6 +309,18 @@ export class Pristine {
       keyManager: this.keyManager,
       kekManager: this.kekManager,
       userId,
+    });
+  }
+
+  public async redact(
+    text: string,
+    confirmed: readonly RedactConfirmedSecret[],
+    userId: string,
+  ): Promise<RedactResult> {
+    return privacyRedact(text, confirmed, userId, {
+      vaultStore: this.vaultStore,
+      keyManager: this.keyManager,
+      kekManager: this.kekManager,
     });
   }
 

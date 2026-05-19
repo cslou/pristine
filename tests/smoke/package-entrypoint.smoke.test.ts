@@ -17,16 +17,23 @@ describe('package entrypoint smoke', () => {
       'SensitiveNotFoundError',
       'SourceChunkStore',
       'buildSourceChunkVectorDdl',
+      'classify',
       'createDatabase',
+      'detect',
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
+      'redact',
     ]);
     expect(pkg.Pristine).toBeTypeOf('function');
     expect(pkg).not.toHaveProperty('PristineLocal');
     expect(pkg.createDatabase).toBeTypeOf('function');
+    expect(pkg.classify).toBeTypeOf('function');
+    expect(pkg.detect).toBeTypeOf('function');
+    expect(pkg.redact).toBeTypeOf('function');
     expect(pkg.SourceChunkStore).toBeTypeOf('function');
     expect(pkg.initSourceChunkTables).toBeTypeOf('function');
     expect(pkg.normalizeSourceChunkInput).toBeTypeOf('function');
+    expect(pkg).not.toHaveProperty('secureAndRedact');
     expect(pkg).not.toHaveProperty('storeAsync');
     expect(pkg).not.toHaveProperty('getConversation');
     expect(pkg).not.toHaveProperty('IngestQueueError');
@@ -52,6 +59,8 @@ describe('package entrypoint smoke', () => {
       expect(client.forget(['built-1'], { projectId: 'built-smoke' })).toEqual({
         deletedCount: 1,
       });
+      expect(client.redact).toBeTypeOf('function');
+      expect('secureAndRedact' in client).toBe(false);
       expect('storeAsync' in client).toBe(false);
       expect('getConversation' in client).toBe(false);
     } finally {

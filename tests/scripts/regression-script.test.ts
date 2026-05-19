@@ -30,11 +30,11 @@ const createStubBin = (): {
   mkdirSync(binDir);
 
   writeFileSync(
-    join(binDir, 'npm'),
+    join(binDir, 'pnpm'),
     `#!/usr/bin/env bash
 set -euo pipefail
-echo "npm|$*|SKIP=\${SKIP_SLOW_TESTS:-}" >> "${logPath}"
-if [[ "\${FAIL_NPM_MATCH:-}" != "" && "$*" == *"\${FAIL_NPM_MATCH}"* ]]; then
+echo "pnpm|$*|SKIP=\${SKIP_SLOW_TESTS:-}" >> "${logPath}"
+if [[ "\${FAIL_PNPM_MATCH:-}" != "" && "$*" == *"\${FAIL_PNPM_MATCH}"* ]]; then
   exit 42
 fi
 exit 0
@@ -56,7 +56,7 @@ echo "node|$*|SKIP=\${SKIP_SLOW_TESTS:-}" >> "${logPath}"
 exit 0
 `,
   );
-  chmodSync(join(binDir, 'npm'), 0o755);
+  chmodSync(join(binDir, 'pnpm'), 0o755);
   chmodSync(join(binDir, 'npx'), 0o755);
   chmodSync(join(binDir, 'node'), 0o755);
 
@@ -69,19 +69,15 @@ exit 0
 
 const runWithStubs = (
   args: readonly string[],
-  options: { readonly script?: string; readonly failNpmMatch?: string } = {},
+  options: { readonly script?: string; readonly failPnpmMatch?: string } = {},
 ): RunResult => {
   const stub = createStubBin();
   try {
     const env = {
       ...process.env,
       PATH: `${stub.binDir}:${process.env.PATH ?? ''}`,
-      // The regression script itself controls SKIP_SLOW_TESTS for the
-      // deterministic integration command. Clear any parent value so these
-      // contract tests verify tier-local environment assignment rather than
-      // the environment of the outer Vitest process.
       SKIP_SLOW_TESTS: '',
-      ...(options.failNpmMatch === undefined ? {} : { FAIL_NPM_MATCH: options.failNpmMatch }),
+      ...(options.failPnpmMatch === undefined ? {} : { FAIL_PNPM_MATCH: options.failPnpmMatch }),
     };
     const result = spawnSync(options.script ?? regressionScript, args, {
       cwd: repoRoot,
@@ -111,36 +107,36 @@ describe('regression.sh tier contract', () => {
 
   it('maps quick, standard, deep, and full tiers to the expected commands', () => {
     expect(runWithStubs(['--tier=quick']).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
     ]);
 
     expect(runWithStubs(['--tier=standard']).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
-      'npm|run test:unit|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
+      'pnpm|run test:unit|SKIP=',
     ]);
 
     expect(runWithStubs(['--tier=deep']).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
-      'npm|run test:unit|SKIP=',
-      'npm|run build|SKIP=',
-      'npm|run test:smoke|SKIP=',
-      'npm|run test:integration|SKIP=1',
-      'npm|run test:e2e|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
+      'pnpm|run test:unit|SKIP=',
+      'pnpm|run build|SKIP=',
+      'pnpm|run test:smoke|SKIP=',
+      'pnpm|run test:integration|SKIP=1',
+      'pnpm|run test:e2e|SKIP=',
     ]);
 
     expect(runWithStubs(['--tier=full']).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
-      'npm|run test:unit|SKIP=',
-      'npm|run build|SKIP=',
-      'npm|run test:smoke|SKIP=',
-      'npm|run test:integration|SKIP=1',
-      'npm|run test:e2e|SKIP=',
-      'npm|run test:integration|SKIP=',
-      'npm|run test:smoke:local-model|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
+      'pnpm|run test:unit|SKIP=',
+      'pnpm|run build|SKIP=',
+      'pnpm|run test:smoke|SKIP=',
+      'pnpm|run test:integration|SKIP=1',
+      'pnpm|run test:e2e|SKIP=',
+      'pnpm|run test:integration|SKIP=',
+      'pnpm|run test:smoke:local-model|SKIP=',
     ]);
   });
 
@@ -155,7 +151,7 @@ describe('regression.sh tier contract', () => {
   });
 
   it('propagates command failures through a red regression report', () => {
-    const result = runWithStubs(['--tier=standard'], { failNpmMatch: 'run typecheck' });
+    const result = runWithStubs(['--tier=standard'], { failPnpmMatch: 'run typecheck' });
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('Regression status: red');
@@ -164,22 +160,22 @@ describe('regression.sh tier contract', () => {
 
   it('pre-* wrappers delegate to the configured regression tiers', () => {
     expect(runWithStubs([], { script: preCommitScript }).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
     ]);
     expect(runWithStubs([], { script: prePushScript }).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
-      'npm|run test:unit|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
+      'pnpm|run test:unit|SKIP=',
     ]);
     expect(runWithStubs([], { script: preMergeScript }).log).toEqual([
-      'npm|run lint|SKIP=',
-      'npm|run typecheck|SKIP=',
-      'npm|run test:unit|SKIP=',
-      'npm|run build|SKIP=',
-      'npm|run test:smoke|SKIP=',
-      'npm|run test:integration|SKIP=1',
-      'npm|run test:e2e|SKIP=',
+      'pnpm|run lint|SKIP=',
+      'pnpm|run typecheck|SKIP=',
+      'pnpm|run test:unit|SKIP=',
+      'pnpm|run build|SKIP=',
+      'pnpm|run test:smoke|SKIP=',
+      'pnpm|run test:integration|SKIP=1',
+      'pnpm|run test:e2e|SKIP=',
     ]);
   });
 });

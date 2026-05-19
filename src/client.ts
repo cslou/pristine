@@ -1,6 +1,15 @@
 import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
-import type { RevealResult, SecureAndRedactResult, SourceChunkInput } from './core/types.js';
+import type {
+  DeleteSensitiveResult,
+  ListSensitiveOptions,
+  RevealResult,
+  SecureAndRedactResult,
+  SensitiveRef,
+  SensitiveSummary,
+  SourceChunkInput,
+  UpdateSensitiveInput,
+} from './core/types.js';
 import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
 import { InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
@@ -11,9 +20,14 @@ import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
 import {
+  deleteSensitive as privacyDeleteSensitive,
+  getSensitive as privacyGetSensitive,
+  listSensitive as privacyListSensitive,
+  resolveSensitive as privacyResolveSensitive,
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
   secureAndRedact as privacySecureAndRedact,
+  updateSensitive as privacyUpdateSensitive,
 } from './privacy/index.js';
 import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
@@ -255,6 +269,59 @@ export class Pristine {
       kekManager: this.kekManager,
       userId,
       classifier: classifier ?? this.privacyClassifierConfig,
+    });
+  }
+
+  public async listSensitive(
+    userId: string,
+    options?: ListSensitiveOptions,
+  ): Promise<readonly SensitiveSummary[]> {
+    return privacyListSensitive(
+      {
+        vaultStore: this.vaultStore,
+        userId,
+      },
+      options,
+    );
+  }
+
+  public async getSensitive(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+  ): Promise<SensitiveSummary | null> {
+    return privacyGetSensitive(sensitiveRef, {
+      vaultStore: this.vaultStore,
+      userId,
+    });
+  }
+
+  public async updateSensitive(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+    input: UpdateSensitiveInput,
+  ): Promise<SensitiveSummary> {
+    return privacyUpdateSensitive(sensitiveRef, input, {
+      vaultStore: this.vaultStore,
+      userId,
+    });
+  }
+
+  public async deleteSensitive(
+    userId: string,
+    sensitiveRefs: readonly SensitiveRef[],
+  ): Promise<DeleteSensitiveResult> {
+    return privacyDeleteSensitive(sensitiveRefs, {
+      vaultStore: this.vaultStore,
+      userId,
+    });
+  }
+
+  public async resolveSensitive(userId: string, sensitiveRef: SensitiveRef): Promise<string> {
+    return privacyResolveSensitive(sensitiveRef, {
+      vaultStore: this.vaultStore,
+      keyManager: this.keyManager,
+      kekManager: this.kekManager,
+      userId,
     });
   }
 

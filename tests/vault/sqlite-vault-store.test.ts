@@ -87,6 +87,104 @@ describe('SqliteVaultStore', () => {
     expect(Buffer.isBuffer(entry.iv)).toBe(true);
     expect(Buffer.isBuffer(entry.authTag)).toBe(true);
   });
+
+  it('lists safe summaries without leaking secret-derived labels', async () => {
+    const results = await store.listEntries('user-1');
+
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sensitiveRef: 'ph-1', label: 'email_address-ph1' }),
+        expect.objectContaining({ sensitiveRef: 'ph-2', label: 'phone_number-ph2' }),
+      ]),
+    );
+    expect(results[0]!.alias).toBeUndefined();
+  });
+
+  it('gets and updates one safe summary by exact ref', async () => {
+    const before = await store.getEntry('user-1', 'ph-1');
+    expect(before?.label).toBe('email_address-ph1');
+    expect(before?.alias).toBeUndefined();
+
+    const updated = await store.updateEntry('user-1', 'ph-1', { alias: 'primary email secret' });
+    expect(updated.alias).toBe('primary email secret');
+    expect(updated.sensitiveRef).toBe('ph-1');
+
+    const after = await store.getEntry('user-1', 'ph-1');
+    expect(after?.alias).toBe('primary email secret');
+  });
+
+  it('filters listed summaries and applies a default bound', async () => {
+    const localDb = new Database(':memory:');
+    const localStore = new SqliteVaultStore(localDb);
+    try {
+      const entries = Array.from({ length: 105 }, (_, index) =>
+        makeEntry(
+          `filter-${index.toString().padStart(3, '0')}`,
+          index % 2 === 0 ? 'email_address' : 'phone_number',
+        ),
+      );
+      await localStore.addEntries(entries);
+
+      await expect(localStore.listEntries('user-1')).resolves.toHaveLength(100);
+      await expect(localStore.listEntries('user-1', { limit: 3 })).resolves.toHaveLength(3);
+
+      const emailEntries = await localStore.listEntries('user-1', {
+        sensitiveType: 'email_address',
+        limit: 100,
+      });
+      expect(emailEntries).toHaveLength(53);
+      expect(emailEntries.every((entry) => entry.sensitiveType === 'email_address')).toBe(true);
+
+      await expect(
+        localStore.listEntries('user-1', {
+          createdFrom: '2000-01-01 00:00:00',
+          createdTo: '2999-01-01 00:00:00',
+          limit: 100,
+        }),
+      ).resolves.toHaveLength(100);
+      await expect(
+        localStore.listEntries('user-1', {
+          createdFrom: '2999-01-01 00:00:00',
+          limit: 100,
+        }),
+      ).resolves.toHaveLength(0);
+    } finally {
+      localDb.close();
+    }
+  });
+
+  it('deletes entries by exact refs and reports missing refs', async () => {
+    const result = await store.deleteEntries('user-1', ['ph-2', 'missing-ref']);
+
+    expect(result.deletedCount).toBe(1);
+    expect(result.missingSensitiveRefs).toEqual(['missing-ref']);
+    await expect(store.getEntry('user-1', 'ph-2')).resolves.toBeNull();
+  });
+
+  it('deletes alias metadata with the vault entry', async () => {
+    const localDb = new Database(':memory:');
+    const localStore = new SqliteVaultStore(localDb);
+    try {
+      await localStore.addEntries([makeEntry('metadata-delete')]);
+      await localStore.updateEntry('user-1', 'metadata-delete', { alias: 'visible metadata' });
+
+      expect(
+        localDb
+          .prepare('SELECT COUNT(*) AS count FROM vault_entry_metadata WHERE placeholder_id = ?')
+          .get('metadata-delete') as { count: number },
+      ).toEqual({ count: 1 });
+
+      await localStore.deleteEntries('user-1', ['metadata-delete']);
+
+      expect(
+        localDb
+          .prepare('SELECT COUNT(*) AS count FROM vault_entry_metadata WHERE placeholder_id = ?')
+          .get('metadata-delete') as { count: number },
+      ).toEqual({ count: 0 });
+    } finally {
+      localDb.close();
+    }
+  });
 });
 
 describe('SqlitePublicKeyStore', () => {

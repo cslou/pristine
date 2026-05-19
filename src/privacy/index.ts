@@ -12,8 +12,18 @@ import {
 } from './classifier/deterministic/index.js';
 import type { KekManager } from './kek/kek-manager.js';
 import { unwrapDekWithKek } from './kek/kek-manager.js';
-import type { RevealResult, SecureAndRedactResult } from '../core/types.js';
+import type {
+  DeleteSensitiveResult,
+  ListSensitiveOptions,
+  RevealResult,
+  SecureAndRedactResult,
+  SensitiveRef,
+  SensitiveSummary,
+  UpdateSensitiveInput,
+  VaultEntry,
+} from '../core/types.js';
 import { scrubStructuredSensitivePatterns } from './safety-scan.js';
+import { InvalidArgumentError, SensitiveNotFoundError } from '../core/errors.js';
 
 export interface SecureAndRedactConfig {
   readonly vaultStore: VaultStore;
@@ -28,6 +38,11 @@ export interface RevealConfig {
   readonly vaultStore: VaultStore;
   readonly keyManager: KeyManager;
   readonly kekManager: KekManager;
+  readonly userId: string;
+}
+
+export interface SensitiveConfig {
+  readonly vaultStore: VaultStore;
   readonly userId: string;
 }
 
@@ -74,6 +89,58 @@ const uniqueStrings = (values: readonly string[]): readonly string[] => {
   }
 
   return result;
+};
+
+const assertNonEmptyUserId = (userId: string, operation: string): void => {
+  if (userId.trim().length === 0) {
+    throw new InvalidArgumentError(`${operation}: userId must be a non-empty string`);
+  }
+};
+
+const assertNonEmptySensitiveRef = (sensitiveRef: SensitiveRef, operation: string): void => {
+  if (sensitiveRef.trim().length === 0) {
+    throw new InvalidArgumentError(`${operation}: sensitiveRef must be a non-empty string`);
+  }
+};
+
+const decryptEntries = async (
+  entries: readonly VaultEntry[],
+  config: RevealConfig,
+): Promise<Map<string, string>> => {
+  if (entries.length === 0) {
+    return new Map();
+  }
+
+  const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
+  const kek = await config.kekManager.getOrCreate(config.userId);
+  const approvedValues = new Map<string, string>();
+
+  for (const entry of entries) {
+    if (!entry.placeholderId) continue;
+
+    const envelope = toApprovedValue(entry);
+    const wrappedDekBuf = Buffer.from(decodeBase64Url(envelope.wrappedDek));
+
+    let dek: Buffer;
+    if (envelope.keyWrapping === 'aes-256-kw+rsa-oaep-256') {
+      dek = unwrapDekWithKek(wrappedDekBuf, kek);
+    } else {
+      dek = unwrapDek(wrappedDekBuf, privateKey);
+    }
+
+    const ciphertext = Buffer.from(decodeBase64Url(envelope.ciphertext));
+    const iv = Buffer.from(decodeBase64Url(envelope.iv));
+    const authTag = Buffer.from(decodeBase64Url(envelope.authTag));
+
+    const decipher = createDecipheriv('aes-256-gcm', dek, iv);
+    decipher.setAAD(Buffer.from(envelope.aad));
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+
+    approvedValues.set(entry.placeholderId, decrypted.toString('utf8'));
+  }
+
+  return approvedValues;
 };
 
 /**
@@ -154,34 +221,7 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
     return { text: redactedText, revealedValues: [] };
   }
 
-  const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
-  const kek = await config.kekManager.getOrCreate(config.userId);
-  const approvedValues = new Map<string, string>();
-
-  for (const entry of entries) {
-    if (!entry.placeholderId) continue;
-
-    const envelope = toApprovedValue(entry);
-    const wrappedDekBuf = Buffer.from(decodeBase64Url(envelope.wrappedDek));
-
-    let dek: Buffer;
-    if (envelope.keyWrapping === 'aes-256-kw+rsa-oaep-256') {
-      dek = unwrapDekWithKek(wrappedDekBuf, kek);
-    } else {
-      dek = unwrapDek(wrappedDekBuf, privateKey);
-    }
-
-    const ciphertext = Buffer.from(decodeBase64Url(envelope.ciphertext));
-    const iv = Buffer.from(decodeBase64Url(envelope.iv));
-    const authTag = Buffer.from(decodeBase64Url(envelope.authTag));
-
-    const decipher = createDecipheriv('aes-256-gcm', dek, iv);
-    decipher.setAAD(Buffer.from(envelope.aad));
-    decipher.setAuthTag(authTag);
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-
-    approvedValues.set(entry.placeholderId, decrypted.toString('utf8'));
-  }
+  const approvedValues = await decryptEntries(entries, config);
 
   const text = resolve(redactedText, { approvedValues }) as string;
   const revealedValues = uniqueStrings(
@@ -191,6 +231,88 @@ export async function reveal(redactedText: string, config: RevealConfig): Promis
   );
 
   return { text, revealedValues };
+}
+
+export async function listSensitive(
+  config: SensitiveConfig,
+  options?: ListSensitiveOptions,
+): Promise<readonly SensitiveSummary[]> {
+  assertNonEmptyUserId(config.userId, 'listSensitive');
+
+  if (
+    options !== undefined &&
+    (typeof options !== 'object' || options === null || Array.isArray(options))
+  ) {
+    throw new InvalidArgumentError('listSensitive: options must be an object');
+  }
+  if (options?.limit !== undefined && (!Number.isInteger(options.limit) || options.limit <= 0)) {
+    throw new InvalidArgumentError('listSensitive: options.limit must be a positive integer');
+  }
+
+  return config.vaultStore.listEntries(config.userId, options);
+}
+
+export async function getSensitive(
+  sensitiveRef: SensitiveRef,
+  config: SensitiveConfig,
+): Promise<SensitiveSummary | null> {
+  assertNonEmptyUserId(config.userId, 'getSensitive');
+  assertNonEmptySensitiveRef(sensitiveRef, 'getSensitive');
+  return config.vaultStore.getEntry(config.userId, sensitiveRef);
+}
+
+export async function updateSensitive(
+  sensitiveRef: SensitiveRef,
+  input: UpdateSensitiveInput,
+  config: SensitiveConfig,
+): Promise<SensitiveSummary> {
+  assertNonEmptyUserId(config.userId, 'updateSensitive');
+  assertNonEmptySensitiveRef(sensitiveRef, 'updateSensitive');
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidArgumentError('updateSensitive: input must be an object');
+  }
+  if (input.alias !== undefined && input.alias !== null && typeof input.alias !== 'string') {
+    throw new InvalidArgumentError(
+      'updateSensitive: input.alias must be a string, null, or undefined',
+    );
+  }
+  return config.vaultStore.updateEntry(config.userId, sensitiveRef, input);
+}
+
+export async function deleteSensitive(
+  sensitiveRefs: readonly SensitiveRef[],
+  config: SensitiveConfig,
+): Promise<DeleteSensitiveResult> {
+  assertNonEmptyUserId(config.userId, 'deleteSensitive');
+  if (!Array.isArray(sensitiveRefs)) {
+    throw new InvalidArgumentError('deleteSensitive: sensitiveRefs must be an array');
+  }
+  if (sensitiveRefs.some((value) => typeof value !== 'string')) {
+    throw new InvalidArgumentError('deleteSensitive: sensitiveRefs must contain only strings');
+  }
+  const normalizedRefs = sensitiveRefs.map((value) => value.trim());
+  if (normalizedRefs.some((value) => value.length === 0)) {
+    throw new InvalidArgumentError('deleteSensitive: sensitiveRefs must not contain empty strings');
+  }
+  return config.vaultStore.deleteEntries(config.userId, uniqueStrings(normalizedRefs));
+}
+
+export async function resolveSensitive(
+  sensitiveRef: SensitiveRef,
+  config: RevealConfig,
+): Promise<string> {
+  assertNonEmptyUserId(config.userId, 'resolveSensitive');
+  assertNonEmptySensitiveRef(sensitiveRef, 'resolveSensitive');
+
+  const entries = await config.vaultStore.getEntriesByPlaceholderIds(config.userId, [sensitiveRef]);
+  const approvedValues = await decryptEntries(entries, config);
+  const value = approvedValues.get(sensitiveRef);
+
+  if (value === undefined) {
+    throw new SensitiveNotFoundError(`Sensitive entry not found for ref ${sensitiveRef}`);
+  }
+
+  return value;
 }
 
 /**

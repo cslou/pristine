@@ -1,0 +1,8 @@
+{
+  "name": "pristine-pi-dev-privacy-input-reference",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@pristine/sdk": "0.0.1"
+  }
+}

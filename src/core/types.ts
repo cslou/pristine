@@ -241,8 +241,28 @@ export interface RedactConfirmedSecret {
   readonly label?: string;
 }
 
+export interface RedactVaultStore {
+  addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
+  updateEntry(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+    input: UpdateSensitiveInput,
+  ): Promise<SensitiveSummary>;
+}
+
+export interface RedactKeyManager {
+  getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus>;
+}
+
+export interface RedactKekManager {
+  getOrCreate(userId: string): Promise<Buffer>;
+}
+
 export interface RedactOptions {
   readonly sourceSurface?: SourceSurface;
+  readonly vaultStore: RedactVaultStore;
+  readonly keyManager: RedactKeyManager;
+  readonly kekManager: RedactKekManager;
 }
 
 export interface RedactResultRedaction {

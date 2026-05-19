@@ -1,6 +1,7 @@
 import {
   classify,
   detect,
+  redact,
   type BuiltInDetectCandidateKind,
   ClassifierCallback,
   ClassifierCallbackDecision,
@@ -37,10 +38,13 @@ import {
   RecalledMemory,
   RecallOptions,
   RedactConfirmedSecret,
+  RedactKeyManager,
+  RedactKekManager,
   RedactOptions,
   RedactPrimitive,
   RedactResult,
   RedactResultRedaction,
+  RedactVaultStore,
   RevealResult,
   SecretClassifierCallbackDecision,
   SecretClassifyDecision,
@@ -111,10 +115,13 @@ type CanonicalPublicRootTypes = [
   RecalledMemory,
   RecallOptions,
   RedactConfirmedSecret,
+  RedactKeyManager,
+  RedactKekManager,
   RedactOptions,
   RedactPrimitive,
   RedactResult,
   RedactResultRedaction,
+  RedactVaultStore,
   RevealResult,
   SecretClassifierCallbackDecision,
   SecretClassifyDecision,
@@ -154,6 +161,11 @@ const removedClientSecureAndRedact = pristineClient.secureAndRedact;
 
 const classifyResult = classify('no secrets here', [], async () => ({ decisions: [] }));
 const detectResult = detect('no secrets here');
+const redactResult = redact('no secrets here', [], 'user-1', {
+  vaultStore: {} as RedactVaultStore,
+  keyManager: {} as RedactKeyManager,
+  kekManager: {} as RedactKekManager,
+});
 const detectPrimitiveFixture: DetectPrimitive = (_text, options) =>
   options?.sourceSurface
     ? { sourceSurface: options.sourceSurface, candidates: [] }
@@ -173,6 +185,7 @@ const deprecatedCompatibilityTypesFixture: DeprecatedCompatibilityTypes | null =
 const removedSecureAndRedactResultFixture: RemovedSecureAndRedactResult | null = null;
 void classifyResult;
 void detectResult;
+void redactResult;
 void detectPrimitiveFixture;
 void classifyPrimitiveFixture;
 void redactPrimitiveFixture;

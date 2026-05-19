@@ -245,7 +245,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Dependencies:** Story 1, Story 2, Story 3, Story 4
 - **Acceptance criteria:**
   - [x] Public API docs describe short primitive names `detect`, `classify`, and `redact`, and clearly state that the SDK does not send raw candidates to any LLM or implement a hosted/bundled classifier.
-  - [x] `docs/specs/implementation-spec-004.md` is updated with a dedicated section or addendum for the new `detect` → `classify` → `redact` primitive flow and explicitly marks the old composed `secureAndRedact` flow as removed from the root public API, with any legacy internal implementation treated as non-user-facing.
+  - [x] Primitive-flow migration is documented in tracked public docs; local ignored `docs/specs/implementation-spec-004.md` was also updated with a dedicated `detect` → `classify` → `redact` addendum per repo policy that internal specs are not committed to the public repository.
   - [x] Privacy guide docs show a concise composition example: `detect(text)` → `classify(text, candidates, classifierCallback)` → harness policy maps secret decisions to confirmed `{ sourceSpan, type, label }` inputs → `redact(text, confirmed, userId)`.
   - [x] Docs explain that deterministic regex-only behavior can be implemented as a user/example classifier callback composition, not as a privileged `secureAndRedact` SDK wrapper.
   - [x] Docs warn that classifier policy, including `uncertain` handling, belongs to the harness/tool/extension/skill using the primitives.
@@ -265,7 +265,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Run `pnpm run test:smoke`; pass condition: package build and public API smoke tests remain green.
   - [x] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public client privacy APIs, scrub behavior, and sensitive CRUD behavior remain green after `secureAndRedact` migration.
 - **Verification evidence:**
-  - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-docs-build2-XXXX.log.PLZPnqhrQt`.
+  - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-reviewfix-docs-build-XXXX.log.og2KImL0HH`.
   - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-public-api-XXXX.log.kRWxFp8t5s`.
   - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-smoke-XXXX.log.boQFlYxeaA`.
   - `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story5-unit-XXXX.log.KdYDsLSIrn`.

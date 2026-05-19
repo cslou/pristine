@@ -53,9 +53,6 @@ export interface PrivacyInputRuntimeLike {
   close(): void;
 }
 
-const resolveUserId = async (userId: PrivacyInputRuntimeConfig['userId']): Promise<string> =>
-  typeof userId === 'function' ? userId() : userId;
-
 export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
   private readonly detect: PrivacyInputRuntimeConfig['detect'];
   private readonly classifier: PrivacyInputClassifierLike;
@@ -79,7 +76,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     const detected = await this.detect(event.text);
     if (detected.candidates.length === 0) return { action: 'continue' };
 
-    await resolveUserId(this.userId);
+    void this.userId;
     void this.classifier;
     void this.redactor;
     void this.policy;

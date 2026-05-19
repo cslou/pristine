@@ -113,6 +113,26 @@ describe('privacy-input Pi extension scaffold', () => {
     );
   });
 
+  it('fails closed for detected candidates even if injected user ID resolution would fail', async () => {
+    const detect = vi.fn(async () => ({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 12 } }],
+    }));
+    const classifier = { classify: vi.fn(async () => ({ decisions: [] })) };
+    const redactor = { redact: vi.fn(async () => ({ text: 'unused', redactions: [] })) };
+    const runtime = new PrivacyInputRuntime({
+      detect,
+      classifier,
+      redactor,
+      userId: () => {
+        throw new Error('missing user');
+      },
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token secret', source: 'interactive' }),
+    ).resolves.toEqual({ action: 'handled' });
+  });
+
   it('continues safely and notifies when runtime initialization fails', async () => {
     const pi = new FakePi();
     const notify = vi.fn();

@@ -154,6 +154,7 @@ export interface PrivacyInputRuntimeConfig {
   readonly policy?: PrivacyInputPolicyConfig;
   readonly userId: string | (() => string | Promise<string>);
   readonly notifications?: PrivacyInputNotificationSink;
+  readonly classifierTimeoutMs?: number;
 }
 
 export interface PrivacyInputRuntimeLike {
@@ -228,6 +229,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
   private readonly policy: PrivacyInputPolicyConfig;
   private readonly userId: PrivacyInputRuntimeConfig['userId'];
   private readonly notifications?: PrivacyInputNotificationSink;
+  private readonly classifierTimeoutMs: number | undefined;
 
   public constructor(config: PrivacyInputRuntimeConfig) {
     this.detect = config.detect;
@@ -237,6 +239,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     this.policy = { uncertainPolicy: config.policy?.uncertainPolicy ?? 'block' };
     this.userId = config.userId;
     this.notifications = config.notifications;
+    this.classifierTimeoutMs = config.classifierTimeoutMs;
   }
 
   public async handleInput(event: PrivacyInputEventLike): Promise<PrivacyInputAction> {
@@ -245,11 +248,33 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     const detected = await this.detect(event.text);
     if (detected.candidates.length === 0) return { action: 'continue' };
 
-    const classified = await this.classify(
-      event.text,
-      detected.candidates,
-      this.classifierCallback,
-    );
+    let classified: PrivacyInputClassifyResultLike;
+    try {
+      const classifyPromise = this.classify(
+        event.text,
+        detected.candidates,
+        this.classifierCallback,
+      );
+      classified =
+        this.classifierTimeoutMs === undefined
+          ? await classifyPromise
+          : await Promise.race([
+              classifyPromise,
+              new Promise<PrivacyInputClassifyResultLike>((_resolve, reject) => {
+                setTimeout(
+                  () => reject(new Error('classifier timed out')),
+                  this.classifierTimeoutMs,
+                );
+              }),
+            ]);
+    } catch (error: unknown) {
+      void error;
+      this.notifications?.notify(
+        'Pristine privacy input blocked this message because classification could not complete safely.',
+        'error',
+      );
+      return { action: 'handled' };
+    }
     const detailsWithoutRedactions = toSafeDetails(classified.decisions, []);
     if (hasMalformedSecretDecision(classified.decisions)) {
       this.notifications?.notify(

@@ -142,7 +142,7 @@ export interface DetectCandidate {
   readonly sourceSpan: SourceSpan;
   readonly valueLength: number;
   readonly location?: SourceLocation;
-  readonly hint?: DetectHint;
+  readonly hint: DetectHint;
 }
 
 export interface DetectResult {
@@ -162,7 +162,7 @@ export interface ClassifierRequestCandidate {
   readonly sourceSpan: SourceSpan;
   readonly valueLength: number;
   readonly location?: SourceLocation;
-  readonly hint?: DetectHint;
+  readonly hint: DetectHint;
 }
 
 export interface ClassifierRequest {
@@ -172,14 +172,26 @@ export interface ClassifierRequest {
   readonly candidates: readonly ClassifierRequestCandidate[];
 }
 
-export interface ClassifierCallbackDecision {
+interface ClassifierDecisionMetadata {
   readonly candidateId: string;
-  readonly verdict: ClassifierVerdict;
-  readonly type?: SensitivityType;
   readonly label?: string;
   readonly confidence?: number;
   readonly rationale?: string;
 }
+
+export interface SecretClassifierCallbackDecision extends ClassifierDecisionMetadata {
+  readonly verdict: 'secret';
+  readonly type: SensitivityType;
+}
+
+export interface NonSecretClassifierCallbackDecision extends ClassifierDecisionMetadata {
+  readonly verdict: 'not_secret' | 'uncertain';
+  readonly type?: SensitivityType;
+}
+
+export type ClassifierCallbackDecision =
+  | SecretClassifierCallbackDecision
+  | NonSecretClassifierCallbackDecision;
 
 export interface ClassifierCallbackResult {
   readonly decisions: readonly ClassifierCallbackDecision[];
@@ -195,15 +207,21 @@ export interface ClassifyOptions {
   readonly contextWindow?: number;
 }
 
-export interface ClassifyDecision {
-  readonly candidateId: string;
-  readonly verdict: ClassifierVerdict;
+interface ClassifyDecisionMetadata extends ClassifierDecisionMetadata {
   readonly sourceSpan: SourceSpan;
-  readonly type?: SensitivityType;
-  readonly label?: string;
-  readonly confidence?: number;
-  readonly rationale?: string;
 }
+
+export interface SecretClassifyDecision extends ClassifyDecisionMetadata {
+  readonly verdict: 'secret';
+  readonly type: SensitivityType;
+}
+
+export interface NonSecretClassifyDecision extends ClassifyDecisionMetadata {
+  readonly verdict: 'not_secret' | 'uncertain';
+  readonly type?: SensitivityType;
+}
+
+export type ClassifyDecision = SecretClassifyDecision | NonSecretClassifyDecision;
 
 export interface ClassifyResult {
   readonly decisions: readonly ClassifyDecision[];

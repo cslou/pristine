@@ -53,6 +53,7 @@ describe('package entrypoint smoke', () => {
       expect(client.forget(['built-1'], { projectId: 'built-smoke' })).toEqual({
         deletedCount: 1,
       });
+      expect('secureAndRedact' in client).toBe(false);
       expect('storeAsync' in client).toBe(false);
       expect('getConversation' in client).toBe(false);
     } finally {

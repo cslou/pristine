@@ -34,6 +34,7 @@ describe('public-API smoke — source chunk API', () => {
     try {
       expect(client).toBeInstanceOf(Pristine);
       expect('pendingEmbedTasks' in client).toBe(false);
+      expect('secureAndRedact' in client).toBe(false);
       await client.dispose();
     } finally {
       db.close();

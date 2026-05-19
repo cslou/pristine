@@ -54,7 +54,7 @@ try {
 - `store(chunks, { projectId })` — store source-owned memory chunks.
 - `recall(query, { projectId, limit? })` — semantically search one project.
 - `forget(chunkIds, { projectId })` — delete stored chunks in one project.
-- `detect` → `classify` → `redact` — compose candidate detection, caller-owned classification policy, and local vault-backed redaction.
+- `DetectPrimitive`, `ClassifyPrimitive`, `RedactPrimitive` — primitive-first privacy contracts for candidate detection, caller-owned classification policy, and local vault-backed redaction.
 - `reveal(redactedText, userId)` — restore known placeholders locally.
 - `scrubOutput(text, allowlist?)` — remove sensitive/revealed values from output. The parameter is named `allowlist` for compatibility; its values are scrubbed.
 

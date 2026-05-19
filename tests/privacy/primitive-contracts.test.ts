@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   ClassifierRequest,
+  ClassifierCallbackDecision,
   ClassifierRequestCandidate,
   DetectCandidate,
   RedactResult,
@@ -19,6 +20,16 @@ const classifierCandidateHasNoRawFields: Expect<
 const classifierRequestHasNoRawSecretFields: Expect<
   HasNoKeys<ClassifierRequest, 'rawValue' | 'rawText' | 'text' | 'matchedText'>
 > = true;
+const validSecretDecision: ClassifierCallbackDecision = {
+  candidateId: 'candidate-1',
+  verdict: 'secret',
+  type: 'api_key',
+};
+// @ts-expect-error secret decisions must carry a sensitivity type for downstream redaction.
+const invalidSecretDecision: ClassifierCallbackDecision = {
+  candidateId: 'candidate-1',
+  verdict: 'secret',
+};
 
 describe('privacy primitive contracts', () => {
   it('defines detector candidates with sourceSpan and safe hint metadata only', () => {
@@ -111,5 +122,7 @@ describe('privacy primitive contracts', () => {
     expect(detectCandidateHasNoRawFields).toBe(true);
     expect(classifierCandidateHasNoRawFields).toBe(true);
     expect(classifierRequestHasNoRawSecretFields).toBe(true);
+    expect(validSecretDecision.type).toBe('api_key');
+    expect(invalidSecretDecision.verdict).toBe('secret');
   });
 });

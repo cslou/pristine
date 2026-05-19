@@ -23,11 +23,14 @@ import type {
   ForgetOptions,
   ForgetResult,
   ListSensitiveOptions,
+  NonSecretClassifierCallbackDecision,
+  NonSecretClassifyDecision,
   PrivacyClassifier,
   PrivacyDetector,
   PrivacyHintFeatures,
   PrivacyHintFeatureValue,
   PrivacyRedactor,
+  Pristine,
   PristineConfig,
   RecalledMemory,
   RecallOptions,
@@ -37,6 +40,8 @@ import type {
   RedactResult,
   RedactResultRedaction,
   RevealResult,
+  SecretClassifierCallbackDecision,
+  SecretClassifyDecision,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
@@ -92,11 +97,14 @@ type CanonicalPublicRootTypes = [
   ForgetOptions,
   ForgetResult,
   ListSensitiveOptions,
+  NonSecretClassifierCallbackDecision,
+  NonSecretClassifyDecision,
   PrivacyClassifier,
   PrivacyDetector,
   PrivacyHintFeatures,
   PrivacyHintFeatureValue,
   PrivacyRedactor,
+  Pristine,
   PristineConfig,
   RecalledMemory,
   RecallOptions,
@@ -106,6 +114,8 @@ type CanonicalPublicRootTypes = [
   RedactResult,
   RedactResultRedaction,
   RevealResult,
+  SecretClassifierCallbackDecision,
+  SecretClassifyDecision,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
@@ -136,6 +146,10 @@ type DeprecatedCompatibilityTypes = [
 // @ts-expect-error SecureAndRedactResult is intentionally removed from the root public type surface.
 type RemovedSecureAndRedactResult = import('@pristine/sdk').SecureAndRedactResult;
 
+declare const pristineClient: Pristine;
+// @ts-expect-error secureAndRedact is intentionally removed from the public Pristine client surface.
+const removedClientSecureAndRedact = pristineClient.secureAndRedact;
+
 const detectPrimitiveFixture: DetectPrimitive = (_text, options) =>
   options?.sourceSurface
     ? { sourceSurface: options.sourceSurface, candidates: [] }
@@ -156,6 +170,7 @@ const removedSecureAndRedactResultFixture: RemovedSecureAndRedactResult | null =
 void detectPrimitiveFixture;
 void classifyPrimitiveFixture;
 void redactPrimitiveFixture;
+void removedClientSecureAndRedact;
 void canonicalPublicRootTypesFixture;
 void deprecatedCompatibilityTypesFixture;
 void removedSecureAndRedactResultFixture;

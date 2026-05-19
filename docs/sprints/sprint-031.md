@@ -1,7 +1,7 @@
 # Pristine — Sprint 031
 **Date:** 2026-05-18 – TBD
 **Goal:** Add a Pi-dev reference privacy input extension that composes Sprint 030's `detect`, `classify`, and `redact` primitives with a pluggable/subagent classifier callback so raw user-pasted secrets are classified from sanitized inputs and redacted before they reach Pi model context or session history.
-**Status:** 🟡 Planning
+**Status:** 🟠 In Progress
 
 ---
 
@@ -59,22 +59,36 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi harness adopter, **I want** a repo-local privacy-input extension scaffold with explicit runtime boundaries, **so that** I can install and test input privacy protection without confusing it with memory indexing/search examples.
 - **Dependencies:** Sprint 030 merged; no intra-sprint dependency
 - **Acceptance criteria:**
-  - [ ] `examples/pi-dev/extensions/privacy-input/` exists with `index.ts`, `package.json`, README, and internal `lib/` modules matching existing Pi-dev example conventions.
-  - [ ] The extension registers a Pi `input` handler and skips processing for `event.source === "extension"` to avoid recursion.
-  - [ ] The extension delegates behavior to a testable runtime object so unit tests can invoke input handling without launching Pi.
-  - [ ] The runtime accepts injected `detect`, `classify`/classifier callback adapter, `redact`, policy, user ID, and notification dependencies for tests and host-managed lifecycles.
-  - [ ] No candidates returns `{ action: "continue" }` and does not call `classify` or `redact` dependencies.
+  - [x] `examples/pi-dev/extensions/privacy-input/` exists with `index.ts`, `package.json`, README, and internal `lib/` modules matching existing Pi-dev example conventions.
+  - [x] The extension registers a Pi `input` handler and skips processing for `event.source === "extension"` to avoid recursion.
+  - [x] The extension delegates behavior to a testable runtime object so unit tests can invoke input handling without launching Pi.
+  - [x] The runtime accepts injected `detect`, `classify`/classifier callback adapter, `redact`, policy, user ID, and notification dependencies for tests and host-managed lifecycles.
+  - [x] No candidates returns `{ action: "continue" }` and does not call `classify` or `redact` dependencies.
 - **Functional verification:**
-  - [ ] Add `tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: extension registration wires exactly one `input` handler and delegates to the runtime.
-  - [ ] Add runtime unit tests for extension-injected messages and no-candidate user messages; pass condition: injected messages continue unchanged and no-candidate input continues without classifier/redactor calls.
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: new scaffold/runtime tests pass.
+  - [x] Add `tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: extension registration wires exactly one `input` handler and delegates to the runtime.
+  - [x] Add runtime unit tests for extension-injected messages and no-candidate user messages; pass condition: injected messages continue unchanged and no-candidate input continues without classifier/redactor calls.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: new scaffold/runtime tests pass.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts tests/examples/pi-dev/search-memory-tool.test.ts`; pass condition: existing Pi-dev extension discovery/install expectations and recall tool wrappers remain green.
-  - [ ] Run `pnpm run lint`; pass condition: new Pi-dev extension code has no lint errors or debug logging.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts tests/examples/pi-dev/search-memory-tool.test.ts`; pass condition: existing Pi-dev extension discovery/install expectations and recall tool wrappers remain green.
+  - [x] Run `pnpm run lint`; pass condition: new Pi-dev extension code has no lint errors or debug logging.
 - **Manual-only verification:** N/A — extension registration and runtime boundaries are covered by unit tests.
 - **Planned commits:**
   1. `feat: scaffold pi privacy input extension` — add extension directory, runtime shell, package metadata, README, and focused tests.
 - **Technical notes:** Follow the existing `jsonl-index` and `search-memory` example pattern: copied extension directories should be self-contained and should not rely on project-private test fixtures at runtime.
+- **Implementation notes:**
+  - Added `examples/pi-dev/extensions/privacy-input/index.ts`, `package.json`, README, and `lib/runtime.ts`.
+  - `registerPrivacyInputExtension` registers one `input` handler plus shutdown cleanup; extension-origin messages continue before runtime construction.
+  - `PrivacyInputRuntime` accepts injected detector/classifier/redactor/policy/user/notification dependencies; no-candidate input exits before classifier/redactor calls, and non-empty candidate input fails closed until Story 2 redaction composition is implemented.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-unit2-XXXX.log.3jp6p71udX`.
+  - `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts tests/examples/pi-dev/search-memory-tool.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-reg2-XXXX.log.hIr3Etanea`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-lint2-XXXX.log.RqfTDfqcbN`.
+  - Review-fix coverage: initialization failure with and without context object continues safely; non-empty candidates return `handled` with a raw-value-free notification until redaction composition exists; detected-candidate fail-closed behavior does not depend on user ID resolution.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-fix2-unit-XXXX.log.ZwQppTEba1`.
+  - `pnpm run lint` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-fix2-lint-XXXX.log.1NvjSTwrom`.
+  - `pnpm run typecheck` passed after review fixes; log: `/tmp/s31-story1-fix2-typecheck.log`.
+  - Second review-fix pass: `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-fix3-unit-XXXX.log.fJnj0Puf9a`.
+  - Second review-fix pass: `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story1-fix3-lint-XXXX.log.29S81VIZtn`.
+  - Second review-fix pass: `pnpm run typecheck` passed; log: `/tmp/s31-story1-fix3-typecheck.log`.
 
 #### Story 2: Compose `detect`, `classify`, policy, and `redact` in the input runtime
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

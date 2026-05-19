@@ -2,31 +2,39 @@
 
 Pristine is designed for local-first privacy: no Pristine-hosted API is required, and user data does not leave the device by default unless your application adds a remote service, remote embedder, or network wrapper.
 
+## Keep secrets out of model context
+
+Pristine does not decide your entire privacy policy. It gives your application local operations for the places where secrets can enter agent/model context or session history.
+
+Use `secureAndRedact` before sensitive text is sent to an agent or model, so third-party LLM providers see placeholders instead of original secrets. Use `reveal` only inside trusted local tool runners that need the original value to execute. Use `scrubOutput` before tool results or generated output are written back into agent/model context or session history.
+
+Because agents are non-deterministic, privacy behavior that must always happen should be made deterministic in the harness where possible. Use prompts, hooks, command guards, approval gates, logging controls, or local checks to enforce required behavior. Use Pristine's privacy primitives at the text-handling points those workflows create.
+
 ## Privacy vault vs source-index memory
 
 The privacy vault and source-index memory have different jobs:
 
-- **Privacy vault:** encrypted local storage for sensitive originals captured by `secureAndRedact`, used later by privileged local `reveal` flows.
+- **Privacy vault:** encrypted local storage for sensitive originals captured by `secureAndRedact`, used later by trusted local `reveal` flows.
 - **Source-index memory:** searchable local chunks, embeddings, snippets, and source metadata used by `store`, `recall`, and `forget`.
 
-Do not treat the source-index memory database as a plaintext-safe cache. It is optimized for search and source pointers, not for hiding every indexed snippet from local readers.
+Do not treat the source-index memory database as a plaintext-safe cache. It is optimized for search and source references, not for hiding every indexed snippet from local readers.
 
 ## Redact before sharing context
 
 `secureAndRedact` detects sensitive values, stores encrypted originals locally in the privacy vault, and returns text with placeholders. Use it before an application places text into an agent or model context.
 
-## Reveal locally
+## Reveal inside trusted local tools
 
-`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation controlled by your application policy.
+`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute.
 
-## Scrub generated output
+## Scrub before writing back
 
-`scrubOutput` is the safety layer for generated text. Use it before output crosses a boundary where sensitive values should not appear.
+`scrubOutput` is the safety layer for generated text and tool results. Use it before output is written back into agent/model context or session history.
 
 ## Threat model notes
 
 Pristine stores source-index chunks, snippets, embeddings, and source metadata in the local SQLite database as searchable index data. Treat local database sensitivity seriously: it is not a public cache, and it is not the authoritative full raw source store.
 
-Privacy vault entries are encrypted locally, but database backups and key backups must be managed together. Backing up encrypted vault data without the matching keys can make reveal impossible; backing up keys without protecting them can weaken the local privacy boundary.
+Privacy vault entries are encrypted locally, but database backups and key backups must be managed together. Backing up encrypted vault data without the matching keys can make reveal impossible; backing up keys without protecting them can weaken the local privacy model.
 
 The default embedder may perform model downloads on first use unless model assets are pre-cached or the runtime is configured for offline operation. Applications remain responsible for filesystem permissions, backup policy, logging policy, model configuration, and any network wrappers they add around the SDK.

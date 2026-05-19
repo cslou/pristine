@@ -1,23 +1,20 @@
 # How privacy works
 
-Pristine privacy helpers reduce the chance that sensitive values cross an application, agent, or model boundary in plaintext.
+Pristine privacy helpers reduce the chance that sensitive values enter agent/model context, third-party LLM requests, or session history in plaintext.
 
-## Lifecycle
+## Composed by the harness
 
-```text
-raw text
-  → classify + redact
-  → agent/model boundary with placeholders
-  → scrub output
-  → optional local reveal
-```
+A typical privacy workflow:
 
-1. Raw text enters the host application.
-2. `secureAndRedact` asks the classifier to classify sensitive values, stores encrypted originals locally, and returns redacted text.
-3. The redacted text can cross an agent/model boundary with placeholders instead of sensitive values.
-4. `scrubOutput` checks generated output before it leaves a sensitive boundary.
-5. `reveal` can perform optional local reveal when caller policy allows it and local vault/key access is available.
+1. The host receives text that may contain secrets.
+2. The harness calls `secureAndRedact` before that text enters agent/model context.
+3. The agent or model sees placeholders instead of original secrets.
+4. A trusted local tool runner can call `reveal` when it needs the original value to execute locally.
+5. The harness calls `scrubOutput` before tool results or generated output are written back into agent/model context or session history.
+6. The harness owns policy, approvals, logging, key handling, backups, and any network services it adds around Pristine.
 
-## Boundary
+## Local primitives, deterministic policy
 
-The SDK provides local primitives. Your application still owns filesystem permissions, backup policy, logging policy, model configuration, and any network wrappers around Pristine.
+The SDK provides local privacy primitives. Your application still decides where those primitives are called and which behaviors must be enforced every time.
+
+Because agents are non-deterministic, important privacy requirements should not depend on the agent remembering to do the right thing. Put required behavior in harness logic, hooks, command guards, approval flows, logging controls, or local checks, then use Pristine at the text-handling points those workflows create.

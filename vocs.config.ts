@@ -2,7 +2,7 @@ import { defineConfig } from 'vocs';
 
 export default defineConfig({
   title: 'Pristine',
-  description: 'Local-first privacy and source-pointer memory SDK for TypeScript.',
+  description: 'Minimal local SDK for agent memory and privacy.',
   rootDir: 'docs',
   topNav: [
     { text: 'Docs', link: '/' },
@@ -14,7 +14,6 @@ export default defineConfig({
       items: [
         { text: 'Overview', link: '/' },
         { text: 'Quickstart', link: '/quickstart' },
-        { text: 'Concepts', link: '/concepts' },
       ],
     },
     {

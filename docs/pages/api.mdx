@@ -16,7 +16,7 @@ const pristine = await Pristine.create();
 
 ### `store(chunks, { projectId })`
 
-Stores source-owned text chunks and returns stored memory records. Each chunk can include source metadata such as `chunkId`, `sourceKind`, `sourceUri`, `entryId`, line numbers, timestamp, and custom metadata. See [Memory](/memory) for the source-of-truth model.
+Stores selected source text with stable IDs and returns stored memory records. Each chunk can include source metadata such as `chunkId`, `sourceKind`, `sourceUri`, `entryId`, line numbers, timestamp, and custom metadata. See [Memory](/memory) for the source-of-truth model.
 
 ### `recall(query, { projectId, limit? })`
 
@@ -30,7 +30,7 @@ Deletes stored chunks by ID within one project and returns a deletion count.
 
 ### `secureAndRedact(text, userId, classifier?)`
 
-Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default. See [Privacy](/privacy) for threat-model boundaries.
+Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default. See [Privacy](/privacy) for threat-model responsibilities.
 
 ### `reveal(redactedText, userId)`
 
@@ -58,11 +58,11 @@ Returns the plaintext value for one sensitive placeholder ref when local vault a
 
 ### `scrubOutput(text, allowlist?)`
 
-Removes sensitive values from output text before it crosses a boundary where those values should not appear. The second parameter is named `allowlist` in the current TypeScript signature for compatibility, but its values are scrubbed from output; pass revealed or sensitive values that must be removed.
+Removes sensitive values from output text before tool results or generated output are written back into agent/model context or session history. The second parameter is named `allowlist` in the current TypeScript signature for compatibility, but its values are scrubbed from output; pass revealed or sensitive values that must be removed.
 
 ## Root exports
 
-The package root is the supported import boundary. It exports the SDK client, domain errors, database helper, public types, and a small set of low-level source-index primitives for advanced local integrations.
+The package root is the supported import surface. It exports the SDK client, domain errors, database helper, public types, and a small set of low-level source-index primitives for advanced local integrations.
 
 ### Supported value exports
 
@@ -118,6 +118,6 @@ The root also keeps deprecated compatibility type exports for the pre-`store`/`r
 - `SearchSourceChunksOptions`
 - `SourceChunkSearchHit`
 
-## Internal boundary
+## Internal imports
 
 The package root does not export raw conversation storage, ingest queues, worker drains, SQL searchers, provider SDK clients, or benchmark-only helpers. Consumers should compose the supported source chunk and privacy primitives instead of importing internal paths. Harness-specific setup should start from [Integrations](/pi-dev) and [Examples](/examples).

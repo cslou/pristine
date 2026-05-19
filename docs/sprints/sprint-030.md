@@ -216,13 +216,13 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Run `pnpm run test:integration -- tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts`; pass condition: existing reveal/scrub/vault lifecycle and PR #240 sensitive CRUD behavior remain green.
   - [x] Run `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: existing redaction and vault store behavior is unchanged.
 - **Verification evidence:**
-  - `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-targeted-XXXX.log.PpbQ8liY5g`.
-  - `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts tests/privacy/primitive-contracts.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-unit-XXXX.log.4wdgITqAE0`.
-  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-typecheck-XXXX.log.uNTT6rt3gW`.
-  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-lint-XXXX.log.gufBUenyN5`.
-  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-build-XXXX.log.g9NFmGJrpu`.
-  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-public-api-XXXX.log.Kfzo8SulP3`.
-  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-smoke-XXXX.log.Cu3TFkRqTw`.
+  - `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-targeted-XXXX.log.Yucv8P4qVl`.
+  - `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts tests/privacy/primitive-contracts.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-unit-XXXX.log.4kvxYv5xc2`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-typecheck-XXXX.log.fRoRHmtqQw`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-lint-XXXX.log.nA3lSteHml`.
+  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-build-XXXX.log.JSN3Jps7hi`.
+  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-public-api-XXXX.log.Nqjave1zSo`.
+  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story4-reviewfix-smoke-XXXX.log.mh4s8NkQqI`.
 - **Manual-only verification:** N/A — integration and unit tests cover this story.
 - **Planned commits:**
   1. `feat: add redact privacy primitive` — add `redact`, validation, vault storage integration, alias persistence, and round-trip tests.

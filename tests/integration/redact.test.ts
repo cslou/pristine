@@ -129,18 +129,46 @@ describe('redact privacy primitive', () => {
     ).rejects.toBeInstanceOf(InvalidArgumentError);
 
     await expect(listSensitive({ vaultStore, userId: 'redact-user-3' })).resolves.toHaveLength(0);
-    await expect(
-      redact(
-        text,
-        [{ sourceSpan: { start: -1, end: 3 }, type: 'api_key' }],
-        'redact-user-3',
-        config(),
-      ),
-    ).rejects.toBeInstanceOf(InvalidArgumentError);
+    for (const badSecret of [
+      { sourceSpan: { start: -1, end: 3 }, type: 'api_key' },
+      { sourceSpan: { start: 0, end: 0 }, type: 'api_key' },
+      { sourceSpan: { start: 8, end: 3 }, type: 'api_key' },
+      { sourceSpan: { start: 0, end: text.length + 1 }, type: 'api_key' },
+      { type: 'api_key' },
+    ]) {
+      await expect(
+        redact(
+          text,
+          [badSecret] as unknown as Parameters<typeof redact>[1],
+          'redact-user-3',
+          config(),
+        ),
+      ).rejects.toBeInstanceOf(InvalidArgumentError);
+    }
     await expect(listSensitive({ vaultStore, userId: 'redact-user-3' })).resolves.toHaveLength(0);
   });
 
-  it('does not persist labels that contain raw secret values as aliases', async () => {
+  it('preserves classifier type metadata while using placeholder-safe type text', async () => {
+    const value = 'oauth-secret-value-123';
+    const text = `token ${value}`;
+    const start = text.indexOf(value);
+
+    const result = await redact(
+      text,
+      [{ sourceSpan: { start, end: start + value.length }, type: 'oauth2_token' }],
+      'redact-user-custom-type',
+      config(),
+    );
+
+    expect(result.text).toMatch(/\[SENSITIVE:oauth_token:[0-9a-f-]+\]/);
+    expect(result.redactions[0]).toMatchObject({ type: 'oauth2_token' });
+    const entries = await vaultStore.getEntriesByPlaceholderIds('redact-user-custom-type', [
+      result.redactions[0]!.sensitiveRef,
+    ]);
+    expect(entries[0]?.sensitiveType).toBe('oauth2_token');
+  });
+
+  it('does not return or persist labels that contain raw secret values', async () => {
     const value = 'raw-secret-value-123';
     const text = `token ${value}`;
     const start = text.indexOf(value);
@@ -158,6 +186,7 @@ describe('redact privacy primitive', () => {
       config(),
     );
 
+    expect(result.redactions[0]!.label).toBeUndefined();
     expect(result.redactions[0]!.alias).toBeUndefined();
     const summary = await getSensitive(result.redactions[0]!.sensitiveRef, {
       vaultStore,

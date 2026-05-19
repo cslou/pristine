@@ -7,12 +7,11 @@ import type {
   RedactResultRedaction,
   SourceSpan,
 } from '../../core/types.js';
-import { computeKeyFingerprint } from '../vault/asymmetric-crypto.js';
-import { encryptAndWrapValue } from '../vault/asymmetric-encrypt.js';
+import { persistRedactions, type PendingRedactionWrite } from './vault-writer.js';
 
 const buildPlaceholder = (type: string, id: string): string => `[SENSITIVE:${type}:${id}]`;
 
-const normalizeType = (type: string): string => {
+const normalizePlaceholderType = (type: string): string => {
   const normalized = type
     .toLowerCase()
     .replace(/[\s-]+/g, '_')
@@ -22,7 +21,10 @@ const normalizeType = (type: string): string => {
   return normalized.length > 0 ? normalized : 'other';
 };
 
-const assertNonEmptyString = (value: string, fieldName: string): void => {
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null;
+
+const assertNonEmptyString = (value: unknown, fieldName: string): void => {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new InvalidArgumentError(`redact: ${fieldName} must be a non-empty string`);
   }
@@ -40,13 +42,22 @@ const assertValidSpan = (span: SourceSpan, textLength: number, label: string): v
   }
 };
 
-const safeAlias = (label: string | undefined, rawValue: string): string | undefined => {
+const safeLabel = (label: string | undefined, rawValue: string): string | undefined => {
   if (!label || label.trim().length === 0) return undefined;
   const trimmed = label.trim();
   if (trimmed === rawValue || trimmed.includes(rawValue) || rawValue.includes(trimmed)) {
     return undefined;
   }
   return trimmed;
+};
+
+const assertConfirmedShape: (
+  value: unknown,
+  index: number,
+) => asserts value is RedactConfirmedSecret = (value, index) => {
+  if (!isRecord(value) || !isRecord(value.sourceSpan)) {
+    throw new InvalidArgumentError(`redact: confirmed[${index}] must include a sourceSpan`);
+  }
 };
 
 const validateConfirmedSecrets = (
@@ -57,10 +68,8 @@ const validateConfirmedSecrets = (
     throw new InvalidArgumentError('redact: confirmed must be an array');
   }
 
-  const sorted = [...confirmed].sort((a, b) => a.sourceSpan.start - b.sourceSpan.start);
-  let cursor = 0;
-
-  for (const [index, secret] of sorted.entries()) {
+  for (const [index, secret] of confirmed.entries()) {
+    assertConfirmedShape(secret, index);
     assertValidSpan(secret.sourceSpan, text.length, `confirmed[${index}]`);
     assertNonEmptyString(secret.type, `confirmed[${index}].type`);
     if (secret.candidateId !== undefined) {
@@ -69,6 +78,11 @@ const validateConfirmedSecrets = (
     if (secret.label !== undefined && typeof secret.label !== 'string') {
       throw new InvalidArgumentError(`redact: confirmed[${index}].label must be a string`);
     }
+  }
+
+  const sorted = [...confirmed].sort((a, b) => a.sourceSpan.start - b.sourceSpan.start);
+  let cursor = 0;
+  for (const secret of sorted) {
     if (secret.sourceSpan.start < cursor) {
       throw new InvalidArgumentError('redact: confirmed sourceSpans must not overlap');
     }
@@ -76,6 +90,43 @@ const validateConfirmedSecrets = (
   }
 
   return sorted;
+};
+
+const buildRedactionWrites = (
+  text: string,
+  confirmed: readonly RedactConfirmedSecret[],
+): { readonly text: string; readonly pending: readonly PendingRedactionWrite[] } => {
+  let redactedText = '';
+  let sourceCursor = 0;
+  const pending: PendingRedactionWrite[] = [];
+
+  for (const secret of confirmed) {
+    const rawValue = text.slice(secret.sourceSpan.start, secret.sourceSpan.end);
+    const placeholderType = normalizePlaceholderType(secret.type);
+    const placeholderId = randomUUID();
+    const placeholder = buildPlaceholder(placeholderType, placeholderId);
+
+    redactedText += text.slice(sourceCursor, secret.sourceSpan.start);
+    const redactedStart = redactedText.length;
+    redactedText += placeholder;
+    const redactedEnd = redactedText.length;
+    sourceCursor = secret.sourceSpan.end;
+
+    const label = safeLabel(secret.label, rawValue);
+    const redaction: RedactResultRedaction = {
+      candidateId: secret.candidateId,
+      sensitiveRef: placeholderId,
+      placeholder,
+      type: secret.type,
+      label,
+      alias: label,
+      sourceSpan: secret.sourceSpan,
+      redactedSpan: { start: redactedStart, end: redactedEnd },
+    };
+    pending.push({ rawValue, placeholderId, vaultType: secret.type, redaction });
+  }
+
+  return { text: redactedText + text.slice(sourceCursor), pending };
 };
 
 export const redact = async (
@@ -100,68 +151,11 @@ export const redact = async (
   const sorted = validateConfirmedSecrets(text, confirmed);
   if (sorted.length === 0) return { text, redactions: [] };
 
-  const { publicKey } = await options.keyManager.getOrCreateKeyPair(userId);
-  const fingerprint = computeKeyFingerprint(publicKey);
-  const kek = await options.kekManager.getOrCreate(userId);
-
-  let redactedText = '';
-  let sourceCursor = 0;
-  const pendingRedactions: Array<{
-    readonly redaction: RedactResultRedaction;
-    readonly rawValue: string;
-    readonly placeholderId: string;
-  }> = [];
-
-  for (const secret of sorted) {
-    const rawValue = text.slice(secret.sourceSpan.start, secret.sourceSpan.end);
-    const type = normalizeType(secret.type);
-    const placeholderId = randomUUID();
-    const placeholder = buildPlaceholder(type, placeholderId);
-
-    redactedText += text.slice(sourceCursor, secret.sourceSpan.start);
-    const redactedStart = redactedText.length;
-    redactedText += placeholder;
-    const redactedEnd = redactedText.length;
-    sourceCursor = secret.sourceSpan.end;
-
-    const alias = safeAlias(secret.label, rawValue);
-    pendingRedactions.push({
-      rawValue,
-      placeholderId,
-      redaction: {
-        candidateId: secret.candidateId,
-        sensitiveRef: placeholderId,
-        placeholder,
-        type,
-        label: secret.label,
-        alias,
-        sourceSpan: secret.sourceSpan,
-        redactedSpan: { start: redactedStart, end: redactedEnd },
-      },
-    });
-  }
-
-  redactedText += text.slice(sourceCursor);
-
-  await options.vaultStore.addEntries(
-    pendingRedactions.map(({ rawValue, placeholderId, redaction }) => ({
-      userId,
-      placeholderId,
-      sensitiveType: redaction.type,
-      encrypted: encryptAndWrapValue(rawValue, redaction.type, placeholderId, kek, fingerprint),
-    })),
-  );
-
-  for (const { redaction } of pendingRedactions) {
-    if (redaction.alias) {
-      await options.vaultStore.updateEntry(userId, redaction.sensitiveRef, {
-        alias: redaction.alias,
-      });
-    }
-  }
+  const built = buildRedactionWrites(text, sorted);
+  await persistRedactions(userId, options, built.pending);
 
   return {
-    text: redactedText,
-    redactions: pendingRedactions.map(({ redaction }) => redaction),
+    text: built.text,
+    redactions: built.pending.map(({ redaction }) => redaction),
   };
 };

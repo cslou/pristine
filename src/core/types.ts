@@ -285,7 +285,7 @@ export type RedactPrimitive = (
   text: string,
   confirmed: readonly RedactConfirmedSecret[],
   userId: string,
-  options?: RedactOptions,
+  options: RedactOptions,
 ) => Promise<RedactResult>;
 
 export interface DetectedEntity {

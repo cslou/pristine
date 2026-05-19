@@ -363,7 +363,7 @@ Counting basis: test files for Unit, Integration / contract, and E2E / smoke; re
 - All implementation story ACs are checked with evidence in the story sections and merged story PRs #253–#257.
 - Functional verification for new `detect`, `classify`, `redact`, and docs behavior is automated and recorded in each story.
 - Full regression verification passed: `pnpm run test` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-test-XXXX.log.MIlsMfzMkU`), `pnpm run docs:build` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-docs-XXXX.log.6SSjVzHC6G`), `pnpm run typecheck` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-typecheck-XXXX.log.LfvodU4Mzw`), and `pnpm run lint` (`/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-sprint030-final-lint-XXXX.log.pZUJjncwuZ`).
-- Final Verification Story review/mergeability gate will be recorded after PR review completes.
+- Final Verification Story review returned mergeability 4/5 with no P0/P1 findings; P2 signature wording was cleaned up in follow-up commits.
 
 ## Open for your decision
 

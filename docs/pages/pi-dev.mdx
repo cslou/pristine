@@ -1,10 +1,16 @@
 # Pi-dev integration
 
-Pristine includes a reference Pi-dev integration for indexing Pi JSONL session history and recalling relevant source references. The detailed runbook lives at [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
+Pristine includes reference Pi-dev integrations for input-only privacy protection, indexing Pi JSONL session history, and recalling relevant source references. The detailed runbook lives at [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev).
 
 ## Prerequisite
 
 Use this page when you run Pi from a local repository and can install project-local `.pi/extensions/*` and `.pi/skills/*` artifacts. Pristine stays local; Pi JSONL remains the source of truth.
+
+## Privacy input reference
+
+The `privacy-input` extension is an input hook reference that composes `detect`, `classify`, and `redact` before user text reaches model context. Classifier prompts receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only — never raw candidates.
+
+`uncertainPolicy` defaults to `block`; `redact` stores uncertain candidates with detector hints or fallback metadata; `allow` is an explicit unsafe opt-in excluded from the default no-raw-secret guarantee. This v1 is input-only: future tool-call reveal and future tool-result scrub hooks are not implemented.
 
 ## What Pi enforces vs. what Pristine recalls
 
@@ -21,13 +27,14 @@ Pristine handles recall. In this Pi-dev example, Pi JSONL remains the source of 
 
 ## Components
 
+- `privacy-input` detects/classifies/redacts user input before model context.
 - `jsonl-index` indexes Pi JSONL sessions into local Pristine storage.
 - `pristine_recall` performs semantic discovery over indexed snippets.
 - `search-session-history` inspects the authoritative JSONL source around returned references.
 
-## Privacy prompt setup
+## Privacy input setup
 
-For privacy, copy the privacy prompt from the [quickstart](/quickstart#privacy-setup-prompt). Expected outcome: secrets are replaced with placeholders before agent/model context, trusted local tool runners can reveal originals when needed, and tool results or generated output are scrubbed before they return to context or session history.
+For input privacy, copy/install `examples/pi-dev/extensions/privacy-input/` into `.pi/extensions/privacy-input/` and configure the host-wired detector, classifier callback, redactor, user ID, and local vault/key dependencies described in the runbook. Expected v1 outcome: user-pasted secrets are replaced with `[SENSITIVE:<type>:<id>]` placeholders or blocked before agent/model context. Tool-call reveal and tool-result scrub are future work.
 
 ## Expected outcome
 
@@ -41,4 +48,4 @@ After setup, Pi can answer memory/history questions by using `search-session-his
 
 ## Smoke check
 
-Run the end-to-end TUI verification in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Pass condition: the agent uses `search-session-history`, gets a relevant `pristine_recall` source reference, answers from the source JSONL, and avoids broad session greps after it has a usable reference.
+Run the end-to-end TUI verification and privacy-input smoke checks in [`examples/pi-dev/README.md`](https://github.com/getlou-gh/pristine/tree/HEAD/examples/pi-dev). Privacy-input pass condition: a fake API key is blocked or transformed before model context; memory pass condition: the agent uses `search-session-history`, gets a relevant `pristine_recall` source reference, answers from the source JSONL, and avoids broad session greps after it has a usable reference.

@@ -235,27 +235,37 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi adopter, **I want** installation docs and a reproducible smoke check for privacy input protection, **so that** I can copy the reference into a repo and verify raw user-input secrets are redacted before model context.
 - **Dependencies:** Story 1, Story 2, Story 3, Story 4
 - **Acceptance criteria:**
-  - [ ] `examples/pi-dev/README.md` artifact map includes the privacy-input extension, copy/install target, dependency installation, and expected behavior.
-  - [ ] `examples/pi-dev/extensions/privacy-input/README.md` documents runtime dependencies, classifier adapter configuration, marker/hint classifier inputs, uncertain policy modes, classifier failure behavior, local vault/key responsibilities, and v1 limitations.
-  - [ ] Public docs under `docs/pages/pi-dev.mdx` and privacy pages link to the Pi privacy input reference without implying tool-call reveal or tool-result scrub are implemented in v1.
-  - [ ] `docs/specs/implementation-spec-004.md` is updated or amended so the Pi-dev reference flow clearly distinguishes Sprint 031's input-only v1 from future tool-call reveal and tool-result scrub hooks.
-  - [ ] Documentation states that classifier prompts receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only, never raw candidates.
-  - [ ] A reproducible Pi smoke procedure is documented with explicit pass/fail conditions for a fake/test classifier mode and, where practical, a real subagent classifier mode.
-  - [ ] Smoke evidence includes a model-facing/session-history artifact or transcript proving the placeholder is present and the raw input secret is absent after the input hook runs.
+  - [x] `examples/pi-dev/README.md` artifact map includes the privacy-input extension, copy/install target, dependency installation, and expected behavior.
+  - [x] `examples/pi-dev/extensions/privacy-input/README.md` documents runtime dependencies, classifier adapter configuration, marker/hint classifier inputs, uncertain policy modes, classifier failure behavior, local vault/key responsibilities, and v1 limitations.
+  - [x] Public docs under `docs/pages/pi-dev.mdx` and privacy pages link to the Pi privacy input reference without implying tool-call reveal or tool-result scrub are implemented in v1.
+  - [x] `docs/specs/implementation-spec-004.md` is updated or amended so the Pi-dev reference flow clearly distinguishes Sprint 031's input-only v1 from future tool-call reveal and tool-result scrub hooks.
+  - [x] Documentation states that classifier prompts receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only, never raw candidates.
+  - [x] A reproducible Pi smoke procedure is documented with explicit pass/fail conditions for a fake/test classifier mode and, where practical, a real subagent classifier mode.
+  - [x] Smoke evidence includes a model-facing/session-history artifact or transcript proving the placeholder is present and the raw input secret is absent after the input hook runs.
 - **Functional verification:**
-  - [ ] Run `pnpm run docs:build`; pass condition: updated public docs build successfully.
-  - [ ] Run individual `rg` checks for `privacy-input`, `sanitized`, `raw candidate`, `uncertainPolicy`, `input hook`, `tool-call reveal`, `marker`, `hint`, `sourceSpan`, and `sensitiveRef` in `examples/pi-dev docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: docs mention the privacy-input extension, sanitized classifier prompts, marker/hint inputs, policy modes, input hook behavior, v1 limitations for tool-call reveal, and Sprint 030 refined metadata names.
-  - [ ] Run `rg "input-only|future tool-call|future tool-result|tool_call|tool_result" docs/specs/implementation-spec-004.md`; pass condition: the spec distinguishes Sprint 031's input-only v1 from future tool-call reveal and tool-result scrub work.
-  - [ ] Run the documented non-interactive smoke command or test harness for fake/test classifier mode; pass condition: a sample input containing a fake API key is transformed to a Pristine placeholder and the raw key is absent from the model-facing text and recorded session-history/transcript artifact.
+  - [x] Run `pnpm run docs:build`; pass condition: updated public docs build successfully.
+  - [x] Run individual `rg` checks for `privacy-input`, `sanitized`, `raw candidate`, `uncertainPolicy`, `input hook`, `tool-call reveal`, `marker`, `hint`, `sourceSpan`, and `sensitiveRef` in `examples/pi-dev docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: docs mention the privacy-input extension, sanitized classifier prompts, marker/hint inputs, policy modes, input hook behavior, v1 limitations for tool-call reveal, and Sprint 030 refined metadata names.
+  - [x] Run `rg "input-only|future tool-call|future tool-result|tool_call|tool_result" docs/specs/implementation-spec-004.md`; pass condition: the spec distinguishes Sprint 031's input-only v1 from future tool-call reveal and tool-result scrub work.
+  - [x] Run the documented non-interactive smoke command or test harness for fake/test classifier mode; pass condition: a sample input containing a fake API key is transformed to a Pristine placeholder and the raw key is absent from the model-facing text and recorded session-history/transcript artifact.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev`; pass condition: all Pi-dev example tests, including existing memory examples and new privacy-input tests, pass.
-  - [ ] Run `pnpm run test:smoke`; pass condition: package/public API smoke tests remain green after docs/example changes.
-  - [ ] Run `pnpm run verify:public-api-types` and individual `rg` checks for `detect(`, `classify(`, `redact(`, `sourceSpan`, `redactedSpan`, `sensitiveRef`, and `classifierCallback` in `examples/pi-dev docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: public type smoke and docs/examples use Sprint 030 primitive names and refined schema names.
-  - [ ] Run `rg "secureAndRedact" examples/pi-dev/extensions/privacy-input docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: no Pi privacy-input docs or public privacy docs reintroduce `secureAndRedact` as a callable public flow; any remaining mentions are limited to migration/non-use language.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev`; pass condition: all Pi-dev example tests, including existing memory examples and new privacy-input tests, pass.
+  - [x] Run `pnpm run test:smoke`; pass condition: package/public API smoke tests remain green after docs/example changes.
+  - [x] Run `pnpm run verify:public-api-types` and individual `rg` checks for `detect(`, `classify(`, `redact(`, `sourceSpan`, `redactedSpan`, `sensitiveRef`, and `classifierCallback` in `examples/pi-dev docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: public type smoke and docs/examples use Sprint 030 primitive names and refined schema names.
+  - [x] Run `rg "secureAndRedact" examples/pi-dev/extensions/privacy-input docs/pages/pi-dev.mdx docs/pages/privacy`; pass condition: no Pi privacy-input docs or public privacy docs reintroduce `secureAndRedact` as a callable public flow; any remaining mentions are limited to migration/non-use language.
 - **Manual-only verification:** If real Pi subagent smoke cannot be automated reliably, run `pi` from a copied reference repo with privacy-input enabled; pass condition: typing a sample fake key produces a safe block/transform result before the agent sees raw text, and document the log or transcript path in story evidence.
 - **Planned commits:**
   1. `docs: document pi privacy input reference` — update Pi-dev runbook, extension README, public docs, and smoke evidence.
 - **Technical notes:** Be explicit that v1 is user-input protection only. Tool-call reveal and output scrub require later dedicated hooks and verification.
+- **Implementation notes:**
+  - Updated `examples/pi-dev/README.md`, `examples/pi-dev/extensions/privacy-input/README.md`, `docs/pages/pi-dev.mdx`, `docs/pages/privacy.mdx`, and `docs/specs/implementation-spec-004.md` with input-only privacy reference docs, policy limits, and smoke procedures.
+  - Updated Pi-dev install-layout test to include copied `privacy-input` extension imports.
+  - `pnpm run docs:build` passed.
+  - `pnpm run test:unit -- tests/examples/pi-dev` passed.
+  - `pnpm run test:smoke` passed.
+  - `pnpm run verify:public-api-types` passed.
+  - Documentation `rg` checks passed for privacy-input terms, input-only/future hook spec language, primitive schema names, and no `secureAndRedact` reintroduction in Pi privacy-input/public privacy docs.
+  - Fake classifier smoke passed via `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts -t "uses real primitives to transform and reveal a confirmed secret"`.
+  - Manual real Pi smoke remains deferred to Lou after sprint handoff, per latest user instruction.
 
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

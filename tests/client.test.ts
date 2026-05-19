@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Pristine } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import type { Embedder } from '../src/core/interfaces.js';
+import { secureAndRedact as privacySecureAndRedact } from '../src/privacy/index.js';
+import { KekManager } from '../src/privacy/kek/kek-manager.js';
+import { FileSystemKeyManager } from '../src/privacy/keys/filesystem.js';
+import { createSqliteVaultStore } from '../src/privacy/vault/sqlite/index.js';
 
 const vector = (first: number, second = 0): number[] => [
   first,
@@ -61,8 +65,14 @@ describe('Pristine', () => {
       });
 
       const secret = 'sk' + '-ant-' + 'api03-' + 'abcdefghijklmnopqrstuvwxyz123456';
-      const secured = await client.secureAndRedact(`Token ${secret}`, 'user-a');
-      expect(secured.redactedText).toContain('[' + 'SENSITIVE:' + 'api_key:');
+      const keyManager = new FileSystemKeyManager({ keysDir });
+      await privacySecureAndRedact(`Token ${secret}`, {
+        vaultStore: createSqliteVaultStore(deps.db),
+        keyManager,
+        kekManager: new KekManager(deps.db, keyManager),
+        userId: 'user-a',
+        classifier: { customPatternsPath: '/tmp/pristine-client-missing-redaction.json' },
+      });
 
       const summaries = await client.listSensitive('user-a', { limit: 10 });
       expect(summaries).toHaveLength(1);

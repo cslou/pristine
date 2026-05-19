@@ -4,7 +4,6 @@ import type {
   DeleteSensitiveResult,
   ListSensitiveOptions,
   RevealResult,
-  SecureAndRedactResult,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
@@ -26,7 +25,6 @@ import {
   resolveSensitive as privacyResolveSensitive,
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
-  secureAndRedact as privacySecureAndRedact,
   updateSensitive as privacyUpdateSensitive,
 } from './privacy/index.js';
 import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
@@ -256,20 +254,6 @@ export class Pristine {
     options: SearchSourceChunksOptions,
   ): Promise<readonly SourceChunkSearchHit[]> {
     return this.recall(query, options);
-  }
-
-  public async secureAndRedact(
-    text: string,
-    userId: string,
-    classifier?: DeterministicClassifierConfig,
-  ): Promise<SecureAndRedactResult> {
-    return privacySecureAndRedact(text, {
-      vaultStore: this.vaultStore,
-      keyManager: this.keyManager,
-      kekManager: this.kekManager,
-      userId,
-      classifier: classifier ?? this.privacyClassifierConfig,
-    });
   }
 
   public async listSensitive(

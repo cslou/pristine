@@ -70,11 +70,11 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] `detect` candidate types contain stable non-value-derived candidate IDs, detector kind/rule metadata, `sourceSpan`, value length, optional location, and safe `hint` metadata (`suggestedType`, `provider`, `prefixFamily`, `nearbyName`, signals, and features), but no raw matched value field.
   - [x] `classify` request/response types represent raw-value-free sanitized classifier inputs, candidate `marker`s, harness callback decisions, `secret` / `not_secret` / `uncertain` verdicts, sensitivity type, optional label, confidence, and rationale without requiring the SDK to implement an LLM provider.
   - [x] `redact` input/result types carry candidate IDs, `sourceSpan`s, sensitivity type, optional labels, returned `sensitiveRef`s/placeholders, `redactedSpan`s, and alias metadata needed by callers.
-  - [x] Root public type exports include the new canonical primitive function contracts/types and remove `SecureAndRedactResult` from the root type surface, with runtime primitive value exports deferred to their implementation stories to avoid public throw-only stubs.
+  - [x] Root public type exports include the new canonical primitive function contracts/types, root `Pristine` no longer exposes `secureAndRedact`, public docs no longer instruct new consumers to call it, and runtime primitive value exports are deferred to their implementation stories to avoid public throw-only stubs.
 - **Functional verification:**
   - [x] Add or update a type-focused smoke fixture in `tests/smoke/public-api-types-fixture.mts`; pass condition: `pnpm run verify:public-api-types` succeeds with `DetectPrimitive`, `ClassifyPrimitive`, `RedactPrimitive`, and their exported primitive types.
   - [x] Add type/shape unit tests or compile-time fixtures proving detector candidates and sanitized classifier requests do not expose a `rawValue`/`text` field for the matched secret and use `hint`, `sourceSpan`, `redactedSpan`, and `sensitiveRef` naming; pass condition: tests or typecheck fail if raw-value fields are required or refined names are missing.
-  - [x] Add a public-surface assertion; pass condition: root exports/type fixtures no longer expose `SecureAndRedactResult` for new consumers and instead import the primitive-first contracts.
+  - [x] Add a public-surface assertion; pass condition: root exports/docs/type fixtures no longer expose or instruct new consumers to call `secureAndRedact` and instead import/use primitive-first contracts.
 - **Regression verification:**
   - [x] Run `pnpm run typecheck`; pass condition: existing strict TypeScript compilation remains green after new public types are introduced.
   - [x] Run `pnpm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: existing scrub, placeholder, and sensitive CRUD behavior still passes.
@@ -84,13 +84,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `src/index.ts` exports the primitive contract types without publishing throw-only runtime stubs. `tests/smoke/public-api-types-fixture.mts` imports the new type surface and uses `@ts-expect-error` to assert `SecureAndRedactResult` is no longer root-exported for new consumers.
   - `tests/privacy/primitive-contracts.test.ts` passed and asserts candidate/classifier request shapes use safe `hint` metadata and do not expose `rawValue`/`text` fields for matched secrets.
   - Review fix: runtime primitive value exports were deferred to implementation stories to avoid public throw-only stubs; Story 1 exports stable primitive function contract types instead.
-  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-build-fix-XXXX.log.IVt3yP4xSy`.
-  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-public-api-types-fix-XXXX.log.WP5W8aFoxi`.
-  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-smoke-fix-XXXX.log.4ddXhvi2Of`.
-  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-typecheck-fix-XXXX.log.i0ytuuBE9d`.
-  - `pnpm run test:unit -- tests/privacy/primitive-contracts.test.ts tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-privacy-contracts-fix-XXXX.log.GW2noTVtLb`.
-  - `pnpm run test:unit` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-unit-fix-XXXX.log.xaH3WgDU0H`.
-  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-lint-fix-XXXX.log.T63hSLaWh2`.
+  - Review fix: root `Pristine` no longer exposes `secureAndRedact`; public docs/README now describe the primitive-first `detect` → `classify` → `redact` flow while legacy internals remain available for existing privacy regression tests.
+  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-build-docfix-XXXX.log.llmmbvCG4z`.
+  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-public-api-types-docfix-XXXX.log.il4hxHKQwz`.
+  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-smoke-docfix-XXXX.log.1jYVYgzq7R`.
+  - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-docs-build-docfix-XXXX.log.SNl81T3pfK`.
+  - `! rg -n "secureAndRedact|SecureAndRedactResult" README.md docs/pages` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-public-docs-rg-docfix-XXXX.log.rRoGjBoFen`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-typecheck-docfix-XXXX.log.8dZj4Tis3e`.
+  - `pnpm run test:unit -- tests/privacy/primitive-contracts.test.ts tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-privacy-contracts-docfix-XXXX.log.SGzrNFsFMc`.
+  - `pnpm run test:unit` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-unit-docfix-XXXX.log.HJnE56cDeT`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-lint-docfix-XXXX.log.xTJDJIj7LL`.
 - **Planned commits:**
   1. `feat: define privacy primitive contracts` — add `detect`/`classify`/`redact` contracts, type exports, and public-surface migration tests without runtime behavior changes.
 - **Technical notes:** Keep all module contracts in `src/core/interfaces.ts` and shared types in `src/core/types.ts` where they are general SDK contracts; privacy-specific helper exports can re-export from `src/privacy/` as needed. Do not add Anthropic/OpenAI SDK dependencies. Because the package is pre-1.0, `secureAndRedact` should be removed from root public exports and public docs; legacy internal code may remain only as an implementation detail if tests prove it is not user-facing.

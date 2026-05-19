@@ -174,12 +174,12 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Run `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/privacy/safety-scan.test.ts`; pass condition: existing placeholder and scrubbing behavior is unchanged.
   - [x] Run `pnpm run typecheck`; pass condition: `classify` request/decision types compile cleanly with strict TypeScript.
 - **Verification evidence:**
-  - `pnpm run test:unit -- tests/privacy/classify.test.ts tests/privacy/primitive-contracts.test.ts tests/vault/vault-redaction.test.ts tests/privacy/safety-scan.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix-targeted-XXXX.log.U6mibFnFgS`.
-  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix-typecheck-XXXX.log.EyOyTk6ixp`.
-  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix-lint-XXXX.log.zLehQG7jsE`.
-  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix-build-XXXX.log.u7xUNkHbx7`.
-  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix-public-api-XXXX.log.d8Gv93hHCw`.
-  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix-smoke-XXXX.log.WBhjrgxXF6`.
+  - `pnpm run test:unit -- tests/privacy/classify.test.ts tests/privacy/primitive-contracts.test.ts tests/vault/vault-redaction.test.ts tests/privacy/safety-scan.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix2-targeted-XXXX.log.cbrBbhvxRG`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix2-typecheck-XXXX.log.aqxdiXg1SI`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix2-lint-XXXX.log.IyJI5X29Vw`.
+  - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix2-build-XXXX.log.mXTsxpr59o`.
+  - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix2-public-api-XXXX.log.B74ID7qc9x`.
+  - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-story3-reviewfix2-smoke-XXXX.log.Mk2V9CG4Kh`.
 - **Manual-only verification:** N/A — leak-focused serialization and callback validation tests cover this story.
 - **Planned commits:**
   1. `feat: add classify privacy primitive` — add `classify`, sanitized callback request construction, callback output validation, leak-focused tests, and request JSON fixtures.

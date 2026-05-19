@@ -97,9 +97,10 @@ describe('classify privacy primitive', () => {
         provider: 'custom-provider',
         prefixFamily: 'custom-family',
         nearbyName: 'TOKEN',
+        signals: ['1234567890', 'known_provider_prefix'],
         positiveSignals: ['assignment_context'],
         negativeSignals: ['example_like'],
-        features: { entropyBucket: 'high', leaked: secret },
+        features: { entropyBucket: 'high', leaked: secret, suffix1234567890: 'high' },
       },
     });
 

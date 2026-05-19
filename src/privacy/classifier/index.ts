@@ -40,9 +40,13 @@ const buildRequest = (
   text: string,
   candidates: readonly DetectCandidate[],
   options: ClassifyOptions,
-): ClassifierRequest => {
+): {
+  readonly request: ClassifierRequest;
+  readonly candidatesByRequestId: ReadonlyMap<string, DetectCandidate>;
+} => {
   const ids = new Set<string>();
   const requestCandidates: ClassifierRequestCandidate[] = [];
+  const candidatesByRequestId = new Map<string, DetectCandidate>();
 
   for (const candidate of candidates) {
     if (candidate.candidateId.length === 0) {
@@ -54,9 +58,11 @@ const buildRequest = (
     ids.add(candidate.candidateId);
     assertValidSpan(candidate.sourceSpan, text.length, `candidate ${candidate.candidateId}`);
     const rawValue = text.slice(candidate.sourceSpan.start, candidate.sourceSpan.end);
+    const requestCandidateId = `request-candidate-${String(requestCandidates.length + 1).padStart(4, '0')}`;
+    candidatesByRequestId.set(requestCandidateId, candidate);
     requestCandidates.push({
-      candidateId: candidate.candidateId,
-      marker: markerForCandidate(candidate.candidateId),
+      candidateId: requestCandidateId,
+      marker: markerForCandidate(requestCandidateId),
       kind: candidate.kind,
       ruleId: candidate.ruleId,
       sourceSpan: candidate.sourceSpan,
@@ -66,12 +72,21 @@ const buildRequest = (
     });
   }
 
-  return {
+  const request = {
     requestId: options.requestId ?? randomUUID(),
     sourceSurface: sanitizeSourceSurface(options.sourceSurface),
-    sanitizedContext: buildSanitizedContext(text, candidates, options.contextWindow),
+    sanitizedContext: buildSanitizedContext(
+      text,
+      requestCandidates.map((requestCandidate, index) => ({
+        ...candidates[index]!,
+        candidateId: requestCandidate.candidateId,
+      })),
+      options.contextWindow,
+    ),
     candidates: requestCandidates,
   };
+
+  return { request, candidatesByRequestId };
 };
 
 const assertSafeOptionalString = (value: unknown, fieldName: string): string | undefined => {
@@ -99,7 +114,7 @@ const normalizeDecision = (
   }
 
   const metadata = {
-    candidateId: decision.candidateId,
+    candidateId: candidate.candidateId,
     sourceSpan: candidate.sourceSpan,
     label,
     confidence: decision.confidence,
@@ -184,8 +199,7 @@ export const classify = async (
 
   if (candidates.length === 0) return { decisions: [] };
 
-  const request = buildRequest(text, candidates, options);
-  const candidatesById = new Map(candidates.map((candidate) => [candidate.candidateId, candidate]));
+  const { request, candidatesByRequestId } = buildRequest(text, candidates, options);
   const result: ClassifierCallbackResult = await classifierCallback(request);
-  return validateCallbackResult(result, candidatesById);
+  return validateCallbackResult(result, candidatesByRequestId);
 };

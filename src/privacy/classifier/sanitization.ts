@@ -62,14 +62,24 @@ const safeSignalArray = (values: readonly string[] | undefined): readonly string
   return safeValues.length > 0 ? safeValues : undefined;
 };
 
-const safeFeatureValue = (value: PrivacyHintFeatureValue): PrivacyHintFeatureValue | undefined => {
-  if (typeof value === 'string') return SAFE_FEATURE_STRINGS.has(value) ? value : undefined;
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (value.every((item): item is string => typeof item === 'string')) {
-    const safeValues = value.filter((item) => SAFE_FEATURE_STRINGS.has(item));
-    return safeValues.length > 0 ? safeValues : undefined;
+const safeFeatureValue = (
+  key: string,
+  value: PrivacyHintFeatureValue,
+): PrivacyHintFeatureValue | undefined => {
+  switch (key) {
+    case 'hasAssignmentContext':
+      return typeof value === 'boolean' ? value : undefined;
+    case 'entropyBucket':
+      return typeof value === 'string' && ['low', 'medium', 'high'].includes(value)
+        ? value
+        : undefined;
+    case 'headerName':
+      return value === 'authorization' ? value : undefined;
+    case 'tokenFormat':
+      return typeof value === 'string' && SAFE_FEATURE_STRINGS.has(value) ? value : undefined;
+    default:
+      return undefined;
   }
-  return value.length > 0 ? value : undefined;
 };
 
 export const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHint => {
@@ -78,7 +88,7 @@ export const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): De
     ? Object.fromEntries(
         Object.entries(safeHint.features)
           .filter(([key]) => SAFE_FEATURE_KEYS.has(key))
-          .map(([key, value]) => [key, safeFeatureValue(value)] as const)
+          .map(([key, value]) => [key, safeFeatureValue(key, value)] as const)
           .filter(
             (entry): entry is readonly [string, PrivacyHintFeatureValue] => entry[1] !== undefined,
           ),

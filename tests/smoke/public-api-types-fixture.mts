@@ -156,6 +156,7 @@ type DeprecatedCompatibilityTypes = [
 type RemovedSecureAndRedactResult = import('@pristine/sdk').SecureAndRedactResult;
 
 declare const pristineClient: Pristine;
+const clientRedactResult = pristineClient.redact('no secrets here', [], 'user-1');
 // @ts-expect-error secureAndRedact is intentionally removed from the public Pristine client surface.
 const removedClientSecureAndRedact = pristineClient.secureAndRedact;
 
@@ -186,6 +187,7 @@ const removedSecureAndRedactResultFixture: RemovedSecureAndRedactResult | null =
 void classifyResult;
 void detectResult;
 void redactResult;
+void clientRedactResult;
 void detectPrimitiveFixture;
 void classifyPrimitiveFixture;
 void redactPrimitiveFixture;

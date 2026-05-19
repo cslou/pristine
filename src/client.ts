@@ -3,6 +3,8 @@ import type Database from 'better-sqlite3';
 import type {
   DeleteSensitiveResult,
   ListSensitiveOptions,
+  RedactConfirmedSecret,
+  RedactResult,
   RevealResult,
   SensitiveRef,
   SensitiveSummary,
@@ -18,6 +20,7 @@ import { SourceChunkStore } from './memory/source-index/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
+import { redact as privacyRedact } from './privacy/redactor/index.js';
 import {
   deleteSensitive as privacyDeleteSensitive,
   getSensitive as privacyGetSensitive,
@@ -306,6 +309,18 @@ export class Pristine {
       keyManager: this.keyManager,
       kekManager: this.kekManager,
       userId,
+    });
+  }
+
+  public async redact(
+    text: string,
+    confirmed: readonly RedactConfirmedSecret[],
+    userId: string,
+  ): Promise<RedactResult> {
+    return privacyRedact(text, confirmed, userId, {
+      vaultStore: this.vaultStore,
+      keyManager: this.keyManager,
+      kekManager: this.kekManager,
     });
   }
 

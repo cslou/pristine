@@ -17,6 +17,6 @@ A typical privacy workflow:
 
 ## Local primitives, deterministic policy
 
-The SDK provides local privacy primitives. Your application still decides where those primitives are called and which behaviors must be enforced every time. Deterministic regex-only behavior can be implemented as a local classifier callback; new integrations should not rely on the legacy `secureAndRedact` composition.
+The SDK provides local privacy primitives. Your application still decides where those primitives are called and which behaviors must be enforced every time. Deterministic regex-only behavior can be implemented as a local classifier callback; new integrations should not rely on a legacy composed SDK policy wrapper.
 
 Because agents are non-deterministic, important privacy requirements should not depend on the agent remembering to do the right thing. Put required behavior in harness logic, hooks, command guards, approval flows, logging controls, or local checks, then use Pristine at the text-handling points those workflows create.

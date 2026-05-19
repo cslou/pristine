@@ -75,9 +75,11 @@ describe('classify privacy primitive', () => {
     expect(request.sourceSurface).toEqual({ kind: 'user_message' });
     for (const candidate of request.candidates) {
       expect(candidate.marker).toBe(`[CANDIDATE:${candidate.candidateId}]`);
+      expect(candidate.candidateId).toMatch(/^request-candidate-\d{4}$/);
       expect(request.sanitizedContext).toContain(candidate.marker);
       expect(candidate.sourceSpan).toEqual(
-        candidates.find((source) => source.candidateId === candidate.candidateId)?.sourceSpan,
+        candidates.find((source) => source.sourceSpan.start === candidate.sourceSpan.start)
+          ?.sourceSpan,
       );
     }
     expect(serialized).not.toContain(apiKey);
@@ -109,11 +111,11 @@ describe('classify privacy primitive', () => {
     expect(request).toMatchObject({
       requestId: 'request-test',
       sourceSurface: { kind: 'user_message' },
-      sanitizedContext: 'token=[CANDIDATE:candidate-shape]',
+      sanitizedContext: 'token=[CANDIDATE:request-candidate-0001]',
       candidates: [
         {
-          candidateId: 'candidate-shape',
-          marker: '[CANDIDATE:candidate-shape]',
+          candidateId: 'request-candidate-0001',
+          marker: '[CANDIDATE:request-candidate-0001]',
           kind: 'key_value_assignment',
           ruleId: 'assignment.secret',
           sourceSpan: candidate.sourceSpan,
@@ -160,13 +162,41 @@ describe('classify privacy primitive', () => {
     ];
 
     const { request } = await serializedRequest(text, candidates);
-    const byId = new Map(request.candidates.map((candidate) => [candidate.candidateId, candidate]));
+    const byOriginalOrder = request.candidates;
 
-    expect(byId.get('openai')?.hint.prefixFamily).toBe('sk-proj');
-    expect(byId.get('github')?.hint.prefixFamily).toBe('ghp_');
-    expect(byId.get('aws')?.hint.prefixFamily).toBe('AKIA');
-    expect(byId.get('unknown')?.hint.provider).toBeUndefined();
-    expect(byId.get('unknown')?.hint.prefixFamily).toBeUndefined();
+    expect(byOriginalOrder[0]?.hint.prefixFamily).toBe('sk-proj');
+    expect(byOriginalOrder[1]?.hint.prefixFamily).toBe('ghp_');
+    expect(byOriginalOrder[2]?.hint.prefixFamily).toBe('AKIA');
+    expect(byOriginalOrder[3]?.hint.provider).toBeUndefined();
+    expect(byOriginalOrder[3]?.hint.prefixFamily).toBeUndefined();
+  });
+
+  it('does not expose raw-derived candidate IDs or encoded feature values', async () => {
+    const secret = 'custom-secret-123456';
+    const text = `token=${secret}`;
+    const candidate = candidateFor(text, secret, {
+      candidateId: secret,
+      hint: {
+        features: {
+          hasAssignmentContext: true,
+          entropyBucket: 'high',
+          tokenFormat: 'jwt',
+          encodedChars: [99, 117, 115, 116, 111, 109],
+        },
+      },
+    });
+
+    const { request, serialized } = await serializedRequest(text, [candidate]);
+
+    expect(request.candidates[0]?.candidateId).toBe('request-candidate-0001');
+    expect(request.sanitizedContext).toBe('token=[CANDIDATE:request-candidate-0001]');
+    expect(request.candidates[0]?.hint.features).toEqual({
+      hasAssignmentContext: true,
+      entropyBucket: 'high',
+      tokenFormat: 'jwt',
+    });
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain('encodedChars');
   });
 
   it('does not send decoded JWT payloads, query secrets, URL passwords, or seed words', async () => {
@@ -214,7 +244,7 @@ describe('classify privacy primitive', () => {
     const candidate = candidateFor(text, secret, { candidateId: 'windowed' });
     const { request } = await serializedRequest(text, [candidate], 6);
 
-    expect(request.sanitizedContext).toBe('efore [CANDIDATE:windowed] after');
+    expect(request.sanitizedContext).toBe('efore [CANDIDATE:request-candidate-0001] after');
     expect(request.sanitizedContext).not.toContain('prefix that should be trimmed');
     expect(request.sanitizedContext).not.toContain('text that should be trimmed');
   });
@@ -226,10 +256,10 @@ describe('classify privacy primitive', () => {
       hint: { suggestedType: 'api_key', provider: 'openai', prefixFamily: 'sk-proj' },
     });
 
-    const result = await classify(text, [candidate], async () => ({
+    const result = await classify(text, [candidate], async (request) => ({
       decisions: [
         {
-          candidateId: candidate.candidateId,
+          candidateId: request.candidates[0]!.candidateId,
           verdict: 'secret',
           type: 'api_key',
           label: 'primary key',
@@ -256,20 +286,20 @@ describe('classify privacy primitive', () => {
     [
       'duplicate decision',
       [
-        { candidateId: 'candidate-0001', verdict: 'uncertain' },
-        { candidateId: 'candidate-0001', verdict: 'not_secret' },
+        { candidateId: 'request-candidate-0001', verdict: 'uncertain' },
+        { candidateId: 'request-candidate-0001', verdict: 'not_secret' },
       ],
     ],
     ['unknown decision', [{ candidateId: 'unknown', verdict: 'uncertain' }]],
     ['missing decision', []],
-    ['invalid verdict', [{ candidateId: 'candidate-0001', verdict: 'safe' }]],
-    ['secret without type', [{ candidateId: 'candidate-0001', verdict: 'secret' }]],
-    ['empty type', [{ candidateId: 'candidate-0001', verdict: 'secret', type: '' }]],
+    ['invalid verdict', [{ candidateId: 'request-candidate-0001', verdict: 'safe' }]],
+    ['secret without type', [{ candidateId: 'request-candidate-0001', verdict: 'secret' }]],
+    ['empty type', [{ candidateId: 'request-candidate-0001', verdict: 'secret', type: '' }]],
     [
       'invalid confidence',
-      [{ candidateId: 'candidate-0001', verdict: 'uncertain', confidence: 1.5 }],
+      [{ candidateId: 'request-candidate-0001', verdict: 'uncertain', confidence: 1.5 }],
     ],
-    ['invalid label', [{ candidateId: 'candidate-0001', verdict: 'uncertain', label: '' }]],
+    ['invalid label', [{ candidateId: 'request-candidate-0001', verdict: 'uncertain', label: '' }]],
   ])('fails loudly for malformed callback output: %s', async (_name, decisions) => {
     const text = 'token=secret1234567890';
     const candidate = candidateFor(text, 'secret1234567890');

@@ -70,8 +70,23 @@ describe('Pristine', () => {
         customPatternsPath: '/tmp/pristine-client-missing-redaction.json',
       });
 
+      const redacted = await client.redact(
+        `Manual ${secret}`,
+        [
+          {
+            sourceSpan: { start: 'Manual '.length, end: `Manual ${secret}`.length },
+            type: 'api_key',
+          },
+        ],
+        'user-a',
+      );
+      expect(redacted.text).not.toContain(secret);
+      await expect(client.reveal(redacted.text, 'user-a')).resolves.toMatchObject({
+        text: `Manual ${secret}`,
+      });
+
       const summaries = await client.listSensitive('user-a', { limit: 10 });
-      expect(summaries).toHaveLength(1);
+      expect(summaries).toHaveLength(2);
       expect(summaries[0]!.label).toMatch(/^api_key-[0-9a-z]+$/);
 
       const updated = await client.updateSensitive('user-a', summaries[0]!.sensitiveRef, {

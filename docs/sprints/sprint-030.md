@@ -201,7 +201,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness integrator, **I want** a `redact` primitive for exact classifier-confirmed spans, **so that** the raw secret is stored only locally in the vault and the text entering model context contains Pristine placeholders.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [x] A new `redact(text, confirmed, userId, options?)` public primitive accepts original text, user/vault/key configuration, and confirmed secrets with `sourceSpan`/type/optional label, then returns redacted text and `sensitiveRef`s/placeholders while storing originals in the encrypted vault.
+  - [x] A new `redact(text, confirmed, userId, options)` public primitive accepts original text, user/vault/key configuration, and confirmed secrets with `sourceSpan`/type/optional label, then returns redacted text and `sensitiveRef`s/placeholders while storing originals in the encrypted vault.
   - [x] `redact` slices raw values locally from the original text using `sourceSpan` offsets and does not require confirmed secret inputs to carry raw values.
   - [x] `redact` validates `sourceSpan` bounds, rejects or reports overlapping/invalid confirmed secrets with domain-specific errors or structured failure results, and preserves deterministic behavior for valid non-overlapping spans.
   - [x] Optional classifier-provided labels are persisted as visible metadata aliases for the resulting `sensitiveRef`s using the PR #240 sensitive CRUD/vault metadata path, with safe fallback aliases or no alias for unlabeled spans.
@@ -326,7 +326,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 
 ## Final Review
 
-**Mergeability:** Pending Final Verification Story `/review`
+**Mergeability:** 4/5 from Final Verification Story `/review` before P2 cleanup; post-fix `/review-fix` pending.
 
 ## Sprint objective + accomplishments
 

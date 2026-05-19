@@ -1,7 +1,7 @@
 # Pristine — Sprint 031
 **Date:** 2026-05-18 – TBD
 **Goal:** Add a Pi-dev reference privacy input extension that composes Sprint 030's `detect`, `classify`, and `redact` primitives with a pluggable/subagent classifier callback so raw user-pasted secrets are classified from sanitized inputs and redacted before they reach Pi model context or session history.
-**Status:** 🟢 Complete — pending Lou's manual Pi smoke before integration merge
+**Status:** 🟡 Awaiting Lou manual Pi smoke before integration merge
 
 ---
 
@@ -279,11 +279,11 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
   - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
   - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
+  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable. Automated checks passed; Lou's manual real Pi smoke remains pending before integration merge.
   - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
   - [x] The sprint’s new functional verification is identified as future regression verification.
   - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with rows for every canonical verification type including zero-count rows and rationale for any `Unknown` values.
-  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
+  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met. Status remains `🟡` until Lou's manual Pi smoke passes.
   - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
   - [x] Run all functional verification items from every story and record pass/fail evidence.
@@ -316,7 +316,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 
 ## Final Review
 
-Sprint 031 is implementation-complete and ready for Lou's manual Pi smoke before the sprint integration merge.
+Sprint 031 is implementation-complete, automated verification is green, and Lou's manual Pi smoke is pending before the sprint integration merge.
 
 ### What shipped
 
@@ -341,6 +341,8 @@ Sprint 031 is implementation-complete and ready for Lou's manual Pi smoke before
 
 - `pnpm run test` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-test-XXXX.log.G7wxfxoHzS`.
 - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-docs-XXXX.log.FkVTX4TvTb`.
+- `pnpm run lint` passed; log: `/tmp/s31-final-lint.log`.
+- `pnpm run typecheck` passed; log: `/tmp/s31-final-typecheck.log`.
 - Story-level functional and targeted regression evidence is recorded under each story's implementation notes.
 - Fake/test classifier smoke transcript: `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
 
@@ -349,7 +351,7 @@ Sprint 031 is implementation-complete and ready for Lou's manual Pi smoke before
 Run the documented manual Pi smoke only after copying/installing `privacy-input` and wiring `registerPrivacyInputExtension` with a configured runtime factory:
 
 ```text
-My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK.
+My test API key is <fake-api-key-from-local-test-fixture>. Please reply OK.
 ```
 
 Pass condition: the turn is blocked or transformed before model context; transcript/session history contains a safe notification or `[SENSITIVE:api_key:<id>]` placeholder and does not contain the raw key.

@@ -7,8 +7,8 @@ Thanks for helping improve Pristine. This repository is a local-first TypeScript
 ```bash
 git clone https://github.com/getlou-gh/pristine.git
 cd pristine
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 ```
 
 Requirements:
@@ -22,14 +22,14 @@ Requirements:
 Run the smallest relevant checks while developing, then run the broader gate before opening or updating a PR:
 
 ```bash
-npm run typecheck
-npm run lint
-npm run test:unit
-npm run test:smoke
-SKIP_SLOW_TESTS=1 npm run test:integration
-npm run test:e2e
-npm run docs:build
-npm run verify:package
+pnpm run typecheck
+pnpm run lint
+pnpm run test:unit
+pnpm run test:smoke
+SKIP_SLOW_TESTS=1 pnpm run test:integration
+pnpm run test:e2e
+pnpm run docs:build
+pnpm run verify:package
 ```
 
 Maintainers use the local regression wrapper when preparing merges/releases:
@@ -40,9 +40,9 @@ Maintainers use the local regression wrapper when preparing merges/releases:
 
 ## Slow and local-model tests
 
-- `SKIP_SLOW_TESTS=1 npm run test:integration` runs deterministic integration coverage and skips local-model checks.
-- `npm run test:integration` may run local model integration tests when the model cache is available.
-- `npm run test:smoke:local-model` runs optional smoke coverage against the default local embedder. It may download or load model assets and is intended for maintainer/full-tier verification, not default CI.
+- `SKIP_SLOW_TESTS=1 pnpm run test:integration` runs deterministic integration coverage and skips local-model checks.
+- `pnpm run test:integration` may run local model integration tests when the model cache is available.
+- `pnpm run test:smoke:local-model` runs optional smoke coverage against the default local embedder. It may download or load model assets and is intended for maintainer/full-tier verification, not default CI.
 - `.checks/regression.sh --tier=full` is the maintainer full regression path and may load local models.
 
 ## Secret audits
@@ -70,8 +70,8 @@ A PR should include:
 Before requesting review, confirm:
 
 ```bash
-npm run docs:build
-npm run verify:package
+pnpm run docs:build
+pnpm run verify:package
 .checks/pre-merge.sh
 ```
 

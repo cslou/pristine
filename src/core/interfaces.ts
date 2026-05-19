@@ -1,7 +1,12 @@
 import type {
   ClassificationPipelineResult,
+  DeleteSensitiveResult,
   KeyPairWithStatus,
+  ListSensitiveOptions,
   SensitivityReport,
+  SensitiveRef,
+  SensitiveSummary,
+  UpdateSensitiveInput,
   VaultEntry,
   VaultEntryInput,
 } from './types.js';
@@ -52,4 +57,15 @@ export interface KeyManager {
 export interface VaultStore {
   addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
   getEntriesByPlaceholderIds(userId: string, placeholderIds: string[]): Promise<VaultEntry[]>;
+  listEntries(userId: string, options?: ListSensitiveOptions): Promise<readonly SensitiveSummary[]>;
+  getEntry(userId: string, sensitiveRef: SensitiveRef): Promise<SensitiveSummary | null>;
+  updateEntry(
+    userId: string,
+    sensitiveRef: SensitiveRef,
+    input: UpdateSensitiveInput,
+  ): Promise<SensitiveSummary>;
+  deleteEntries(
+    userId: string,
+    sensitiveRefs: readonly SensitiveRef[],
+  ): Promise<DeleteSensitiveResult>;
 }

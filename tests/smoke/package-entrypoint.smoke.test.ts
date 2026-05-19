@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // This smoke imports the built package entrypoint that consumers resolve via
-// package.json exports. It requires `npm run build` before `npm run test:smoke`.
+// package.json exports. It requires `pnpm run build` before `pnpm run test:smoke`.
 describe('package entrypoint smoke', () => {
   it('exports and exercises the source-index public API from dist', async () => {
     const pkg = (await import('../../dist/index.js')) as Record<string, unknown>;
@@ -14,6 +14,7 @@ describe('package entrypoint smoke', () => {
       'Pristine',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
+      'SensitiveNotFoundError',
       'SourceChunkStore',
       'buildSourceChunkVectorDdl',
       'createDatabase',

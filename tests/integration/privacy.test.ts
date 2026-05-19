@@ -1,10 +1,20 @@
 import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { secureAndRedact, reveal, scrubOutput } from '../../src/privacy/index.js';
+import {
+  deleteSensitive,
+  getSensitive,
+  listSensitive,
+  resolveSensitive,
+  secureAndRedact,
+  reveal,
+  scrubOutput,
+  updateSensitive,
+} from '../../src/privacy/index.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { clearResolvedStringRegistry } from '../../src/privacy/sanitizer/index.js';
 import type { KeyManager, PrivacyPipeline } from '../../src/core/interfaces.js';
 import type { ClassificationPipelineResult, SecureAndRedactResult } from '../../src/core/types.js';
+import { InvalidArgumentError, SensitiveNotFoundError } from '../../src/core/errors.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 
@@ -120,6 +130,102 @@ describe('privacy pipeline end-to-end', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.sensitiveType).toBe('api_key');
     expect(entries[0]!.encryptionMode).toBe('client_v2');
+  });
+
+  it('lists, updates, resolves, and deletes sensitive entries by exact ref', async () => {
+    clearResolvedStringRegistry();
+
+    const text =
+      'Use sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456 and sk-ant-api03-zyxwvutsrqponmlkjihgfedcba654321 for separate calls.';
+
+    const result = expectSuccess(
+      await secureAndRedact(text, {
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-sensitive-management',
+      }),
+    );
+
+    const summaries = await listSensitive(
+      { vaultStore, userId: 'user-sensitive-management' },
+      { limit: 10 },
+    );
+
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]!.label).toMatch(/^api_key-[0-9a-z]+$/);
+    expect(summaries[0]!.label).not.toContain('sk-ant-api03');
+
+    const firstRef = result.placeholderIds[0]!;
+    const secondRef = result.placeholderIds[1]!;
+
+    const updated = await updateSensitive(
+      firstRef,
+      { alias: 'primary api key' },
+      { vaultStore, userId: 'user-sensitive-management' },
+    );
+    expect(updated.alias).toBe('primary api key');
+
+    const fetched = await getSensitive(firstRef, {
+      vaultStore,
+      userId: 'user-sensitive-management',
+    });
+    expect(fetched?.alias).toBe('primary api key');
+
+    await expect(
+      resolveSensitive(firstRef, {
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-sensitive-management',
+      }),
+    ).resolves.toContain('sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456');
+
+    const deleted = await deleteSensitive([secondRef], {
+      vaultStore,
+      userId: 'user-sensitive-management',
+    });
+    expect(deleted.deletedCount).toBe(1);
+    expect(deleted.missingSensitiveRefs).toEqual([]);
+
+    await expect(
+      resolveSensitive(secondRef, {
+        vaultStore,
+        keyManager,
+        kekManager,
+        userId: 'user-sensitive-management',
+      }),
+    ).rejects.toBeInstanceOf(SensitiveNotFoundError);
+  });
+
+  it('rejects invalid sensitive-management inputs with domain errors', async () => {
+    await expect(
+      listSensitive(
+        { vaultStore, userId: 'user-invalid-sensitive-management' },
+        null as unknown as Parameters<typeof listSensitive>[1],
+      ),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+
+    await expect(
+      listSensitive(
+        { vaultStore, userId: 'user-invalid-sensitive-management' },
+        [] as unknown as Parameters<typeof listSensitive>[1],
+      ),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+
+    await expect(
+      deleteSensitive(null as unknown as Parameters<typeof deleteSensitive>[0], {
+        vaultStore,
+        userId: 'user-invalid-sensitive-management',
+      }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
+
+    await expect(
+      deleteSensitive(['valid-ref', 123] as unknown as Parameters<typeof deleteSensitive>[0], {
+        vaultStore,
+        userId: 'user-invalid-sensitive-management',
+      }),
+    ).rejects.toBeInstanceOf(InvalidArgumentError);
   });
 
   it('reveal returns text unchanged when no placeholders present', async () => {
@@ -300,7 +406,7 @@ describe('privacy pipeline end-to-end', () => {
   it('handles unicode context around a secret in round-trip', async () => {
     clearResolvedStringRegistry();
 
-    const apiKey = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456';
+    const apiKey = 'sk-ant-api03-unicodeabcdefghijklmnopqrstuvwxyz123456';
     const text = `Name is 山田太郎 and token ${apiKey}`;
 
     const result = expectSuccess(

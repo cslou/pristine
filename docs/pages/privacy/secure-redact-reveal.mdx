@@ -32,6 +32,21 @@ const toolResult = 'Sent the invoice email to ada@example.com.';
 const scrubbed = pristine.scrubOutput(toolResult, ['ada@example.com']);
 ```
 
+## manage sensitive refs
+
+The management APIs operate on metadata by default: `listSensitive` and `getSensitive` return refs, generated labels, optional aliases, sensitivity types, and timestamps, but never plaintext secret values. `updateSensitive` only changes caller-provided visible metadata such as `alias`; aliases are returned by metadata APIs, so do not store secret plaintext in them. Use `resolveSensitive` only inside privileged local flows that are allowed to recover one ref's plaintext value.
+
+```ts
+const summaries = await pristine.listSensitive('local-user', { limit: 25 });
+const first = summaries[0];
+
+if (first) {
+  await pristine.updateSensitive('local-user', first.sensitiveRef, {
+    alias: 'primary contact email',
+  });
+}
+```
+
 ## API and Reference
 
-See the [API reference](/api) for exact `secureAndRedact`, `reveal`, and `scrubOutput` signatures, and the [configuration reference](/configuration) for local storage, classifier, and embedder options.
+See the [API reference](/api) for exact privacy signatures and public types, and the [configuration reference](/configuration) for local storage, classifier, and embedder options.

@@ -16,13 +16,19 @@
 ### Sprint-Wide Context
 
 - **Sprint type:** Feature
-- **Shared context:** This sprint creates the core SDK building blocks for a future Pi privacy hook. The desired architecture is Detector / Classifier / Redactor with short public primitive names: `detect` finds suspicious spans and metadata, `classify` builds sanitized classifier inputs and validates caller-provided classifier decisions, and `redact` stores/redacts confirmed spans locally. The SDK should expose reusable contracts and local primitives but should not implement a hosted or provider-specific LLM classifier. `secureAndRedact` is removed from the preferred public flow because it composes an opinionated deterministic classifier differently from the new user/harness-owned `classify` primitive. `docs/specs/implementation-spec-004.md` must be updated before sprint integration so the durable flow spec matches the new primitive split.
-- **Non-goals:** No Pi input hook implementation, no subagent classifier implementation, no hosted Pristine service, no third-party secret verification, no large provider-specific catalog beyond the broad v1 candidate classes, no raw candidate values in detector output or sanitized classifier packets, and no composed replacement convenience wrapper for `detect` → `classify` → `redact`.
+- **Shared context:** This sprint creates the core SDK building blocks for a future Pi privacy hook. The desired architecture is Detector / Classifier / Redactor with short public primitive names: `detect` finds suspicious `sourceSpan`s and safe hint metadata, `classify` builds raw-value-free classifier requests, invokes a caller-provided classifier callback, and validates/normalizes decisions, and `redact` stores/redacts confirmed `sourceSpan`s locally while returning sensitive refs/placeholders. The SDK should expose reusable contracts and local primitives but should not implement a hosted or provider-specific LLM classifier. `secureAndRedact` is removed from the preferred public flow because it composes an opinionated deterministic classifier differently from the new user/harness-owned classifier callback used by `classify`. `docs/specs/implementation-spec-004.md` must be updated before sprint integration so the durable flow spec matches the new primitive split.
+- **Non-goals:** No Pi input hook implementation, no subagent classifier implementation, no SDK-owned LLM classifier, no hosted Pristine service, no third-party secret verification, no large provider-specific catalog beyond the broad v1 candidate classes, no raw candidate values in detector output or sanitized classifier requests, and no composed replacement convenience wrapper for `detect` → `classify` → `redact`.
 
 ### Affected Flows
 
-- **Existing flows affected:** Privacy module exports, `secureAndRedact` public API removal/migration surface, implementation-spec-004's current deterministic `secureAndRedact` and Pi secret-redaction flows, `reveal`, `scrubOutput`, sensitive vault CRUD/alias APIs, vault redaction/storage, public API type fixture, privacy tests.
-- **New flows introduced:** SDK primitive flow for harness-mediated privacy decisions: `detect(text)` → `classify(text, candidates, classifier)` → harness policy selects confirmed decisions → `redact(text, confirmed, userId)` stores originals in the local vault, applies safe aliases, and returns redacted text.
+- **Existing flows affected:** Privacy module exports, `secureAndRedact` public API removal/migration surface, implementation-spec-004's current deterministic `secureAndRedact`, §8 Claude Code/harness secret-redaction, custom-pattern/classifier, compatible harness reveal/tool-call, and Pi secret-redaction flows, `reveal`, `scrubOutput`, sensitive vault CRUD/alias APIs, vault redaction/storage, public API type fixture, privacy tests. Pi hook, tool-call reveal, and tool-result scrub implementations remain non-goals for this sprint.
+- **New flows introduced:** SDK primitive flow for harness-mediated privacy decisions: `detect(text)` returns raw-value-free candidates with `sourceSpan`s and `hint` metadata → `classify(text, candidates, classifierCallback)` sends sanitized context and marker metadata to the harness classifier callback and returns normalized decisions with `sourceSpan`s → harness policy selects confirmed decisions → `redact(text, confirmed, userId)` slices originals locally, stores them in the local vault, applies safe aliases, and returns redacted text plus `sensitiveRef`, `sourceSpan`, and `redactedSpan` metadata.
+
+### Primitive Surface Targets
+
+- `detect(text, options?) -> DetectResult`: returns `{ sourceSurface?, candidates }`, where each candidate has a non-value-derived `candidateId`, `sourceSpan`, `kind`, `ruleId`, `valueLength`, optional `location`, and optional safe `hint` metadata. It never returns raw matched values.
+- `classify(text, candidates, classifierCallback, options?) -> Promise<ClassifyResult>`: builds a sanitized `ClassifierRequest` with `sanitizedContext`, `[CANDIDATE:<id>]` markers, and safe candidate metadata, invokes the caller-provided callback, then validates and normalizes callback decisions back to `{ candidateId, verdict, sourceSpan, type?, label?, confidence?, rationale? }`. It does not implement or bundle an LLM classifier.
+- `redact(text, confirmed, userId, options?) -> Promise<RedactResult>`: accepts confirmed secrets with `{ candidateId?, sourceSpan, type, label? }`, slices raw values locally from the original text, stores them in the local vault, persists labels as visible aliases where supplied, and returns `{ text, redactions }` with `sensitiveRef`, placeholder, `sourceSpan`, and `redactedSpan` metadata.
 
 ### Verification Strategy
 
@@ -59,14 +65,15 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** SDK integrator, **I want** explicit `detect`, `classify`, and `redact` contracts, **so that** I can compose local candidate detection, harness-owned classification policy, and local vault redaction without relying on a monolithic privacy pipeline.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] New shared privacy types live in the privacy/core type surface with names that distinguish `detect` candidate output, `classify` decisions, and `redact` confirmed inputs/results.
-  - [ ] `detect` candidate types contain stable candidate IDs, span offsets, detector kind/rule metadata, and derived shape/context signals, but no raw matched value field.
-  - [ ] `classify` request/response types represent sanitized classifier inputs, `secret` / `not_secret` / `uncertain` verdicts, sensitivity type, optional label, confidence, and rationale without requiring the SDK to implement an LLM provider.
-  - [ ] `redact` input/result types carry candidate IDs, span offsets, sensitivity type, optional labels, returned sensitive refs/placeholders, and alias metadata needed by callers.
+  - [ ] New shared privacy types live in the privacy/core type surface with names that distinguish `detect` candidate output, `classify` callback requests/decisions, and `redact` confirmed inputs/results.
+  - [ ] Shared span types define UTF-16 half-open `[start, end)` offsets and use `sourceSpan` for positions in the original text; redaction result types additionally expose `redactedSpan` for placeholder positions in returned text.
+  - [ ] `detect` candidate types contain stable non-value-derived candidate IDs, detector kind/rule metadata, `sourceSpan`, value length, optional location, and safe `hint` metadata (`suggestedType`, `provider`, `prefixFamily`, `nearbyName`, signals, and features), but no raw matched value field.
+  - [ ] `classify` request/response types represent raw-value-free sanitized classifier inputs, candidate `marker`s, harness callback decisions, `secret` / `not_secret` / `uncertain` verdicts, sensitivity type, optional label, confidence, and rationale without requiring the SDK to implement an LLM provider.
+  - [ ] `redact` input/result types carry candidate IDs, `sourceSpan`s, sensitivity type, optional labels, returned `sensitiveRef`s/placeholders, `redactedSpan`s, and alias metadata needed by callers.
   - [ ] Root public exports include the new canonical primitive functions/types and remove `secureAndRedact` from the documented/root public API surface, with any legacy internal helper kept only if it is not exported or documented as user-facing, and the public API type fixture importing the new surface successfully.
 - **Functional verification:**
   - [ ] Add or update a type-focused smoke fixture in `tests/smoke/public-api-types-fixture.mts`; pass condition: `pnpm run verify:public-api-types` succeeds with `detect`, `classify`, `redact`, and their exported primitive types.
-  - [ ] Add type/shape unit tests or compile-time fixtures proving detector candidates and sanitized classifier inputs do not expose a `rawValue`/`text` field for the matched secret; pass condition: tests or typecheck fail if such a public field is required.
+  - [ ] Add type/shape unit tests or compile-time fixtures proving detector candidates and sanitized classifier requests do not expose a `rawValue`/`text` field for the matched secret and use `hint`, `sourceSpan`, `redactedSpan`, and `sensitiveRef` naming; pass condition: tests or typecheck fail if raw-value fields are required or refined names are missing.
   - [ ] Add a public-surface assertion; pass condition: root exports/docs/type fixtures no longer expose or instruct new consumers to call `secureAndRedact` and instead import/use `detect`, `classify`, and `redact`.
 - **Regression verification:**
   - [ ] Run `pnpm run typecheck`; pass condition: existing strict TypeScript compilation remains green after new public types are introduced.
@@ -92,22 +99,23 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness developer, **I want** a broad local `detect` primitive that returns suspicious candidates with metadata, **so that** my harness can cast a wide net before asking its own classifier to decide policy.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] A new `detect(text, options?)` public primitive detects secret candidates in a text string without performing final secret classification or vault redaction.
+  - [ ] A new `detect(text, options?)` public primitive detects secret candidates in a text string without performing final secret classification or vault redaction, and is configurable by callers through rule enable/disable, custom detector rules, sensitivity presets, and source-surface metadata.
   - [ ] The detector covers broad v1 candidate classes: private key blocks, sensitive key/value assignments, auth headers, known provider prefixes, JWT/PASETO-like structured tokens, credential-bearing URLs, cookies/session tokens, signed URLs/query secrets, cloud credential blocks, recovery/seed phrases, and opaque generated-looking values.
-  - [ ] `detect` output includes span offsets, candidate kind, rule ID, value length, line/column or equivalent location metadata, allowed provider prefix-family metadata where applicable, suggested sensitivity type where the rule has one, and explicit `positiveSignals` / `negativeSignals` arrays with at least key/header/parameter context, detector confidence reason, example/placeholder signal, and hash/public-id signal when those facts are present.
-  - [ ] `detect` output does not include the raw matched value; raw values remain recoverable only by local code that already has the original text and span offsets.
+  - [ ] `detect` output includes `sourceSpan` offsets, candidate kind, rule ID, value length, line/column or equivalent location metadata, and safe `hint` metadata with `prefixFamily` where applicable, `provider` where guessed, `suggestedType` where the rule has one, and `positiveSignals` / `negativeSignals` arrays with at least key/header/parameter context, detector confidence reason, example/placeholder signal, and hash/public-id signal when those facts are present.
+  - [ ] `detect` output does not include the raw matched value, raw prefixes/suffixes, or value-derived candidate IDs; raw values remain recoverable only by local code that already has the original text and `sourceSpan` offsets.
   - [ ] Overlapping detector matches are normalized so higher-signal or longer candidates are not duplicated before `classify` receives them.
 - **Functional verification:**
-  - [ ] Add detector unit tests with at least one fixture for each broad v1 candidate class; pass condition: every fixture returns an expected candidate kind/rule ID, span, value length, location metadata, allowed prefix-family metadata where applicable, suggested type where applicable, and asserted `positiveSignals` such as `known_provider_prefix`, `sensitive_key_name`, `auth_header_context`, `query_secret_param`, `credential_url_context`, `detector_confidence_high`, or equivalent rule-specific confidence/context signals.
+  - [ ] Add detector unit tests with at least one fixture for each broad v1 candidate class; pass condition: every fixture returns an expected candidate kind/rule ID, `sourceSpan`, value length, location metadata, `hint.prefixFamily` where applicable, `hint.provider`/`hint.suggestedType` where applicable, and asserted `hint.positiveSignals` such as `known_provider_prefix`, `sensitive_key_name`, `auth_header_context`, `query_secret_param`, `credential_url_context`, `detector_confidence_high`, or equivalent rule-specific confidence/context signals.
+  - [ ] Add detector configuration tests; pass condition: rule enable/disable changes emitted candidates, a custom detector rule emits the documented safe candidate shape without raw values, `broad`/`balanced`/`strict` sensitivity presets produce the documented candidate-count or signal differences, and `sourceSurface` metadata is propagated to the detect result or downstream classifier request.
   - [ ] Add noisy non-secret fixtures for hashes, commit SHAs, UUIDs, package versions, example placeholders, and public IDs; pass condition: either no candidate is emitted or emitted candidates include asserted `negativeSignals` such as `looks_like_commit_sha`, `looks_like_uuid`, `looks_like_package_version`, `looks_like_placeholder`, or `looks_like_public_id`.
-  - [ ] Add an overlap/deduplication test; pass condition: nested matches such as an auth header containing a provider token produce the intended normalized candidate set without duplicate raw spans.
+  - [ ] Add an overlap/deduplication test; pass condition: nested matches such as an auth header containing a provider token produce the intended normalized candidate set without duplicate `sourceSpan`s.
 - **Regression verification:**
   - [ ] Run `pnpm run test:unit -- tests/classifier/deterministic-classifier.test.ts tests/privacy/safety-scan.test.ts`; pass condition: existing custom-pattern detection and scrub behavior still passes while the new `detect` primitive remains candidate-only.
   - [ ] Run `pnpm run lint`; pass condition: detector regex implementation satisfies lint and contains no debug logging.
 - **Manual-only verification:** N/A — detector fixtures cover this story.
 - **Planned commits:**
   1. `feat: add detect privacy primitive` — add `detect`, candidate rules, overlap normalization, and focused fixtures.
-- **Technical notes:** Treat regexes as candidate detectors, not truth classifiers. `detect` may accept extensible detector rules/options, but extension must preserve the no-raw-value output contract. Keep rule metadata explicit enough for classifier prompts and test assertions.
+- **Technical notes:** Treat regexes as candidate detectors, not truth classifiers. `detect` should accept extensible detector rules/options, but extension must preserve the no-raw-value output contract and avoid value-derived IDs. Keep `hint` metadata explicit enough for classifier prompts and test assertions without exposing raw candidate substrings.
 
 #### Story 3: Implement `classify` with sanitized classifier inputs
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -125,24 +133,24 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness classifier author, **I want** a `classify` primitive that safely calls my classifier with redacted context and rich metadata, **so that** I can decide whether candidates are secrets without seeing full raw candidate values in classifier input.
 - **Dependencies:** Story 1, Story 2
 - **Acceptance criteria:**
-  - [ ] A new `classify(text, candidates, classifier, options?)` public primitive builds sanitized classifier input internally, invokes a caller-provided classifier callback, and returns normalized candidate decisions.
-  - [ ] The classifier callback receives `requestId`, `sourceSurface`, `sanitizedContext`, and `candidates[]`; each candidate entry includes `candidateId`, `kind`, `ruleId`, `span`, `location`, `valueLength`, `features`, `allowedPrefixFamily`, `providerGuess`, `nearbyName`, `suggestedType`, `positiveSignals`, and `negativeSignals` fields where applicable.
-  - [ ] `classify` replaces all candidate spans in included context with `[CANDIDATE:<id>]` placeholders, including candidates other than the callback request's primary candidate when per-candidate requests are used.
-  - [ ] The classifier callback input does not include raw candidate strings, arbitrary raw prefixes/suffixes, decoded JWT payload values, connection-string passwords, query secret values, or seed phrase words.
-  - [ ] `classify` validates callback output for known candidate IDs, allowed verdicts (`secret`, `not_secret`, `uncertain`), valid sensitivity type/label fields, confidence shape, and duplicate/missing candidate decisions.
+  - [ ] A new `classify(text, candidates, classifierCallback, options?)` public primitive builds sanitized classifier input internally, invokes a caller-provided classifier callback, and returns normalized candidate decisions with original `sourceSpan`s for downstream policy/redaction.
+  - [ ] The classifier callback receives `requestId`, `sourceSurface`, `sanitizedContext`, and `candidates[]`; each candidate entry includes `candidateId`, `marker`, `kind`, `ruleId`, `location`, `valueLength`, and safe `hint` metadata (`features`, `prefixFamily`, `provider`, `nearbyName`, `suggestedType`, `positiveSignals`, `negativeSignals`) where applicable.
+  - [ ] `classify` replaces all candidate `sourceSpan`s in included context with `[CANDIDATE:<id>]` markers, including candidates other than the callback request's primary candidate when per-candidate requests are used.
+  - [ ] The classifier callback input does not include raw candidate strings, arbitrary raw prefixes/suffixes, original source spans unless explicitly justified as safe metadata, decoded JWT payload values, connection-string passwords, query secret values, or seed phrase words.
+  - [ ] `classify` validates callback output for known candidate IDs, allowed verdicts (`secret`, `not_secret`, `uncertain`), valid sensitivity type/label fields, confidence shape (`0..1`), and duplicate/missing candidate decisions.
 - **Functional verification:**
-  - [ ] Add `classify` callback-input tests using multi-candidate user messages; pass condition: all raw candidate strings are absent from serialized callback input and each candidate placeholder appears in sanitized context.
-  - [ ] Add a callback request shape fixture/test; pass condition: classifier requests include `requestId`, `sourceSurface`, `sanitizedContext`, `candidates[]`, and candidate `candidateId`, `kind`, `ruleId`, `span`, `location`, `valueLength`, `features`, `allowedPrefixFamily`, `providerGuess`, `nearbyName`, `suggestedType`, `positiveSignals`, and `negativeSignals` fields where applicable, without raw candidate leakage.
-  - [ ] Add tests for allowed provider prefix-family metadata; pass condition: allowed labels such as `sk-proj`, `ghp_`, and `AKIA` are represented as metadata for classifier signal while arbitrary unknown candidate prefixes are not exposed and no prefix-family metadata is treated as a non-secret verdict.
+  - [ ] Add `classify` callback-input tests using multi-candidate user messages; pass condition: all raw candidate strings are absent from serialized callback input and each candidate marker appears in sanitized context.
+  - [ ] Add a callback request shape fixture/test; pass condition: classifier requests include `requestId`, `sourceSurface`, `sanitizedContext`, `candidates[]`, and candidate `candidateId`, `marker`, `kind`, `ruleId`, `location`, `valueLength`, and `hint` fields (`features`, `prefixFamily`, `provider`, `nearbyName`, `suggestedType`, `positiveSignals`, `negativeSignals`) where applicable, without raw candidate leakage.
+  - [ ] Add tests for safe provider prefix-family metadata; pass condition: allowed labels such as `sk-proj`, `ghp_`, and `AKIA` are represented as `hint.prefixFamily` metadata for classifier signal while arbitrary unknown candidate prefixes are not exposed and no prefix-family metadata is treated as a non-secret verdict.
   - [ ] Add JWT/URL/seed phrase sanitization tests; pass condition: classifier callback input does not contain decoded payload values, URL passwords, query secret values, or seed words.
-  - [ ] Add classifier output validation tests; pass condition: duplicate, unknown, missing, malformed, or invalid verdict/type/label outputs fail loudly with domain-specific errors or structured failures before `redact` can run.
+  - [ ] Add classifier output validation tests; pass condition: duplicate, unknown, missing, malformed, or invalid verdict/type/label/confidence outputs fail loudly with domain-specific errors or structured failures before `redact` can run, and valid outputs normalize back to decisions containing original `sourceSpan`s.
 - **Regression verification:**
   - [ ] Run `pnpm run test:unit -- tests/vault/vault-redaction.test.ts tests/privacy/safety-scan.test.ts`; pass condition: existing placeholder and scrubbing behavior is unchanged.
   - [ ] Run `pnpm run typecheck`; pass condition: `classify` request/decision types compile cleanly with strict TypeScript.
 - **Manual-only verification:** N/A — leak-focused serialization and callback validation tests cover this story.
 - **Planned commits:**
   1. `feat: add classify privacy primitive` — add `classify`, sanitized callback request construction, callback output validation, leak-focused tests, and request JSON fixtures.
-- **Technical notes:** This story owns the privacy boundary for classifier prompts: no full raw candidates. Prefer stable, explicit metadata over partial raw value previews. The SDK provides the callback contract and validation, not a bundled LLM classifier implementation.
+- **Technical notes:** This story owns the privacy boundary for classifier prompts: no full raw candidates. Prefer stable, explicit `hint` metadata and `[CANDIDATE:<id>]` markers over partial raw value previews. The SDK provides request construction, callback contract, and validation; the harness owns any LLM/subagent/manual classifier implementation.
 
 #### Story 4: Implement `redact` vault-backed primitive
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -160,15 +168,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** harness integrator, **I want** a `redact` primitive for exact classifier-confirmed spans, **so that** the raw secret is stored only locally in the vault and the text entering model context contains Pristine placeholders.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] A new `redact(text, confirmed, userId, options?)` public primitive accepts original text, user/vault/key configuration, and confirmed spans with start/end/type/optional label, then returns redacted text and sensitive refs/placeholders while storing originals in the encrypted vault.
-  - [ ] `redact` slices raw values locally from the original text using span offsets and does not require confirmed span inputs to carry raw values.
-  - [ ] `redact` validates span bounds, rejects or reports overlapping/invalid confirmed spans with domain-specific errors or structured failure results, and preserves deterministic behavior for valid non-overlapping spans.
-  - [ ] Optional classifier-provided labels are persisted as visible metadata aliases for the resulting sensitive refs using the PR #240 sensitive CRUD/vault metadata path, with safe fallback aliases or no alias for unlabeled spans.
-  - [ ] `reveal` can restore values redacted by `redact`, and `resolveSensitive` can resolve each returned sensitive ref for the same user.
+  - [ ] A new `redact(text, confirmed, userId, options?)` public primitive accepts original text, user/vault/key configuration, and confirmed secrets with `sourceSpan`/type/optional label, then returns redacted text and `sensitiveRef`s/placeholders while storing originals in the encrypted vault.
+  - [ ] `redact` slices raw values locally from the original text using `sourceSpan` offsets and does not require confirmed secret inputs to carry raw values.
+  - [ ] `redact` validates `sourceSpan` bounds, rejects or reports overlapping/invalid confirmed secrets with domain-specific errors or structured failure results, and preserves deterministic behavior for valid non-overlapping spans.
+  - [ ] Optional classifier-provided labels are persisted as visible metadata aliases for the resulting `sensitiveRef`s using the PR #240 sensitive CRUD/vault metadata path, with safe fallback aliases or no alias for unlabeled spans.
+  - [ ] `redact` result redaction metadata includes `candidateId` where available, `sensitiveRef`, placeholder, type, label, original `sourceSpan`, and `redactedSpan` in the returned text.
+  - [ ] `reveal` can restore values redacted by `redact`, and `resolveSensitive` can resolve each returned `sensitiveRef` for the same user.
 - **Functional verification:**
-  - [ ] Add integration tests for `redact`; pass condition: confirmed spans are replaced with `[SENSITIVE:<type>:<id>]`, originals are absent from redacted text, sensitive refs/placeholder IDs are returned, and vault entries exist.
-  - [ ] Add a reveal/resolve round-trip test; pass condition: `reveal` restores text redacted by `redact`, and `resolveSensitive` returns the original value for each returned sensitive ref for the same user.
-  - [ ] Add validation tests for invalid, out-of-bounds, and overlapping spans; pass condition: invalid input fails loudly without writing partial vault entries.
+  - [ ] Add integration tests for `redact`; pass condition: confirmed `sourceSpan`s are replaced with `[SENSITIVE:<type>:<id>]`, originals are absent from redacted text, `sensitiveRef`s/placeholder IDs are returned, `sourceSpan` and `redactedSpan` are correct, and vault entries exist.
+  - [ ] Add a reveal/resolve round-trip test; pass condition: `reveal` restores text redacted by `redact`, and `resolveSensitive` returns the original value for each returned `sensitiveRef` for the same user.
+  - [ ] Add validation tests for invalid, out-of-bounds, and overlapping `sourceSpan`s; pass condition: invalid input fails loudly without writing partial vault entries.
   - [ ] Add label/alias tests; pass condition: supplied labels are persisted as visible aliases returned by `getSensitive`/`listSensitive`, unlabeled spans use the documented fallback/no-alias behavior, and aliases never contain raw secret values.
 - **Regression verification:**
   - [ ] Run `pnpm run test:integration -- tests/integration/privacy.test.ts tests/integration/kek-lifecycle.test.ts`; pass condition: existing reveal/scrub/vault lifecycle and PR #240 sensitive CRUD behavior remain green.
@@ -176,7 +185,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Manual-only verification:** N/A — integration and unit tests cover this story.
 - **Planned commits:**
   1. `feat: add redact privacy primitive` — add `redact`, validation, vault storage integration, alias persistence, and round-trip tests.
-- **Technical notes:** Reuse existing vault encryption/key/KekManager paths and PR #240 sensitive CRUD metadata aliases. Classifier labels are visible metadata, not secrets; validate or document that callers must not put raw secret values in aliases.
+- **Technical notes:** Reuse existing vault encryption/key/KekManager paths and PR #240 sensitive CRUD metadata aliases. Classifier labels are visible metadata, not secrets; validate or document that callers must not put raw secret values in aliases. Keep source and redacted spans distinct because placeholder insertion changes offsets.
 
 #### Story 5: Publish primitive API docs, spec update, and `secureAndRedact` migration
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -194,29 +203,29 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** privacy API adopter, **I want** docs and examples that explain `detect` → `classify` → `redact` and the `secureAndRedact` migration, **so that** I can compose privacy policy explicitly instead of relying on an opinionated SDK wrapper.
 - **Dependencies:** Story 1, Story 2, Story 3, Story 4
 - **Acceptance criteria:**
-  - [ ] Public API docs describe short primitive names `detect`, `classify`, and `redact`, and clearly state that the SDK does not send raw candidates to any LLM or implement a hosted classifier.
+  - [ ] Public API docs describe short primitive names `detect`, `classify`, and `redact`, and clearly state that the SDK does not send raw candidates to any LLM or implement a hosted/bundled classifier.
   - [ ] `docs/specs/implementation-spec-004.md` is updated with a dedicated section or addendum for the new `detect` → `classify` → `redact` primitive flow and explicitly marks the old composed `secureAndRedact` flow as removed from the root public API, with any legacy internal implementation treated as non-user-facing.
-  - [ ] Privacy guide docs show a concise composition example: `detect(text)` → `classify(text, candidates, classifier)` → harness policy → `redact(text, confirmed, userId)`.
-  - [ ] Docs explain that deterministic regex-only behavior can be implemented as a user/example classifier composition, not as a privileged `secureAndRedact` SDK wrapper.
+  - [ ] Privacy guide docs show a concise composition example: `detect(text)` → `classify(text, candidates, classifierCallback)` → harness policy maps secret decisions to confirmed `{ sourceSpan, type, label }` inputs → `redact(text, confirmed, userId)`.
+  - [ ] Docs explain that deterministic regex-only behavior can be implemented as a user/example classifier callback composition, not as a privileged `secureAndRedact` SDK wrapper.
   - [ ] Docs warn that classifier policy, including `uncertain` handling, belongs to the harness/tool/extension/skill using the primitives.
   - [ ] Docs describe PR #240 sensitive CRUD primitives and state classifier labels are visible aliases stored via `updateSensitive`, never raw secrets.
   - [ ] Public API type fixture and package build include the new exports and no longer encourage `secureAndRedact` for new consumers.
 - **Functional verification:**
   - [ ] Run `pnpm run docs:build`; pass condition: updated API/privacy docs build successfully.
-  - [ ] Run `rg "detect|classify|redact" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention all three short primitive names.
-  - [ ] Run `rg "confirmed span|confirmed spans|sensitive refs|sensitiveRef" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec describe the confirmed-span `redact` primitive and returned sensitive refs.
-  - [ ] Run `rg "sanitized|raw candidates|raw candidate" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain sanitized classifier input and that raw candidates are not sent to classifiers.
-  - [ ] Run `rg "uncertain|policy" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state uncertain handling belongs to harness policy.
-  - [ ] Run `rg "secureAndRedact|migration|primitive-first" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain the `secureAndRedact` public API removal/migration and primitive-first replacement.
-  - [ ] Run `rg "hosted classifier|hosted Pristine|LLM classifier|does not implement" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state the SDK does not provide a hosted classifier or bundled LLM classifier implementation.
-  - [ ] Run `rg "listSensitive|getSensitive|updateSensitive|deleteSensitive|resolveSensitive|alias" docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention sensitive CRUD and alias label handling.
+  - [ ] Run individual `rg` checks for `detect`, `classify`, and `redact` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention each short primitive name.
+  - [ ] Run individual `rg` checks for `sourceSpan`, `redactedSpan`, `sensitiveRef`, and `sensitive refs` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec describe confirmed-secret `sourceSpan` inputs, `redact` output spans, and returned sensitive refs.
+  - [ ] Run individual `rg` checks for `sanitized`, `raw candidate`, `classifierCallback`, `hint`, and `marker` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain sanitized classifier callback input, candidate markers/hints, and that raw candidates are not sent to classifiers.
+  - [ ] Run individual `rg` checks for `uncertain` and `policy` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state uncertain handling belongs to harness policy.
+  - [ ] Run individual `rg` checks for `secureAndRedact`, `migration`, and `primitive-first` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec explain the `secureAndRedact` public API removal/migration and primitive-first replacement.
+  - [ ] Run individual `rg` checks for `hosted classifier`, `LLM classifier`, and `does not implement` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec state the SDK does not provide a hosted classifier or bundled LLM classifier implementation.
+  - [ ] Run individual `rg` checks for `listSensitive`, `getSensitive`, `updateSensitive`, `deleteSensitive`, `resolveSensitive`, and `alias` in `docs/pages/privacy docs/pages/api.mdx docs/specs/implementation-spec-004.md`; pass condition: docs/spec mention every sensitive CRUD primitive and alias label handling.
   - [ ] Run `pnpm run verify:public-api-types`; pass condition: external consumers can import new primitive types and existing supported types.
 - **Regression verification:**
   - [ ] Run `pnpm run test:smoke`; pass condition: package build and public API smoke tests remain green.
   - [ ] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public client privacy APIs, scrub behavior, and sensitive CRUD behavior remain green after `secureAndRedact` migration.
 - **Manual-only verification:** N/A — docs build, grep checks, smoke tests, and focused unit tests cover this story.
 - **Planned commits:**
-  1. `docs: document primitive-first privacy api` — update API/privacy docs, implementation spec, public type fixtures, and examples for `detect` → `classify` → `redact` plus `secureAndRedact` migration.
+  1. `docs: document primitive-first privacy api` — update API/privacy docs, implementation spec, public type fixtures, and examples for `detect` → `classify` → `redact`, refined schema names (`hint`, `sourceSpan`, `redactedSpan`, `sensitiveRef`), and `secureAndRedact` migration.
 - **Technical notes:** Use public docs wording consistent with recent Vocs positioning: local SDK building blocks, no hosted service, no raw candidates to LLM by default. Keep Pi hook and subagent implementation documentation for a later sprint. The spec update can be an addendum rather than a full rewrite of the older deterministic-only plan. Because classifier labels are visible aliases, docs must warn not to put plaintext secrets in labels/aliases.
 
 #### Final Story: Sprint Verification & Completion

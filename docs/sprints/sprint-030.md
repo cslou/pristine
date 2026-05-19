@@ -326,7 +326,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 
 ## Final Review
 
-**Mergeability:** 4/5 from Final Verification Story `/review` before P2 cleanup; post-fix `/review-fix` pending.
+**Mergeability:** 4/5 from Final Verification Story `/review`; P2 signature cleanup applied in follow-up commit.
 
 ## Sprint objective + accomplishments
 

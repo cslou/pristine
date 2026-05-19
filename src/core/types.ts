@@ -46,11 +46,14 @@ export type SensitivitySource = 'deterministic';
 
 export type SensitivityType = string;
 
-/** UTF-16 half-open [start, end) offsets into the original source text. */
-export interface SourceSpan {
+/** UTF-16 half-open [start, end) offsets into a text string. */
+export interface TextSpan {
   readonly start: number;
   readonly end: number;
 }
+
+/** UTF-16 half-open [start, end) offsets into the original source text. */
+export type SourceSpan = TextSpan;
 
 export interface SourceLocation {
   readonly line: number;
@@ -147,6 +150,8 @@ export interface DetectResult {
   readonly candidates: readonly DetectCandidate[];
 }
 
+export type DetectPrimitive = (text: string, options?: DetectOptions) => DetectResult;
+
 export type ClassifierVerdict = 'secret' | 'not_secret' | 'uncertain';
 
 export interface ClassifierRequestCandidate {
@@ -204,6 +209,13 @@ export interface ClassifyResult {
   readonly decisions: readonly ClassifyDecision[];
 }
 
+export type ClassifyPrimitive = (
+  text: string,
+  candidates: readonly DetectCandidate[],
+  classifierCallback: ClassifierCallback,
+  options?: ClassifyOptions,
+) => Promise<ClassifyResult>;
+
 export interface RedactConfirmedSecret {
   readonly candidateId?: string;
   readonly sourceSpan: SourceSpan;
@@ -223,13 +235,20 @@ export interface RedactResultRedaction {
   readonly label?: string;
   readonly alias?: string;
   readonly sourceSpan: SourceSpan;
-  readonly redactedSpan: SourceSpan;
+  readonly redactedSpan: TextSpan;
 }
 
 export interface RedactResult {
   readonly text: string;
   readonly redactions: readonly RedactResultRedaction[];
 }
+
+export type RedactPrimitive = (
+  text: string,
+  confirmed: readonly RedactConfirmedSecret[],
+  userId: string,
+  options?: RedactOptions,
+) => Promise<RedactResult>;
 
 export interface DetectedEntity {
   readonly type: SensitivityType;

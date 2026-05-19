@@ -32,8 +32,6 @@ export type {
   SourceChunkSearchHit,
 } from './client.js';
 
-export { classify, detect, redact } from './privacy/index.js';
-
 export type {
   BuiltInDetectCandidateKind,
   ClassifierCallback,
@@ -44,11 +42,13 @@ export type {
   ClassifierVerdict,
   ClassifyDecision,
   ClassifyOptions,
+  ClassifyPrimitive,
   ClassifyResult,
   DetectCandidate,
   DetectCandidateKind,
   DetectHint,
   DetectOptions,
+  DetectPrimitive,
   DetectResult,
   DetectSensitivityPreset,
   DeleteSensitiveResult,
@@ -57,6 +57,7 @@ export type {
   PrivacyHintFeatureValue,
   RedactConfirmedSecret,
   RedactOptions,
+  RedactPrimitive,
   RedactResult,
   RedactResultRedaction,
   RevealResult,
@@ -68,6 +69,7 @@ export type {
   SourceSpan,
   SourceSurface,
   SourceSurfaceMetadata,
+  TextSpan,
   UpdateSensitiveInput,
 } from './core/types.js';
 

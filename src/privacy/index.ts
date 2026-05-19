@@ -13,17 +13,8 @@ import {
 import type { KekManager } from './kek/kek-manager.js';
 import { unwrapDekWithKek } from './kek/kek-manager.js';
 import type {
-  ClassifierCallback,
-  ClassifyOptions,
-  ClassifyResult,
-  DetectCandidate,
-  DetectOptions,
-  DetectResult,
   DeleteSensitiveResult,
   ListSensitiveOptions,
-  RedactConfirmedSecret,
-  RedactOptions,
-  RedactResult,
   RevealResult,
   SecureAndRedactResult,
   SensitiveRef,
@@ -32,11 +23,7 @@ import type {
   VaultEntry,
 } from '../core/types.js';
 import { scrubStructuredSensitivePatterns } from './safety-scan.js';
-import {
-  InvalidArgumentError,
-  PrivacyPipelineError,
-  SensitiveNotFoundError,
-} from '../core/errors.js';
+import { InvalidArgumentError, SensitiveNotFoundError } from '../core/errors.js';
 
 export interface SecureAndRedactConfig {
   readonly vaultStore: VaultStore;
@@ -155,42 +142,6 @@ const decryptEntries = async (
 
   return approvedValues;
 };
-
-export function detect(text: string, options: DetectOptions = {}): DetectResult {
-  if (typeof text !== 'string') {
-    throw new InvalidArgumentError('detect: text must be a string');
-  }
-
-  return options.sourceSurface
-    ? { sourceSurface: options.sourceSurface, candidates: [] }
-    : { candidates: [] };
-}
-
-export async function classify(
-  text: string,
-  candidates: readonly DetectCandidate[],
-  classifierCallback: ClassifierCallback,
-  options: ClassifyOptions = {},
-): Promise<ClassifyResult> {
-  void text;
-  void candidates;
-  void classifierCallback;
-  void options;
-  throw new PrivacyPipelineError('classify primitive implementation is not available yet');
-}
-
-export async function redact(
-  text: string,
-  confirmed: readonly RedactConfirmedSecret[],
-  userId: string,
-  options: RedactOptions = {},
-): Promise<RedactResult> {
-  void text;
-  void confirmed;
-  void userId;
-  void options;
-  throw new PrivacyPipelineError('redact primitive implementation is not available yet');
-}
 
 /**
  * Classify text for sensitive content, redact detected entities with placeholders,

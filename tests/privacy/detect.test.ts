@@ -174,8 +174,8 @@ describe('detect privacy primitive', () => {
             valueLength: value.length,
             hint: {
               suggestedType: 'api_key',
-              provider: 'acme',
-              prefixFamily: 'acme_tk',
+              provider: 'custom-provider',
+              prefixFamily: 'custom-family',
               positiveSignals: ['custom_rule'],
               features: { bucket: 'short_lived' },
             },
@@ -185,7 +185,8 @@ describe('detect privacy primitive', () => {
     };
     const customCandidate = firstCandidate(customText, { customRules: [customRule] });
     expect(customCandidate.ruleId).toBe('custom.acme-token');
-    expect(customCandidate.hint.provider).toBe('acme');
+    expect(customCandidate.hint.provider).toBe('custom-provider');
+    expect(customCandidate.hint.prefixFamily).toBe('custom-family');
     expectOnlySafeCandidateFields(customCandidate);
 
     const leakyCustomRule: DetectorRule = {

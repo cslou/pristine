@@ -79,20 +79,23 @@ const assertValidSpan = (span: SourceSpan, textLength: number, ruleId: string): 
   }
 };
 
-const safeHintString = (
-  value: string,
-  rawValue: string,
-  options: { readonly allowPrefix?: boolean } = {},
-): string | undefined => {
+const SAFE_PROVIDER_HINTS = new Set(['anthropic', 'aws', 'github', 'openai', 'sendgrid']);
+const SAFE_PREFIX_FAMILY_HINTS = new Set(['AKIA', 'ghp_', 'sk-ant', 'sk-proj', 'SG.']);
+
+const safeHintString = (value: string, rawValue: string): string | undefined => {
   if (value.length === 0) return undefined;
-  if (value === rawValue || value.includes(rawValue)) return undefined;
-  if (
-    rawValue.includes(value) &&
-    !(options.allowPrefix && rawValue.startsWith(value) && value.length <= 16)
-  ) {
-    return undefined;
-  }
+  if (value === rawValue || value.includes(rawValue) || rawValue.includes(value)) return undefined;
   return value;
+};
+
+const safeProvider = (value: string | undefined, rawValue: string): string | undefined => {
+  if (!value) return undefined;
+  return SAFE_PROVIDER_HINTS.has(value) ? value : safeHintString(value, rawValue);
+};
+
+const safePrefixFamily = (value: string | undefined, rawValue: string): string | undefined => {
+  if (!value) return undefined;
+  return SAFE_PREFIX_FAMILY_HINTS.has(value) ? value : safeHintString(value, rawValue);
 };
 
 const safeHintStringArray = (
@@ -130,13 +133,9 @@ const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHin
     : undefined;
 
   return {
-    suggestedType: hint.suggestedType,
-    provider: hint.provider
-      ? safeHintString(hint.provider, rawValue, { allowPrefix: true })
-      : undefined,
-    prefixFamily: hint.prefixFamily
-      ? safeHintString(hint.prefixFamily, rawValue, { allowPrefix: true })
-      : undefined,
+    suggestedType: hint.suggestedType ? safeHintString(hint.suggestedType, rawValue) : undefined,
+    provider: safeProvider(hint.provider, rawValue),
+    prefixFamily: safePrefixFamily(hint.prefixFamily, rawValue),
     nearbyName: hint.nearbyName ? safeHintString(hint.nearbyName, rawValue) : undefined,
     signals: hint.signals ? safeHintStringArray(hint.signals, rawValue) : undefined,
     positiveSignals: hint.positiveSignals

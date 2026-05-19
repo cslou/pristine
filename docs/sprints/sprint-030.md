@@ -132,12 +132,12 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `src/privacy/detector/` implements the candidate-only `detect` primitive with modular rule helpers, built-in rules, custom detector rule support, overlap normalization, and stable non-value-derived candidate IDs.
   - `tests/privacy/detect.test.ts` covers all broad v1 candidate classes, source spans, value lengths, location metadata, safe hints, provider/prefix metadata, positive/negative signals, configuration behavior, custom rules, source-surface propagation, broad/balanced/strict presets, noisy fixtures, and auth-header/provider overlap normalization.
   - `src/index.ts`, smoke tests, and public API type fixture export/import the root `detect` value while keeping `classify` and `redact` as deferred contract types.
-  - `pnpm run test:unit -- tests/privacy/detect.test.ts tests/classifier/deterministic-classifier.test.ts tests/privacy/safety-scan.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-detect-reviewfix-test-XXXX.log.SfKInDVL60`.
+  - `pnpm run test:unit -- tests/privacy/detect.test.ts tests/classifier/deterministic-classifier.test.ts tests/privacy/safety-scan.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-detect-reviewfix2-test-XXXX.log.gfz4LyKeEv`.
   - `pnpm run build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-build-detect-XXXX.log.mxTD0oLE2w`.
   - `pnpm run verify:public-api-types` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-api-detect-XXXX.log.3D6gU3JmNU`.
   - `pnpm run test:smoke` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-smoke-detect-XXXX.log.Rr5hhLWx6Q`.
-  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-typecheck-detect-reviewfix-XXXX.log.1uU8pbbuxV`.
-  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-lint-detect-reviewfix-XXXX.log.Km7L86jozE`.
+  - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-typecheck-detect-reviewfix2-XXXX.log.wZsfNtY0jl`.
+  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-lint-detect-reviewfix2-XXXX.log.6YjVG3zrQI`.
   - `pnpm run test:unit` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-unit-detect-XXXX.log.otQsgt5rUK`.
 - **Planned commits:**
   1. `feat: add detect privacy primitive` — add `detect`, candidate rules, overlap normalization, and focused fixtures.

@@ -15,6 +15,10 @@ export type BuiltInRule = DetectorRule & {
   readonly priority: number;
 };
 
+type MatchWithIndices = RegExpMatchArray & {
+  readonly indices?: readonly (readonly [number, number] | undefined)[];
+};
+
 interface RegexRuleConfig {
   readonly ruleId: string;
   readonly kind: BuiltInRule['kind'];
@@ -44,7 +48,8 @@ export interface CandidateDraft {
 }
 
 const cloneRegExp = (pattern: RegExp): RegExp => {
-  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const globalFlags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const flags = globalFlags.includes('d') ? globalFlags : `${globalFlags}d`;
   return new RegExp(pattern.source, flags);
 };
 
@@ -166,13 +171,16 @@ export const createRegexRule = (config: RegexRuleConfig): BuiltInRule => ({
       if (value === undefined || matchIndex === undefined || value.length === 0) continue;
       if (config.validate && !config.validate(value)) continue;
 
+      const groupIndices = (match as MatchWithIndices).indices?.[valueGroup];
       const valueOffset = valueGroup === 0 ? 0 : fullMatch.indexOf(value);
-      if (valueOffset < 0) continue;
+      if (!groupIndices && valueOffset < 0) continue;
 
-      const sourceSpan = {
-        start: matchIndex + valueOffset,
-        end: matchIndex + valueOffset + value.length,
-      };
+      const sourceSpan = groupIndices
+        ? { start: groupIndices[0], end: groupIndices[1] }
+        : {
+            start: matchIndex + valueOffset,
+            end: matchIndex + valueOffset + value.length,
+          };
       const nearbyName = config.nearbyNameGroup ? match[config.nearbyNameGroup] : undefined;
       const inferred = inferContextSignals(text, sourceSpan, value);
       const positiveSignals: string[] = [];

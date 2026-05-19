@@ -142,6 +142,15 @@ describe('detect privacy primitive', () => {
     },
   );
 
+  it('computes capture-group source spans when repeated text appears earlier in a match', () => {
+    const text = 'postgres://repeat:repeat@example.com/app';
+    const candidate = firstCandidate(text);
+
+    expect(candidate.kind).toBe('credential_url');
+    expect(text.slice(candidate.sourceSpan.start, candidate.sourceSpan.end)).toBe('repeat');
+    expect(candidate.sourceSpan.start).toBe(text.indexOf(':repeat@') + 1);
+  });
+
   it('supports rule enable/disable, custom rules, sensitivity presets, and source surfaces', () => {
     const providerText = 'Token ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ';
     expect(detect(providerText).candidates).toHaveLength(1);
@@ -168,6 +177,7 @@ describe('detect privacy primitive', () => {
               provider: 'acme',
               prefixFamily: 'acme_tk',
               positiveSignals: ['custom_rule'],
+              features: { bucket: 'short_lived' },
             },
           },
         ];
@@ -177,6 +187,34 @@ describe('detect privacy primitive', () => {
     expect(customCandidate.ruleId).toBe('custom.acme-token');
     expect(customCandidate.hint.provider).toBe('acme');
     expectOnlySafeCandidateFields(customCandidate);
+
+    const leakyCustomRule: DetectorRule = {
+      ruleId: 'custom.leaky-token',
+      kind: 'known_provider_prefix',
+      findCandidates: (text) => {
+        const value = 'leaky_tk_ABC12345';
+        const start = text.indexOf(value);
+        return [
+          {
+            sourceSpan: { start, end: start + value.length },
+            valueLength: value.length,
+            hint: {
+              suggestedType: 'api_key',
+              provider: value,
+              prefixFamily: value,
+              positiveSignals: [value, 'custom_rule'],
+              features: { leaked: value, safe: 'metadata_only' },
+            },
+          },
+        ];
+      },
+    };
+    const leakyCandidate = firstCandidate('custom secret leaky_tk_ABC12345', {
+      customRules: [leakyCustomRule],
+    });
+    expect(JSON.stringify(leakyCandidate)).not.toContain('leaky_tk_ABC12345');
+    expect(leakyCandidate.hint.positiveSignals).toEqual(['custom_rule']);
+    expect(leakyCandidate.hint.features).toEqual({ safe: 'metadata_only' });
 
     const opaque = 'abcdefghijklmnopqrstuvwxyz1234567890TOKEN';
     expect(detect(opaque, { sensitivity: 'broad' }).candidates).toHaveLength(1);

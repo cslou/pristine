@@ -256,6 +256,84 @@ describe('privacy-input Pi extension scaffold', () => {
     }
   });
 
+  it.each([
+    [
+      'classifier throw',
+      async () => {
+        throw new Error('boom');
+      },
+    ],
+    [
+      'malformed classifier response',
+      async () => {
+        throw new Error('privacy-input classifier: response is not valid JSON');
+      },
+    ],
+    [
+      'unknown candidate ID',
+      async () => {
+        throw new Error('privacy-input classifier: unknown candidateId unknown');
+      },
+    ],
+    [
+      'duplicate candidate ID',
+      async () => {
+        throw new Error('privacy-input classifier: duplicate candidateId candidate-0001');
+      },
+    ],
+  ])('blocks classification failure: %s', async (_name, classifyImpl) => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockImplementationOnce(classifyImpl);
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toEqual({ action: 'handled' });
+
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledTimes(1);
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.not.stringContaining('raw-value-123'),
+      'error',
+    );
+  });
+
+  it('blocks classifier timeout with one safe notification', async () => {
+    const detect = vi.fn(async () => ({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    }));
+    const classifyDependency = vi.fn(
+      () => new Promise<never>((resolve) => setTimeout(resolve, 50)),
+    );
+    const classifierCallback = vi.fn(async () => ({ decisions: [] }));
+    const redact = vi.fn(async () => ({
+      text: 'unused',
+      redactions: [] as PrivacyInputRedactionLike[],
+    }));
+    const notifications = { notify: vi.fn() };
+    const runtime = new PrivacyInputRuntime({
+      detect,
+      classify: classifyDependency,
+      classifierCallback,
+      redact,
+      userId: 'user-1',
+      notifications,
+      classifierTimeoutMs: 1,
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toEqual({ action: 'handled' });
+    expect(notifications.notify).toHaveBeenCalledTimes(1);
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.not.stringContaining('raw-value-123'),
+      'error',
+    );
+    expect(redact).not.toHaveBeenCalled();
+  });
+
   it('blocks uncertain decisions by default without raw values', async () => {
     const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
     detect.mockResolvedValueOnce({
@@ -359,9 +437,19 @@ describe('privacy-input Pi extension scaffold', () => {
       ],
     });
 
-    await expect(
-      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
-    ).resolves.toMatchObject({ action: 'continue' });
+    const result = await runtime.handleInput({
+      text: 'token raw-value-123',
+      source: 'interactive',
+    });
+
+    expect(result).toMatchObject({
+      action: 'continue',
+      details: {
+        decisions: [{ candidateId: 'candidate-0001', verdict: 'uncertain' }],
+        redactions: [],
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('raw-value-123');
     expect(redact).not.toHaveBeenCalled();
   });
 

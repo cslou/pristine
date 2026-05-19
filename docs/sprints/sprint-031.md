@@ -195,22 +195,29 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** privacy-conscious Pi user, **I want** classifier uncertainty and failures handled before the turn proceeds, **so that** a classifier outage or ambiguous result does not silently leak likely secrets to model context.
 - **Dependencies:** Story 2, Story 3
 - **Acceptance criteria:**
-  - [ ] The extension policy supports configurable `uncertain` handling with explicit modes `block`, `redact`, and `allow`, and the documented default is `block`.
-  - [ ] Classifier timeout, thrown error, malformed response, unknown candidate ID, or duplicate candidate ID causes the input turn to return `{ action: "handled" }` and sends exactly one safe notification that contains no raw candidate values.
-  - [ ] `uncertainPolicy: "block"` blocks the turn and notifies the user when any candidate remains uncertain.
-  - [ ] `uncertainPolicy: "redact"` redacts uncertain candidates using detector `hint.suggestedType` or a fallback type/label without sending raw values to the classifier or notification.
-  - [ ] `uncertainPolicy: "allow"` passes uncertain candidates through only when explicitly configured, safe details record that policy decision without raw values, and docs/config warnings state this unsafe opt-in mode is excluded from the sprint's default no-raw-secret model/session-history guarantee.
+  - [x] The extension policy supports configurable `uncertain` handling with explicit modes `block`, `redact`, and `allow`, and the documented default is `block`.
+  - [x] Classifier timeout, thrown error, malformed response, unknown candidate ID, or duplicate candidate ID causes the input turn to return `{ action: "handled" }` and sends exactly one safe notification that contains no raw candidate values.
+  - [x] `uncertainPolicy: "block"` blocks the turn and notifies the user when any candidate remains uncertain.
+  - [x] `uncertainPolicy: "redact"` redacts uncertain candidates using detector `hint.suggestedType` or a fallback type/label without sending raw values to the classifier or notification.
+  - [x] `uncertainPolicy: "allow"` passes uncertain candidates through only when explicitly configured, safe details record that policy decision without raw values, and docs/config warnings state this unsafe opt-in mode is excluded from the sprint's default no-raw-secret model/session-history guarantee.
 - **Functional verification:**
-  - [ ] Add failure-mode tests for classifier throw, timeout, malformed JSON, unknown candidate ID, and duplicate candidate ID; pass condition: runtime returns exactly `{ action: "handled" }`, sends exactly one safe notification, and does not transform raw text into model context.
-  - [ ] Add tests for all uncertain policy modes; pass condition: `block`, `redact`, and `allow` produce the documented behavior, safe details contain no raw candidate values, and `allow` assertions/docs mark the raw-pass-through risk as explicit opt-in.
-  - [ ] Add notification leak tests; pass condition: notification text and details do not contain raw candidate values.
+  - [x] Add failure-mode tests for classifier throw, timeout, malformed JSON, unknown candidate ID, and duplicate candidate ID; pass condition: runtime returns exactly `{ action: "handled" }`, sends exactly one safe notification, and does not transform raw text into model context.
+  - [x] Add tests for all uncertain policy modes; pass condition: `block`, `redact`, and `allow` produce the documented behavior, safe details contain no raw candidate values, and `allow` assertions/docs mark the raw-pass-through risk as explicit opt-in.
+  - [x] Add notification leak tests; pass condition: notification text and details do not contain raw candidate values.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts`; pass condition: core scrub/placeholder behavior remains green.
-  - [ ] Run `pnpm run lint`; pass condition: policy code has no lint errors or debug logging.
+  - [x] Run `pnpm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts`; pass condition: core scrub/placeholder behavior remains green.
+  - [x] Run `pnpm run lint`; pass condition: policy code has no lint errors or debug logging.
 - **Manual-only verification:** N/A — failure and policy behavior are covered by unit tests.
 - **Planned commits:**
   1. `feat: handle pi privacy classification failures` — add policy modes, failure handling, safe notifications, and leak tests.
 - **Technical notes:** Pi `input` supports `continue`, `transform`, and `handled`; if blocking uses `handled`, notify the user clearly that the turn was stopped before reaching the agent.
+- **Implementation notes:**
+  - Runtime classification is wrapped in safe failure handling with optional `classifierTimeoutMs`; classifier throw, timeout, malformed parser errors, unknown IDs, and duplicate IDs return `{ action: "handled" }` with exactly one raw-value-free notification.
+  - `uncertainPolicy` now has tested `block`, `redact`, and `allow` behavior. Default `block` is fail-closed; `allow` is explicit opt-in, returns safe details only, and is documented in the extension README as excluded from the default no-raw-secret guarantee.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed.
+  - `pnpm run typecheck` passed.
+  - `pnpm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts` passed.
+  - `pnpm run lint` passed.
 
 #### Story 5: Document Pi privacy input installation, limits, and smoke verification
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

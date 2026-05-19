@@ -255,18 +255,24 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
         detected.candidates,
         this.classifierCallback,
       );
-      classified =
-        this.classifierTimeoutMs === undefined
-          ? await classifyPromise
-          : await Promise.race([
-              classifyPromise,
-              new Promise<PrivacyInputClassifyResultLike>((_resolve, reject) => {
-                setTimeout(
-                  () => reject(new Error('classifier timed out')),
-                  this.classifierTimeoutMs,
-                );
-              }),
-            ]);
+      if (this.classifierTimeoutMs === undefined) {
+        classified = await classifyPromise;
+      } else {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          classified = await Promise.race([
+            classifyPromise,
+            new Promise<PrivacyInputClassifyResultLike>((_resolve, reject) => {
+              timeout = setTimeout(
+                () => reject(new Error('classifier timed out')),
+                this.classifierTimeoutMs,
+              );
+            }),
+          ]);
+        } finally {
+          if (timeout !== undefined) clearTimeout(timeout);
+        }
+      }
     } catch (error: unknown) {
       void error;
       this.notifications?.notify(

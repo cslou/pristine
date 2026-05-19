@@ -213,7 +213,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Technical notes:** Pi `input` supports `continue`, `transform`, and `handled`; if blocking uses `handled`, notify the user clearly that the turn was stopped before reaching the agent.
 - **Implementation notes:**
   - Runtime classification is wrapped in safe failure handling with optional `classifierTimeoutMs`; classifier throw, timeout, malformed parser errors, unknown IDs, and duplicate IDs return `{ action: "handled" }` with exactly one raw-value-free notification.
-  - `uncertainPolicy` now has tested `block`, `redact`, and `allow` behavior. Default `block` is fail-closed; `allow` is explicit opt-in and returns safe details only.
+  - `uncertainPolicy` now has tested `block`, `redact`, and `allow` behavior. Default `block` is fail-closed; `allow` is explicit opt-in, returns safe details only, and is documented in the extension README as excluded from the default no-raw-secret guarantee.
   - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed.
   - `pnpm run typecheck` passed.
   - `pnpm run test:unit -- tests/privacy/safety-scan.test.ts tests/vault/vault-redaction.test.ts` passed.

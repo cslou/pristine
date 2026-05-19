@@ -437,9 +437,19 @@ describe('privacy-input Pi extension scaffold', () => {
       ],
     });
 
-    await expect(
-      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
-    ).resolves.toMatchObject({ action: 'continue' });
+    const result = await runtime.handleInput({
+      text: 'token raw-value-123',
+      source: 'interactive',
+    });
+
+    expect(result).toMatchObject({
+      action: 'continue',
+      details: {
+        decisions: [{ candidateId: 'candidate-0001', verdict: 'uncertain' }],
+        redactions: [],
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('raw-value-123');
     expect(redact).not.toHaveBeenCalled();
   });
 

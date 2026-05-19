@@ -127,12 +127,13 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `PrivacyInputRuntime` now accepts injected `detect`, `classify`, `classifierCallback`, and `redact` dependencies and composes them in the primitive order for user input.
   - Confirmed `secret` decisions are converted to `{ candidateId, sourceSpan, type, label }` redaction inputs; `not_secret` decisions continue without redaction.
   - Runtime transform results include raw-value-free details with candidate IDs, verdict/type/label metadata, `sensitiveRef`s, placeholders, and `redactedSpan`s.
-  - Functional tests include fake dependency call-order/shape coverage and a real `detect` → `classify` → `Pristine.redact` → `reveal` round trip.
-  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story2-unit3-XXXX.log.egISPLIqvg`.
-  - `pnpm run typecheck` passed; log: `/tmp/s31-story2-typecheck.log`.
-  - `pnpm run test:integration -- tests/integration/privacy.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story2-integration-XXXX.log.86ypiUgUUY`.
-  - `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story2-regunit-XXXX.log.03A1sv1X3c`.
-  - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story2-lint-XXXX.log.0Pa0FheddH`.
+  - Functional tests include fake dependency call-order/shape coverage, `uncertainPolicy` block/redact/allow coverage, malformed-secret fail-closed coverage, redaction setup failure blocking, and a real `detect` → `classify` → `Pristine.redact` → `reveal` round trip.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed.
+  - `pnpm run typecheck` passed.
+  - `pnpm run test:integration -- tests/integration/privacy.test.ts` passed.
+  - `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts` passed.
+  - `pnpm run lint` passed.
+  - Review-fix reruns passed: `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts`, `pnpm run typecheck`, and `pnpm run lint`.
 
 #### Story 3: Add reference subagent classifier callback and labeler adapter
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

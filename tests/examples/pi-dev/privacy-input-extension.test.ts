@@ -256,6 +256,171 @@ describe('privacy-input Pi extension scaffold', () => {
     }
   });
 
+  it('blocks uncertain decisions by default without raw values', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'uncertain',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    });
+
+    const result = await runtime.handleInput({
+      text: 'token raw-value-123',
+      source: 'interactive',
+    });
+
+    expect(result.action).toBe('handled');
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.not.stringContaining('raw-value-123'),
+      'warning',
+    );
+    expect(JSON.stringify(result)).not.toContain('raw-value-123');
+  });
+
+  it('redacts uncertain decisions when explicitly configured', async () => {
+    const { detect, classifyDependency, classifierCallback, redact } = createRuntime();
+    const runtime = new PrivacyInputRuntime({
+      detect,
+      classify: classifyDependency,
+      classifierCallback,
+      redact,
+      policy: { uncertainPolicy: 'redact' },
+      userId: 'user-1',
+    });
+    detect.mockResolvedValueOnce({
+      candidates: [
+        {
+          candidateId: 'candidate-0001',
+          sourceSpan: { start: 6, end: 19 },
+          hint: { suggestedType: 'api_key' },
+        },
+      ],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'uncertain',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    });
+    redact.mockResolvedValueOnce({
+      text: 'token [SENSITIVE:api_key:ref-1]',
+      redactions: [
+        {
+          candidateId: 'candidate-0001',
+          sensitiveRef: 'ref-1',
+          placeholder: '[SENSITIVE:api_key:ref-1]',
+          type: 'api_key',
+          redactedSpan: { start: 6, end: 31 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'transform', text: 'token [SENSITIVE:api_key:ref-1]' });
+    expect(redact).toHaveBeenCalledExactlyOnceWith(
+      'token raw-value-123',
+      [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 }, type: 'api_key' }],
+      'user-1',
+    );
+  });
+
+  it('allows uncertain decisions only when explicitly configured', async () => {
+    const { detect, classifyDependency, classifierCallback, redact } = createRuntime();
+    const runtime = new PrivacyInputRuntime({
+      detect,
+      classify: classifyDependency,
+      classifierCallback,
+      redact,
+      policy: { uncertainPolicy: 'allow' },
+      userId: 'user-1',
+    });
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'uncertain',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'continue' });
+    expect(redact).not.toHaveBeenCalled();
+  });
+
+  it('blocks malformed secret decisions without redaction', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'secret',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'handled' });
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.not.stringContaining('raw-value-123'),
+      'error',
+    );
+  });
+
+  it('blocks when local redaction setup fails after a confirmed decision', async () => {
+    const { detect, classifyDependency, classifierCallback, redact } = createRuntime();
+    const runtime = new PrivacyInputRuntime({
+      detect,
+      classify: classifyDependency,
+      classifierCallback,
+      redact,
+      userId: () => {
+        throw new Error('missing user');
+      },
+    });
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'secret',
+          sourceSpan: { start: 6, end: 19 },
+          type: 'api_key',
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'handled' });
+    expect(redact).not.toHaveBeenCalled();
+  });
+
   it('passes through not-secret decisions without redaction', async () => {
     const { runtime, detect, classifyDependency, redact } = createRuntime();
     detect.mockResolvedValueOnce({

@@ -31,9 +31,20 @@ export interface PrivacyInputDetectResultLike {
   readonly candidates: readonly PrivacyInputCandidateLike[];
 }
 
+export interface PrivacyInputClassifierRequestCandidateLike {
+  readonly candidateId: string;
+  readonly marker: string;
+  readonly kind?: string;
+  readonly ruleId?: string;
+  readonly sourceSpan?: PrivacyInputSpanLike;
+  readonly valueLength?: number;
+  readonly location?: unknown;
+  readonly hint?: unknown;
+}
+
 export interface PrivacyInputClassifierRequestLike {
   readonly sanitizedContext: string;
-  readonly candidates: readonly { readonly candidateId: string; readonly marker: string }[];
+  readonly candidates: readonly PrivacyInputClassifierRequestCandidateLike[];
 }
 
 export type PrivacyInputClassifierVerdict = 'secret' | 'not_secret' | 'uncertain';
@@ -173,20 +184,39 @@ const toSafeDetails = (
   })),
 });
 
+const hasMalformedSecretDecision = (
+  decisions: readonly PrivacyInputClassifyDecisionLike[],
+): boolean =>
+  decisions.some(
+    (decision) =>
+      decision.verdict === 'secret' &&
+      (typeof decision.type !== 'string' || decision.type.length === 0),
+  );
+
+const suggestedTypeFor = (
+  candidates: readonly PrivacyInputCandidateLike[],
+  candidateId: string,
+): string | undefined => {
+  const hint = candidates.find((candidate) => candidate.candidateId === candidateId)?.hint;
+  if (typeof hint !== 'object' || hint === null || !('suggestedType' in hint)) return undefined;
+  const suggestedType = (hint as { readonly suggestedType?: unknown }).suggestedType;
+  return typeof suggestedType === 'string' && suggestedType.length > 0 ? suggestedType : undefined;
+};
+
 const confirmedFromDecisions = (
   decisions: readonly PrivacyInputClassifyDecisionLike[],
+  candidates: readonly PrivacyInputCandidateLike[],
+  policy: PrivacyInputPolicyConfig,
 ): readonly PrivacyInputConfirmedSecretLike[] =>
   decisions
-    .filter(
-      (decision): decision is PrivacyInputClassifyDecisionLike & { readonly type: string } =>
-        decision.verdict === 'secret' &&
-        typeof decision.type === 'string' &&
-        decision.type.length > 0,
-    )
+    .filter((decision) => {
+      if (decision.verdict === 'secret') return true;
+      return decision.verdict === 'uncertain' && policy.uncertainPolicy === 'redact';
+    })
     .map((decision) => ({
       candidateId: decision.candidateId,
       sourceSpan: decision.sourceSpan,
-      type: decision.type,
+      type: decision.type ?? suggestedTypeFor(candidates, decision.candidateId) ?? 'sensitive',
       label: decision.label,
     }));
 
@@ -204,7 +234,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     this.classify = config.classify;
     this.classifierCallback = config.classifierCallback;
     this.redact = config.redact;
-    this.policy = config.policy ?? { uncertainPolicy: 'block' };
+    this.policy = { uncertainPolicy: config.policy?.uncertainPolicy ?? 'block' };
     this.userId = config.userId;
     this.notifications = config.notifications;
   }
@@ -220,14 +250,47 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       detected.candidates,
       this.classifierCallback,
     );
-    const confirmed = confirmedFromDecisions(classified.decisions);
-    if (confirmed.length === 0) {
-      return { action: 'continue', details: toSafeDetails(classified.decisions, []) };
+    const detailsWithoutRedactions = toSafeDetails(classified.decisions, []);
+    if (hasMalformedSecretDecision(classified.decisions)) {
+      this.notifications?.notify(
+        'Pristine privacy input blocked this message because classifier output for a confirmed value was incomplete.',
+        'error',
+      );
+      return { action: 'handled', details: detailsWithoutRedactions };
     }
 
-    const userId = await resolveUserId(this.userId);
-    void this.policy;
-    const redacted = await this.redact(event.text, confirmed, userId);
+    if (
+      classified.decisions.some((decision) => decision.verdict === 'uncertain') &&
+      this.policy.uncertainPolicy === 'block'
+    ) {
+      this.notifications?.notify(
+        'Pristine privacy input blocked this message because one or more sensitive candidates were uncertain.',
+        'warning',
+      );
+      return { action: 'handled', details: detailsWithoutRedactions };
+    }
+
+    const confirmed = confirmedFromDecisions(
+      classified.decisions,
+      detected.candidates,
+      this.policy,
+    );
+    if (confirmed.length === 0) {
+      return { action: 'continue', details: detailsWithoutRedactions };
+    }
+
+    let redacted: PrivacyInputRedactResultLike;
+    try {
+      const userId = await resolveUserId(this.userId);
+      redacted = await this.redact(event.text, confirmed, userId);
+    } catch (error: unknown) {
+      void error;
+      this.notifications?.notify(
+        'Pristine privacy input blocked this message because local redaction could not complete.',
+        'error',
+      );
+      return { action: 'handled', details: detailsWithoutRedactions };
+    }
     const details = toSafeDetails(classified.decisions, redacted.redactions);
     this.notifications?.notify(
       `Pristine privacy input redacted ${redacted.redactions.length} confirmed value(s).`,

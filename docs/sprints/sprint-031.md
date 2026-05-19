@@ -106,23 +106,34 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi user, **I want** confirmed input secrets redacted before my message reaches the model, **so that** I can paste sensitive values into Pi without storing or sending those raw values in model context.
 - **Dependencies:** Story 1; Sprint 030 merged
 - **Acceptance criteria:**
-  - [ ] The runtime composes Sprint 030 primitives in order: `detect(text)` → `classify(text, candidates, classifierCallback)` with sanitized marker/hint callback input → apply extension policy → `redact(text, confirmed, userId)` → return transformed redacted text.
-  - [ ] Classifier verdicts with `verdict: "secret"` produce confirmed secrets using classifier-provided `sourceSpan`, type, and label, then call `redact` with original text plus confirmed `{ sourceSpan, type, label }` inputs.
-  - [ ] `verdict: "not_secret"` candidates are not redacted when no other confirmed candidate overlaps the same `sourceSpan`.
-  - [ ] Successful redaction returns `{ action: "transform", text: redactedText }` and the transformed text contains Pristine `[SENSITIVE:<type>:<id>]` placeholders but not the raw secret.
-  - [ ] The runtime records safe details for rendering/logging that include candidate IDs, verdicts, types, labels, `sensitiveRef`s, placeholders, and `redactedSpan`s, but no raw candidate values.
+  - [x] The runtime composes Sprint 030 primitives in order: `detect(text)` → `classify(text, candidates, classifierCallback)` with sanitized marker/hint callback input → apply extension policy → `redact(text, confirmed, userId)` → return transformed redacted text.
+  - [x] Classifier verdicts with `verdict: "secret"` produce confirmed secrets using classifier-provided `sourceSpan`, type, and label, then call `redact` with original text plus confirmed `{ sourceSpan, type, label }` inputs.
+  - [x] `verdict: "not_secret"` candidates are not redacted when no other confirmed candidate overlaps the same `sourceSpan`.
+  - [x] Successful redaction returns `{ action: "transform", text: redactedText }` and the transformed text contains Pristine `[SENSITIVE:<type>:<id>]` placeholders but not the raw secret.
+  - [x] The runtime records safe details for rendering/logging that include candidate IDs, verdicts, types, labels, `sensitiveRef`s, placeholders, and `redactedSpan`s, but no raw candidate values.
 - **Functional verification:**
-  - [ ] Add runtime composition tests with fake `detect`/`classify`/`redact` dependencies and a fake classifier adapter; pass condition: dependency calls occur in the expected order and receive original text only where local detection/redaction requires it, while the classifier callback receives only sanitized marker/hint data.
-  - [ ] Add a secret-input transform test using the real Sprint 030 `detect`, `classify`, and `redact` primitives with a fake classifier callback; pass condition: raw secret is absent from transformed text, placeholder is present, `sourceSpan`/`redactedSpan` metadata is correct, and reveal restores the original value for the same user.
-  - [ ] Add a mixed verdict test; pass condition: `secret` verdict `sourceSpan`s are redacted and `not_secret` candidate source text remains unchanged.
-  - [ ] Add a confirmed-secret safe-details leak test; pass condition: emitted runtime details include expected candidate IDs, verdicts, types, labels, `sensitiveRef`s, placeholders, and `redactedSpan`s, and serialized details do not contain raw candidate values.
+  - [x] Add runtime composition tests with fake `detect`/`classify`/`redact` dependencies and a fake classifier adapter; pass condition: dependency calls occur in the expected order and receive original text only where local detection/redaction requires it, while the classifier callback receives only sanitized marker/hint data.
+  - [x] Add a secret-input transform test using the real Sprint 030 `detect`, `classify`, and `redact` primitives with a fake classifier callback; pass condition: raw secret is absent from transformed text, placeholder is present, `sourceSpan`/`redactedSpan` metadata is correct, and reveal restores the original value for the same user.
+  - [x] Add a mixed verdict test; pass condition: `secret` verdict `sourceSpan`s are redacted and `not_secret` candidate source text remains unchanged.
+  - [x] Add a confirmed-secret safe-details leak test; pass condition: emitted runtime details include expected candidate IDs, verdicts, types, labels, `sensitiveRef`s, placeholders, and `redactedSpan`s, and serialized details do not contain raw candidate values.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:integration -- tests/integration/privacy.test.ts`; pass condition: existing core `reveal`, `scrubOutput`, vault lifecycle, and sensitive CRUD behavior remains green.
-  - [ ] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public privacy client behavior, scrub behavior, and sensitive CRUD behavior remain green.
+  - [x] Run `pnpm run test:integration -- tests/integration/privacy.test.ts`; pass condition: existing core `reveal`, `scrubOutput`, vault lifecycle, and sensitive CRUD behavior remains green.
+  - [x] Run `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts`; pass condition: public privacy client behavior, scrub behavior, and sensitive CRUD behavior remain green.
 - **Manual-only verification:** N/A — runtime composition and vault round-trip are covered by tests.
 - **Planned commits:**
   1. `feat: compose pi input privacy redaction` — wire `detect`/`classify`/classifier callback/policy/`redact` flow with `sourceSpan`/`hint`/`sensitiveRef` metadata and add runtime/vault round-trip tests.
 - **Technical notes:** The extension should transform only the user input text; tool-call reveal and tool-result scrubbing are intentionally deferred to a later sprint.
+- **Implementation notes:**
+  - `PrivacyInputRuntime` now accepts injected `detect`, `classify`, `classifierCallback`, and `redact` dependencies and composes them in the primitive order for user input.
+  - Confirmed `secret` decisions are converted to `{ candidateId, sourceSpan, type, label }` redaction inputs; `not_secret` decisions continue without redaction.
+  - Runtime transform results include raw-value-free details with candidate IDs, verdict/type/label metadata, `sensitiveRef`s, placeholders, and `redactedSpan`s.
+  - Functional tests include fake dependency call-order/shape coverage, `uncertainPolicy` block/redact/allow coverage, malformed-secret fail-closed coverage, redaction setup failure blocking, and a real `detect` → `classify` → `Pristine.redact` → `reveal` round trip.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts` passed.
+  - `pnpm run typecheck` passed.
+  - `pnpm run test:integration -- tests/integration/privacy.test.ts` passed.
+  - `pnpm run test:unit -- tests/client.test.ts tests/privacy/safety-scan.test.ts tests/vault/sqlite-vault-store.test.ts` passed.
+  - `pnpm run lint` passed.
+  - Review-fix reruns passed: `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts`, `pnpm run typecheck`, and `pnpm run lint`.
 
 #### Story 3: Add reference subagent classifier callback and labeler adapter
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)

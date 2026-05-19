@@ -32,19 +32,51 @@ export type {
   SourceChunkSearchHit,
 } from './client.js';
 
+export { classify, detect, redact } from './privacy/index.js';
+
 export type {
+  BuiltInDetectCandidateKind,
+  ClassifierCallback,
+  ClassifierCallbackDecision,
+  ClassifierCallbackResult,
+  ClassifierRequest,
+  ClassifierRequestCandidate,
+  ClassifierVerdict,
+  ClassifyDecision,
+  ClassifyOptions,
+  ClassifyResult,
+  DetectCandidate,
+  DetectCandidateKind,
+  DetectHint,
+  DetectOptions,
+  DetectResult,
+  DetectSensitivityPreset,
   DeleteSensitiveResult,
   ListSensitiveOptions,
+  PrivacyHintFeatures,
+  PrivacyHintFeatureValue,
+  RedactConfirmedSecret,
+  RedactOptions,
+  RedactResult,
+  RedactResultRedaction,
   RevealResult,
-  SecureAndRedactResult,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
+  SourceLocation,
+  SourceSpan,
+  SourceSurface,
+  SourceSurfaceMetadata,
   UpdateSensitiveInput,
 } from './core/types.js';
 
-export type { Embedder } from './core/interfaces.js';
+export type {
+  Embedder,
+  PrivacyClassifier,
+  PrivacyDetector,
+  PrivacyRedactor,
+} from './core/interfaces.js';
 
 export {
   SOURCE_CHUNK_METADATA_JSON_LIMIT,

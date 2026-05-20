@@ -177,10 +177,10 @@ const createCompositeSignal = (
 };
 
 const awaitWithAbort = async <T>(
-  operation: Promise<T>,
+  operationFactory: () => Promise<T>,
   signal: AbortSignal | undefined,
 ): Promise<T> => {
-  if (signal === undefined) return operation;
+  if (signal === undefined) return operationFactory();
   if (signal.aborted) {
     throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
   }
@@ -195,7 +195,7 @@ const awaitWithAbort = async <T>(
   });
 
   try {
-    return await Promise.race([operation, abortPromise]);
+    return await Promise.race([operationFactory(), abortPromise]);
   } finally {
     removeAbortListener();
   }
@@ -226,26 +226,27 @@ export const createPiModelClassifierTransport = (
       );
       const completeSimple = options.completeSimple ?? (await loadCompleteSimple());
       const response = await awaitWithAbort(
-        completeSimple(
-          model,
-          {
-            systemPrompt: task.systemPrompt,
-            messages: [
-              {
-                role: 'user',
-                content: [{ type: 'text', text: task.userPrompt }],
-                timestamp: Date.now(),
-              },
-            ],
-          },
-          {
-            apiKey: auth.apiKey,
-            headers: auth.headers,
-            maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
-            reasoning: options.reasoning ?? DEFAULT_REASONING,
-            signal: compositeSignal.signal,
-          },
-        ),
+        () =>
+          completeSimple(
+            model,
+            {
+              systemPrompt: task.systemPrompt,
+              messages: [
+                {
+                  role: 'user',
+                  content: [{ type: 'text', text: task.userPrompt }],
+                  timestamp: Date.now(),
+                },
+              ],
+            },
+            {
+              apiKey: auth.apiKey,
+              headers: auth.headers,
+              maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+              reasoning: options.reasoning ?? DEFAULT_REASONING,
+              signal: compositeSignal.signal,
+            },
+          ),
         compositeSignal.signal,
       );
 

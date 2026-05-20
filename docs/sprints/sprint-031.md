@@ -305,11 +305,11 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Implementation notes:**
   - Added `examples/pi-dev/extensions/privacy-input/lib/pi-model-classifier-transport.ts` with configured-preference/current-model selection, `getApiKeyAndHeaders` auth, `completeSimple`, timeout/signal handling, diagnostics, text extraction, truncation/empty-response checks, and structured classifier errors.
   - Updated `registerPrivacyInputExtension` runtime factories to receive Pi `ctx`, enabling host wiring with `ctx.modelRegistry` and `ctx.model` while preserving existing zero-arg factory compatibility.
-  - Added `tests/examples/pi-dev/privacy-input-pi-model-transport.test.ts` for configured model selection, current-model fallback, header-only OAuth auth, sanitized prompt/no-raw-leak behavior, registry/model-call failure paths, abort-enforced timeout handling, stop-reason failures, callback parser wiring, and runtime fail-closed handling.
+  - Added `tests/examples/pi-dev/privacy-input-pi-model-transport.test.ts` for configured model selection, current-model fallback, header-only OAuth auth, sanitized prompt/no-raw-leak behavior, registry/model-call failure paths, abort-enforced timeout handling including pre-aborted signals, stop-reason failures, callback parser wiring, and runtime fail-closed handling.
   - Updated `examples/pi-dev/extensions/privacy-input/README.md` and `examples/pi-dev/README.md` with real Pi model transport wiring using `openai-codex/gpt-5.5`, current-model fallback, and `getApiKeyAndHeaders` auth.
-  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts tests/examples/pi-dev/privacy-input-extension.test.ts tests/examples/pi-dev/privacy-input-pi-model-transport.test.ts` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-unit-fix-XXXX.log.OfxeXpTs0W`.
-  - `pnpm run typecheck` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-typecheck-fix-XXXX.log.FVETvZa5qj`.
-  - `pnpm run lint` passed after review fixes; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-lint-fix-XXXX.log.WfBaS47Rub`.
+  - `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-pi-model-transport.test.ts` passed after review-fix timeout hardening; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-unit-fix2-XXXX.log.xrRYjVDvkb`.
+  - `pnpm run typecheck` passed after review-fix timeout hardening; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-typecheck-fix2-XXXX.log.6Lh5Emiwqm`.
+  - `pnpm run lint` passed after review-fix timeout hardening; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-lint-fix2-XXXX.log.TH9mTeiLpl`.
   - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-story6-docs-XXXX.log.ZruFoi1yZs`.
 
 #### Final Story: Sprint Verification & Completion

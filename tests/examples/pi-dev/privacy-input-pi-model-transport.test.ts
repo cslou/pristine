@@ -200,6 +200,18 @@ describe('Pi model privacy-input classifier transport', () => {
         ),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
     ).rejects.toThrow('privacy-input classifier: Pi model classifier timed out or was aborted');
+
+    const controller = new AbortController();
+    controller.abort();
+    const completeAfterPreAbort = createCompleteSimple();
+    await expect(
+      createPiModelClassifierTransport({
+        modelRegistry: createRegistry(),
+        signal: controller.signal,
+        completeSimple: completeAfterPreAbort,
+      }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
+    ).rejects.toThrow('privacy-input classifier: Pi model classifier timed out or was aborted');
+    expect(completeAfterPreAbort).not.toHaveBeenCalled();
   });
 
   it('wires through callback parsing and runtime fail-closed handling', async () => {

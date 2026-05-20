@@ -204,13 +204,15 @@ describe('Pi model privacy-input classifier transport', () => {
     const controller = new AbortController();
     controller.abort();
     const completeAfterPreAbort = createCompleteSimple();
+    const registryAfterPreAbort = createRegistry();
     await expect(
       createPiModelClassifierTransport({
-        modelRegistry: createRegistry(),
+        modelRegistry: registryAfterPreAbort,
         signal: controller.signal,
         completeSimple: completeAfterPreAbort,
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
     ).rejects.toThrow('privacy-input classifier: Pi model classifier timed out or was aborted');
+    expect(registryAfterPreAbort.find).not.toHaveBeenCalled();
     expect(completeAfterPreAbort).not.toHaveBeenCalled();
   });
 

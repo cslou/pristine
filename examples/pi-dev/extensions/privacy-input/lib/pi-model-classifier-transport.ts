@@ -218,37 +218,41 @@ export const createPiModelClassifierTransport = (
     const compositeSignal = createCompositeSignal(options.signal, options.timeoutMs);
 
     try {
-      const { model, auth } = await selectModel(
-        options.modelRegistry,
-        options.preferences ?? DEFAULT_MODEL_PREFERENCES,
-        options.currentModel,
-        options.diagnostics,
-      );
-      const completeSimple = options.completeSimple ?? (await loadCompleteSimple());
-      const response = await awaitWithAbort(
-        () =>
-          completeSimple(
-            model,
-            {
-              systemPrompt: task.systemPrompt,
-              messages: [
-                {
-                  role: 'user',
-                  content: [{ type: 'text', text: task.userPrompt }],
-                  timestamp: Date.now(),
-                },
-              ],
-            },
-            {
-              apiKey: auth.apiKey,
-              headers: auth.headers,
-              maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
-              reasoning: options.reasoning ?? DEFAULT_REASONING,
-              signal: compositeSignal.signal,
-            },
-          ),
-        compositeSignal.signal,
-      );
+      const response = await awaitWithAbort(async () => {
+        const { model, auth } = await selectModel(
+          options.modelRegistry,
+          options.preferences ?? DEFAULT_MODEL_PREFERENCES,
+          options.currentModel,
+          options.diagnostics,
+        );
+        if (compositeSignal.signal?.aborted) {
+          throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+        }
+        const completeSimple = options.completeSimple ?? (await loadCompleteSimple());
+        if (compositeSignal.signal?.aborted) {
+          throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+        }
+        return completeSimple(
+          model,
+          {
+            systemPrompt: task.systemPrompt,
+            messages: [
+              {
+                role: 'user',
+                content: [{ type: 'text', text: task.userPrompt }],
+                timestamp: Date.now(),
+              },
+            ],
+          },
+          {
+            apiKey: auth.apiKey,
+            headers: auth.headers,
+            maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+            reasoning: options.reasoning ?? DEFAULT_REASONING,
+            signal: compositeSignal.signal,
+          },
+        );
+      }, compositeSignal.signal);
 
       assertSuccessfulStopReason(response.stopReason);
 

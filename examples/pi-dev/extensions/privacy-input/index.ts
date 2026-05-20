@@ -33,13 +33,13 @@ const notifyInitFailure = (ctx: unknown, error: unknown): void => {
 
 export const registerPrivacyInputExtension = (
   pi: PiExtensionApiLike,
-  runtimeFactory: () => PrivacyInputRuntimeLike,
+  runtimeFactory: (ctx: unknown) => PrivacyInputRuntimeLike,
 ): void => {
   let runtime: PrivacyInputRuntimeLike | null = null;
   const getRuntime = (ctx: unknown): PrivacyInputRuntimeLike | null => {
     if (runtime !== null) return runtime;
     try {
-      runtime = runtimeFactory();
+      runtime = runtimeFactory(ctx);
       return runtime;
     } catch (error: unknown) {
       notifyInitFailure(ctx, error);
@@ -62,7 +62,7 @@ export const registerPrivacyInputExtension = (
 };
 
 export const createDefaultPrivacyInputRuntimeFactory =
-  (config: PrivacyInputRuntimeConfig): (() => PrivacyInputRuntimeLike) =>
+  (config: PrivacyInputRuntimeConfig): ((ctx: unknown) => PrivacyInputRuntimeLike) =>
   () =>
     createPrivacyInputRuntime(config);
 

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@mariozechner/pi-ai": "0.73.0",
     "@pristine/sdk": "0.0.1"
   }
 }

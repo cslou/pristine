@@ -12,6 +12,8 @@ The runtime is intentionally host-wired. Provide:
 - `redact(text, confirmed, userId)`, usually `Pristine.redact` from a configured local client.
 - `userId`, policy, optional `classifierTimeoutMs`, and optional notifications.
 
+`package.json` intentionally installs only the Pi model transport dependency required by this reference extension. If your wrapper imports `@pristine/sdk` from inside the copied extension directory, install the SDK beside the wrapper too (for local checkout smoke: `npm install --omit=dev /path/to/pristine`; for a published SDK: `npm install --omit=dev @pristine/sdk`). Hosts may also inject compatible detector/classifier/redactor functions without installing the SDK in the extension package.
+
 ## Classifier adapter contract
 
 The reference classifier adapter builds tasks from `classify` callback requests: sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata. Hosts can replace it with a fake/local/manual classifier callback by implementing the same callback interface.

@@ -406,12 +406,16 @@ Before integrating `sprint-30-and-31` to `main`, four standalone hardening PRs w
 
 - PR #270 removed unreleased deprecated source-memory compatibility aliases/methods/docs/tests.
 - PR #271 added canonical raw-free privacy-input classifier failure reason codes and runtime-safe details.
-- PR #272 enforced provider-prefix classification normalization so known provider-prefix candidates cannot pass through as `not_secret` because of fake/test/example wording.
+- PR #272 added conservative provider-prefix handling to the privacy-input runtime so known provider-prefix candidates cannot pass through to model context as `not_secret` because of fake/test/example wording, while the primitive `classify` callback result remains caller-owned policy.
 - PR #273 clarified vault `sensitiveType` versus `label`/`alias` semantics, made aliases caller-managed via `updateSensitive`, and narrowed `RedactVaultStore` to the `addEntries` capability used by `redact`.
 
 Post-hardening full regression passed: `.checks/regression.sh --tier=full`; log `/tmp/pristine-checks/sprint-30-31-final-full.log`.
 
 Post-integration-review real Pi smoke passed at PR #269 head after provider-prefix and alias hardening using the same synthetic `sk-proj-<test-key>` prompt shape; output `/tmp/pristine-pi-real-smoke-final-output-XXXX.txt` contained `OK`; evidence `/tmp/pristine-pi-real-smoke-final-evidence-XXXX.json` recorded `requestContainsRawKey: false` and `requestContainsMarker: true`; session history under `/tmp/pristine-pi-real-smoke-session-final-57Qu` contained `[SENSITIVE:api_key:smoke-ref-1]` and no raw fake key.
+
+Post-review install smoke for the copied privacy-input package passed: copied `examples/pi-dev/extensions/privacy-input/` to `/tmp/pristine-pi-install-smoke-XXfy/.pi/extensions/privacy-input/`, ran `npm install --omit=dev` there, then loaded a Pi wrapper importing `../extensions/privacy-input/index.js`; evidence files are `/tmp/pristine-pi-install-smoke-XXfy/npm-install.log`, `/tmp/pristine-pi-install-smoke-XXfy/pi-import.log`, and `/tmp/pristine-pi-install-smoke-XXfy/loaded.txt` containing `loaded`.
+
+Local implementation spec addendum is intentionally kept as internal context outside the public docs surface; reviewable public excerpts are the input-only/future-hook language in `examples/pi-dev/README.md`, `examples/pi-dev/extensions/privacy-input/README.md`, `docs/pages/pi-dev.mdx`, and `docs/pages/privacy.mdx`. The local spec snapshot used for sprint verification had SHA-256 `72540d0ac3b3f2309fd8f426659c63adb20f430f76cdf4c77b2cb0159c5b9f61` and states that Sprint 031 is input-only while tool-call reveal/tool-result scrub hooks remain future work.
 
 ### New Dependencies
 

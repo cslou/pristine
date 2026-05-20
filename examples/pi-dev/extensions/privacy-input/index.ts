@@ -25,10 +25,13 @@ const isInputEventLike = (event: unknown): event is PrivacyInputEventLike =>
   typeof (event as { readonly text?: unknown }).text === 'string';
 
 const notifyInitFailure = (ctx: unknown, error: unknown): void => {
-  const message = error instanceof Error ? error.message : String(error);
+  void error;
   if (typeof ctx !== 'object' || ctx === null) return;
   const maybeContext = ctx as PiInputContextLike;
-  maybeContext.ui?.notify(`Pristine privacy input failed to initialize: ${message}`, 'error');
+  maybeContext.ui?.notify(
+    'Pristine privacy input failed to initialize safely. Check local extension configuration.',
+    'error',
+  );
 };
 
 export const registerPrivacyInputExtension = (

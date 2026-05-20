@@ -87,9 +87,11 @@ Project `.pi/settings.json` paths are relative to the `.pi` directory. Do not ad
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/privacy-input/ .pi/extensions/privacy-input/
 cd /path/to/your/repo/.pi/extensions/privacy-input
 npm install --omit=dev
+# Only if your wrapper imports @pristine/sdk from this copied directory before the SDK is published:
+# npm install --omit=dev /path/to/pristine
 ```
 
-Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. For real classifier smoke, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport calls Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
+Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). For real classifier smoke, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport calls Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
 
 ## Embedding model and Nomic warmup
 

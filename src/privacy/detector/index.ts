@@ -122,7 +122,7 @@ const safeFeatureValue = (
   if (value.every((item): item is string => typeof item === 'string')) {
     return safeHintStringArray(value, rawValue);
   }
-  return value.length > 0 ? value : undefined;
+  return undefined;
 };
 
 const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHint => {

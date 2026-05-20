@@ -229,6 +229,27 @@ describe('classify privacy primitive', () => {
     }
   });
 
+  it('defaults to bounded scrubbed classifier context for unrelated surrounding secrets', async () => {
+    const candidateValue = 'custom-candidate-1234567890';
+    const nearbySecret = 'sk-proj-unrelatedsurroundingsecret123456';
+    const farSecret = 'ghp_farunrelatedsurroundingsecret1234567890';
+    const text = `${farSecret} ${'x'.repeat(100)} before ${nearbySecret} token=${candidateValue} after alice@example.com`;
+    const candidate = candidateFor(text, candidateValue, {
+      kind: 'key_value_assignment',
+      hint: { suggestedType: 'api_key' },
+    });
+
+    const { request, serialized } = await serializedRequest(text, [candidate]);
+
+    expect(request.sanitizedContext).toContain('[CANDIDATE:request-candidate-0001]');
+    expect(request.sanitizedContext).toContain('[REDACTED_SECRET]');
+    expect(request.sanitizedContext).toContain('[REDACTED_EMAIL]');
+    expect(serialized).not.toContain(candidateValue);
+    expect(serialized).not.toContain(nearbySecret);
+    expect(serialized).not.toContain(farSecret);
+    expect(serialized).not.toContain('alice@example.com');
+  });
+
   it('honors context windows and does not invoke callbacks for empty candidate lists', async () => {
     let emptyCallbackInvoked = false;
     await expect(
@@ -287,7 +308,7 @@ describe('classify privacy primitive', () => {
     'My fake API-key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
     'My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
     'My example OpenAI token is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
-  ])('provider-prefix fixtures are never normalized to not_secret: %s', async (text) => {
+  ])('preserves caller-owned provider-prefix classifier decisions: %s', async (text) => {
     const rawToken = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
     const detected = detect(text);
     const candidate = detected.candidates.find(
@@ -306,9 +327,8 @@ describe('classify privacy primitive', () => {
 
     expect(result.decisions[0]).toMatchObject({
       candidateId: candidate.candidateId,
-      verdict: 'uncertain',
-      type: 'api_key',
-      rationale: 'known provider prefix requires conservative handling',
+      verdict: 'not_secret',
+      rationale: 'fake/test/example wording',
     });
     expect(JSON.stringify(result)).not.toContain(rawToken);
   });
@@ -367,5 +387,15 @@ describe('classify privacy primitive', () => {
         async () => ({ decisions }) as unknown as ClassifierCallbackResult,
       ),
     ).rejects.toThrow(/classify:/);
+  });
+
+  it('fails loudly for malformed candidate objects before reading candidate fields', async () => {
+    await expect(
+      classify(
+        'token=secret1234567890',
+        [null] as unknown as readonly DetectCandidate[],
+        async () => ({ decisions: [] }),
+      ),
+    ).rejects.toThrow(/candidate must be an object/);
   });
 });

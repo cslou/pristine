@@ -227,7 +227,7 @@ describe('privacy-input Pi extension scaffold', () => {
       ),
     ).resolves.toEqual({ action: 'handled' });
     expect(notify).toHaveBeenCalledWith(
-      'Pristine privacy input failed to initialize: missing runtime dependencies',
+      'Pristine privacy input failed to initialize safely. Check local extension configuration.',
       'error',
     );
   });
@@ -595,6 +595,101 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(redact).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['missing decision', []],
+    [
+      'duplicate decision',
+      [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'uncertain',
+          sourceSpan: { start: 6, end: 19 },
+        },
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'not_secret',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    ],
+    [
+      'unknown candidate',
+      [{ candidateId: 'unknown', verdict: 'uncertain', sourceSpan: { start: 6, end: 19 } }],
+    ],
+    [
+      'wrong source span',
+      [{ candidateId: 'candidate-0001', verdict: 'uncertain', sourceSpan: { start: 0, end: 5 } }],
+    ],
+  ] as const)('blocks malformed classifier decision coverage: %s', async (_name, decisions) => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [...decisions] as PrivacyInputClassifyDecisionLike[],
+    });
+
+    const result = await runtime.handleInput({
+      text: 'token raw-value-123',
+      source: 'interactive',
+    });
+
+    expect(result).toEqual({ action: 'handled', details: { decisions: [], redactions: [] } });
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because classifier output did not match detected candidates safely.',
+      'error',
+    );
+    expect(JSON.stringify(result)).not.toContain('raw-value-123');
+  });
+
+  it('blocks provider-prefix candidates that classifiers mark as not-secret', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [
+        {
+          candidateId: 'candidate-0001',
+          kind: 'known_provider_prefix',
+          sourceSpan: { start: 6, end: 19 },
+          hint: { suggestedType: 'api_key' },
+        },
+      ],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'not_secret',
+          sourceSpan: { start: 6, end: 19 },
+          rationale: 'test wording',
+        },
+      ],
+    });
+
+    const result = await runtime.handleInput({
+      text: 'token raw-value-123',
+      source: 'interactive',
+    });
+
+    expect(result).toMatchObject({
+      action: 'handled',
+      details: {
+        decisions: [
+          {
+            candidateId: 'candidate-0001',
+            verdict: 'uncertain',
+            type: 'api_key',
+          },
+        ],
+      },
+    });
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because one or more sensitive candidates were uncertain.',
+      'warning',
+    );
+  });
+
   it('blocks malformed secret decisions without redaction', async () => {
     const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
     detect.mockResolvedValueOnce({
@@ -677,7 +772,13 @@ describe('privacy-input Pi extension scaffold', () => {
       candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 12 } }],
     }));
     const classifyDependency = vi.fn(async () => ({
-      decisions: [] as PrivacyInputClassifyDecisionLike[],
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'not_secret' as const,
+          sourceSpan: { start: 6, end: 12 },
+        },
+      ],
     }));
     const classifierCallback = vi.fn(async () => ({ decisions: [] }));
     const redact = vi.fn(async () => ({
@@ -696,7 +797,13 @@ describe('privacy-input Pi extension scaffold', () => {
 
     await expect(
       runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
-    ).resolves.toEqual({ action: 'continue', details: { decisions: [], redactions: [] } });
+    ).resolves.toEqual({
+      action: 'continue',
+      details: {
+        decisions: [{ candidateId: 'candidate-0001', verdict: 'not_secret' }],
+        redactions: [],
+      },
+    });
     expect(redact).not.toHaveBeenCalled();
   });
 
@@ -714,7 +821,7 @@ describe('privacy-input Pi extension scaffold', () => {
     });
 
     expect(notify).toHaveBeenCalledWith(
-      'Pristine privacy input failed to initialize: missing config',
+      'Pristine privacy input failed to initialize safely. Check local extension configuration.',
       'error',
     );
   });

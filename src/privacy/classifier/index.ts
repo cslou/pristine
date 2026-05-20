@@ -36,36 +36,6 @@ const assertValidSpan = (span: SourceSpan, textLength: number, label: string): v
 const candidateHint = (candidate: DetectCandidate): DetectHint | undefined =>
   (candidate as { readonly hint?: DetectHint }).hint;
 
-const includesKnownProviderPrefixSignal = (signals: readonly string[] | undefined): boolean =>
-  signals?.includes('known_provider_prefix') ?? false;
-
-const isStrongProviderPrefixCandidate = (candidate: DetectCandidate): boolean => {
-  const hint = candidateHint(candidate);
-  return (
-    candidate.kind === 'known_provider_prefix' ||
-    includesKnownProviderPrefixSignal(hint?.signals) ||
-    includesKnownProviderPrefixSignal(hint?.positiveSignals)
-  );
-};
-
-const applyProviderPrefixPolicy = (
-  decision: ClassifyDecision,
-  candidate: DetectCandidate,
-): ClassifyDecision => {
-  if (decision.verdict !== 'not_secret' || !isStrongProviderPrefixCandidate(candidate)) {
-    return decision;
-  }
-  return {
-    candidateId: decision.candidateId,
-    verdict: 'uncertain',
-    sourceSpan: decision.sourceSpan,
-    type: decision.type ?? candidateHint(candidate)?.suggestedType,
-    label: decision.label,
-    confidence: decision.confidence,
-    rationale: 'known provider prefix requires conservative handling',
-  };
-};
-
 const buildRequest = (
   text: string,
   candidates: readonly DetectCandidate[],
@@ -78,10 +48,17 @@ const buildRequest = (
   const requestCandidates: ClassifierRequestCandidate[] = [];
   const candidatesByRequestId = new Map<string, DetectCandidate>();
 
-  for (const candidate of candidates) {
-    if (candidate.candidateId.length === 0) {
+  for (const rawCandidate of candidates as readonly unknown[]) {
+    if (!isRecord(rawCandidate)) {
+      throw new InvalidArgumentError('classify: candidate must be an object');
+    }
+    if (typeof rawCandidate.candidateId !== 'string' || rawCandidate.candidateId.length === 0) {
       throw new InvalidArgumentError('classify: candidateId must be non-empty');
     }
+    if (!isRecord(rawCandidate.sourceSpan)) {
+      throw new InvalidArgumentError('classify: candidate sourceSpan must be an object');
+    }
+    const candidate = rawCandidate as unknown as DetectCandidate;
     if (ids.has(candidate.candidateId)) {
       throw new InvalidArgumentError(`classify: duplicate candidateId ${candidate.candidateId}`);
     }
@@ -194,10 +171,7 @@ const validateCallbackResult = (
     }
     seen.add(rawDecision.candidateId);
     decisions.push(
-      applyProviderPrefixPolicy(
-        normalizeDecision(rawDecision as unknown as ClassifierCallbackDecision, candidate),
-        candidate,
-      ),
+      normalizeDecision(rawDecision as unknown as ClassifierCallbackDecision, candidate),
     );
   }
 

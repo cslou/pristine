@@ -209,7 +209,12 @@ describe('detect privacy primitive', () => {
               provider: value,
               prefixFamily: value,
               positiveSignals: [value, 'custom_rule'],
-              features: { [value]: 'raw_key', leaked: value, safe: 'metadata_only' },
+              features: {
+                [value]: 'raw_key',
+                leaked: value,
+                safe: 'metadata_only',
+                encodedBytes: [108, 101, 97, 107, 121],
+              },
             },
             location: {
               line: 1,

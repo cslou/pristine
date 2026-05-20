@@ -192,6 +192,83 @@ const toSafeDetails = (
   })),
 });
 
+const RUNTIME_CLASSIFIER_VERDICTS = new Set<PrivacyInputClassifierVerdict>([
+  'secret',
+  'not_secret',
+  'uncertain',
+]);
+
+const isSpanLike = (value: unknown): value is PrivacyInputSpanLike =>
+  typeof value === 'object' &&
+  value !== null &&
+  Number.isInteger((value as { readonly start?: unknown }).start) &&
+  Number.isInteger((value as { readonly end?: unknown }).end);
+
+const hasSameSpan = (left: PrivacyInputSpanLike, right: PrivacyInputSpanLike): boolean =>
+  left.start === right.start && left.end === right.end;
+
+const includesKnownProviderPrefixSignal = (signals: readonly string[] | undefined): boolean =>
+  signals?.includes('known_provider_prefix') ?? false;
+
+const hintForCandidate = (candidate: PrivacyInputCandidateLike): Record<string, unknown> | undefined =>
+  typeof candidate.hint === 'object' && candidate.hint !== null
+    ? (candidate.hint as Record<string, unknown>)
+    : undefined;
+
+const isStrongProviderPrefixCandidate = (candidate: PrivacyInputCandidateLike): boolean => {
+  const hint = hintForCandidate(candidate);
+  return (
+    candidate.kind === 'known_provider_prefix' ||
+    includesKnownProviderPrefixSignal(hint?.signals as readonly string[] | undefined) ||
+    includesKnownProviderPrefixSignal(hint?.positiveSignals as readonly string[] | undefined)
+  );
+};
+
+const applyRuntimeProviderPrefixPolicy = (
+  decision: PrivacyInputClassifyDecisionLike,
+  candidate: PrivacyInputCandidateLike,
+): PrivacyInputClassifyDecisionLike => {
+  if (decision.verdict !== 'not_secret' || !isStrongProviderPrefixCandidate(candidate)) {
+    return decision;
+  }
+  return {
+    candidateId: decision.candidateId,
+    verdict: 'uncertain',
+    sourceSpan: decision.sourceSpan,
+    type: decision.type ?? suggestedTypeFor([candidate], decision.candidateId),
+    label: decision.label,
+    confidence: decision.confidence,
+    rationale: 'known provider prefix requires conservative handling',
+  };
+};
+
+const validateAndNormalizeClassifiedDecisions = (
+  decisions: readonly PrivacyInputClassifyDecisionLike[],
+  candidates: readonly PrivacyInputCandidateLike[],
+): readonly PrivacyInputClassifyDecisionLike[] | undefined => {
+  const candidatesById = new Map(candidates.map((candidate) => [candidate.candidateId, candidate]));
+  const seen = new Set<string>();
+  const normalized: PrivacyInputClassifyDecisionLike[] = [];
+
+  for (const decision of decisions) {
+    if (seen.has(decision.candidateId) || !RUNTIME_CLASSIFIER_VERDICTS.has(decision.verdict)) {
+      return undefined;
+    }
+    const candidate = candidatesById.get(decision.candidateId);
+    if (
+      candidate === undefined ||
+      !isSpanLike(decision.sourceSpan) ||
+      !hasSameSpan(decision.sourceSpan, candidate.sourceSpan)
+    ) {
+      return undefined;
+    }
+    seen.add(decision.candidateId);
+    normalized.push(applyRuntimeProviderPrefixPolicy(decision, candidate));
+  }
+
+  return seen.size === candidatesById.size ? normalized : undefined;
+};
+
 const hasMalformedSecretDecision = (
   decisions: readonly PrivacyInputClassifyDecisionLike[],
 ): boolean =>
@@ -298,8 +375,19 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       );
       return { action: 'handled', details: { decisions: [], redactions: [], classifierFailure } };
     }
-    const detailsWithoutRedactions = toSafeDetails(classified.decisions, []);
-    if (hasMalformedSecretDecision(classified.decisions)) {
+    const normalizedDecisions = Array.isArray(classified.decisions)
+      ? validateAndNormalizeClassifiedDecisions(classified.decisions, detected.candidates)
+      : undefined;
+    if (normalizedDecisions === undefined) {
+      this.notifications?.notify(
+        'Pristine privacy input blocked this message because classifier output did not match detected candidates safely.',
+        'error',
+      );
+      return { action: 'handled', details: { decisions: [], redactions: [] } };
+    }
+
+    const detailsWithoutRedactions = toSafeDetails(normalizedDecisions, []);
+    if (hasMalformedSecretDecision(normalizedDecisions)) {
       this.notifications?.notify(
         'Pristine privacy input blocked this message because classifier output for a confirmed value was incomplete.',
         'error',
@@ -308,7 +396,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     }
 
     if (
-      classified.decisions.some((decision) => decision.verdict === 'uncertain') &&
+      normalizedDecisions.some((decision) => decision.verdict === 'uncertain') &&
       this.policy.uncertainPolicy === 'block'
     ) {
       this.notifications?.notify(
@@ -319,7 +407,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     }
 
     const confirmed = confirmedFromDecisions(
-      classified.decisions,
+      normalizedDecisions,
       detected.candidates,
       this.policy,
     );
@@ -339,7 +427,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       );
       return { action: 'handled', details: detailsWithoutRedactions };
     }
-    const details = toSafeDetails(classified.decisions, redacted.redactions);
+    const details = toSafeDetails(normalizedDecisions, redacted.redactions);
     this.notifications?.notify(
       `Pristine privacy input redacted ${redacted.redactions.length} confirmed value(s).`,
       'success',

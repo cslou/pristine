@@ -132,6 +132,30 @@ const isRedactResultLike = (value: unknown): value is PrivacyInputRedactResultLi
   Array.isArray(value.redactions) &&
   value.redactions.every((redaction) => isRedactionLike(redaction));
 
+const coversConfirmedRedactions = (
+  text: string,
+  confirmed: readonly PrivacyInputConfirmedSecretLike[],
+  redacted: PrivacyInputRedactResultLike,
+): boolean => {
+  if (redacted.redactions.length !== confirmed.length) return false;
+  const redactionsByCandidateId = new Map(
+    redacted.redactions
+      .filter((redaction) => redaction.candidateId !== undefined)
+      .map((redaction) => [redaction.candidateId, redaction]),
+  );
+  for (const secret of confirmed) {
+    const rawValue = text.slice(secret.sourceSpan.start, secret.sourceSpan.end);
+    if (rawValue.length > 0 && redacted.text.includes(rawValue)) return false;
+    if (
+      secret.candidateId !== undefined &&
+      redactionsByCandidateId.get(secret.candidateId)?.type !== secret.type
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
 const RUNTIME_CLASSIFIER_VERDICTS = new Set<PrivacyInputClassifierVerdict>([
   'secret',
   'not_secret',
@@ -382,7 +406,9 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     try {
       const userId = await resolveUserId(this.userId);
       const redactResult = await this.redact(event.text, confirmed, userId);
-      if (!isRedactResultLike(redactResult)) throw new Error('invalid redactor result');
+      if (!isRedactResultLike(redactResult) || !coversConfirmedRedactions(event.text, confirmed, redactResult)) {
+        throw new Error('invalid redactor result');
+      }
       redacted = redactResult;
     } catch (error: unknown) {
       void error;

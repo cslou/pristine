@@ -111,7 +111,7 @@ describe('classify privacy primitive', () => {
     expect(request).toMatchObject({
       requestId: 'request-test',
       sourceSurface: { kind: 'user_message' },
-      sanitizedContext: 'token=[CANDIDATE:request-candidate-0001]',
+      sanitizedContext: '[CONTEXT chars=6 lines=1][CANDIDATE:request-candidate-0001]',
       candidates: [
         {
           candidateId: 'request-candidate-0001',
@@ -195,7 +195,9 @@ describe('classify privacy primitive', () => {
     expect(request.candidates[0]?.kind).toBeUndefined();
     expect(request.candidates[0]?.ruleId).toBeUndefined();
     expect(request.candidates[0]?.location).toEqual({ line: 1, column: 7 });
-    expect(request.sanitizedContext).toBe('token=[CANDIDATE:request-candidate-0001]');
+    expect(request.sanitizedContext).toBe(
+      '[CONTEXT chars=6 lines=1][CANDIDATE:request-candidate-0001]',
+    );
     expect(request.candidates[0]?.hint.features).toEqual({
       hasAssignmentContext: true,
       entropyBucket: 'high',
@@ -248,8 +250,8 @@ describe('classify privacy primitive', () => {
     const { request, serialized } = await serializedRequest(text, [candidate]);
 
     expect(request.sanitizedContext).toContain('[CANDIDATE:request-candidate-0001]');
-    expect(request.sanitizedContext).toContain('[REDACTED_SECRET]');
-    expect(request.sanitizedContext).toContain('[REDACTED_EMAIL]');
+    expect(request.sanitizedContext).toContain('[CONTEXT chars=80 lines=1]');
+    expect(request.sanitizedContext).toContain('[CONTEXT chars=24 lines=1]');
     expect(serialized).not.toContain(candidateValue);
     expect(serialized).not.toContain(nearbySecret);
     expect(serialized).not.toContain(farSecret);
@@ -293,7 +295,9 @@ describe('classify privacy primitive', () => {
     const candidate = candidateFor(text, secret, { candidateId: 'windowed' });
     const { request } = await serializedRequest(text, [candidate], 6);
 
-    expect(request.sanitizedContext).toBe('efore [CANDIDATE:request-candidate-0001] after');
+    expect(request.sanitizedContext).toBe(
+      '[CONTEXT chars=6 lines=1][CANDIDATE:request-candidate-0001][CONTEXT chars=6 lines=1]',
+    );
     expect(request.sanitizedContext).not.toContain('prefix that should be trimmed');
     expect(request.sanitizedContext).not.toContain('text that should be trimmed');
   });

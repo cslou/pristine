@@ -1,3 +1,4 @@
+import { PrivacyPipelineError } from '../../core/errors.js';
 import type { RedactOptions, RedactResultRedaction } from '../../core/types.js';
 import { computeKeyFingerprint } from '../vault/asymmetric-crypto.js';
 import { encryptAndWrapValue } from '../vault/asymmetric-encrypt.js';
@@ -18,7 +19,7 @@ export const persistRedactions = async (
   const fingerprint = computeKeyFingerprint(publicKey);
   const kek = await options.kekManager.getOrCreate(userId);
 
-  await options.vaultStore.addEntries(
+  const entries = await options.vaultStore.addEntries(
     pending.map(({ rawValue, placeholderId, vaultType }) => ({
       userId,
       placeholderId,
@@ -26,4 +27,13 @@ export const persistRedactions = async (
       encrypted: encryptAndWrapValue(rawValue, vaultType, placeholderId, kek, fingerprint),
     })),
   );
+  if (entries.length !== pending.length) {
+    throw new PrivacyPipelineError('redact: vault store did not persist every redaction');
+  }
+  const persistedRefs = new Set(entries.map((entry) => entry.placeholderId));
+  for (const pendingWrite of pending) {
+    if (!persistedRefs.has(pendingWrite.placeholderId)) {
+      throw new PrivacyPipelineError('redact: vault store persisted an unexpected redaction set');
+    }
+  }
 };

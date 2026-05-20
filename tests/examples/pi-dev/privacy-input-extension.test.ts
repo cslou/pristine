@@ -839,6 +839,43 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(redact).not.toHaveBeenCalled();
   });
 
+  it('blocks redactor results that do not remove confirmed raw values', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'secret',
+          sourceSpan: { start: 6, end: 19 },
+          type: 'api_key',
+        },
+      ],
+    });
+    redact.mockResolvedValueOnce({
+      text: 'token raw-value-123',
+      redactions: [
+        {
+          candidateId: 'candidate-0001',
+          sensitiveRef: 'ref-1',
+          placeholder: '[SENSITIVE:api_key:ref-1]',
+          type: 'api_key',
+          redactedSpan: { start: 6, end: 31 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'handled' });
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because local redaction could not complete.',
+      'error',
+    );
+  });
+
   it('blocks malformed redactor results after a confirmed decision', async () => {
     const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
     detect.mockResolvedValueOnce({

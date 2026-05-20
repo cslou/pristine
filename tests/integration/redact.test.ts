@@ -123,6 +123,24 @@ describe('redact privacy primitive', () => {
     await expect(listSensitive({ vaultStore, userId: 'redact-user-2' })).resolves.toHaveLength(1);
   });
 
+  it('fails when the vault store does not persist every pending redaction', async () => {
+    const value = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
+    const text = `token=${value}`;
+    const start = text.indexOf(value);
+
+    await expect(
+      redact(
+        text,
+        [{ sourceSpan: { start, end: start + value.length }, type: 'api_key' }],
+        'redact-user-incomplete-vault',
+        {
+          ...config(),
+          vaultStore: { addEntries: async () => [] },
+        },
+      ),
+    ).rejects.toThrow(/vault store did not persist every redaction/);
+  });
+
   it('rejects invalid spans without writing partial vault entries', async () => {
     const text = 'token=secret-one and secret-two';
     const first = text.indexOf('secret-one');

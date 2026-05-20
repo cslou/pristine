@@ -6,22 +6,11 @@ export const markerForCandidate = (candidateId: string): string => `[CANDIDATE:$
 const DEFAULT_CONTEXT_WINDOW = 80;
 const ELISION_MARKER = '\n[...]\n';
 
-const scrubContextSlice = (value: string): string =>
-  value
-    .replace(/\bsk-(?:proj|ant)[A-Za-z0-9._-]{12,}\b/gu, '[REDACTED_SECRET]')
-    .replace(/\bghp_[A-Za-z0-9_]{12,}\b/gu, '[REDACTED_SECRET]')
-    .replace(/\bSG\.[A-Za-z0-9._-]{12,}\b/gu, '[REDACTED_SECRET]')
-    .replace(/\bAKIA[0-9A-Z]{12,}\b/gu, '[REDACTED_SECRET]')
-    .replace(
-      /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/gu,
-      '[REDACTED_SECRET]',
-    )
-    .replace(/:\/\/([^:\s/@]+):([^@\s]+)@/gu, '://$1:[REDACTED_SECRET]@')
-    .replace(
-      /([?&][^=\s]*(?:token|key|secret|signature|password)[^=\s]*=)[^&\s]+/giu,
-      '$1[REDACTED_SECRET]',
-    )
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[REDACTED_EMAIL]');
+const contextSummary = (value: string): string => {
+  if (value.length === 0) return '';
+  const lineBreaks = [...value].filter((character) => character === '\n').length;
+  return `[CONTEXT chars=${value.length} lines=${lineBreaks + 1}]`;
+};
 
 const assertNonOverlapping = (ordered: readonly DetectCandidate[]): void => {
   let previousEnd = -1;
@@ -68,12 +57,12 @@ const buildWindowContext = (
   for (const candidate of ordered) {
     if (candidate.sourceSpan.end <= window.start) continue;
     if (candidate.sourceSpan.start >= window.end) break;
-    parts.push(scrubContextSlice(text.slice(cursor, candidate.sourceSpan.start)));
+    parts.push(contextSummary(text.slice(cursor, candidate.sourceSpan.start)));
     parts.push(markerForCandidate(candidate.candidateId));
     cursor = candidate.sourceSpan.end;
   }
 
-  parts.push(scrubContextSlice(text.slice(cursor, window.end)));
+  parts.push(contextSummary(text.slice(cursor, window.end)));
   return parts.join('');
 };
 

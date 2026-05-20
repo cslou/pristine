@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-20
 **Type:** Docs / Test
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 **Target branch:** sprint-30-and-31
 **Working branch:** docs/vault-type-alias-semantics
 **Related issue/spec/sprint/PR:** `docs/sprints/sprint-031.md`, PR #269
@@ -47,10 +47,10 @@ If this story affects product, agent, developer, maintainer, CLI, API, or operat
 
 ## Acceptance Criteria
 
-- [ ] Tests prove a redaction with canonical type `api_key` and classifier/display label `OpenAI API key` returns redaction `type: "api_key"`, preserves the classifier text as redaction `label: "OpenAI API key"`, and stores/lists/gets vault `sensitiveType: "api_key"`. Pass condition: assertions fail if canonical type is replaced by `OpenAI API key` or if the safe label is lost from the redaction result.
-- [ ] Tests prove updating `alias` changes visible metadata without changing canonical `sensitiveType`. Pass condition: after `updateSensitive(..., { alias: "OpenAI API key" })`, `getSensitive`/`listSensitive` return `alias: "OpenAI API key"` and `sensitiveType: "api_key"`.
-- [ ] Public docs state that `sensitiveType` is the canonical machine type, classifier labels are visible metadata, aliases must never contain plaintext secrets, and display should prefer `alias ?? label` while preserving canonical type. Pass condition: separate `rg` checks find each exact concept: `canonical machine type`, `classifier labels`, `aliases must never contain plaintext secrets`, `alias ?? label`, and `sensitiveType` in `docs/pages examples/pi-dev`.
-- [ ] No code path introduced by this story stores raw plaintext secrets in alias/display metadata. Pass condition: existing safe-label/alias tests remain green and new tests use fake fixtures only.
+- [x] Tests prove a redaction with canonical type `api_key` and classifier/display label `OpenAI API key` returns redaction `type: "api_key"`, preserves the classifier text as redaction `label: "OpenAI API key"`, and stores/lists/gets vault `sensitiveType: "api_key"`. Pass condition: assertions fail if canonical type is replaced by `OpenAI API key` or if the safe label is lost from the redaction result.
+- [x] Tests prove updating `alias` changes visible metadata without changing canonical `sensitiveType`. Pass condition: after `updateSensitive(..., { alias: "OpenAI API key" })`, `getSensitive`/`listSensitive` return `alias: "OpenAI API key"` and `sensitiveType: "api_key"`.
+- [x] Public docs state that `sensitiveType` is the canonical machine type, classifier labels are visible metadata, aliases must never contain plaintext secrets, and display should prefer `alias ?? label` while preserving canonical type. Pass condition: separate `rg` checks find each exact concept: `canonical machine type`, `classifier labels`, `aliases must never contain plaintext secrets`, `alias ?? label`, and `sensitiveType` in `docs/pages examples/pi-dev`.
+- [x] No code path introduced by this story stores raw plaintext secrets in alias/display metadata. Pass condition: existing safe-label/alias tests remain green and new tests use fake fixtures only.
 
 ## Implementation Plan
 
@@ -66,27 +66,27 @@ If this story affects product, agent, developer, maintainer, CLI, API, or operat
 This story follows verifiability-first engineering: define how the new or changed behavior will be proven correct and which existing behavior it could regress before implementation starts.
 
 - **Functional verification:**
-  - [ ] Run targeted metadata tests; pass condition: canonical `sensitiveType` remains `api_key` while `alias` carries `OpenAI API key` display metadata.
-  - [ ] Run separate docs checks for `canonical machine type`, `classifier labels`, `aliases must never contain plaintext secrets`, `alias ?? label`, and `sensitiveType` in `docs/pages examples/pi-dev`; pass condition: each concept is present in updated public docs/examples.
+  - [x] Run targeted metadata tests; pass condition: canonical `sensitiveType` remains `api_key` while `alias` carries `OpenAI API key` display metadata.
+  - [x] Run separate docs checks for `canonical machine type`, `classifier labels`, `aliases must never contain plaintext secrets`, `alias ?? label`, and `sensitiveType` in `docs/pages examples/pi-dev`; pass condition: each concept is present in updated public docs/examples.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/privacy/primitive-contracts.test.ts`; pass condition: primitive contract tests pass after metadata clarification.
-  - [ ] Run `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts`; pass condition: vault/redaction metadata integration tests pass.
-  - [ ] Run `pnpm run docs:build`; pass condition: public docs build successfully after metadata docs changes.
-  - [ ] Run `pnpm run lint && pnpm run typecheck`; pass condition: lint and TypeScript checks pass without errors.
+  - [x] Run `pnpm run test:unit -- tests/privacy/primitive-contracts.test.ts`; pass condition: primitive contract tests pass after metadata clarification.
+  - [x] Run `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts`; pass condition: vault/redaction metadata integration tests pass.
+  - [x] Run `pnpm run docs:build`; pass condition: public docs build successfully after metadata docs changes.
+  - [x] Run `pnpm run lint && pnpm run typecheck`; pass condition: lint and TypeScript checks pass without errors.
 - **Manual-only verification:** N/A — metadata semantics are covered by automated tests and docs build.
 
 ## Completion Evidence
 
 (Fill this in before marking the story `🟢 Complete`.)
 
-- **PR:** Pending
-- **Commits:** Pending
-- **Acceptance criteria evidence:** Pending
-- **Functional verification evidence:** Pending
-- **Regression verification evidence:** Pending
+- **PR:** #273 (`docs: clarify vault type and alias semantics` targeting `sprint-30-and-31`)
+- **Commits:** `9a9f379 docs: clarify vault type and alias semantics`
+- **Acceptance criteria evidence:** Added focused integration coverage for `api_key` redaction type, `OpenAI API key` redaction label, vault `sensitiveType: "api_key"`, and caller-managed `alias` updates. Updated docs/API/example wording to distinguish canonical machine type from visible label/alias display metadata. Removed automatic redaction-label-to-vault-alias persistence and narrowed `RedactVaultStore` to the `addEntries` capability used by `redact`.
+- **Functional verification evidence:** PASS — `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts`; PASS — `rg -F "canonical machine type" docs/pages examples/pi-dev`; PASS — `rg -F "classifier labels" docs/pages examples/pi-dev`; PASS — `rg -F "aliases must never contain plaintext secrets" docs/pages examples/pi-dev`; PASS — `rg -F "alias ?? label" docs/pages examples/pi-dev`; PASS — `rg -F "sensitiveType" docs/pages examples/pi-dev`.
+- **Regression verification evidence:** PASS — `pnpm run test:unit -- tests/privacy/primitive-contracts.test.ts`; PASS — `pnpm run test:integration -- tests/integration/redact.test.ts tests/integration/privacy.test.ts`; PASS — `pnpm run docs:build`; PASS — `pnpm run lint`; PASS — `pnpm run typecheck`; PASS — push hook standard tier (`pnpm run lint`, `pnpm run typecheck`, `pnpm run test:unit`) with 38 unit files / 425 tests passing.
 - **Manual-only verification evidence:** N/A
-- **Failed, ambiguous, or unrun verification:** Pending
-- **Review evidence:** Pending `/review`
+- **Failed, ambiguous, or unrun verification:** None
+- **Review evidence:** `/review` for PR #273 initially returned 0 P0, 3 P1, and 1 P2; PR/body/story evidence and the `RedactVaultStore` interface were updated before `/review-fix`.
 - **New dependencies:** None
 
 ## Rules

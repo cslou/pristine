@@ -1,7 +1,7 @@
 # Pristine — Sprint 031
 **Date:** 2026-05-18 – TBD
 **Goal:** Add a Pi-dev reference privacy input extension that composes Sprint 030's `detect`, `classify`, and `redact` primitives with a pluggable/subagent classifier callback so raw user-pasted secrets are classified from sanitized inputs and redacted before they reach Pi model context or session history.
-**Status:** 🟠 In Progress — adding Pi model classifier transport
+**Status:** 🟢 Complete
 
 ---
 
@@ -265,7 +265,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - `pnpm run verify:public-api-types` passed.
   - Documentation `rg` checks passed for privacy-input terms, input-only/future hook spec language, primitive schema names, and no `secureAndRedact` reintroduction in Pi privacy-input/public privacy docs.
   - Fake classifier smoke passed via `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts -t "uses real primitives to transform and reveal a confirmed secret"`.
-  - Fake/test smoke transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`; manual real Pi smoke remains deferred to Lou after sprint handoff, per latest user instruction.
+  - Fake/test smoke transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`; real Pi model-transport smoke later passed during final verification after Story 6 landed.
 
 #### Story 6: Add Pi model classifier transport for privacy-input
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
@@ -298,7 +298,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: existing adapter/runtime policy behavior remains green with the new transport.
   - [x] Run `pnpm run typecheck`; pass condition: transport types compile cleanly with strict TypeScript and do not require forbidden provider SDK imports.
   - [x] Run `pnpm run lint`; pass condition: no debug logging, no generic provider SDK imports, and no lint errors.
-- **Manual-only verification:** Pending Lou-run real Pi smoke after merge; pass condition: with `openai-codex/gpt-5.5` or current model fallback configured, a fake local API key input is blocked or transformed before model context, the classifier request is sanitized, and session history/model-facing text does not contain the raw key. This remains unrun in this story because it requires an interactive Pi install/runtime wiring check outside the automated PR gate.
+- **Manual-only verification:** Real Pi smoke passed with `openai-codex/gpt-5.5`; pass condition met: a fake local API key input was transformed before model context, the classifier request contained sanitized `[CANDIDATE:<id>]` metadata and no raw key, and session history contained `[SENSITIVE:api_key:smoke-ref]` without the raw key.
 - **Planned commits:**
   1. `feat: add pi model privacy classifier transport` — add the `completeSimple` transport, model-selection/auth handling, tests, docs, and manual smoke wiring notes.
 - **Technical notes:** Reuse the installed agentic-compaction pattern (`ctx.modelRegistry.find`, `ctx.modelRegistry.getApiKeyAndHeaders`, `completeSimple`, `reasoning: "minimal"`) rather than spawning a full Pi subagent process. Keep the existing parser/runtime fail-closed behavior as the security boundary.
@@ -324,18 +324,18 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
   - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
   - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable. Automated checks passed; Lou's manual real Pi smoke remains pending before integration merge.
+  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
   - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
   - [x] The sprint’s new functional verification is identified as future regression verification.
   - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, with rows for every canonical verification type including zero-count rows and rationale for any `Unknown` values.
-  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met. Status remains `🟡` until Lou's manual Pi smoke passes.
+  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met. Status is complete after automated regression and real Pi smoke passed.
   - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
   - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
   - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence. Automated full regression passed; manual real Pi smoke remains pending Lou.
-- **Manual-only verification:** Pending Lou manual real Pi smoke before sprint integration merge; automated fake/test classifier smoke passed and transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
+  - [x] Run the full available regression verification suite and record pass/fail evidence.
+- **Manual-only verification:** Real Pi smoke passed using the Pi model classifier transport and `openai-codex/gpt-5.5`; automated fake/test classifier smoke also passed and transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
 - **Planned commits:**
   1. `test: complete sprint 031 verification` — record final verification evidence and sprint completion state.
 - **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc.
@@ -361,46 +361,45 @@ The Final Verification Story runs all sprint functional verification plus the fu
 
 ## Final Review
 
-Sprint 031 was reopened after manual-test planning identified the missing Pi model classifier transport. The previous automated verification remains recorded below as historical evidence and must be rerun after Story 6 lands.
+Sprint 031 is complete. Story 6 landed, final automated verification passed, and the real Pi smoke with the Pi model classifier transport passed. The sprint is ready for the sprint-integration PR; that PR still requires the normal review/gates and Lou's explicit merge command.
 
 ### What shipped
 
 - Added `examples/pi-dev/extensions/privacy-input/` as an input-only Pi reference extension.
 - Composed `detect` → `classify` → policy → `redact` in the runtime.
 - Added a replaceable sanitized classifier adapter with parser and label validation.
-- Added fail-closed classifier failure handling, timeout handling, and `uncertainPolicy` modes.
-- Documented install boundaries, input-only limitations, future tool-call reveal/future tool-result scrub scope, and smoke checks.
+- Added the Pi model classifier transport using `ctx.modelRegistry`, `getApiKeyAndHeaders`, and `completeSimple`, with configured `openai-codex/gpt-5.5` preference and current-model fallback.
+- Added fail-closed classifier failure handling, timeout/abort handling, stop-reason rejection, and `uncertainPolicy` modes.
+- Documented install boundaries, input-only limitations, future tool-call reveal/future tool-result scrub scope, fake/test smoke checks, and real Pi model transport wiring.
 
 ### Verification delta
 
 | Type | Before Sprint | Added This Sprint | Removed | Pending / Not Yet Run | After Sprint |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Unit | 37 files / 397 tests | + privacy-input runtime, policy, adapter, install-layout coverage | 0 | 0 | 37 files / 404 tests in final `pnpm run test` |
-| Integration | Existing privacy integration suite | 0 new integration files; runtime real primitive/vault round trip is unit-suite scoped | 0 | 0 | Existing integration suite passed via `pnpm run test` |
-| Smoke | Existing public/package smoke | + fake classifier privacy-input smoke transcript/procedure | 0 | Manual real Pi smoke pending Lou | `pnpm run test:smoke` passed |
-| E2E | Existing e2e suite | 0 | 0 | Manual real Pi smoke pending Lou | `pnpm run test:e2e` passed via `pnpm run test` |
-| Static / docs | Existing lint/type/docs checks | + docs/spec rg checks for input-only privacy reference | 0 | 0 | lint, typecheck, docs build passed |
-| Manual | None required before this sprint | Manual real Pi privacy-input smoke handoff | 0 | 1 pending Lou-run Pi smoke | Pending before integration merge |
+| Unit | 37 files / 397 tests | + privacy-input runtime, policy, adapter, Pi model transport, install-layout coverage | 0 | 0 | 38 files / 409 tests in final `pnpm run test` |
+| Integration | Existing privacy integration suite | 0 new integration files; runtime real primitive/vault round trip remains unit-suite scoped | 0 | 0 | Existing integration suite passed via `pnpm run test` |
+| Smoke | Existing public/package smoke | + fake classifier privacy-input smoke transcript/procedure; + real Pi model classifier smoke | 0 | 0 | `pnpm run test:smoke` passed via `pnpm run test`; real Pi smoke passed |
+| E2E | Existing e2e suite | 0 automated E2E files | 0 | 0 | `pnpm run test:e2e` passed via `pnpm run test`; real Pi smoke covered the interactive input-hook boundary |
+| Static / docs | Existing lint/type/docs checks | + docs/spec rg checks for input-only privacy reference and Pi model transport wiring docs | 0 | 0 | lint, typecheck, docs build passed |
+| Manual | None required before this sprint | Manual real Pi privacy-input smoke using `openai-codex/gpt-5.5` | 0 | 0 | Real Pi smoke passed |
 
 ### Final verification evidence
 
-- `pnpm run test` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-test-XXXX.log.G7wxfxoHzS`.
-- `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-docs-XXXX.log.FkVTX4TvTb`.
-- `pnpm run lint` passed; log: `/tmp/s31-final-lint.log`.
-- `pnpm run typecheck` passed; log: `/tmp/s31-final-typecheck.log`.
+- `pnpm run test` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-test-XXXX.log.KW3nAJ2OE6`.
+- `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-docs-XXXX.log.qcfFB4GLkY`.
+- `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-lint-XXXX.log.JqDH7LAj5X`.
+- `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-typecheck-XXXX.log.qAKDzWaFc6`.
+- Real Pi smoke passed with command: `pi --model openai-codex/gpt-5.5 --thinking minimal --session-dir /tmp/pristine-pi-real-smoke-session-NQdj --no-context-files --extension .tmp/pi-privacy-smoke/privacy-input-real-smoke.ts -p "My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK."`.
+- Real Pi smoke output: `/tmp/pristine-pi-real-smoke-output-XXXX.txt` contained `OK`.
+- Real Pi classifier request evidence: `/tmp/pristine-pi-real-smoke-evidence-XXXX.json` recorded `requestContainsRawKey: false`, `requestContainsMarker: true`, and model `{ provider: "openai-codex", id: "gpt-5.5" }`.
+- Real Pi session evidence: `/tmp/pristine-pi-real-smoke-session-NQdj/2026-05-20T08-36-24-282Z_019e4487-645a-73d4-969a-7bb156330b2e.jsonl` contained `My test API key is [SENSITIVE:api_key:smoke-ref]. Please reply OK.` and no raw fake key.
 - Story-level functional and targeted regression evidence is recorded under each story's implementation notes.
 - Fake/test classifier smoke transcript: `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
 
-### Manual verification for Lou (pending after Story 6)
+### Manual verification
 
-Run the documented manual Pi smoke only after copying/installing `privacy-input` and wiring `registerPrivacyInputExtension` with a configured runtime factory:
-
-```text
-My test API key is <fake-api-key-from-local-test-fixture>. Please reply OK.
-```
-
-Pass condition: the turn is blocked or transformed before model context; transcript/session history contains a safe notification or `[SENSITIVE:api_key:<id>]` placeholder and does not contain the raw key.
+Real Pi smoke passed. Pass condition met: the turn was transformed before model context; classifier request contained sanitized `[CANDIDATE:<id>]` markers and no raw key; session history contained `[SENSITIVE:api_key:smoke-ref]` and did not contain the raw fake key.
 
 ### New Dependencies
 
-None.
+- `@mariozechner/pi-ai@0.73.0` in `examples/pi-dev/extensions/privacy-input/package.json`, used by the copied Pi reference extension to call Pi `completeSimple` through the same model layer as agentic compaction.

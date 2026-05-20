@@ -11,11 +11,11 @@ import { persistRedactions, type PendingRedactionWrite } from './vault-writer.js
 
 const buildPlaceholder = (type: string, id: string): string => `[SENSITIVE:${type}:${id}]`;
 
-const normalizePlaceholderType = (type: string): string => {
+const normalizeSensitiveType = (type: string): string => {
   const normalized = type
     .toLowerCase()
     .replace(/[\s-]+/g, '_')
-    .replace(/[^a-z_]/g, '')
+    .replace(/[^a-z0-9_]/g, '')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '');
   return normalized.length > 0 ? normalized : 'other';
@@ -102,9 +102,9 @@ const buildRedactionWrites = (
 
   for (const secret of confirmed) {
     const rawValue = text.slice(secret.sourceSpan.start, secret.sourceSpan.end);
-    const placeholderType = normalizePlaceholderType(secret.type);
+    const canonicalType = normalizeSensitiveType(secret.type);
     const placeholderId = randomUUID();
-    const placeholder = buildPlaceholder(placeholderType, placeholderId);
+    const placeholder = buildPlaceholder(canonicalType, placeholderId);
 
     redactedText += text.slice(sourceCursor, secret.sourceSpan.start);
     const redactedStart = redactedText.length;
@@ -117,12 +117,12 @@ const buildRedactionWrites = (
       candidateId: secret.candidateId,
       sensitiveRef: placeholderId,
       placeholder,
-      type: secret.type,
+      type: canonicalType,
       label,
       sourceSpan: secret.sourceSpan,
       redactedSpan: { start: redactedStart, end: redactedEnd },
     };
-    pending.push({ rawValue, placeholderId, vaultType: secret.type, redaction });
+    pending.push({ rawValue, placeholderId, vaultType: canonicalType, redaction });
   }
 
   return { text: redactedText + text.slice(sourceCursor), pending };

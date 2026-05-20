@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { detect } from '../../src/privacy/detector/index.js';
-import type { DetectCandidate, DetectorRule, SourceSurface } from '../../src/core/types.js';
+import type {
+  DetectCandidate,
+  DetectorRule,
+  DetectorRuleMatch,
+  SourceSurface,
+} from '../../src/core/types.js';
 
 const validJwt =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
@@ -204,8 +209,13 @@ describe('detect privacy primitive', () => {
               provider: value,
               prefixFamily: value,
               positiveSignals: [value, 'custom_rule'],
-              features: { leaked: value, safe: 'metadata_only' },
+              features: { [value]: 'raw_key', leaked: value, safe: 'metadata_only' },
             },
+            location: {
+              line: 1,
+              column: 15,
+              leaked: value,
+            } as unknown as DetectorRuleMatch['location'],
           },
         ];
       },
@@ -216,6 +226,7 @@ describe('detect privacy primitive', () => {
     expect(JSON.stringify(leakyCandidate)).not.toContain('leaky_tk_ABC12345');
     expect(leakyCandidate.hint.positiveSignals).toEqual(['custom_rule']);
     expect(leakyCandidate.hint.features).toEqual({ safe: 'metadata_only' });
+    expect(leakyCandidate.location).toEqual({ line: 1, column: 15 });
 
     const opaque = 'abcdefghijklmnopqrstuvwxyz1234567890TOKEN';
     expect(detect(opaque, { sensitivity: 'broad' }).candidates).toHaveLength(1);

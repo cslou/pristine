@@ -214,7 +214,7 @@ describe('redact privacy primitive', () => {
     ).resolves.toMatchObject([{ sensitiveRef, sensitiveType: 'api_key', alias: 'OpenAI API key' }]);
   });
 
-  it('preserves classifier type metadata while using placeholder-safe type text', async () => {
+  it('normalizes classifier type metadata to canonical placeholder-safe type text', async () => {
     const value = 'oauth-secret-value-123';
     const text = `token ${value}`;
     const start = text.indexOf(value);
@@ -226,7 +226,7 @@ describe('redact privacy primitive', () => {
       config(),
     );
 
-    expect(result.text).toMatch(/\[SENSITIVE:oauth_token:[0-9a-f-]+\]/);
+    expect(result.text).toMatch(/\[SENSITIVE:oauth2_token:[0-9a-f-]+\]/);
     expect(result.redactions[0]).toMatchObject({ type: 'oauth2_token' });
     const entries = await vaultStore.getEntriesByPlaceholderIds('redact-user-custom-type', [
       result.redactions[0]!.sensitiveRef,

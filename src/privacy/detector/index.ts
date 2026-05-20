@@ -108,6 +108,11 @@ const safeHintStringArray = (
   return safeValues.length > 0 ? safeValues : undefined;
 };
 
+const safeFeatureKey = (key: string, rawValue: string): string | undefined => {
+  const safeKey = safeHintString(key, rawValue);
+  return safeKey && /^[A-Za-z0-9_.:-]{1,80}$/.test(safeKey) ? safeKey : undefined;
+};
+
 const safeFeatureValue = (
   value: PrivacyHintFeatureValue,
   rawValue: string,
@@ -125,9 +130,13 @@ const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHin
   const features = hint.features
     ? Object.fromEntries(
         Object.entries(hint.features)
-          .map(([key, value]) => [key, safeFeatureValue(value, rawValue)] as const)
+          .map(
+            ([key, value]) =>
+              [safeFeatureKey(key, rawValue), safeFeatureValue(value, rawValue)] as const,
+          )
           .filter(
-            (entry): entry is readonly [string, PrivacyHintFeatureValue] => entry[1] !== undefined,
+            (entry): entry is readonly [string, PrivacyHintFeatureValue] =>
+              entry[0] !== undefined && entry[1] !== undefined,
           ),
       )
     : undefined;
@@ -148,6 +157,23 @@ const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHin
   };
 };
 
+const sanitizeLocation = (
+  location: DetectorRuleMatch['location'] | undefined,
+  text: string,
+  sourceSpan: SourceSpan,
+): DetectorRuleMatch['location'] => {
+  if (
+    location !== undefined &&
+    Number.isInteger(location.line) &&
+    Number.isInteger(location.column) &&
+    location.line > 0 &&
+    location.column > 0
+  ) {
+    return { line: location.line, column: location.column };
+  }
+  return locationForOffset(text, sourceSpan.start);
+};
+
 const toCandidateDrafts = (
   text: string,
   rule: DetectorRule,
@@ -164,7 +190,7 @@ const toCandidateDrafts = (
       ruleId: rule.ruleId,
       sourceSpan: match.sourceSpan,
       valueLength,
-      location: match.location ?? locationForOffset(text, match.sourceSpan.start),
+      location: sanitizeLocation(match.location, text, match.sourceSpan),
       hint: sanitizeHint(match.hint, text.slice(match.sourceSpan.start, match.sourceSpan.end)),
       priority,
     };

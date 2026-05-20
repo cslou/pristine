@@ -411,6 +411,8 @@ Before integrating `sprint-30-and-31` to `main`, four standalone hardening PRs w
 
 Post-hardening full regression passed: `.checks/regression.sh --tier=full`; log `/tmp/pristine-checks/sprint-30-31-final-full.log`.
 
+Post-integration-review real Pi smoke passed at PR #269 head after provider-prefix and alias hardening: `pi --model openai-codex/gpt-5.5 --thinking minimal --session-dir /tmp/pristine-pi-real-smoke-session-final-57Qu --no-context-files --extension .tmp/pi-privacy-real-smoke.ts -p "My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK."`; output `/tmp/pristine-pi-real-smoke-final-output-XXXX.txt` contained `OK`; evidence `/tmp/pristine-pi-real-smoke-final-evidence-XXXX.json` recorded `requestContainsRawKey: false` and `requestContainsMarker: true`; session history under `/tmp/pristine-pi-real-smoke-session-final-57Qu` contained `[SENSITIVE:api_key:smoke-ref-1]` and no raw fake key.
+
 ### New Dependencies
 
 - `@mariozechner/pi-ai@0.73.0` in `examples/pi-dev/extensions/privacy-input/package.json`, used by the copied Pi reference extension to call Pi `completeSimple` through the same model layer as agentic compaction.

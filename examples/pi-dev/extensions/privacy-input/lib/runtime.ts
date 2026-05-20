@@ -245,7 +245,17 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
   public async handleInput(event: PrivacyInputEventLike): Promise<PrivacyInputAction> {
     if (event.source === 'extension') return { action: 'continue' };
 
-    const detected = await this.detect(event.text);
+    let detected: PrivacyInputDetectResultLike;
+    try {
+      detected = await this.detect(event.text);
+    } catch (error: unknown) {
+      void error;
+      this.notifications?.notify(
+        'Pristine privacy input blocked this message because detection could not complete safely.',
+        'error',
+      );
+      return { action: 'handled' };
+    }
     if (detected.candidates.length === 0) return { action: 'continue' };
 
     let classified: PrivacyInputClassifyResultLike;

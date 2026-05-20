@@ -103,6 +103,25 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(runtimeFactory).not.toHaveBeenCalled();
   });
 
+  it('fails closed when runtime initialization fails', async () => {
+    const pi = new FakePi();
+    const notify = vi.fn();
+    registerPrivacyInputExtension(pi, () => {
+      throw new Error('missing runtime dependencies');
+    });
+
+    await expect(
+      inputHandlerFrom(pi)(
+        { text: 'token raw-value-123', source: 'interactive' },
+        { ui: { notify } },
+      ),
+    ).resolves.toEqual({ action: 'handled' });
+    expect(notify).toHaveBeenCalledWith(
+      'Pristine privacy input failed to initialize: missing runtime dependencies',
+      'error',
+    );
+  });
+
   it('continues no-candidate input without classifier or redactor calls', async () => {
     const { runtime, detect, classifyDependency, redact } = createRuntime();
 
@@ -115,6 +134,21 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(detect).toHaveBeenCalledExactlyOnceWith('ordinary input');
     expect(classifyDependency).not.toHaveBeenCalled();
     expect(redact).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when detection throws', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockRejectedValueOnce(new Error('detector unavailable'));
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toEqual({ action: 'handled' });
+    expect(classifyDependency).not.toHaveBeenCalled();
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because detection could not complete safely.',
+      'error',
+    );
   });
 
   it('redacts confirmed secret decisions and records safe details', async () => {
@@ -558,7 +592,7 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(redact).not.toHaveBeenCalled();
   });
 
-  it('continues safely and notifies when runtime initialization fails', async () => {
+  it('fails closed and notifies when runtime initialization fails', async () => {
     const pi = new FakePi();
     const notify = vi.fn();
     registerPrivacyInputExtension(pi, () => {
@@ -568,7 +602,7 @@ describe('privacy-input Pi extension scaffold', () => {
     await expect(
       inputHandlerFrom(pi)({ text: 'hello', source: 'interactive' }, { ui: { notify } }),
     ).resolves.toEqual({
-      action: 'continue',
+      action: 'handled',
     });
 
     expect(notify).toHaveBeenCalledWith(
@@ -577,7 +611,7 @@ describe('privacy-input Pi extension scaffold', () => {
     );
   });
 
-  it('continues safely when runtime initialization fails without a context object', async () => {
+  it('fails closed when runtime initialization fails without a context object', async () => {
     const pi = new FakePi();
     registerPrivacyInputExtension(pi, () => {
       throw new Error('missing config');
@@ -586,7 +620,7 @@ describe('privacy-input Pi extension scaffold', () => {
     await expect(
       inputHandlerFrom(pi)({ text: 'hello', source: 'interactive' }, null),
     ).resolves.toEqual({
-      action: 'continue',
+      action: 'handled',
     });
   });
 

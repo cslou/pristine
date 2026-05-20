@@ -51,7 +51,7 @@ export const registerPrivacyInputExtension = (
     if (!isInputEventLike(event)) return { action: 'continue' };
     if (event.source === 'extension') return { action: 'continue' };
     const activeRuntime = getRuntime(ctx);
-    if (activeRuntime === null) return { action: 'continue' };
+    if (activeRuntime === null) return { action: 'handled' };
     return activeRuntime.handleInput(event);
   });
 

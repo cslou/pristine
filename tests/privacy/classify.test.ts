@@ -283,6 +283,62 @@ describe('classify privacy primitive', () => {
   });
 
   it.each([
+    'My fake API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+    'My fake API-key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+    'My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+    'My example OpenAI token is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+  ])('provider-prefix fixtures are never normalized to not_secret: %s', async (text) => {
+    const rawToken = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
+    const detected = detect(text);
+    const candidate = detected.candidates.find(
+      (candidate) => text.slice(candidate.sourceSpan.start, candidate.sourceSpan.end) === rawToken,
+    );
+    expect(candidate).toBeDefined();
+    if (candidate === undefined) throw new Error('expected provider-prefix candidate');
+
+    const result = await classify(text, [candidate], async (request) => ({
+      decisions: request.candidates.map((requestCandidate) => ({
+        candidateId: requestCandidate.candidateId,
+        verdict: 'not_secret' as const,
+        rationale: 'fake/test/example wording',
+      })),
+    }));
+
+    expect(result.decisions[0]).toMatchObject({
+      candidateId: candidate.candidateId,
+      verdict: 'uncertain',
+      type: 'api_key',
+      rationale: 'known provider prefix requires conservative handling',
+    });
+    expect(JSON.stringify(result)).not.toContain(rawToken);
+  });
+
+  it('does not apply the provider-prefix override to generic API-key wording alone', async () => {
+    const text = 'My fake API key is example-value-1234567890';
+    const candidate = candidateFor(text, 'example-value-1234567890', {
+      kind: 'key_value_assignment',
+      hint: { suggestedType: 'api_key', nearbyName: 'API key' },
+    });
+
+    const result = await classify(text, [candidate], async (request) => ({
+      decisions: request.candidates.map((requestCandidate) => ({
+        candidateId: requestCandidate.candidateId,
+        verdict: 'not_secret' as const,
+        rationale: 'example wording',
+      })),
+    }));
+
+    expect(result.decisions).toEqual([
+      {
+        candidateId: candidate.candidateId,
+        verdict: 'not_secret',
+        sourceSpan: candidate.sourceSpan,
+        rationale: 'example wording',
+      },
+    ]);
+  });
+
+  it.each([
     [
       'duplicate decision',
       [

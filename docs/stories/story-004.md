@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-20
 **Type:** Fix
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 **Target branch:** sprint-30-and-31
 **Working branch:** fix/provider-prefix-classification-policy
 **Related issue/spec/sprint/PR:** `docs/sprints/sprint-031.md`, PR #269
@@ -46,11 +46,11 @@ If this story affects product, agent, developer, maintainer, CLI, API, or operat
 
 ## Acceptance Criteria
 
-- [ ] `classify` post-processing detects strong provider-prefix candidates using raw-value-free detector metadata. Strong provider-prefix means candidates already identified by detector metadata as known provider prefixes, such as `kind: "known_provider_prefix"` or known-provider signals/prefix-family metadata; generic API-key wording alone must not trigger the override. Pass condition: tests show the override works from sanitized candidate metadata without inspecting/logging raw candidate values.
-- [ ] If a classifier callback returns `not_secret` for a strong provider-prefix candidate, the final `ClassifyDecision` is normalized to `uncertain` with a safe rationale/metadata, or to `secret` if implementation chooses a stricter policy. Pass condition: tests assert final verdict is never `not_secret` for strong provider-prefix fixtures.
-- [ ] Regression coverage exists for these exact synthetic fixtures: `My fake API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456`, `My fake API-key is sk-proj-abcdefghijklmnopqrstuvwxyz123456`, `My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456`, and `My example OpenAI token is sk-proj-abcdefghijklmnopqrstuvwxyz123456`. Pass condition: each produces `secret` or `uncertain`, never `not_secret`.
-- [ ] Synthetic test fixtures may contain provider-looking fake values, but emitted diagnostics/details must not echo candidate-derived prefixes/suffixes or raw values. Pass condition: serialized decisions/details for provider-prefix override do not contain the fake `sk-proj-...` value.
-- [ ] Existing non-provider-prefix `not_secret` decisions still pass through when safe. Pass condition: a non-provider candidate callback returning `not_secret` remains `not_secret` in regression tests.
+- [x] `classify` post-processing detects strong provider-prefix candidates using raw-value-free detector metadata. Strong provider-prefix means candidates already identified by detector metadata as known provider prefixes, such as `kind: "known_provider_prefix"` or known-provider signals/prefix-family metadata; generic API-key wording alone must not trigger the override. Pass condition: tests show the override works from sanitized candidate metadata without inspecting/logging raw candidate values.
+- [x] If a classifier callback returns `not_secret` for a strong provider-prefix candidate, the final `ClassifyDecision` is normalized to `uncertain` with a safe rationale/metadata, or to `secret` if implementation chooses a stricter policy. Pass condition: tests assert final verdict is never `not_secret` for strong provider-prefix fixtures.
+- [x] Regression coverage exists for these exact synthetic fixtures: `My fake API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456`, `My fake API-key is sk-proj-abcdefghijklmnopqrstuvwxyz123456`, `My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456`, and `My example OpenAI token is sk-proj-abcdefghijklmnopqrstuvwxyz123456`. Pass condition: each produces `secret` or `uncertain`, never `not_secret`.
+- [x] Synthetic test fixtures may contain provider-looking fake values, but emitted diagnostics/details must not echo candidate-derived prefixes/suffixes or raw values. Pass condition: serialized decisions/details for provider-prefix override do not contain the fake `sk-proj-...` value.
+- [x] Existing non-provider-prefix `not_secret` decisions still pass through when safe. Pass condition: a non-provider candidate callback returning `not_secret` remains `not_secret` in regression tests.
 
 ## Implementation Plan
 
@@ -66,26 +66,26 @@ If this story affects product, agent, developer, maintainer, CLI, API, or operat
 This story follows verifiability-first engineering: define how the new or changed behavior will be proven correct and which existing behavior it could regress before implementation starts.
 
 - **Functional verification:**
-  - [ ] Run `pnpm run test:unit -- tests/privacy/classify.test.ts -t "provider-prefix"`; pass condition: fake/test/example `sk-proj-...` cases are `secret` or `uncertain`, never `not_secret`.
-  - [ ] Run a targeted no-raw-leak assertion in `tests/privacy/classify.test.ts`; pass condition: serialized override decisions/details do not include the raw fake token.
+  - [x] Run `pnpm run test:unit -- tests/privacy/classify.test.ts -t "provider-prefix"`; pass condition: fake/test/example `sk-proj-...` cases are `secret` or `uncertain`, never `not_secret`.
+  - [x] Run a targeted no-raw-leak assertion in `tests/privacy/classify.test.ts`; pass condition: serialized override decisions/details do not include the raw fake token.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/privacy/classify.test.ts`; pass condition: all classifier primitive tests pass, including existing non-provider `not_secret` behavior.
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts`; pass condition: Pi privacy-input behavior remains green with the stricter provider-prefix policy.
-  - [ ] Run `pnpm run lint && pnpm run typecheck`; pass condition: lint and TypeScript checks pass without errors.
+  - [x] Run `pnpm run test:unit -- tests/privacy/classify.test.ts`; pass condition: all classifier primitive tests pass, including existing non-provider `not_secret` behavior.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts`; pass condition: Pi privacy-input behavior remains green with the stricter provider-prefix policy.
+  - [x] Run `pnpm run lint && pnpm run typecheck`; pass condition: lint and TypeScript checks pass without errors.
 - **Manual-only verification:** N/A — automated classifier and Pi runtime tests cover the provider-prefix policy. Real Pi smoke can be rerun during final integration verification if this change affects manual smoke behavior.
 
 ## Completion Evidence
 
 (Fill this in before marking the story `🟢 Complete`.)
 
-- **PR:** Pending
-- **Commits:** Pending
-- **Acceptance criteria evidence:** Pending
-- **Functional verification evidence:** Pending
-- **Regression verification evidence:** Pending
+- **PR:** #272 (`fix: guard provider prefix classifier decisions` targeting `sprint-30-and-31`)
+- **Commits:** `8152de6 fix: guard provider prefix classifier decisions`
+- **Acceptance criteria evidence:** Added metadata-driven strong provider-prefix normalization in `src/privacy/classifier/index.ts`; `not_secret` decisions for known provider-prefix candidates become `uncertain` with raw-free rationale; generic API-key wording without provider-prefix metadata remains `not_secret`.
+- **Functional verification evidence:** PASS — `pnpm run test:unit -- tests/privacy/classify.test.ts -t "provider-prefix"` covers all required synthetic fixtures, the no-raw serialized decision assertion, and generic non-provider pass-through.
+- **Regression verification evidence:** PASS — `pnpm run test:unit -- tests/privacy/classify.test.ts`; PASS — `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts`; PASS — `pnpm run lint`; PASS — `pnpm run typecheck`; PASS — push hook standard tier (`pnpm run lint`, `pnpm run typecheck`, `pnpm run test:unit`) with 38 unit files / 425 tests passing.
 - **Manual-only verification evidence:** N/A
-- **Failed, ambiguous, or unrun verification:** Pending
-- **Review evidence:** Pending `/review`
+- **Failed, ambiguous, or unrun verification:** None
+- **Review evidence:** `/review` for PR #272 returned 0 P0, 0 P1, 3 P2 (test-file size and churn context); mergeability 4/5.
 - **New dependencies:** None
 
 ## Rules

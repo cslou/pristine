@@ -36,6 +36,36 @@ const assertValidSpan = (span: SourceSpan, textLength: number, label: string): v
 const candidateHint = (candidate: DetectCandidate): DetectHint | undefined =>
   (candidate as { readonly hint?: DetectHint }).hint;
 
+const includesKnownProviderPrefixSignal = (signals: readonly string[] | undefined): boolean =>
+  signals?.includes('known_provider_prefix') ?? false;
+
+const isStrongProviderPrefixCandidate = (candidate: DetectCandidate): boolean => {
+  const hint = candidateHint(candidate);
+  return (
+    candidate.kind === 'known_provider_prefix' ||
+    includesKnownProviderPrefixSignal(hint?.signals) ||
+    includesKnownProviderPrefixSignal(hint?.positiveSignals)
+  );
+};
+
+const applyProviderPrefixPolicy = (
+  decision: ClassifyDecision,
+  candidate: DetectCandidate,
+): ClassifyDecision => {
+  if (decision.verdict !== 'not_secret' || !isStrongProviderPrefixCandidate(candidate)) {
+    return decision;
+  }
+  return {
+    candidateId: decision.candidateId,
+    verdict: 'uncertain',
+    sourceSpan: decision.sourceSpan,
+    type: decision.type ?? candidateHint(candidate)?.suggestedType,
+    label: decision.label,
+    confidence: decision.confidence,
+    rationale: 'known provider prefix requires conservative handling',
+  };
+};
+
 const buildRequest = (
   text: string,
   candidates: readonly DetectCandidate[],
@@ -164,7 +194,10 @@ const validateCallbackResult = (
     }
     seen.add(rawDecision.candidateId);
     decisions.push(
-      normalizeDecision(rawDecision as unknown as ClassifierCallbackDecision, candidate),
+      applyProviderPrefixPolicy(
+        normalizeDecision(rawDecision as unknown as ClassifierCallbackDecision, candidate),
+        candidate,
+      ),
     );
   }
 

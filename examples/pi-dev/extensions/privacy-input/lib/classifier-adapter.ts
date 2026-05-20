@@ -36,6 +36,7 @@ const SAFE_KINDS = new Set([
   'structured_token',
 ]);
 const SAFE_RULE_IDS = new Set([
+  'assignment.secret',
   'assignment.sensitive-key',
   'cloud.aws-secret-access-key',
   'cookie.session-token',

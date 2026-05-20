@@ -1,3 +1,4 @@
+import { PrivacyInputClassifierError } from './classifier-diagnostics.js';
 import type {
   PrivacyInputClassifierCallbackDecisionLike,
   PrivacyInputClassifierCallbackResultLike,
@@ -5,12 +6,8 @@ import type {
   PrivacyInputClassifierVerdict,
 } from './runtime.js';
 
-export class PrivacyInputClassifierError extends Error {
-  public constructor(message: string) {
-    super(`privacy-input classifier: ${message}`);
-    this.name = 'PrivacyInputClassifierError';
-  }
-}
+export { PrivacyInputClassifierError } from './classifier-diagnostics.js';
+export type { PrivacyInputClassifierFailureReasonCode } from './classifier-diagnostics.js';
 
 export interface PrivacyInputClassifierTask {
   readonly systemPrompt: string;
@@ -66,11 +63,17 @@ const sanitizeHint = (hint: unknown): Record<string, unknown> | undefined => {
 export const sanitizeClassifierLabel = (label: string | undefined): string | undefined => {
   if (label === undefined) return undefined;
   if (/\p{C}/u.test(label)) {
-    throw new PrivacyInputClassifierError('classifier label contains unsafe characters');
+    throw new PrivacyInputClassifierError(
+      'invalid_response',
+      'classifier label contains unsafe characters',
+    );
   }
   const normalized = label.trim().replace(/\s+/g, ' ');
   if (!SAFE_LABEL.test(normalized)) {
-    throw new PrivacyInputClassifierError('classifier label contains unsafe characters');
+    throw new PrivacyInputClassifierError(
+      'invalid_response',
+      'classifier label contains unsafe characters',
+    );
   }
   return normalized;
 };
@@ -101,13 +104,18 @@ export const buildPrivacyInputClassifierTask = (
 };
 
 const parseJsonObject = (responseText: string): Record<string, unknown> => {
+  if (responseText.trim().length === 0) {
+    throw new PrivacyInputClassifierError('empty_response', 'response was empty');
+  }
   try {
     const parsed = JSON.parse(responseText) as unknown;
-    if (!isRecord(parsed)) throw new PrivacyInputClassifierError('response must be a JSON object');
+    if (!isRecord(parsed)) {
+      throw new PrivacyInputClassifierError('invalid_response', 'response must be a JSON object');
+    }
     return parsed;
   } catch (error: unknown) {
     if (error instanceof PrivacyInputClassifierError) throw error;
-    throw new PrivacyInputClassifierError('response is not valid JSON');
+    throw new PrivacyInputClassifierError('malformed_json', 'response is not valid JSON');
   }
 };
 
@@ -118,22 +126,30 @@ export const parsePrivacyInputClassifierResponse = (
   const response = parseJsonObject(responseText);
   const rawDecisions = response.decisions;
   if (!Array.isArray(rawDecisions)) {
-    throw new PrivacyInputClassifierError('response.decisions must be an array');
+    throw new PrivacyInputClassifierError(
+      'missing_decision',
+      'response.decisions must be an array',
+    );
   }
 
   const allowedIds = new Set(allowedCandidateIds);
   const seenIds = new Set<string>();
   const decisions: PrivacyInputClassifierCallbackDecisionLike[] = rawDecisions.map((raw) => {
-    if (!isRecord(raw)) throw new PrivacyInputClassifierError('decision must be an object');
+    if (!isRecord(raw)) {
+      throw new PrivacyInputClassifierError('invalid_response', 'decision must be an object');
+    }
     const candidateId = raw.candidateId;
     if (typeof candidateId !== 'string' || candidateId.length === 0) {
-      throw new PrivacyInputClassifierError('decision candidateId must be a non-empty string');
+      throw new PrivacyInputClassifierError(
+        'invalid_response',
+        'decision candidateId must be a non-empty string',
+      );
     }
     if (!allowedIds.has(candidateId)) {
-      throw new PrivacyInputClassifierError(`unknown candidateId ${candidateId}`);
+      throw new PrivacyInputClassifierError('unknown_candidate_id', 'unknown candidateId');
     }
     if (seenIds.has(candidateId)) {
-      throw new PrivacyInputClassifierError(`duplicate candidateId ${candidateId}`);
+      throw new PrivacyInputClassifierError('duplicate_candidate_id', 'duplicate candidateId');
     }
     seenIds.add(candidateId);
 
@@ -142,13 +158,13 @@ export const parsePrivacyInputClassifierResponse = (
       typeof verdict !== 'string' ||
       !ALLOWED_VERDICTS.has(verdict as PrivacyInputClassifierVerdict)
     ) {
-      throw new PrivacyInputClassifierError('decision verdict is invalid');
+      throw new PrivacyInputClassifierError('invalid_response', 'decision verdict is invalid');
     }
 
     const type =
       typeof raw.type === 'string' && raw.type.trim().length > 0 ? raw.type.trim() : undefined;
     if (verdict === 'secret' && type === undefined) {
-      throw new PrivacyInputClassifierError('secret decision requires type');
+      throw new PrivacyInputClassifierError('invalid_response', 'secret decision requires type');
     }
 
     const confidence = raw.confidence;
@@ -156,11 +172,14 @@ export const parsePrivacyInputClassifierResponse = (
       confidence !== undefined &&
       (typeof confidence !== 'number' || confidence < 0 || confidence > 1)
     ) {
-      throw new PrivacyInputClassifierError('decision confidence must be between 0 and 1');
+      throw new PrivacyInputClassifierError(
+        'invalid_response',
+        'decision confidence must be between 0 and 1',
+      );
     }
 
     if (raw.label !== undefined && typeof raw.label !== 'string') {
-      throw new PrivacyInputClassifierError('decision label must be a string');
+      throw new PrivacyInputClassifierError('invalid_response', 'decision label must be a string');
     }
     const label = sanitizeClassifierLabel(raw.label);
     const rationale = typeof raw.rationale === 'string' ? raw.rationale : undefined;
@@ -175,7 +194,10 @@ export const parsePrivacyInputClassifierResponse = (
   });
 
   if (seenIds.size !== allowedIds.size) {
-    throw new PrivacyInputClassifierError('response is missing candidate decisions');
+    throw new PrivacyInputClassifierError(
+      'missing_decision',
+      'response is missing candidate decisions',
+    );
   }
 
   return { decisions };

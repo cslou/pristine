@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPrivacyInputClassifierCallback } from '../../../examples/pi-dev/extensions/privacy-input/lib/classifier-adapter.js';
+import {
+  createPrivacyInputClassifierCallback,
+  PrivacyInputClassifierError,
+  type PrivacyInputClassifierFailureReasonCode,
+} from '../../../examples/pi-dev/extensions/privacy-input/lib/classifier-adapter.js';
 import {
   createPiModelClassifierTransport,
   type PiModelCompleteSimple,
@@ -33,6 +37,29 @@ const createRegistry = (overrides?: {
 
 const createCompleteSimple = (responseText = classifierJson): PiModelCompleteSimple =>
   vi.fn(async () => ({ content: [{ type: 'text', text: responseText }] }));
+
+const transportRiskyValues = [
+  'sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+  'sk-proj-raw-prefix-that-must-not-leak',
+  'provider raw failure with secret querySecret456',
+];
+
+const expectTransportFailure = async (
+  operation: Promise<unknown>,
+  reasonCode: PrivacyInputClassifierFailureReasonCode,
+): Promise<void> => {
+  await expect(operation).rejects.toBeInstanceOf(PrivacyInputClassifierError);
+  try {
+    await operation;
+  } catch (error: unknown) {
+    expect(error).toBeInstanceOf(PrivacyInputClassifierError);
+    expect((error as PrivacyInputClassifierError).reasonCode).toBe(reasonCode);
+    const serialized = `${String(error)} ${JSON.stringify(error)}`;
+    for (const value of transportRiskyValues) {
+      expect(serialized).not.toContain(value);
+    }
+  }
+};
 
 const sanitizedRequest = {
   sanitizedContext: 'token [CANDIDATE:request-candidate-0001]',
@@ -125,41 +152,45 @@ describe('Pi model privacy-input classifier transport', () => {
     }
   });
 
-  it('rejects unavailable models, registry errors, unusable auth, empty responses, bad stops, throws, and aborts', async () => {
-    await expect(
+  it('rejects transport failures with canonical raw-free reason codes', async () => {
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry({ foundModel: undefined }),
         completeSimple: createCompleteSimple(),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: no usable Pi classifier model');
+      'model_unavailable',
+    );
 
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: {
           find: vi.fn(() => {
-            throw new Error('registry unavailable');
+            throw new Error('provider raw failure with secret querySecret456');
           }),
           getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'unused' })),
         },
         completeSimple: createCompleteSimple(),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model classifier failed: registry unavailable');
+      'transport_error',
+    );
 
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry({ auth: { ok: true } }),
         completeSimple: createCompleteSimple(),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: no usable Pi classifier model');
+      'auth_unavailable',
+    );
 
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry(),
         completeSimple: createCompleteSimple(''),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model response was empty');
+      'empty_response',
+    );
 
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry(),
         completeSimple: vi.fn(async () => ({
@@ -167,9 +198,21 @@ describe('Pi model privacy-input classifier transport', () => {
           stopReason: 'length',
         })),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model response was truncated');
+      'truncated_response',
+    );
 
-    await expect(
+    await expectTransportFailure(
+      createPiModelClassifierTransport({
+        modelRegistry: createRegistry(),
+        completeSimple: vi.fn(async () => ({
+          content: [{ type: 'text', text: '{}' }],
+          stopReason: 'abort',
+        })),
+      }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
+      'aborted',
+    );
+
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry(),
         completeSimple: vi.fn(async () => ({
@@ -177,18 +220,20 @@ describe('Pi model privacy-input classifier transport', () => {
           stopReason: 'error',
         })),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model response stopped with error');
+      'transport_error',
+    );
 
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry(),
         completeSimple: vi.fn(async () => {
-          throw new Error('provider down');
+          throw new Error('provider raw failure with secret querySecret456');
         }),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model classifier failed: provider down');
+      'transport_error',
+    );
 
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry(),
         timeoutMs: 1,
@@ -199,19 +244,21 @@ describe('Pi model privacy-input classifier transport', () => {
             }),
         ),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model classifier timed out or was aborted');
+      'timeout',
+    );
 
     const controller = new AbortController();
     controller.abort();
     const completeAfterPreAbort = createCompleteSimple();
     const registryAfterPreAbort = createRegistry();
-    await expect(
+    await expectTransportFailure(
       createPiModelClassifierTransport({
         modelRegistry: registryAfterPreAbort,
         signal: controller.signal,
         completeSimple: completeAfterPreAbort,
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
-    ).rejects.toThrow('privacy-input classifier: Pi model classifier timed out or was aborted');
+      'aborted',
+    );
     expect(registryAfterPreAbort.find).not.toHaveBeenCalled();
     expect(completeAfterPreAbort).not.toHaveBeenCalled();
   });
@@ -281,6 +328,7 @@ describe('Pi model privacy-input classifier transport', () => {
     await expect(failingRuntime.handleInput({ text: `token ${rawSecret}` })).resolves.toMatchObject(
       {
         action: 'handled',
+        details: { classifierFailure: { reasonCode: 'malformed_json' } },
       },
     );
   });

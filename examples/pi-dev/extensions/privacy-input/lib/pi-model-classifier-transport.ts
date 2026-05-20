@@ -1,7 +1,7 @@
-import {
-  PrivacyInputClassifierError,
-  type PrivacyInputClassifierTask,
-  type PrivacyInputClassifierTransport,
+import { PrivacyInputClassifierError } from './classifier-diagnostics.js';
+import type {
+  PrivacyInputClassifierTask,
+  PrivacyInputClassifierTransport,
 } from './classifier-adapter.js';
 
 export interface PiModelPreference {
@@ -104,7 +104,7 @@ const loadCompleteSimple = async (): Promise<PiModelCompleteSimple> => {
   const moduleValue = (await import(moduleName)) as Record<string, unknown>;
   const completeSimple = moduleValue.completeSimple;
   if (typeof completeSimple !== 'function') {
-    throw new PrivacyInputClassifierError('Pi completeSimple is unavailable');
+    throw new PrivacyInputClassifierError('model_unavailable', 'Pi completeSimple is unavailable');
   }
   return completeSimple as PiModelCompleteSimple;
 };
@@ -128,7 +128,7 @@ const selectModel = async (
 
     const auth = await modelRegistry.getApiKeyAndHeaders(model);
     if (isUsableAuth(auth)) return { model, auth };
-    const diagnostic = `configured model unavailable: ${preference.provider}/${preference.id} (${auth.ok ? 'no usable API key or headers' : (auth.error ?? 'auth failed')})`;
+    const diagnostic = `configured model unavailable: ${preference.provider}/${preference.id} (${auth.ok ? 'no usable API key or headers' : 'auth unavailable'})`;
     diagnostics.push(diagnostic);
     diagnosticsSink?.(diagnostic);
   }
@@ -136,13 +136,16 @@ const selectModel = async (
   if (currentModel !== undefined) {
     const auth = await modelRegistry.getApiKeyAndHeaders(currentModel);
     if (isUsableAuth(auth)) return { model: currentModel, auth };
-    const diagnostic = `current model unavailable: ${modelName(currentModel)} (${auth.ok ? 'no usable API key or headers' : (auth.error ?? 'auth failed')})`;
+    const diagnostic = `current model unavailable: ${modelName(currentModel)} (${auth.ok ? 'no usable API key or headers' : 'auth unavailable'})`;
     diagnostics.push(diagnostic);
     diagnosticsSink?.(diagnostic);
   }
 
   throw new PrivacyInputClassifierError(
-    `no usable Pi classifier model (${diagnostics.at(-1) ?? 'no configured or current model'})`,
+    diagnostics.length === 0 || diagnostics.every((diagnostic) => diagnostic.includes('not found'))
+      ? 'model_unavailable'
+      : 'auth_unavailable',
+    'no usable Pi classifier model',
   );
 };
 
@@ -159,36 +162,62 @@ const textFromResponse = (response: PiModelCompleteResponse): string =>
 const createCompositeSignal = (
   signal: AbortSignal | undefined,
   timeoutMs: number | undefined,
-): { readonly signal?: AbortSignal; readonly cleanup: () => void } => {
-  if (timeoutMs === undefined) return { signal, cleanup: () => undefined };
+): {
+  readonly signal?: AbortSignal;
+  readonly cleanup: () => void;
+  readonly getAbortReason: () => 'timeout' | 'aborted';
+} => {
+  let abortReason: 'timeout' | 'aborted' = signal?.aborted ? 'aborted' : 'timeout';
+  if (timeoutMs === undefined) {
+    return { signal, cleanup: () => undefined, getAbortReason: () => 'aborted' };
+  }
   const controller = new AbortController();
-  const abort = (): void => controller.abort();
-  const timeout = setTimeout(abort, timeoutMs);
-  signal?.addEventListener('abort', abort, { once: true });
-  if (signal?.aborted) abort();
+  const abortForTimeout = (): void => {
+    abortReason = 'timeout';
+    controller.abort();
+  };
+  const abortForSignal = (): void => {
+    abortReason = 'aborted';
+    controller.abort();
+  };
+  const timeout = setTimeout(abortForTimeout, timeoutMs);
+  signal?.addEventListener('abort', abortForSignal, { once: true });
+  if (signal?.aborted) abortForSignal();
 
   return {
     signal: controller.signal,
     cleanup: () => {
       clearTimeout(timeout);
-      signal?.removeEventListener('abort', abort);
+      signal?.removeEventListener('abort', abortForSignal);
     },
+    getAbortReason: () => abortReason,
   };
 };
 
 const awaitWithAbort = async <T>(
   operationFactory: () => Promise<T>,
   signal: AbortSignal | undefined,
+  getAbortReason: () => 'timeout' | 'aborted',
 ): Promise<T> => {
   if (signal === undefined) return operationFactory();
   if (signal.aborted) {
-    throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+    const reasonCode = getAbortReason();
+    throw new PrivacyInputClassifierError(
+      reasonCode,
+      `Pi model classifier ${reasonCode === 'timeout' ? 'timed out' : 'was aborted'}`,
+    );
   }
 
   let removeAbortListener = (): void => undefined;
   const abortPromise = new Promise<never>((_resolve, reject) => {
     const rejectOnAbort = (): void => {
-      reject(new PrivacyInputClassifierError('Pi model classifier timed out or was aborted'));
+      const reasonCode = getAbortReason();
+      reject(
+        new PrivacyInputClassifierError(
+          reasonCode,
+          `Pi model classifier ${reasonCode === 'timeout' ? 'timed out' : 'was aborted'}`,
+        ),
+      );
     };
     signal.addEventListener('abort', rejectOnAbort, { once: true });
     removeAbortListener = () => signal.removeEventListener('abort', rejectOnAbort);
@@ -201,13 +230,22 @@ const awaitWithAbort = async <T>(
   }
 };
 
+const classifierAbortError = (reasonCode: 'timeout' | 'aborted'): PrivacyInputClassifierError =>
+  new PrivacyInputClassifierError(
+    reasonCode,
+    `Pi model classifier ${reasonCode === 'timeout' ? 'timed out' : 'was aborted'}`,
+  );
+
 const assertSuccessfulStopReason = (stopReason: string | undefined): void => {
   if (stopReason === undefined) return;
   if (stopReason === 'length') {
-    throw new PrivacyInputClassifierError('Pi model response was truncated');
+    throw new PrivacyInputClassifierError('truncated_response', 'Pi model response was truncated');
   }
-  if (['error', 'aborted', 'abort', 'cancelled', 'canceled'].includes(stopReason)) {
-    throw new PrivacyInputClassifierError(`Pi model response stopped with ${stopReason}`);
+  if (['aborted', 'abort', 'cancelled', 'canceled'].includes(stopReason)) {
+    throw new PrivacyInputClassifierError('aborted', 'Pi model response was aborted');
+  }
+  if (stopReason === 'error') {
+    throw new PrivacyInputClassifierError('transport_error', 'Pi model response stopped with error');
   }
 };
 
@@ -226,11 +264,11 @@ export const createPiModelClassifierTransport = (
           options.diagnostics,
         );
         if (compositeSignal.signal?.aborted) {
-          throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+          throw classifierAbortError(compositeSignal.getAbortReason());
         }
         const completeSimple = options.completeSimple ?? (await loadCompleteSimple());
         if (compositeSignal.signal?.aborted) {
-          throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+          throw classifierAbortError(compositeSignal.getAbortReason());
         }
         return completeSimple(
           model,
@@ -252,22 +290,22 @@ export const createPiModelClassifierTransport = (
             signal: compositeSignal.signal,
           },
         );
-      }, compositeSignal.signal);
+      }, compositeSignal.signal, compositeSignal.getAbortReason);
 
       assertSuccessfulStopReason(response.stopReason);
 
       const responseText = textFromResponse(response);
       if (responseText.length === 0) {
-        throw new PrivacyInputClassifierError('Pi model response was empty');
+        throw new PrivacyInputClassifierError('empty_response', 'Pi model response was empty');
       }
       return responseText;
     } catch (error: unknown) {
       if (error instanceof PrivacyInputClassifierError) throw error;
       if (compositeSignal.signal?.aborted) {
-        throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+        throw classifierAbortError(compositeSignal.getAbortReason());
       }
-      const message = error instanceof Error ? error.message : String(error);
-      throw new PrivacyInputClassifierError(`Pi model classifier failed: ${message}`);
+      void error;
+      throw new PrivacyInputClassifierError('transport_error', 'Pi model classifier failed');
     } finally {
       compositeSignal.cleanup();
     }

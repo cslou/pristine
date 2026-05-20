@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-20
 **Type:** Cleanup
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 **Target branch:** sprint-30-and-31
 **Working branch:** chore/remove-deprecated-memory-api
 **Related issue/spec/sprint/PR:** `docs/sprints/sprint-031.md`, PR #269
@@ -47,10 +47,10 @@ If this story affects product, agent, developer, maintainer, CLI, API, or operat
 
 ## Acceptance Criteria
 
-- [ ] `src/client.ts` no longer declares deprecated source-memory type aliases (`IndexSourceChunksOptions`, `IndexedSourceChunk`, `SearchSourceChunksOptions`, `DeleteSourceChunksOptions`, `DeleteSourceChunksResult`, `SourceChunkSearchHit`) or deprecated methods (`indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`). Pass condition: `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit" src/client.ts` returns no matches, and any remaining `@deprecated` in `src/client.ts` is explicitly documented as unrelated or removed.
-- [ ] `src/index.ts` no longer re-exports deprecated source-memory compatibility types or includes the deprecated compatibility comment. Pass condition: `rg "Deprecated compatibility|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit" src/index.ts` returns no matches.
-- [ ] Public docs and public API fixture no longer advertise or type-check deprecated source-memory names. Pass condition: `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit|Deprecated compatibility" docs/pages tests/smoke README.md` returns no matches except historical story files if intentionally excluded from the command.
-- [ ] Canonical source-memory API remains available and tested. Pass condition: public API fixture and source-memory tests compile/pass using `StoreOptions`, `StoredMemory`, `RecallOptions`, `RecalledMemory`, `ForgetOptions`, `ForgetResult`, `store`, `recall`, and `forget`.
+- [x] `src/client.ts` no longer declares deprecated source-memory type aliases (`IndexSourceChunksOptions`, `IndexedSourceChunk`, `SearchSourceChunksOptions`, `DeleteSourceChunksOptions`, `DeleteSourceChunksResult`, `SourceChunkSearchHit`) or deprecated methods (`indexSourceChunks`, `searchSourceChunks`, `deleteSourceChunks`). Pass condition: `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit" src/client.ts` returns no matches, and any remaining `@deprecated` in `src/client.ts` is explicitly documented as unrelated or removed.
+- [x] `src/index.ts` no longer re-exports deprecated source-memory compatibility types or includes the deprecated compatibility comment. Pass condition: `rg "Deprecated compatibility|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit" src/index.ts` returns no matches.
+- [x] Public docs and public API fixture no longer advertise or type-check deprecated source-memory names. Pass condition: `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit|Deprecated compatibility" docs/pages tests/smoke README.md` returns no matches except historical story files if intentionally excluded from the command.
+- [x] Canonical source-memory API remains available and tested. Pass condition: public API fixture and source-memory tests compile/pass using `StoreOptions`, `StoredMemory`, `RecallOptions`, `RecalledMemory`, `ForgetOptions`, `ForgetResult`, `store`, `recall`, and `forget`.
 
 ## Implementation Plan
 
@@ -66,27 +66,27 @@ If this story affects product, agent, developer, maintainer, CLI, API, or operat
 This story follows verifiability-first engineering: define how the new or changed behavior will be proven correct and which existing behavior it could regress before implementation starts.
 
 - **Functional verification:**
-  - [ ] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit|Deprecated compatibility" src docs/pages tests/smoke tests/client README.md`; pass condition: no deprecated source-memory API matches remain outside story docs or explicitly documented false positives.
-  - [ ] Run `pnpm run verify:public-api-types`; pass condition: public API type fixture compiles using only canonical source-memory API names.
+  - [x] Run `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit|Deprecated compatibility" src docs/pages tests/smoke tests/client README.md`; pass condition: no deprecated source-memory API matches remain outside story docs or explicitly documented false positives.
+  - [x] Run `pnpm run verify:public-api-types`; pass condition: public API type fixture compiles using only canonical source-memory API names.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/client/source-memory-store.test.ts`; pass condition: canonical `store`, `recall`, and `forget` source-memory tests pass after deprecated aliases are removed.
-  - [ ] Run `pnpm run test:smoke`; pass condition: package build, public API type verification, and smoke suite pass after public API cleanup.
-  - [ ] Run `pnpm run docs:build`; pass condition: public docs build successfully after deprecated API references are removed from MDX docs.
-  - [ ] Run `pnpm run lint && pnpm run typecheck`; pass condition: lint and TypeScript checks pass without errors.
+  - [x] Run `pnpm run test:unit -- tests/client/source-memory-store.test.ts`; pass condition: canonical `store`, `recall`, and `forget` source-memory tests pass after deprecated aliases are removed.
+  - [x] Run `pnpm run test:smoke`; pass condition: package build, public API type verification, and smoke suite pass after public API cleanup.
+  - [x] Run `pnpm run docs:build`; pass condition: public docs build successfully after deprecated API references are removed from MDX docs.
+  - [x] Run `pnpm run lint && pnpm run typecheck`; pass condition: lint and TypeScript checks pass without errors.
 - **Manual-only verification:** N/A — API cleanup is covered by static checks, public type fixture, and automated tests.
 
 ## Completion Evidence
 
 (Fill this in before marking the story `🟢 Complete`.)
 
-- **PR:** Pending
-- **Commits:** Pending
-- **Acceptance criteria evidence:** Pending
-- **Functional verification evidence:** Pending
-- **Regression verification evidence:** Pending
+- **PR:** #270 (`chore: remove deprecated source memory api aliases` targeting `sprint-30-and-31`)
+- **Commits:** `81a2964 chore: remove deprecated source memory api aliases`
+- **Acceptance criteria evidence:** Removed deprecated aliases/methods from `src/client.ts`, root compatibility exports from `src/index.ts`, public docs references from `docs/pages/api.mdx`, public type fixture imports/usages from `tests/smoke/public-api-types-fixture.mts`, and deprecated compatibility assertions from `tests/client/source-memory-store.test.ts`. Renamed the internal source-index search hit type to avoid keeping the deprecated public compatibility name in `src/`.
+- **Functional verification evidence:** PASS — `rg "indexSourceChunks|searchSourceChunks|deleteSourceChunks|IndexSourceChunksOptions|IndexedSourceChunk|SearchSourceChunksOptions|DeleteSourceChunksOptions|DeleteSourceChunksResult|SourceChunkSearchHit|Deprecated compatibility" src docs/pages tests/smoke tests/client README.md` returned no matches (exit 1). PASS — `pnpm run verify:public-api-types`.
+- **Regression verification evidence:** PASS — `pnpm run test:unit -- tests/client/source-memory-store.test.ts`; PASS — `pnpm run test:smoke`; PASS — `pnpm run docs:build`; PASS — `pnpm run lint`; PASS — `pnpm run typecheck`; PASS — push hook standard tier (`pnpm run lint`, `pnpm run typecheck`, `pnpm run test:unit`) with 38 unit files / 410 tests passing.
 - **Manual-only verification evidence:** N/A
-- **Failed, ambiguous, or unrun verification:** Pending
-- **Review evidence:** Pending `/review`
+- **Failed, ambiguous, or unrun verification:** None
+- **Review evidence:** `/review` for PR #270 returned 0 P0, 0 P1, 7 P2 (six git-history churn context notes plus one PR-body public-API-impact wording note that was addressed); mergeability 4/5.
 - **New dependencies:** None
 
 ## Rules

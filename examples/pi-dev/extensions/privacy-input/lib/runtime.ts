@@ -146,10 +146,7 @@ const coversConfirmedRedactions = (
   for (const secret of confirmed) {
     const rawValue = text.slice(secret.sourceSpan.start, secret.sourceSpan.end);
     if (rawValue.length > 0 && redacted.text.includes(rawValue)) return false;
-    if (
-      secret.candidateId !== undefined &&
-      redactionsByCandidateId.get(secret.candidateId)?.type !== secret.type
-    ) {
+    if (secret.candidateId !== undefined && !redactionsByCandidateId.has(secret.candidateId)) {
       return false;
     }
   }

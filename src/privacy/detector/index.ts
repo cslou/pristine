@@ -158,18 +158,13 @@ const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHin
   };
 };
 
-const SAFE_METADATA = /^[A-Za-z0-9_.:-]{1,120}$/u;
+const BUILT_IN_RULE_METADATA = new Map(BUILT_IN_RULES.map((rule) => [rule.ruleId, rule.kind]));
 
-const safeCandidateMetadata = (value: string, rawValue: string): string | undefined => {
-  const safeValue = safeHintString(value, rawValue);
-  return safeValue && SAFE_METADATA.test(safeValue) ? safeValue : undefined;
-};
+const safeCandidateKind = (rule: DetectorRule): string =>
+  BUILT_IN_RULE_METADATA.get(rule.ruleId) ?? 'custom';
 
-const safeCandidateKind = (kind: string, rawValue: string): string =>
-  safeCandidateMetadata(kind, rawValue) ?? 'custom';
-
-const safeCandidateRuleId = (ruleId: string, rawValue: string): string =>
-  safeCandidateMetadata(ruleId, rawValue) ?? 'custom.redacted';
+const safeCandidateRuleId = (rule: DetectorRule): string =>
+  BUILT_IN_RULE_METADATA.has(rule.ruleId) ? rule.ruleId : 'custom.redacted';
 
 const sanitizeLocation = (
   location: DetectorRuleMatch['location'] | undefined,
@@ -201,8 +196,8 @@ const toCandidateDrafts = (
       match.valueLength > 0 ? match.valueLength : match.sourceSpan.end - match.sourceSpan.start;
     return {
       candidateId: '',
-      kind: safeCandidateKind(rule.kind, rawValue),
-      ruleId: safeCandidateRuleId(rule.ruleId, rawValue),
+      kind: safeCandidateKind(rule),
+      ruleId: safeCandidateRuleId(rule),
       sourceSpan: match.sourceSpan,
       valueLength,
       location: sanitizeLocation(match.location, text, match.sourceSpan),

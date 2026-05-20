@@ -189,7 +189,8 @@ describe('detect privacy primitive', () => {
       },
     };
     const customCandidate = firstCandidate(customText, { customRules: [customRule] });
-    expect(customCandidate.ruleId).toBe('custom.acme-token');
+    expect(customCandidate.ruleId).toBe('custom.redacted');
+    expect(customCandidate.kind).toBe('custom');
     expect(customCandidate.hint.provider).toBe('custom-provider');
     expect(customCandidate.hint.prefixFamily).toBe('custom-family');
     expectOnlySafeCandidateFields(customCandidate);

@@ -178,7 +178,7 @@ const safeDecisionLabel = (
   decision: PrivacyInputClassifyDecisionLike,
   sourceText: string,
 ): string | undefined => {
-  if (decision.label === undefined) return undefined;
+  if (typeof decision.label !== 'string') return undefined;
   const label = decision.label.trim().replace(/\s+/gu, ' ');
   if (!SAFE_DETAIL_LABEL.test(label)) return undefined;
   const rawValue = sourceText.slice(decision.sourceSpan.start, decision.sourceSpan.end);
@@ -231,8 +231,20 @@ const isDetectResultLike = (value: unknown): value is PrivacyInputDetectResultLi
 const isClassifyResultLike = (value: unknown): value is PrivacyInputClassifyResultLike =>
   isRecordLike(value) && Array.isArray(value.decisions);
 
+const isRedactionLike = (value: unknown): value is PrivacyInputRedactionLike =>
+  isRecordLike(value) &&
+  (value.candidateId === undefined || typeof value.candidateId === 'string') &&
+  typeof value.sensitiveRef === 'string' &&
+  typeof value.placeholder === 'string' &&
+  typeof value.type === 'string' &&
+  (value.label === undefined || typeof value.label === 'string') &&
+  isSpanLike(value.redactedSpan);
+
 const isRedactResultLike = (value: unknown): value is PrivacyInputRedactResultLike =>
-  isRecordLike(value) && typeof value.text === 'string' && Array.isArray(value.redactions);
+  isRecordLike(value) &&
+  typeof value.text === 'string' &&
+  Array.isArray(value.redactions) &&
+  value.redactions.every((redaction) => isRedactionLike(redaction));
 
 const RUNTIME_CLASSIFIER_VERDICTS = new Set<PrivacyInputClassifierVerdict>([
   'secret',

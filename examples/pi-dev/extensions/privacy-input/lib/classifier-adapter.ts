@@ -35,20 +35,25 @@ const SAFE_KINDS = new Set([
   'signed_url_or_query_secret',
   'structured_token',
 ]);
-const SAFE_RULE_ID_PREFIXES = [
-  'assignment.',
-  'cloud.',
-  'cookie.',
-  'custom.',
-  'header.',
-  'opaque.',
-  'private-key.',
-  'provider.',
-  'query.',
-  'seed.',
-  'structured.',
-  'url.',
-] as const;
+const SAFE_RULE_IDS = new Set([
+  'assignment.sensitive-key',
+  'cloud.aws-secret-access-key',
+  'cookie.session-token',
+  'header.authorization-bearer',
+  'opaque.generated-looking-value',
+  'private-key.pem-block',
+  'private-key.pgp-block',
+  'provider.anthropic-key',
+  'provider.aws-access-key-id',
+  'provider.github-token',
+  'provider.openai-project-key',
+  'provider.sendgrid-key',
+  'query.signed-url-secret',
+  'seed.recovery-phrase',
+  'structured.jwt',
+  'structured.paseto',
+  'url.credential-password',
+]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -63,10 +68,7 @@ const safeKind = (value: unknown): string | undefined => {
 
 const safeRuleId = (value: unknown): string | undefined => {
   const safeValue = safeString(value);
-  if (safeValue === undefined) return undefined;
-  return SAFE_RULE_ID_PREFIXES.some((prefix) => safeValue.startsWith(prefix))
-    ? safeValue
-    : undefined;
+  return safeValue !== undefined && SAFE_RULE_IDS.has(safeValue) ? safeValue : undefined;
 };
 
 const safeSignalArray = (value: unknown): readonly string[] | undefined => {

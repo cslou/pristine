@@ -44,21 +44,39 @@ const SAFE_FEATURE_KEYS = new Set([
 const SAFE_FEATURE_STRINGS = new Set(['authorization', 'high', 'jwt', 'low', 'medium', 'paseto']);
 const SAFE_NEARBY_NAMES = new Set(['API_KEY', 'AUTHORIZATION', 'PASSWORD', 'SECRET', 'TOKEN']);
 const SAFE_SOURCE_SURFACE_KIND = /^[a-z][a-z0-9_-]{0,63}$/u;
-const SAFE_METADATA_VALUE = /^[A-Za-z0-9_.:-]{1,120}$/u;
-const SAFE_RULE_ID_PREFIXES = [
-  'assignment.',
-  'cloud.',
-  'cookie.',
-  'custom.',
-  'header.',
-  'opaque.',
-  'private-key.',
-  'provider.',
-  'query.',
-  'seed.',
-  'structured.',
-  'url.',
-] as const;
+const SAFE_CANDIDATE_KINDS = new Set([
+  'auth_header',
+  'cloud_credential_block',
+  'cookie_or_session',
+  'credential_url',
+  'key_value_assignment',
+  'known_provider_prefix',
+  'opaque_generated_value',
+  'private_key_block',
+  'recovery_or_seed_phrase',
+  'signed_url_or_query_secret',
+  'structured_token',
+]);
+const SAFE_RULE_IDS = new Set([
+  'assignment.secret',
+  'assignment.sensitive-key',
+  'cloud.aws-secret-access-key',
+  'cookie.session-token',
+  'header.authorization-bearer',
+  'opaque.generated-looking-value',
+  'private-key.pem-block',
+  'private-key.pgp-block',
+  'provider.anthropic-key',
+  'provider.aws-access-key-id',
+  'provider.github-token',
+  'provider.openai-project-key',
+  'provider.sendgrid-key',
+  'query.signed-url-secret',
+  'seed.recovery-phrase',
+  'structured.jwt',
+  'structured.paseto',
+  'url.credential-password',
+]);
 
 const isRawDerived = (value: string, rawValue: string): boolean =>
   value.length === 0 || value === rawValue || value.includes(rawValue) || rawValue.includes(value);
@@ -127,33 +145,15 @@ export const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): De
   };
 };
 
-const safeMetadataString = (value: string | undefined, rawValue: string): string | undefined => {
-  if (
-    !value ||
-    !SAFE_METADATA_VALUE.test(value) ||
-    value === rawValue ||
-    value.includes(rawValue)
-  ) {
-    return undefined;
-  }
-  return value;
-};
-
 export const sanitizeCandidateKind = (
   kind: string | undefined,
-  rawValue: string,
-): string | undefined => safeMetadataString(kind, rawValue);
+  _rawValue: string,
+): string | undefined => (kind !== undefined && SAFE_CANDIDATE_KINDS.has(kind) ? kind : undefined);
 
 export const sanitizeCandidateRuleId = (
   ruleId: string | undefined,
-  rawValue: string,
-): string | undefined => {
-  const safeRuleId = safeMetadataString(ruleId, rawValue);
-  if (safeRuleId === undefined) return undefined;
-  return SAFE_RULE_ID_PREFIXES.some((prefix) => safeRuleId.startsWith(prefix))
-    ? safeRuleId
-    : undefined;
-};
+  _rawValue: string,
+): string | undefined => (ruleId !== undefined && SAFE_RULE_IDS.has(ruleId) ? ruleId : undefined);
 
 export const sanitizeCandidateLocation = (
   location: SourceLocation | undefined,

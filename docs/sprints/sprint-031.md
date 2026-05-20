@@ -1,7 +1,7 @@
 # Pristine — Sprint 031
 **Date:** 2026-05-18 – TBD
 **Goal:** Add a Pi-dev reference privacy input extension that composes Sprint 030's `detect`, `classify`, and `redact` primitives with a pluggable/subagent classifier callback so raw user-pasted secrets are classified from sanitized inputs and redacted before they reach Pi model context or session history.
-**Status:** 🟡 Awaiting Lou manual Pi smoke before integration merge
+**Status:** 🟠 In Progress — adding Pi model classifier transport
 
 ---
 
@@ -267,6 +267,42 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - Fake classifier smoke passed via `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-extension.test.ts -t "uses real primitives to transform and reveal a confirmed secret"`.
   - Fake/test smoke transcript evidence is recorded in `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`; manual real Pi smoke remains deferred to Lou after sprint handoff, per latest user instruction.
 
+#### Story 6: Add Pi model classifier transport for privacy-input
+- **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
+  - [x] Follows sprint template
+  - [x] Acceptance criteria are specific and testable
+  - [x] Functional verification items are concrete and have pass/fail conditions
+  - [x] Regression verification items are concrete and have pass/fail conditions
+  - [x] Story is small enough to review and merge independently
+  - [x] Reviewed by sub-agent
+  - [x] Review findings addressed or explicitly recorded
+  - [x] Ready for Lou
+- **Planning review:**
+  - Findings: Added after manual-test planning surfaced that Sprint 031 had a safe classifier adapter but no Pi-model-backed transport analogous to agentic compaction.
+  - Resolution: Implement a small `completeSimple` transport that reuses Pi `ctx.modelRegistry` auth/model selection and feeds existing sanitized adapter/parser boundaries.
+- **As a** Pi privacy extension adopter, **I want** the reference classifier adapter to invoke a configured Pi model through the same `ctx.modelRegistry` / `completeSimple` pattern used by agentic compaction, **so that** manual Pi smoke can exercise a real model classifier without introducing raw candidate leakage, provider SDK dependencies, or a hosted classifier.
+- **Dependencies:** Story 3, Story 4, Story 5
+- **Acceptance criteria:**
+  - [ ] A Pi model classifier transport exists under `examples/pi-dev/extensions/privacy-input/lib/` and implements the existing `PrivacyInputClassifierTransport` interface by calling `completeSimple` from `@mariozechner/pi-ai`.
+  - [ ] The transport accepts injected Pi `modelRegistry`, current model, configurable model preferences, `maxTokens`, reasoning level, timeout/signal, and optional notification/diagnostic hooks without hardcoding Gemini, Anthropic, OpenAI SDKs, or raw API keys.
+  - [ ] Model selection mirrors agentic-compaction semantics: try configured preferences first, then current model fallback, and call `ctx.modelRegistry.getApiKeyAndHeaders(model)` so OAuth/header-backed providers and API-key providers both work.
+  - [ ] The transport sends only `task.systemPrompt` and `task.userPrompt` from the existing sanitized classifier adapter to the model; no raw source text, raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, seed phrase words, vault refs, or reveal data are added.
+  - [ ] Model responses are returned as text to the existing parser; empty, truncated, invalid, unauthenticated, unavailable, timed-out, or thrown model calls surface as structured classifier errors so the runtime fails closed.
+  - [ ] Docs and manual-smoke instructions show how to wire the transport into `registerPrivacyInputExtension` with `detect`, `classify`, `Pristine.redact`, and `createPrivacyInputClassifierCallback`, including the default example preference `openai-codex/gpt-5.5` and current-model fallback.
+- **Functional verification:**
+  - [ ] Add unit tests with a fake model registry and fake `completeSimple`; pass condition: configured model preference is selected, `getApiKeyAndHeaders` is called, OAuth/header-only auth is accepted, and the model request contains the sanitized system/user prompt only.
+  - [ ] Add no-raw-leak transport tests; pass condition: serialized model request does not contain raw candidate values even when the classifier task fixture contains realistic risky source values upstream in test setup.
+  - [ ] Add failure-path tests; pass condition: missing model, unusable auth, timeout/abort, empty response, truncated response, and thrown model calls reject with structured classifier errors that the runtime handles as `{ action: "handled" }` in existing failure tests or a new integration test.
+  - [ ] Add a wiring smoke unit test; pass condition: `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))` returns parsed decisions from fake model JSON and can be passed through the privacy-input runtime without raw values in details.
+- **Regression verification:**
+  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/privacy-input-classifier-adapter.test.ts tests/examples/pi-dev/privacy-input-extension.test.ts`; pass condition: existing adapter/runtime policy behavior remains green with the new transport.
+  - [ ] Run `pnpm run typecheck`; pass condition: transport types compile cleanly with strict TypeScript and do not require forbidden provider SDK imports.
+  - [ ] Run `pnpm run lint`; pass condition: no debug logging, no generic provider SDK imports, and no lint errors.
+- **Manual-only verification:** Real Pi smoke after the transport lands; pass condition: with `openai-codex/gpt-5.5` or current model fallback configured, a fake local API key input is blocked or transformed before model context, the classifier request is sanitized, and session history/model-facing text does not contain the raw key.
+- **Planned commits:**
+  1. `feat: add pi model privacy classifier transport` — add the `completeSimple` transport, model-selection/auth handling, tests, docs, and manual smoke wiring notes.
+- **Technical notes:** Reuse the installed agentic-compaction pattern (`ctx.modelRegistry.find`, `ctx.modelRegistry.getApiKeyAndHeaders`, `completeSimple`, `reasoning: "minimal"`) rather than spawning a full Pi subagent process. Keep the existing parser/runtime fail-closed behavior as the security boundary.
+
 #### Final Story: Sprint Verification & Completion
 - **Story Checklist:** (MUST BE CHECKED OFF BEFORE STARTING THE SPRINT)
   - [x] Uses the story sections above and the existing regression suite as the verification source of truth
@@ -316,7 +352,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
 
 ## Final Review
 
-Sprint 031 is implementation-complete, automated verification is green, and Lou's manual Pi smoke is pending before the sprint integration merge.
+Sprint 031 was reopened after manual-test planning identified the missing Pi model classifier transport. The previous automated verification remains recorded below as historical evidence and must be rerun after Story 6 lands.
 
 ### What shipped
 
@@ -346,7 +382,7 @@ Sprint 031 is implementation-complete, automated verification is green, and Lou'
 - Story-level functional and targeted regression evidence is recorded under each story's implementation notes.
 - Fake/test classifier smoke transcript: `examples/pi-dev/extensions/privacy-input/smoke-transcript.md`.
 
-### Manual verification for Lou
+### Manual verification for Lou (pending after Story 6)
 
 Run the documented manual Pi smoke only after copying/installing `privacy-input` and wiring `registerPrivacyInputExtension` with a configured runtime factory:
 

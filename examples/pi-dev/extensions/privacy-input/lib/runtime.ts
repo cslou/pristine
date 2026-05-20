@@ -1,3 +1,9 @@
+import {
+  classifierFailureDetailFromError,
+  PrivacyInputClassifierError,
+  type PrivacyInputClassifierFailureDetail,
+} from './classifier-diagnostics.js';
+
 export type PrivacyInputAction =
   | { readonly action: 'continue'; readonly details?: PrivacyInputSafeDetails }
   | {
@@ -144,6 +150,7 @@ export interface PrivacyInputSafeRedactionDetail {
 export interface PrivacyInputSafeDetails {
   readonly decisions: readonly PrivacyInputSafeDecisionDetail[];
   readonly redactions: readonly PrivacyInputSafeRedactionDetail[];
+  readonly classifierFailure?: PrivacyInputClassifierFailureDetail;
 }
 
 export interface PrivacyInputRuntimeConfig {
@@ -274,7 +281,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
             classifyPromise,
             new Promise<PrivacyInputClassifyResultLike>((_resolve, reject) => {
               timeout = setTimeout(
-                () => reject(new Error('classifier timed out')),
+                () => reject(new PrivacyInputClassifierError('timeout', 'classifier timed out')),
                 this.classifierTimeoutMs,
               );
             }),
@@ -284,12 +291,12 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
         }
       }
     } catch (error: unknown) {
-      void error;
+      const classifierFailure = classifierFailureDetailFromError(error);
       this.notifications?.notify(
-        'Pristine privacy input blocked this message because classification could not complete safely.',
+        `Pristine privacy input blocked this message because classification could not complete safely (reason: ${classifierFailure.reasonCode}).`,
         'error',
       );
-      return { action: 'handled' };
+      return { action: 'handled', details: { decisions: [], redactions: [], classifierFailure } };
     }
     const detailsWithoutRedactions = toSafeDetails(classified.decisions, []);
     if (hasMalformedSecretDecision(classified.decisions)) {

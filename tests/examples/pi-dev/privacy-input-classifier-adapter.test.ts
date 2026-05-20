@@ -5,6 +5,7 @@ import {
   parsePrivacyInputClassifierResponse,
   PrivacyInputClassifierError,
   sanitizeClassifierLabel,
+  type PrivacyInputClassifierFailureReasonCode,
   type PrivacyInputClassifierTransport,
 } from '../../../examples/pi-dev/extensions/privacy-input/lib/classifier-adapter.js';
 import { PrivacyInputRuntime } from '../../../examples/pi-dev/extensions/privacy-input/lib/runtime.js';
@@ -21,6 +22,38 @@ const riskyValues = {
   urlPassword: 'dbPassSecret123',
   querySecret: 'querySecret456',
   seedWord: 'mango',
+};
+
+const allReasonCodes: readonly PrivacyInputClassifierFailureReasonCode[] = [
+  'model_unavailable',
+  'auth_unavailable',
+  'timeout',
+  'aborted',
+  'malformed_json',
+  'empty_response',
+  'truncated_response',
+  'missing_decision',
+  'unknown_candidate_id',
+  'duplicate_candidate_id',
+  'invalid_response',
+  'transport_error',
+];
+
+const expectClassifierFailure = (
+  action: () => unknown,
+  reasonCode: PrivacyInputClassifierFailureReasonCode,
+): void => {
+  expect(action).toThrow(PrivacyInputClassifierError);
+  try {
+    action();
+  } catch (error: unknown) {
+    expect(error).toBeInstanceOf(PrivacyInputClassifierError);
+    expect((error as PrivacyInputClassifierError).reasonCode).toBe(reasonCode);
+    const serialized = `${String(error)} ${JSON.stringify(error)}`;
+    for (const value of Object.values(riskyValues)) {
+      expect(serialized).not.toContain(value);
+    }
+  }
 };
 
 const requestFixture = (): PrivacyInputClassifierRequestLike => ({
@@ -69,6 +102,23 @@ const requestFixture = (): PrivacyInputClassifierRequestLike => ({
 });
 
 describe('privacy input classifier adapter', () => {
+  it('exports the canonical classifier failure reason codes as a typed union', () => {
+    expect(allReasonCodes).toEqual([
+      'model_unavailable',
+      'auth_unavailable',
+      'timeout',
+      'aborted',
+      'malformed_json',
+      'empty_response',
+      'truncated_response',
+      'missing_decision',
+      'unknown_candidate_id',
+      'duplicate_candidate_id',
+      'invalid_response',
+      'transport_error',
+    ]);
+  });
+
   it('builds sanitized classifier tasks without raw secret values', () => {
     const task = buildPrivacyInputClassifierTask(requestFixture());
     const serialized = JSON.stringify(task);
@@ -110,8 +160,9 @@ describe('privacy input classifier adapter', () => {
   });
 
   it.each([
-    ['malformed JSON', '{'],
-    ['missing decisions', JSON.stringify({})],
+    ['malformed JSON', '{', 'malformed_json'],
+    ['empty response', '', 'empty_response'],
+    ['missing decisions', JSON.stringify({}), 'missing_decision'],
     [
       'duplicate candidate',
       JSON.stringify({
@@ -120,32 +171,41 @@ describe('privacy input classifier adapter', () => {
           { candidateId: 'request-candidate-0001', verdict: 'uncertain' },
         ],
       }),
+      'duplicate_candidate_id',
     ],
     [
       'unknown candidate',
       JSON.stringify({ decisions: [{ candidateId: 'unknown', verdict: 'not_secret' }] }),
+      'unknown_candidate_id',
     ],
     [
       'secret without type',
       JSON.stringify({ decisions: [{ candidateId: 'request-candidate-0001', verdict: 'secret' }] }),
+      'invalid_response',
     ],
     [
       'bad confidence',
       JSON.stringify({
         decisions: [{ candidateId: 'request-candidate-0001', verdict: 'uncertain', confidence: 2 }],
       }),
+      'invalid_response',
     ],
     [
       'non-string label',
       JSON.stringify({
         decisions: [{ candidateId: 'request-candidate-0001', verdict: 'uncertain', label: 123 }],
       }),
+      'invalid_response',
     ],
-  ])('rejects invalid classifier output: %s', (_name, response) => {
-    expect(() => parsePrivacyInputClassifierResponse(response, ['request-candidate-0001'])).toThrow(
-      PrivacyInputClassifierError,
-    );
-  });
+  ] as const)(
+    'rejects invalid classifier output with reason code %s',
+    (_name, response, reasonCode) => {
+      expectClassifierFailure(
+        () => parsePrivacyInputClassifierResponse(response, ['request-candidate-0001']),
+        reasonCode,
+      );
+    },
+  );
 
   it('rejects unsafe labels before alias storage', () => {
     expect(sanitizeClassifierLabel('safe label-1')).toBe('safe label-1');

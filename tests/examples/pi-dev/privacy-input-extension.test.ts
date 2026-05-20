@@ -8,6 +8,7 @@ import type { Embedder } from '../../../src/core/interfaces.js';
 import { classify } from '../../../src/privacy/classifier/index.js';
 import { detect } from '../../../src/privacy/detector/index.js';
 import { registerPrivacyInputExtension } from '../../../examples/pi-dev/extensions/privacy-input/index.js';
+import { PrivacyInputClassifierError } from '../../../examples/pi-dev/extensions/privacy-input/lib/classifier-adapter.js';
 import {
   PrivacyInputRuntime,
   type PrivacyInputCandidateLike,
@@ -291,47 +292,41 @@ describe('privacy-input Pi extension scaffold', () => {
   });
 
   it.each([
-    [
-      'classifier throw',
-      async () => {
-        throw new Error('boom');
-      },
-    ],
-    [
-      'malformed classifier response',
-      async () => {
-        throw new Error('privacy-input classifier: response is not valid JSON');
-      },
-    ],
-    [
-      'unknown candidate ID',
-      async () => {
-        throw new Error('privacy-input classifier: unknown candidateId unknown');
-      },
-    ],
-    [
-      'duplicate candidate ID',
-      async () => {
-        throw new Error('privacy-input classifier: duplicate candidateId candidate-0001');
-      },
-    ],
-  ])('blocks classification failure: %s', async (_name, classifyImpl) => {
+    'model_unavailable',
+    'auth_unavailable',
+    'timeout',
+    'aborted',
+    'malformed_json',
+    'empty_response',
+    'truncated_response',
+    'missing_decision',
+    'unknown_candidate_id',
+    'duplicate_candidate_id',
+    'invalid_response',
+    'transport_error',
+  ] as const)('blocks classification failure with safe reason details: %s', async (reasonCode) => {
     const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
     detect.mockResolvedValueOnce({
       candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
     });
-    classifyDependency.mockImplementationOnce(classifyImpl);
+    classifyDependency.mockRejectedValueOnce(
+      new PrivacyInputClassifierError(reasonCode, 'safe classifier failure'),
+    );
 
-    await expect(
-      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
-    ).resolves.toEqual({ action: 'handled' });
+    const result = await runtime.handleInput({
+      text: 'token raw-value-123',
+      source: 'interactive',
+    });
 
+    expect(result).toEqual({
+      action: 'handled',
+      details: { decisions: [], redactions: [], classifierFailure: { reasonCode } },
+    });
     expect(redact).not.toHaveBeenCalled();
     expect(notifications.notify).toHaveBeenCalledTimes(1);
-    expect(notifications.notify).toHaveBeenCalledWith(
-      expect.not.stringContaining('raw-value-123'),
-      'error',
-    );
+    expect(notifications.notify).toHaveBeenCalledWith(expect.stringContaining(reasonCode), 'error');
+    expect(JSON.stringify(result)).not.toContain('raw-value-123');
+    expect(JSON.stringify(notifications.notify.mock.calls)).not.toContain('raw-value-123');
   });
 
   it('blocks classifier timeout with one safe notification', async () => {
@@ -359,12 +354,16 @@ describe('privacy-input Pi extension scaffold', () => {
 
     await expect(
       runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
-    ).resolves.toEqual({ action: 'handled' });
+    ).resolves.toEqual({
+      action: 'handled',
+      details: {
+        decisions: [],
+        redactions: [],
+        classifierFailure: { reasonCode: 'timeout' },
+      },
+    });
     expect(notifications.notify).toHaveBeenCalledTimes(1);
-    expect(notifications.notify).toHaveBeenCalledWith(
-      expect.not.stringContaining('raw-value-123'),
-      'error',
-    );
+    expect(notifications.notify).toHaveBeenCalledWith(expect.stringContaining('timeout'), 'error');
     expect(redact).not.toHaveBeenCalled();
   });
 

@@ -6,7 +6,7 @@ import { assertValidDim } from '../../core/vector-dim.js';
 import type {
   SourceChunkInput,
   SourceChunkNormalizeOptions,
-  SourceChunkSearchHit,
+  SourceChunkStoreSearchHit,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
   StoredSourceChunk,
@@ -458,7 +458,7 @@ export class SourceChunkStore {
   public search(
     embedding: readonly number[],
     options: SourceChunkSearchOptions,
-  ): readonly SourceChunkSearchHit[] {
+  ): readonly SourceChunkStoreSearchHit[] {
     const projectId = validateProjectId(
       assertRecordInput(options, 'SourceChunkSearchOptions').projectId as string,
     );

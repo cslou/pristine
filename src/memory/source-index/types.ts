@@ -29,7 +29,7 @@ export interface SourceChunkSearchOptions extends SourceChunkNormalizeOptions {
   readonly limit: number;
 }
 
-export interface SourceChunkSearchHit {
+export interface SourceChunkStoreSearchHit {
   readonly chunk: StoredSourceChunk;
   readonly score: number;
 }

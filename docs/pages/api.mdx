@@ -132,15 +132,6 @@ The package exports public option and result types for the launch API:
 - `SourceChunkStoreOptions`
 - `StoredSourceChunk`
 
-The root also keeps deprecated compatibility type exports for the pre-`store`/`recall`/`forget` memory API:
-
-- `DeleteSourceChunksOptions`
-- `DeleteSourceChunksResult`
-- `IndexedSourceChunk`
-- `IndexSourceChunksOptions`
-- `SearchSourceChunksOptions`
-- `SourceChunkSearchHit`
-
 ## Internal imports
 
 The package root does not export raw conversation storage, ingest queues, worker drains, SQL searchers, provider SDK clients, or benchmark-only helpers. Consumers should compose the supported source chunk and privacy primitives instead of importing internal paths. Harness-specific setup should start from [Integrations](/pi-dev) and [Examples](/examples).

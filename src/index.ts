@@ -20,21 +20,9 @@ export type {
   StoreOptions,
 } from './client.js';
 
-// Deprecated compatibility exports for the pre-`store`/`recall`/`forget` memory API.
-// New code should use StoreOptions, StoredMemory, RecallOptions, RecalledMemory,
-// ForgetOptions, and ForgetResult instead.
 export { classify } from './privacy/classifier/index.js';
 export { detect } from './privacy/detector/index.js';
 export { redact } from './privacy/redactor/index.js';
-
-export type {
-  DeleteSourceChunksOptions,
-  DeleteSourceChunksResult,
-  IndexedSourceChunk,
-  IndexSourceChunksOptions,
-  SearchSourceChunksOptions,
-  SourceChunkSearchHit,
-} from './client.js';
 
 export type {
   BuiltInDetectCandidateKind,

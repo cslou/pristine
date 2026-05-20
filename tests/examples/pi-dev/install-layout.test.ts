@@ -71,6 +71,7 @@ describe('Pi dev reference install layout', () => {
         join(targetRoot, '.pi/extensions/privacy-input/index.ts'),
         join(targetRoot, '.pi/extensions/privacy-input/lib/runtime.ts'),
         join(targetRoot, '.pi/extensions/privacy-input/lib/classifier-adapter.ts'),
+        join(targetRoot, '.pi/extensions/privacy-input/lib/pi-model-classifier-transport.ts'),
       ];
 
       const resolvedImports = extensionFiles.flatMap((file) => {

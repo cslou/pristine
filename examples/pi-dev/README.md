@@ -89,7 +89,7 @@ cd /path/to/your/repo/.pi/extensions/privacy-input
 npm install --omit=dev
 ```
 
-Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery.
+Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. For real classifier smoke, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport calls Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
 
 ## Embedding model and Nomic warmup
 
@@ -117,7 +117,24 @@ The `privacy-input` extension is an input-only v1 reference. It runs before skil
 input hook → detect(text) → classify(text, candidates, classifierCallback) → policy → redact(text, confirmed, userId)
 ```
 
-Classifier prompts/tasks receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only. They must never receive raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
+Classifier prompts/tasks receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only. They must never receive raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, seed phrase words, vault refs, or reveal data.
+
+Real Pi classifier wiring uses the same model-layer pattern as agentic compaction rather than a provider SDK:
+
+```ts
+classifierCallback: createPrivacyInputClassifierCallback(
+  createPiModelClassifierTransport({
+    modelRegistry: ctx.modelRegistry,
+    currentModel: ctx.model,
+    preferences: [{ provider: 'openai-codex', id: 'gpt-5.5' }],
+    reasoning: 'minimal',
+    maxTokens: 2048,
+    timeoutMs: 10_000,
+  }),
+);
+```
+
+The transport calls `ctx.modelRegistry.getApiKeyAndHeaders(model)`, so Pi OAuth/session headers and API keys are both supported.
 
 Policy modes:
 

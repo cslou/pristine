@@ -8,15 +8,49 @@ The runtime is intentionally host-wired. Provide:
 
 - `detect(text)` from `@pristine/sdk` or a compatible local detector.
 - `classify(text, candidates, classifierCallback)` from `@pristine/sdk`.
-- `classifierCallback`, either the reference adapter from `lib/classifier-adapter.ts` or a fake/local/manual callback.
+- `classifierCallback`, either the reference adapter from `lib/classifier-adapter.ts` with the Pi model transport from `lib/pi-model-classifier-transport.ts`, or a fake/local/manual callback.
 - `redact(text, confirmed, userId)`, usually `Pristine.redact` from a configured local client.
 - `userId`, policy, optional `classifierTimeoutMs`, and optional notifications.
 
 ## Classifier adapter contract
 
-The reference classifier adapter builds tasks from `classify` callback requests: sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata. Hosts can replace it with a fake/local/manual classifier callback by implementing the same callback interface; no Anthropic, OpenAI, or hosted classifier dependency is required.
+The reference classifier adapter builds tasks from `classify` callback requests: sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata. Hosts can replace it with a fake/local/manual classifier callback by implementing the same callback interface.
 
-Classifier prompts must never include raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words. Parser failures, duplicate IDs, unknown IDs, malformed JSON, and unsafe labels are structured classifier failures.
+For real Pi smoke, wire the adapter to `createPiModelClassifierTransport`. The transport uses Pi's model registry and `completeSimple` from `@mariozechner/pi-ai`, tries configured preferences first, falls back to the current Pi model, and calls `ctx.modelRegistry.getApiKeyAndHeaders(model)` so OAuth/header-backed providers and API-key providers both work. The default example preference is `openai-codex/gpt-5.5`; it is an example, not a hardcoded provider requirement.
+
+```ts
+import { Pristine, classify, detect } from '@pristine/sdk';
+import { registerPrivacyInputExtension } from './index.js';
+import { createPrivacyInputClassifierCallback } from './lib/classifier-adapter.js';
+import { createPiModelClassifierTransport } from './lib/pi-model-classifier-transport.js';
+import { PrivacyInputRuntime } from './lib/runtime.js';
+
+export default function privacyInput(pi) {
+  registerPrivacyInputExtension(pi, (ctx) => {
+    const client = new Pristine();
+    return new PrivacyInputRuntime({
+      detect,
+      classify,
+      classifierCallback: createPrivacyInputClassifierCallback(
+        createPiModelClassifierTransport({
+          modelRegistry: ctx.modelRegistry,
+          currentModel: ctx.model,
+          preferences: [{ provider: 'openai-codex', id: 'gpt-5.5' }],
+          reasoning: 'minimal',
+          maxTokens: 2048,
+          timeoutMs: 10_000,
+        }),
+      ),
+      redact: (text, confirmed, userId) => client.redact(text, confirmed, userId),
+      userId: 'local-pi-user',
+      policy: { uncertainPolicy: 'block' },
+      notifications: ctx.ui,
+    });
+  });
+}
+```
+
+Classifier prompts must never include raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, seed phrase words, vault refs, or reveal data. Parser failures, duplicate IDs, unknown IDs, malformed JSON, empty/truncated model responses, unavailable model/auth, and timeouts are structured classifier failures.
 
 ## Policy and failure behavior
 

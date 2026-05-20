@@ -56,7 +56,7 @@ const scrubbed = pristine.scrubOutput(toolResult, ['ada@example.com']);
 
 ## manage sensitive refs
 
-The management APIs operate on metadata by default: `listSensitive` and `getSensitive` return refs, generated labels, optional aliases, sensitivity types, and timestamps, but never plaintext secret values. `updateSensitive` only changes caller-provided visible metadata such as `alias`; aliases are returned by metadata APIs, so do not store secret plaintext in them. `deleteSensitive` removes exact refs. Use `resolveSensitive` only inside privileged local flows that are allowed to recover one ref's plaintext value.
+The management APIs operate on metadata by default: `listSensitive` and `getSensitive` return refs, generated labels, optional aliases, sensitivity types, and timestamps, but never plaintext secret values. `sensitiveType` is the canonical machine type for filtering and policy, for example `api_key`; classifier labels are visible metadata on redaction results. `updateSensitive` only changes caller-provided visible metadata such as `alias`; aliases must never contain plaintext secrets and are returned by metadata APIs. For UI copy, prefer `alias ?? label` while preserving the canonical machine type. `deleteSensitive` removes exact refs. Use `resolveSensitive` only inside privileged local flows that are allowed to recover one ref's plaintext value.
 
 ```ts
 const summaries = await pristine.listSensitive('local-user', { limit: 25 });

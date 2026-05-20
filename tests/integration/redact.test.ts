@@ -2,7 +2,13 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InvalidArgumentError } from '../../src/core/errors.js';
 import { redact } from '../../src/privacy/redactor/index.js';
-import { reveal, resolveSensitive, getSensitive, listSensitive } from '../../src/privacy/index.js';
+import {
+  reveal,
+  resolveSensitive,
+  getSensitive,
+  listSensitive,
+  updateSensitive,
+} from '../../src/privacy/index.js';
 import { KekManager } from '../../src/privacy/kek/kek-manager.js';
 import { SqliteVaultStore } from '../../src/privacy/vault/sqlite/index.js';
 import { InMemoryKeyManager } from '../helpers/in-memory-key-manager.js';
@@ -62,7 +68,6 @@ describe('redact privacy primitive', () => {
       candidateId: 'candidate-api',
       type: 'api_key',
       label: 'primary api key',
-      alias: 'primary api key',
       sourceSpan: { start: apiStart, end: apiStart + apiKey.length },
     });
     expect(result.redactions[0]!.redactedSpan).toEqual({
@@ -78,7 +83,7 @@ describe('redact privacy primitive', () => {
     expect(entries.map((entry) => entry.sensitiveType).sort()).toEqual(['api_key', 'password']);
   });
 
-  it('round-trips through reveal, resolveSensitive, and sensitive aliases', async () => {
+  it('round-trips through reveal, resolveSensitive, and caller-managed sensitive aliases', async () => {
     const value = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
     const text = `token=${value}`;
     const start = text.indexOf(value);
@@ -107,7 +112,14 @@ describe('redact privacy primitive', () => {
 
     await expect(
       getSensitive(sensitiveRef, { vaultStore, userId: 'redact-user-2' }),
-    ).resolves.toMatchObject({ sensitiveRef, alias: 'deploy key' });
+    ).resolves.toMatchObject({ sensitiveRef, sensitiveType: 'api_key', alias: undefined });
+    await expect(
+      updateSensitive(
+        sensitiveRef,
+        { alias: 'deploy key' },
+        { vaultStore, userId: 'redact-user-2' },
+      ),
+    ).resolves.toMatchObject({ sensitiveRef, sensitiveType: 'api_key', alias: 'deploy key' });
     await expect(listSensitive({ vaultStore, userId: 'redact-user-2' })).resolves.toHaveLength(1);
   });
 
@@ -146,6 +158,60 @@ describe('redact privacy primitive', () => {
       ).rejects.toBeInstanceOf(InvalidArgumentError);
     }
     await expect(listSensitive({ vaultStore, userId: 'redact-user-3' })).resolves.toHaveLength(0);
+  });
+
+  it('keeps canonical sensitive type separate from classifier label and caller alias', async () => {
+    const value = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
+    const text = `token ${value}`;
+    const start = text.indexOf(value);
+
+    const result = await redact(
+      text,
+      [
+        {
+          sourceSpan: { start, end: start + value.length },
+          type: 'api_key',
+          label: 'OpenAI API key',
+        },
+      ],
+      'redact-user-type-alias',
+      config(),
+    );
+    const sensitiveRef = result.redactions[0]!.sensitiveRef;
+
+    expect(result.redactions[0]).toMatchObject({
+      type: 'api_key',
+      label: 'OpenAI API key',
+    });
+    expect(result.redactions[0]!.alias).toBeUndefined();
+
+    const entries = await vaultStore.getEntriesByPlaceholderIds('redact-user-type-alias', [
+      sensitiveRef,
+    ]);
+    expect(entries[0]?.sensitiveType).toBe('api_key');
+
+    await expect(
+      getSensitive(sensitiveRef, { vaultStore, userId: 'redact-user-type-alias' }),
+    ).resolves.toMatchObject({
+      sensitiveRef,
+      sensitiveType: 'api_key',
+      alias: undefined,
+    });
+
+    await expect(
+      updateSensitive(
+        sensitiveRef,
+        { alias: 'OpenAI API key' },
+        { vaultStore, userId: 'redact-user-type-alias' },
+      ),
+    ).resolves.toMatchObject({
+      sensitiveRef,
+      sensitiveType: 'api_key',
+      alias: 'OpenAI API key',
+    });
+    await expect(
+      listSensitive({ vaultStore, userId: 'redact-user-type-alias' }),
+    ).resolves.toMatchObject([{ sensitiveRef, sensitiveType: 'api_key', alias: 'OpenAI API key' }]);
   });
 
   it('preserves classifier type metadata while using placeholder-safe type text', async () => {

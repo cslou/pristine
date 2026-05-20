@@ -42,7 +42,7 @@ Restores known redaction placeholders for a local user when vault and key access
 
 ### `listSensitive(userId, options?)`
 
-Lists metadata-only summaries for locally vaulted sensitive values. Results include placeholder refs, sensitivity type, generated labels, optional caller-provided aliases, and timestamps; they do not include plaintext secret values. When `limit` is omitted, the SQLite vault applies a bounded default of 100 summaries. Options support `limit`, `sensitiveType`, `createdFrom`, and `createdTo`.
+Lists metadata-only summaries for locally vaulted sensitive values. Results include placeholder refs, `sensitiveType` as the canonical machine type, generated labels, optional caller-provided aliases, and timestamps; they do not include plaintext secret values. When `limit` is omitted, the SQLite vault applies a bounded default of 100 summaries. Options support `limit`, `sensitiveType`, `createdFrom`, and `createdTo`.
 
 ### `getSensitive(userId, sensitiveRef)`
 
@@ -50,7 +50,7 @@ Returns one metadata-only summary for a sensitive placeholder ref, or `null` whe
 
 ### `updateSensitive(userId, sensitiveRef, input)`
 
-Updates caller-owned visible metadata for a sensitive placeholder ref. The current input supports `alias`, where `null` or an empty string clears the alias. Aliases are returned by `listSensitive` and `getSensitive`, so callers must treat aliases as visible metadata and must not put secret plaintext in them. Missing refs throw `SensitiveNotFoundError`.
+Updates caller-owned visible metadata for a sensitive placeholder ref. The current input supports `alias`, where `null` or an empty string clears the alias. Caller-managed aliases must never contain plaintext secrets. Aliases are returned by `listSensitive` and `getSensitive`, so callers should display `alias ?? label` while keeping `sensitiveType` as the canonical machine type. Missing refs throw `SensitiveNotFoundError`.
 
 ### `deleteSensitive(userId, sensitiveRefs)`
 

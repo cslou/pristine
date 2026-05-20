@@ -207,7 +207,7 @@ describe('privacy input classifier adapter', () => {
     },
   );
 
-  it('rejects unsafe labels before alias storage', () => {
+  it('rejects unsafe labels before display metadata storage', () => {
     expect(sanitizeClassifierLabel('safe label-1')).toBe('safe label-1');
     expect(() => sanitizeClassifierLabel('raw\nsecret')).toThrow(PrivacyInputClassifierError);
     expect(() => sanitizeClassifierLabel('x'.repeat(100))).toThrow(PrivacyInputClassifierError);

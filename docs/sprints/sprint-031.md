@@ -16,13 +16,13 @@
 ### Sprint-Wide Context
 
 - **Sprint type:** Feature
-- **Shared context:** This sprint depends on Sprint 030's primitives being merged before implementation starts. The Pi-dev reference should demonstrate one composition, not force a universal policy: `detect` and `classify` are SDK primitives, the classifier/labeler callback is a harness adapter that receives sanitized marker/hint data only, policy is extension-owned, and `redact` keeps raw-value slicing, vault storage, placeholder replacement, and alias persistence local. The v1 Pi reference protects user input only.
+- **Shared context:** This sprint depends on Sprint 030's primitives being merged before implementation starts. The Pi-dev reference should demonstrate one composition, not force a universal policy: `detect` and `classify` are SDK primitives, the classifier/labeler callback is a harness adapter that receives sanitized marker/hint data only, policy is extension-owned, and `redact` keeps raw-value slicing, vault storage, placeholder replacement, redaction labels, and caller-managed alias updates local. The v1 Pi reference protects user input only.
 - **Non-goals:** No tool-call reveal hook, no tool-result scrub hook, no Claude Code or Codex integration, no background session scanning, no hosted Pristine classifier, no raw candidate values in subagent prompts, no model-provider-specific production routing beyond a reference subagent/adapter, no `secureAndRedact` public-flow dependency, and no composed replacement convenience wrapper for `detect` → `classify` → `redact`.
 
 ### Affected Flows
 
 - **Existing flows affected:** Pi-dev example artifact map/install docs, examples/pi-dev unit tests, public Pi-dev docs, privacy primitive API usage, package/public API smoke tests.
-- **New flows introduced:** Pi user-input privacy flow: Pi `input` hook receives raw user text → SDK `detect` finds raw-value-free candidates with `sourceSpan`/`hint` metadata locally → SDK `classify` creates sanitized classifier input with `[CANDIDATE:<id>]` markers and calls the Pi classifier adapter/subagent callback → extension policy handles confirmed/uncertain/failure states using normalized decisions with `sourceSpan`s → SDK `redact` secures confirmed secrets locally, persists labels as aliases, and passes redacted text plus `sensitiveRef`/`redactedSpan` metadata to Pi.
+- **New flows introduced:** Pi user-input privacy flow: Pi `input` hook receives raw user text → SDK `detect` finds raw-value-free candidates with `sourceSpan`/`hint` metadata locally → SDK `classify` creates sanitized classifier input with `[CANDIDATE:<id>]` markers and calls the Pi classifier adapter/subagent callback → extension policy handles confirmed/uncertain/failure states using normalized decisions with `sourceSpan`s → SDK `redact` secures confirmed secrets locally, preserves safe classifier labels as redaction metadata, and passes redacted text plus `sensitiveRef`/`redactedSpan` metadata to Pi. Vault aliases are caller-managed through `updateSensitive`.
 
 ### Verification Strategy
 
@@ -154,13 +154,13 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] A reference classifier adapter builds a classifier task/prompt from sanitized `classify` callback requests containing `sanitizedContext`, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata, and never includes raw candidate strings, arbitrary raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, or seed phrase words.
   - [x] The adapter returns structured classifier decisions containing candidate ID, verdict, sensitivity type, optional label, confidence, and rationale, and validates/parses the response before `classify` normalizes the decisions with `sourceSpan`s for policy use.
   - [x] The reference supports `secret`, `not_secret`, and `uncertain` verdicts and preserves labels for `secret` verdicts when supplied.
-  - [x] Classifier-provided labels are validated/normalized for Sprint 030 `redact` alias storage via the PR #240 sensitive alias path; invalid or unsafe labels are rejected with structured classifier errors or replaced by a documented safe fallback before policy/redaction uses them.
+  - [x] Classifier-provided labels are validated/normalized for Sprint 030 `redact` display metadata; invalid or unsafe labels are rejected with structured classifier errors or replaced by a documented safe fallback before policy/redaction uses them.
   - [x] The adapter is replaceable: tests and README show how hosts can use a fake/local/manual classifier instead of the reference subagent classifier.
   - [x] Malformed, missing, duplicate, or unknown candidate IDs in classifier output are reported as classifier failures rather than silently passing through.
 - **Functional verification:**
   - [x] Add prompt-construction leak tests for realistic raw secrets, arbitrary raw prefixes/suffixes, JWT payload values, credential URL passwords, signed URL query secret values, and seed phrase words; pass condition: serialized prompts/tasks contain `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata but none of those raw values.
   - [x] Add response parser tests; pass condition: valid JSON verdicts parse to classifier results and malformed/duplicate/unknown-candidate outputs fail with structured classifier errors before `classify` can normalize them.
-  - [x] Add label preservation and validation tests; pass condition: `secret` verdict labels from classifier output are passed through `classify` decisions to the runtime `redact` alias flow, invalid/unsafe labels produce the documented structured failure or fallback behavior, and serialized aliases/details do not contain raw secret values.
+  - [x] Add label preservation and validation tests; pass condition: `secret` verdict labels from classifier output are passed through `classify` decisions to the runtime `redact` label metadata flow, invalid/unsafe labels produce the documented structured failure or fallback behavior, and serialized details do not contain raw secret values.
 - **Regression verification:**
   - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory.test.ts`; pass condition: existing Pi-dev skill/tool examples remain green.
   - [x] Run `pnpm run typecheck`; pass condition: classifier adapter types compile cleanly with strict TypeScript.
@@ -399,6 +399,17 @@ Sprint 031 is complete. Story 6 landed, final automated verification passed, and
 ### Manual verification
 
 Real Pi smoke passed. Pass condition met: the turn was transformed before model context; classifier request contained sanitized `[CANDIDATE:<id>]` markers and no raw key; session history contained `[SENSITIVE:api_key:smoke-ref]` and did not contain the raw fake key.
+
+### Pre-integration hardening addendum
+
+Before integrating `sprint-30-and-31` to `main`, four standalone hardening PRs were merged into the sprint branch:
+
+- PR #270 removed unreleased deprecated source-memory compatibility aliases/methods/docs/tests.
+- PR #271 added canonical raw-free privacy-input classifier failure reason codes and runtime-safe details.
+- PR #272 enforced provider-prefix classification normalization so known provider-prefix candidates cannot pass through as `not_secret` because of fake/test/example wording.
+- PR #273 clarified vault `sensitiveType` versus `label`/`alias` semantics, made aliases caller-managed via `updateSensitive`, and narrowed `RedactVaultStore` to the `addEntries` capability used by `redact`.
+
+Post-hardening full regression passed: `.checks/regression.sh --tier=full`; log `/tmp/pristine-checks/sprint-30-31-final-full.log`.
 
 ### New Dependencies
 

@@ -176,44 +176,80 @@ const createCompositeSignal = (
   };
 };
 
+const awaitWithAbort = async <T>(
+  operation: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> => {
+  if (signal === undefined) return operation;
+  if (signal.aborted) {
+    throw new PrivacyInputClassifierError('Pi model classifier timed out or was aborted');
+  }
+
+  let removeAbortListener = (): void => undefined;
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    const rejectOnAbort = (): void => {
+      reject(new PrivacyInputClassifierError('Pi model classifier timed out or was aborted'));
+    };
+    signal.addEventListener('abort', rejectOnAbort, { once: true });
+    removeAbortListener = () => signal.removeEventListener('abort', rejectOnAbort);
+  });
+
+  try {
+    return await Promise.race([operation, abortPromise]);
+  } finally {
+    removeAbortListener();
+  }
+};
+
+const assertSuccessfulStopReason = (stopReason: string | undefined): void => {
+  if (stopReason === undefined) return;
+  if (stopReason === 'length') {
+    throw new PrivacyInputClassifierError('Pi model response was truncated');
+  }
+  if (['error', 'aborted', 'abort', 'cancelled', 'canceled'].includes(stopReason)) {
+    throw new PrivacyInputClassifierError(`Pi model response stopped with ${stopReason}`);
+  }
+};
+
 export const createPiModelClassifierTransport = (
   options: PiModelClassifierTransportOptions,
 ): PrivacyInputClassifierTransport => ({
   async classify(task: PrivacyInputClassifierTask): Promise<string> {
-    const { model, auth } = await selectModel(
-      options.modelRegistry,
-      options.preferences ?? DEFAULT_MODEL_PREFERENCES,
-      options.currentModel,
-      options.diagnostics,
-    );
-    const completeSimple = options.completeSimple ?? (await loadCompleteSimple());
     const compositeSignal = createCompositeSignal(options.signal, options.timeoutMs);
 
     try {
-      const response = await completeSimple(
-        model,
-        {
-          systemPrompt: task.systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: [{ type: 'text', text: task.userPrompt }],
-              timestamp: Date.now(),
-            },
-          ],
-        },
-        {
-          apiKey: auth.apiKey,
-          headers: auth.headers,
-          maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
-          reasoning: options.reasoning ?? DEFAULT_REASONING,
-          signal: compositeSignal.signal,
-        },
+      const { model, auth } = await selectModel(
+        options.modelRegistry,
+        options.preferences ?? DEFAULT_MODEL_PREFERENCES,
+        options.currentModel,
+        options.diagnostics,
+      );
+      const completeSimple = options.completeSimple ?? (await loadCompleteSimple());
+      const response = await awaitWithAbort(
+        completeSimple(
+          model,
+          {
+            systemPrompt: task.systemPrompt,
+            messages: [
+              {
+                role: 'user',
+                content: [{ type: 'text', text: task.userPrompt }],
+                timestamp: Date.now(),
+              },
+            ],
+          },
+          {
+            apiKey: auth.apiKey,
+            headers: auth.headers,
+            maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+            reasoning: options.reasoning ?? DEFAULT_REASONING,
+            signal: compositeSignal.signal,
+          },
+        ),
+        compositeSignal.signal,
       );
 
-      if (response.stopReason === 'length') {
-        throw new PrivacyInputClassifierError('Pi model response was truncated');
-      }
+      assertSuccessfulStopReason(response.stopReason);
 
       const responseText = textFromResponse(response);
       if (responseText.length === 0) {

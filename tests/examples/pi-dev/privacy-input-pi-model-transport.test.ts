@@ -125,13 +125,25 @@ describe('Pi model privacy-input classifier transport', () => {
     }
   });
 
-  it('rejects unavailable models, unusable auth, empty responses, truncation, throws, and aborts', async () => {
+  it('rejects unavailable models, registry errors, unusable auth, empty responses, bad stops, throws, and aborts', async () => {
     await expect(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry({ foundModel: undefined }),
         completeSimple: createCompleteSimple(),
       }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
     ).rejects.toThrow('privacy-input classifier: no usable Pi classifier model');
+
+    await expect(
+      createPiModelClassifierTransport({
+        modelRegistry: {
+          find: vi.fn(() => {
+            throw new Error('registry unavailable');
+          }),
+          getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'unused' })),
+        },
+        completeSimple: createCompleteSimple(),
+      }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
+    ).rejects.toThrow('privacy-input classifier: Pi model classifier failed: registry unavailable');
 
     await expect(
       createPiModelClassifierTransport({
@@ -160,6 +172,16 @@ describe('Pi model privacy-input classifier transport', () => {
     await expect(
       createPiModelClassifierTransport({
         modelRegistry: createRegistry(),
+        completeSimple: vi.fn(async () => ({
+          content: [{ type: 'text', text: '{}' }],
+          stopReason: 'error',
+        })),
+      }).classify({ systemPrompt: 'system', userPrompt: '{}', allowedCandidateIds: [] }),
+    ).rejects.toThrow('privacy-input classifier: Pi model response stopped with error');
+
+    await expect(
+      createPiModelClassifierTransport({
+        modelRegistry: createRegistry(),
         completeSimple: vi.fn(async () => {
           throw new Error('provider down');
         }),
@@ -171,11 +193,8 @@ describe('Pi model privacy-input classifier transport', () => {
         modelRegistry: createRegistry(),
         timeoutMs: 1,
         completeSimple: vi.fn<PiModelCompleteSimple>(
-          async (_model, _request, options) =>
-            new Promise((resolve, reject) => {
-              options.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
-                once: true,
-              });
+          async () =>
+            new Promise((resolve) => {
               setTimeout(() => resolve({ content: [{ type: 'text', text: '{}' }] }), 50);
             }),
         ),

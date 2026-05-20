@@ -33,13 +33,13 @@ const notifyInitFailure = (ctx: unknown, error: unknown): void => {
 
 export const registerPrivacyInputExtension = (
   pi: PiExtensionApiLike,
-  runtimeFactory: (ctx: unknown) => PrivacyInputRuntimeLike,
+  runtimeFactory: (ctx: unknown) => PrivacyInputRuntimeLike | Promise<PrivacyInputRuntimeLike>,
 ): void => {
   let runtime: PrivacyInputRuntimeLike | null = null;
-  const getRuntime = (ctx: unknown): PrivacyInputRuntimeLike | null => {
+  const getRuntime = async (ctx: unknown): Promise<PrivacyInputRuntimeLike | null> => {
     if (runtime !== null) return runtime;
     try {
-      runtime = runtimeFactory(ctx);
+      runtime = await runtimeFactory(ctx);
       return runtime;
     } catch (error: unknown) {
       notifyInitFailure(ctx, error);
@@ -50,7 +50,7 @@ export const registerPrivacyInputExtension = (
   pi.on('input', async (event, ctx) => {
     if (!isInputEventLike(event)) return { action: 'continue' };
     if (event.source === 'extension') return { action: 'continue' };
-    const activeRuntime = getRuntime(ctx);
+    const activeRuntime = await getRuntime(ctx);
     if (activeRuntime === null) return { action: 'handled' };
     return activeRuntime.handleInput(event);
   });
@@ -62,7 +62,9 @@ export const registerPrivacyInputExtension = (
 };
 
 export const createDefaultPrivacyInputRuntimeFactory =
-  (config: PrivacyInputRuntimeConfig): ((ctx: unknown) => PrivacyInputRuntimeLike) =>
+  (
+    config: PrivacyInputRuntimeConfig,
+  ): ((ctx: unknown) => PrivacyInputRuntimeLike | Promise<PrivacyInputRuntimeLike>) =>
   () =>
     createPrivacyInputRuntime(config);
 

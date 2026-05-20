@@ -26,8 +26,9 @@ import { createPiModelClassifierTransport } from './lib/pi-model-classifier-tran
 import { PrivacyInputRuntime } from './lib/runtime.js';
 
 export default function privacyInput(pi) {
-  registerPrivacyInputExtension(pi, (ctx) => {
-    const client = new Pristine();
+  const clientPromise = Pristine.create();
+  registerPrivacyInputExtension(pi, async (ctx) => {
+    const client = await clientPromise;
     return new PrivacyInputRuntime({
       detect,
       classify,

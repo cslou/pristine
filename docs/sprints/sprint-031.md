@@ -389,7 +389,7 @@ Sprint 031 is complete. Story 6 landed, final automated verification passed, and
 - `pnpm run docs:build` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-docs-XXXX.log.qcfFB4GLkY`.
 - `pnpm run lint` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-lint-XXXX.log.JqDH7LAj5X`.
 - `pnpm run typecheck` passed; log: `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-s31-final-rerun-typecheck-XXXX.log.qAKDzWaFc6`.
-- Real Pi smoke passed with command: `pi --model openai-codex/gpt-5.5 --thinking minimal --session-dir /tmp/pristine-pi-real-smoke-session-NQdj --no-context-files --extension .tmp/pi-privacy-smoke/privacy-input-real-smoke.ts -p "My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK."`.
+- Real Pi smoke passed with command shape: `pi --model openai-codex/gpt-5.5 --thinking minimal --session-dir /tmp/pristine-pi-real-smoke-session-NQdj --no-context-files --extension .tmp/pi-privacy-smoke/privacy-input-real-smoke.ts -p "My test API key is sk-proj-<synthetic-test-key>. Please reply OK."`.
 - Real Pi smoke output: `/tmp/pristine-pi-real-smoke-output-XXXX.txt` contained `OK`.
 - Real Pi classifier request evidence: `/tmp/pristine-pi-real-smoke-evidence-XXXX.json` recorded `requestContainsRawKey: false`, `requestContainsMarker: true`, and model `{ provider: "openai-codex", id: "gpt-5.5" }`.
 - Real Pi session evidence: `/tmp/pristine-pi-real-smoke-session-NQdj/2026-05-20T08-36-24-282Z_019e4487-645a-73d4-969a-7bb156330b2e.jsonl` contained `My test API key is [SENSITIVE:api_key:smoke-ref]. Please reply OK.` and no raw fake key.
@@ -411,7 +411,7 @@ Before integrating `sprint-30-and-31` to `main`, four standalone hardening PRs w
 
 Post-hardening full regression passed: `.checks/regression.sh --tier=full`; log `/tmp/pristine-checks/sprint-30-31-final-full.log`.
 
-Post-integration-review real Pi smoke passed at PR #269 head after provider-prefix and alias hardening: `pi --model openai-codex/gpt-5.5 --thinking minimal --session-dir /tmp/pristine-pi-real-smoke-session-final-57Qu --no-context-files --extension .tmp/pi-privacy-real-smoke.ts -p "My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456. Please reply OK."`; output `/tmp/pristine-pi-real-smoke-final-output-XXXX.txt` contained `OK`; evidence `/tmp/pristine-pi-real-smoke-final-evidence-XXXX.json` recorded `requestContainsRawKey: false` and `requestContainsMarker: true`; session history under `/tmp/pristine-pi-real-smoke-session-final-57Qu` contained `[SENSITIVE:api_key:smoke-ref-1]` and no raw fake key.
+Post-integration-review real Pi smoke passed at PR #269 head after provider-prefix and alias hardening using the same synthetic `sk-proj-<test-key>` prompt shape; output `/tmp/pristine-pi-real-smoke-final-output-XXXX.txt` contained `OK`; evidence `/tmp/pristine-pi-real-smoke-final-evidence-XXXX.json` recorded `requestContainsRawKey: false` and `requestContainsMarker: true`; session history under `/tmp/pristine-pi-real-smoke-session-final-57Qu` contained `[SENSITIVE:api_key:smoke-ref-1]` and no raw fake key.
 
 ### New Dependencies
 

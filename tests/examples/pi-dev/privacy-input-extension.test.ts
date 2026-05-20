@@ -90,6 +90,25 @@ describe('privacy-input Pi extension scaffold', () => {
     });
   });
 
+  it('supports async runtime setup for Pristine.create-style initialization', async () => {
+    const pi = new FakePi();
+    const runtime = {
+      handleInput: vi.fn(async () => ({ action: 'continue' as const })),
+      close: vi.fn(),
+    };
+    const runtimeFactory = vi.fn(async () => runtime);
+    registerPrivacyInputExtension(pi, runtimeFactory);
+
+    await expect(
+      inputHandlerFrom(pi)({ text: 'hello', source: 'interactive' }, {}),
+    ).resolves.toEqual({ action: 'continue' });
+    expect(runtimeFactory).toHaveBeenCalledTimes(1);
+    expect(runtime.handleInput).toHaveBeenCalledExactlyOnceWith({
+      text: 'hello',
+      source: 'interactive',
+    });
+  });
+
   it('skips extension-injected messages without constructing or calling the runtime', async () => {
     const pi = new FakePi();
     const runtimeFactory = vi.fn(() => ({

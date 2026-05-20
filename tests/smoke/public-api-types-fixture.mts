@@ -66,18 +66,6 @@ import {
   UpdateSensitiveInput,
 } from '@pristine/sdk';
 
-// Deprecated compatibility exports for the pre-store/recall/forget memory API.
-// They stay importable for existing consumers, but new code should prefer the
-// canonical verb-oriented types above.
-import type {
-  DeleteSourceChunksOptions,
-  DeleteSourceChunksResult,
-  IndexedSourceChunk,
-  IndexSourceChunksOptions,
-  SearchSourceChunksOptions,
-  SourceChunkSearchHit,
-} from '@pristine/sdk';
-
 type CanonicalPublicRootTypes = [
   BuiltInDetectCandidateKind,
   ClassifierCallback,
@@ -143,15 +131,6 @@ type CanonicalPublicRootTypes = [
   UpdateSensitiveInput,
 ];
 
-type DeprecatedCompatibilityTypes = [
-  DeleteSourceChunksOptions,
-  DeleteSourceChunksResult,
-  IndexedSourceChunk,
-  IndexSourceChunksOptions,
-  SearchSourceChunksOptions,
-  SourceChunkSearchHit,
-];
-
 // @ts-expect-error SecureAndRedactResult is intentionally removed from the root public type surface.
 type RemovedSecureAndRedactResult = import('@pristine/sdk').SecureAndRedactResult;
 
@@ -182,7 +161,6 @@ const redactPrimitiveFixture: RedactPrimitive = async (_text, _confirmed, _userI
   redactions: [],
 });
 const canonicalPublicRootTypesFixture: CanonicalPublicRootTypes | null = null;
-const deprecatedCompatibilityTypesFixture: DeprecatedCompatibilityTypes | null = null;
 const removedSecureAndRedactResultFixture: RemovedSecureAndRedactResult | null = null;
 void classifyResult;
 void detectResult;
@@ -193,5 +171,4 @@ void classifyPrimitiveFixture;
 void redactPrimitiveFixture;
 void removedClientSecureAndRedact;
 void canonicalPublicRootTypesFixture;
-void deprecatedCompatibilityTypesFixture;
 void removedSecureAndRedactResultFixture;

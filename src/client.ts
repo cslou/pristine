@@ -68,19 +68,6 @@ export interface RecalledMemory extends StoredMemory {
   readonly score: number;
 }
 
-/** @deprecated Use StoreOptions. */
-export type IndexSourceChunksOptions = StoreOptions;
-/** @deprecated Use StoredMemory. */
-export type IndexedSourceChunk = StoredMemory;
-/** @deprecated Use RecallOptions. */
-export type SearchSourceChunksOptions = RecallOptions;
-/** @deprecated Use ForgetOptions. */
-export type DeleteSourceChunksOptions = ForgetOptions;
-/** @deprecated Use ForgetResult. */
-export type DeleteSourceChunksResult = ForgetResult;
-/** @deprecated Use RecalledMemory. */
-export type SourceChunkSearchHit = RecalledMemory;
-
 export interface PristineConfig {
   readonly baseDir?: string;
   readonly keysDir?: string;
@@ -233,30 +220,6 @@ export class Pristine {
     return this.sourceChunkStore
       .search(embedding, { projectId: options.projectId, limit })
       .map((hit) => ({ ...toPublicChunk(hit.chunk), score: hit.score }));
-  }
-
-  /** @deprecated Use store(). */
-  public async indexSourceChunks(
-    chunks: readonly SourceChunkInput[],
-    options: IndexSourceChunksOptions,
-  ): Promise<readonly IndexedSourceChunk[]> {
-    return this.store(chunks, options);
-  }
-
-  /** @deprecated Use forget(). */
-  public deleteSourceChunks(
-    chunkIds: readonly string[],
-    options: DeleteSourceChunksOptions,
-  ): DeleteSourceChunksResult {
-    return this.forget(chunkIds, options);
-  }
-
-  /** @deprecated Use recall(). */
-  public async searchSourceChunks(
-    query: string,
-    options: SearchSourceChunksOptions,
-  ): Promise<readonly SourceChunkSearchHit[]> {
-    return this.recall(query, options);
   }
 
   public async listSensitive(

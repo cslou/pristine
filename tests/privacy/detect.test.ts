@@ -195,6 +195,21 @@ describe('detect privacy primitive', () => {
     expect(customCandidate.hint.prefixFamily).toBe('custom-family');
     expectOnlySafeCandidateFields(customCandidate);
 
+    const spoofedBuiltInRule: DetectorRule = {
+      ruleId: 'provider.openai-project-key',
+      kind: 'known_provider_prefix',
+      findCandidates: (text) => {
+        const value = 'spoof_tk_ABC12345';
+        const start = text.indexOf(value);
+        return [{ sourceSpan: { start, end: start + value.length }, valueLength: value.length }];
+      },
+    };
+    const spoofedCandidate = firstCandidate('custom secret spoof_tk_ABC12345', {
+      customRules: [spoofedBuiltInRule],
+    });
+    expect(spoofedCandidate.ruleId).toBe('custom.redacted');
+    expect(spoofedCandidate.kind).toBe('custom');
+
     const leakyCustomRule: DetectorRule = {
       ruleId: 'custom.leaky-token',
       kind: 'known_provider_prefix',

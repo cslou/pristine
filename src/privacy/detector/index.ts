@@ -158,13 +158,15 @@ const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): DetectHin
   };
 };
 
-const BUILT_IN_RULE_METADATA = new Map(BUILT_IN_RULES.map((rule) => [rule.ruleId, rule.kind]));
+const BUILT_IN_RULE_SET = new Set<DetectorRule>(BUILT_IN_RULES);
+
+const isBuiltInRule = (rule: DetectorRule): boolean => BUILT_IN_RULE_SET.has(rule);
 
 const safeCandidateKind = (rule: DetectorRule): string =>
-  BUILT_IN_RULE_METADATA.get(rule.ruleId) ?? 'custom';
+  isBuiltInRule(rule) ? rule.kind : 'custom';
 
 const safeCandidateRuleId = (rule: DetectorRule): string =>
-  BUILT_IN_RULE_METADATA.has(rule.ruleId) ? rule.ruleId : 'custom.redacted';
+  isBuiltInRule(rule) ? rule.ruleId : 'custom.redacted';
 
 const sanitizeLocation = (
   location: DetectorRuleMatch['location'] | undefined,

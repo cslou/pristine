@@ -1,4 +1,9 @@
-import type { DetectHint, PrivacyHintFeatureValue, SourceSurface } from '../../core/types.js';
+import type {
+  DetectHint,
+  PrivacyHintFeatureValue,
+  SourceLocation,
+  SourceSurface,
+} from '../../core/types.js';
 
 const SAFE_PROVIDER_HINTS = new Set(['anthropic', 'aws', 'github', 'openai', 'sendgrid']);
 const SAFE_PREFIX_FAMILY_HINTS = new Set(['AKIA', 'ghp_', 'sk-ant', 'sk-proj', 'SG.']);
@@ -39,6 +44,21 @@ const SAFE_FEATURE_KEYS = new Set([
 const SAFE_FEATURE_STRINGS = new Set(['authorization', 'high', 'jwt', 'low', 'medium', 'paseto']);
 const SAFE_NEARBY_NAMES = new Set(['API_KEY', 'AUTHORIZATION', 'PASSWORD', 'SECRET', 'TOKEN']);
 const SAFE_SOURCE_SURFACE_KIND = /^[a-z][a-z0-9_-]{0,63}$/u;
+const SAFE_METADATA_VALUE = /^[A-Za-z0-9_.:-]{1,120}$/u;
+const SAFE_RULE_ID_PREFIXES = [
+  'assignment.',
+  'cloud.',
+  'cookie.',
+  'custom.',
+  'header.',
+  'opaque.',
+  'private-key.',
+  'provider.',
+  'query.',
+  'seed.',
+  'structured.',
+  'url.',
+] as const;
 
 const isRawDerived = (value: string, rawValue: string): boolean =>
   value.length === 0 || value === rawValue || value.includes(rawValue) || rawValue.includes(value);
@@ -105,6 +125,46 @@ export const sanitizeHint = (hint: DetectHint | undefined, rawValue: string): De
     negativeSignals: safeSignalArray(safeHint.negativeSignals),
     features: features && Object.keys(features).length > 0 ? features : undefined,
   };
+};
+
+const safeMetadataString = (value: string | undefined, rawValue: string): string | undefined => {
+  if (
+    !value ||
+    !SAFE_METADATA_VALUE.test(value) ||
+    value === rawValue ||
+    value.includes(rawValue)
+  ) {
+    return undefined;
+  }
+  return value;
+};
+
+export const sanitizeCandidateKind = (
+  kind: string | undefined,
+  rawValue: string,
+): string | undefined => safeMetadataString(kind, rawValue);
+
+export const sanitizeCandidateRuleId = (
+  ruleId: string | undefined,
+  rawValue: string,
+): string | undefined => {
+  const safeRuleId = safeMetadataString(ruleId, rawValue);
+  if (safeRuleId === undefined) return undefined;
+  return SAFE_RULE_ID_PREFIXES.some((prefix) => safeRuleId.startsWith(prefix))
+    ? safeRuleId
+    : undefined;
+};
+
+export const sanitizeCandidateLocation = (
+  location: SourceLocation | undefined,
+): SourceLocation | undefined => {
+  if (!location) return undefined;
+  return Number.isInteger(location.line) &&
+    Number.isInteger(location.column) &&
+    location.line > 0 &&
+    location.column > 0
+    ? { line: location.line, column: location.column }
+    : undefined;
 };
 
 export const sanitizeSourceSurface = (

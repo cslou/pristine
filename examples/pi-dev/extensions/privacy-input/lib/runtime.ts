@@ -172,15 +172,32 @@ export interface PrivacyInputRuntimeLike {
 const resolveUserId = async (userId: PrivacyInputRuntimeConfig['userId']): Promise<string> =>
   typeof userId === 'function' ? userId() : userId;
 
+const SAFE_DETAIL_LABEL = /^[A-Za-z0-9 _./:-]{1,80}$/u;
+
+const safeDecisionLabel = (
+  decision: PrivacyInputClassifyDecisionLike,
+  sourceText: string,
+): string | undefined => {
+  if (decision.label === undefined) return undefined;
+  const label = decision.label.trim().replace(/\s+/gu, ' ');
+  if (!SAFE_DETAIL_LABEL.test(label)) return undefined;
+  const rawValue = sourceText.slice(decision.sourceSpan.start, decision.sourceSpan.end);
+  if (rawValue.length > 0 && (label.includes(rawValue) || rawValue.includes(label))) {
+    return undefined;
+  }
+  return label;
+};
+
 const toSafeDetails = (
   decisions: readonly PrivacyInputClassifyDecisionLike[],
   redactions: readonly PrivacyInputRedactionLike[],
+  sourceText: string,
 ): PrivacyInputSafeDetails => ({
   decisions: decisions.map((decision) => ({
     candidateId: decision.candidateId,
     verdict: decision.verdict,
     type: decision.type,
-    label: decision.label,
+    label: safeDecisionLabel(decision, sourceText),
   })),
   redactions: redactions.map((redaction) => ({
     candidateId: redaction.candidateId,
@@ -192,17 +209,36 @@ const toSafeDetails = (
   })),
 });
 
-const RUNTIME_CLASSIFIER_VERDICTS = new Set<PrivacyInputClassifierVerdict>([
-  'secret',
-  'not_secret',
-  'uncertain',
-]);
+const isRecordLike = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null;
 
 const isSpanLike = (value: unknown): value is PrivacyInputSpanLike =>
   typeof value === 'object' &&
   value !== null &&
   Number.isInteger((value as { readonly start?: unknown }).start) &&
   Number.isInteger((value as { readonly end?: unknown }).end);
+
+const isCandidateLike = (value: unknown): value is PrivacyInputCandidateLike =>
+  isRecordLike(value) &&
+  typeof value.candidateId === 'string' &&
+  isSpanLike(value.sourceSpan);
+
+const isDetectResultLike = (value: unknown): value is PrivacyInputDetectResultLike =>
+  isRecordLike(value) &&
+  Array.isArray(value.candidates) &&
+  value.candidates.every((candidate) => isCandidateLike(candidate));
+
+const isClassifyResultLike = (value: unknown): value is PrivacyInputClassifyResultLike =>
+  isRecordLike(value) && Array.isArray(value.decisions);
+
+const isRedactResultLike = (value: unknown): value is PrivacyInputRedactResultLike =>
+  isRecordLike(value) && typeof value.text === 'string' && Array.isArray(value.redactions);
+
+const RUNTIME_CLASSIFIER_VERDICTS = new Set<PrivacyInputClassifierVerdict>([
+  'secret',
+  'not_secret',
+  'uncertain',
+]);
 
 const hasSameSpan = (left: PrivacyInputSpanLike, right: PrivacyInputSpanLike): boolean =>
   left.start === right.start && left.end === right.end;
@@ -350,7 +386,9 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
 
     let detected: PrivacyInputDetectResultLike;
     try {
-      detected = await this.detect(event.text);
+      const detectResult = await this.detect(event.text);
+      if (!isDetectResultLike(detectResult)) throw new Error('invalid detector result');
+      detected = detectResult;
     } catch (error: unknown) {
       void error;
       this.notifications?.notify(
@@ -369,11 +407,15 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
         this.classifierCallback,
       );
       if (this.classifierTimeoutMs === undefined) {
-        classified = await classifyPromise;
+        const classifyResult = await classifyPromise;
+        if (!isClassifyResultLike(classifyResult)) {
+          throw new PrivacyInputClassifierError('invalid_response', 'invalid classifier result');
+        }
+        classified = classifyResult;
       } else {
         let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
-          classified = await Promise.race([
+          const classifyResult = await Promise.race([
             classifyPromise,
             new Promise<PrivacyInputClassifyResultLike>((_resolve, reject) => {
               timeout = setTimeout(
@@ -382,6 +424,10 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
               );
             }),
           ]);
+          if (!isClassifyResultLike(classifyResult)) {
+            throw new PrivacyInputClassifierError('invalid_response', 'invalid classifier result');
+          }
+          classified = classifyResult;
         } finally {
           if (timeout !== undefined) clearTimeout(timeout);
         }
@@ -405,7 +451,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       return { action: 'handled', details: { decisions: [], redactions: [] } };
     }
 
-    const detailsWithoutRedactions = toSafeDetails(normalizedDecisions, []);
+    const detailsWithoutRedactions = toSafeDetails(normalizedDecisions, [], event.text);
     if (hasMalformedSecretDecision(normalizedDecisions)) {
       this.notifications?.notify(
         'Pristine privacy input blocked this message because classifier output for a confirmed value was incomplete.',
@@ -437,7 +483,9 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     let redacted: PrivacyInputRedactResultLike;
     try {
       const userId = await resolveUserId(this.userId);
-      redacted = await this.redact(event.text, confirmed, userId);
+      const redactResult = await this.redact(event.text, confirmed, userId);
+      if (!isRedactResultLike(redactResult)) throw new Error('invalid redactor result');
+      redacted = redactResult;
     } catch (error: unknown) {
       void error;
       this.notifications?.notify(
@@ -446,7 +494,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       );
       return { action: 'handled', details: detailsWithoutRedactions };
     }
-    const details = toSafeDetails(normalizedDecisions, redacted.redactions);
+    const details = toSafeDetails(normalizedDecisions, redacted.redactions, event.text);
     this.notifications?.notify(
       `Pristine privacy input redacted ${redacted.redactions.length} confirmed value(s).`,
       'success',

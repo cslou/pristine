@@ -157,8 +157,8 @@ export type ClassifierVerdict = 'secret' | 'not_secret' | 'uncertain';
 export interface ClassifierRequestCandidate {
   readonly candidateId: string;
   readonly marker: string;
-  readonly kind: DetectCandidateKind;
-  readonly ruleId: string;
+  readonly kind?: DetectCandidateKind;
+  readonly ruleId?: string;
   readonly sourceSpan: SourceSpan;
   readonly valueLength: number;
   readonly location?: SourceLocation;

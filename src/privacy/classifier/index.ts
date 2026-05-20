@@ -14,7 +14,13 @@ import type {
   SourceSpan,
 } from '../../core/types.js';
 import { buildSanitizedContext, markerForCandidate } from './sanitized-context.js';
-import { sanitizeHint, sanitizeSourceSurface } from './sanitization.js';
+import {
+  sanitizeCandidateKind,
+  sanitizeCandidateLocation,
+  sanitizeCandidateRuleId,
+  sanitizeHint,
+  sanitizeSourceSurface,
+} from './sanitization.js';
 
 const ALLOWED_VERDICTS = new Set(['secret', 'not_secret', 'uncertain']);
 
@@ -105,11 +111,11 @@ const buildRequest = (
     requestCandidates.push({
       candidateId: requestCandidateId,
       marker: markerForCandidate(requestCandidateId),
-      kind: candidate.kind,
-      ruleId: candidate.ruleId,
+      kind: sanitizeCandidateKind(candidate.kind, rawValue),
+      ruleId: sanitizeCandidateRuleId(candidate.ruleId, rawValue),
       sourceSpan: candidate.sourceSpan,
       valueLength: candidate.valueLength,
-      location: candidate.location,
+      location: sanitizeCandidateLocation(candidate.location),
       hint: sanitizeHint(candidateHint(candidate), rawValue),
     });
   }

@@ -63,8 +63,8 @@ const requestFixture = (): PrivacyInputClassifierRequestLike => ({
     {
       candidateId: 'request-candidate-0001',
       marker: '[CANDIDATE:request-candidate-0001]',
-      kind: 'known_provider_prefix',
-      ruleId: 'known-provider.openai',
+      kind: riskyValues.rawSecret,
+      ruleId: riskyValues.rawSecret,
       sourceSpan: { start: 22, end: 62 },
       valueLength: riskyValues.rawSecret.length,
       hint: {

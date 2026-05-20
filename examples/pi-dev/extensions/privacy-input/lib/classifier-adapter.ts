@@ -22,12 +22,52 @@ const ALLOWED_VERDICTS = new Set<PrivacyInputClassifierVerdict>([
 ]);
 
 const SAFE_LABEL = /^[A-Za-z0-9 _./:-]{1,80}$/;
+const SAFE_KINDS = new Set([
+  'auth_header',
+  'cloud_credential_block',
+  'cookie_or_session',
+  'credential_url',
+  'key_value_assignment',
+  'known_provider_prefix',
+  'opaque_generated_value',
+  'private_key_block',
+  'recovery_or_seed_phrase',
+  'signed_url_or_query_secret',
+  'structured_token',
+]);
+const SAFE_RULE_ID_PREFIXES = [
+  'assignment.',
+  'cloud.',
+  'cookie.',
+  'custom.',
+  'header.',
+  'opaque.',
+  'private-key.',
+  'provider.',
+  'query.',
+  'seed.',
+  'structured.',
+  'url.',
+] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const safeString = (value: unknown): string | undefined =>
   typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(value) ? value : undefined;
+
+const safeKind = (value: unknown): string | undefined => {
+  const safeValue = safeString(value);
+  return safeValue !== undefined && SAFE_KINDS.has(safeValue) ? safeValue : undefined;
+};
+
+const safeRuleId = (value: unknown): string | undefined => {
+  const safeValue = safeString(value);
+  if (safeValue === undefined) return undefined;
+  return SAFE_RULE_ID_PREFIXES.some((prefix) => safeValue.startsWith(prefix))
+    ? safeValue
+    : undefined;
+};
 
 const safeSignalArray = (value: unknown): readonly string[] | undefined => {
   if (!Array.isArray(value)) return undefined;
@@ -86,8 +126,8 @@ export const buildPrivacyInputClassifierTask = (
     candidates: request.candidates.map((candidate) => ({
       candidateId: candidate.candidateId,
       marker: candidate.marker,
-      kind: candidate.kind,
-      ruleId: candidate.ruleId,
+      kind: safeKind(candidate.kind),
+      ruleId: safeRuleId(candidate.ruleId),
       sourceSpan: candidate.sourceSpan,
       valueLength: candidate.valueLength,
       location: sanitizeLocation(candidate.location),

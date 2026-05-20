@@ -8,7 +8,7 @@ The runtime is intentionally host-wired. Provide:
 
 - `detect(text)` from `@pristine/sdk` or a compatible local detector.
 - `classify(text, candidates, classifierCallback)` from `@pristine/sdk`.
-- `classifierCallback`, either the reference adapter from `lib/classifier-adapter.ts` with the Pi model transport from `lib/pi-model-classifier-transport.ts`, or a fake/local/manual callback.
+- `classifierCallback`, preferably a local/fake/manual callback for local-first deployments. The reference adapter from `lib/classifier-adapter.ts` can also be paired with the Pi model transport from `lib/pi-model-classifier-transport.ts` when you explicitly opt into sending sanitized classifier context to the configured Pi model provider.
 - `redact(text, confirmed, userId)`, usually `Pristine.redact` from a configured local client.
 - `userId`, policy, optional `classifierTimeoutMs`, and optional notifications.
 
@@ -18,7 +18,7 @@ The runtime is intentionally host-wired. Provide:
 
 The reference classifier adapter builds tasks from `classify` callback requests: sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata. Hosts can replace it with a fake/local/manual classifier callback by implementing the same callback interface.
 
-For real Pi smoke, wire the adapter to `createPiModelClassifierTransport`. The transport uses Pi's model registry and `completeSimple` from `@mariozechner/pi-ai`, tries configured preferences first, falls back to the current Pi model, and calls `ctx.modelRegistry.getApiKeyAndHeaders(model)` so OAuth/header-backed providers and API-key providers both work. The default example preference is `openai-codex/gpt-5.5`; it is an example, not a hardcoded provider requirement.
+For real Pi smoke with a remote/provider-backed Pi model, wire the adapter to `createPiModelClassifierTransport`. This is an explicit non-local opt-in: sanitized context and safe candidate metadata can leave the device according to the selected Pi model provider. The transport uses Pi's model registry and `completeSimple` from `@mariozechner/pi-ai`, tries configured preferences first, falls back to the current Pi model, and calls `ctx.modelRegistry.getApiKeyAndHeaders(model)` so OAuth/header-backed providers and API-key providers both work. The default example preference is `openai-codex/gpt-5.5`; it is an example, not a hardcoded provider requirement. Use a local classifier callback instead when preserving the SDK's local-only/no-network guarantee is required.
 
 ```ts
 import { Pristine, classify, detect } from '@pristine/sdk';

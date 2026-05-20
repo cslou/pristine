@@ -171,11 +171,14 @@ describe('classify privacy primitive', () => {
     expect(byOriginalOrder[3]?.hint.prefixFamily).toBeUndefined();
   });
 
-  it('does not expose raw-derived candidate IDs or encoded feature values', async () => {
+  it('does not expose raw-derived candidate IDs or unsafe candidate metadata', async () => {
     const secret = 'custom-secret-123456';
     const text = `token=${secret}`;
     const candidate = candidateFor(text, secret, {
       candidateId: secret,
+      kind: secret,
+      ruleId: secret,
+      location: { line: 1, column: 7, leaked: secret } as DetectCandidate['location'],
       hint: {
         features: {
           hasAssignmentContext: true,
@@ -189,6 +192,9 @@ describe('classify privacy primitive', () => {
     const { request, serialized } = await serializedRequest(text, [candidate]);
 
     expect(request.candidates[0]?.candidateId).toBe('request-candidate-0001');
+    expect(request.candidates[0]?.kind).toBeUndefined();
+    expect(request.candidates[0]?.ruleId).toBeUndefined();
+    expect(request.candidates[0]?.location).toEqual({ line: 1, column: 7 });
     expect(request.sanitizedContext).toBe('token=[CANDIDATE:request-candidate-0001]');
     expect(request.candidates[0]?.hint.features).toEqual({
       hasAssignmentContext: true,

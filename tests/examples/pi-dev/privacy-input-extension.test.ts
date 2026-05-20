@@ -246,6 +246,21 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(redact).not.toHaveBeenCalled();
   });
 
+  it('fails closed when detection returns malformed output', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce(null as never);
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toEqual({ action: 'handled' });
+    expect(classifyDependency).not.toHaveBeenCalled();
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because detection could not complete safely.',
+      'error',
+    );
+  });
+
   it('fails closed when detection throws', async () => {
     const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
     detect.mockRejectedValueOnce(new Error('detector unavailable'));
@@ -398,6 +413,30 @@ describe('privacy-input Pi extension scaffold', () => {
       db.close();
       rmSync(keysDir, { force: true, recursive: true });
     }
+  });
+
+  it('blocks malformed classifier result objects with safe details', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce(null as never);
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toEqual({
+      action: 'handled',
+      details: {
+        decisions: [],
+        redactions: [],
+        classifierFailure: { reasonCode: 'invalid_response' },
+      },
+    });
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.stringContaining('invalid_response'),
+      'error',
+    );
   });
 
   it.each([
@@ -768,6 +807,60 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(redact).not.toHaveBeenCalled();
     expect(notifications.notify).toHaveBeenCalledWith(
       expect.not.stringContaining('raw-value-123'),
+      'error',
+    );
+  });
+
+  it('drops unsafe classifier labels from safe details', async () => {
+    const { runtime, detect, classifyDependency, redact } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'not_secret',
+          sourceSpan: { start: 6, end: 19 },
+          label: 'raw-value-123',
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toEqual({
+      action: 'continue',
+      details: {
+        decisions: [{ candidateId: 'candidate-0001', verdict: 'not_secret' }],
+        redactions: [],
+      },
+    });
+    expect(redact).not.toHaveBeenCalled();
+  });
+
+  it('blocks malformed redactor results after a confirmed decision', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [{ candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } }],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'secret',
+          sourceSpan: { start: 6, end: 19 },
+          type: 'api_key',
+        },
+      ],
+    });
+    redact.mockResolvedValueOnce(null as never);
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'handled' });
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because local redaction could not complete.',
       'error',
     );
   });

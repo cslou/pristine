@@ -91,7 +91,7 @@ npm install --omit=dev
 # npm install --omit=dev /path/to/pristine
 ```
 
-Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). For real classifier smoke, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport calls Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
+Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). Local-first deployments should use a local/fake/manual classifier callback. For real classifier smoke with an explicit non-local/provider-backed Pi model opt-in, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport sends sanitized classifier context to Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
 
 ## Embedding model and Nomic warmup
 
@@ -121,7 +121,7 @@ input hook → detect(text) → classify(text, candidates, classifierCallback) �
 
 Classifier prompts/tasks receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only. They must never receive raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, seed phrase words, vault refs, or reveal data.
 
-Real Pi classifier wiring uses the same model-layer pattern as agentic compaction rather than a provider SDK:
+Real Pi classifier wiring is optional and non-local: sanitized classifier context can leave the device via the selected Pi model provider. It uses the same model-layer pattern as agentic compaction rather than a provider SDK:
 
 ```ts
 classifierCallback: createPrivacyInputClassifierCallback(

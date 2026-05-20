@@ -256,6 +256,28 @@ describe('classify privacy primitive', () => {
     expect(serialized).not.toContain('alice@example.com');
   });
 
+  it('elides unrelated gaps between distant candidate context windows', async () => {
+    const firstSecret = 'sk-proj-firstsyntheticsecret123456';
+    const secondSecret = 'ghp_secondsyntheticsecret1234567890';
+    const hiddenGap = 'DO_NOT_SEND_INTERVENING_TEXT';
+    const text = `first ${firstSecret} ${'x'.repeat(120)} ${hiddenGap} ${'y'.repeat(120)} second ${secondSecret}`;
+    const firstCandidate = candidateFor(text, firstSecret, { candidateId: 'first' });
+    const secondCandidate = candidateFor(text, secondSecret, { candidateId: 'second' });
+
+    const { request, serialized } = await serializedRequest(
+      text,
+      [firstCandidate, secondCandidate],
+      6,
+    );
+
+    expect(request.sanitizedContext).toContain('[CANDIDATE:request-candidate-0001]');
+    expect(request.sanitizedContext).toContain('[...]');
+    expect(request.sanitizedContext).toContain('[CANDIDATE:request-candidate-0002]');
+    expect(serialized).not.toContain(hiddenGap);
+    expect(serialized).not.toContain(firstSecret);
+    expect(serialized).not.toContain(secondSecret);
+  });
+
   it('honors context windows and does not invoke callbacks for empty candidate lists', async () => {
     let emptyCallbackInvoked = false;
     await expect(

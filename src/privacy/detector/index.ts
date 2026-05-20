@@ -119,6 +119,7 @@ const safeFeatureValue = (
 ): PrivacyHintFeatureValue | undefined => {
   if (typeof value === 'string') return safeHintString(value, rawValue);
   if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (!Array.isArray(value)) return undefined;
   if (value.every((item): item is string => typeof item === 'string')) {
     return safeHintStringArray(value, rawValue);
   }

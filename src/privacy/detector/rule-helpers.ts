@@ -105,6 +105,26 @@ export const locationForOffset = (text: string, offset: number): SourceLocation 
   return { line, column };
 };
 
+const createLocationTracker = (text: string): ((offset: number) => SourceLocation) => {
+  let scannedOffset = 0;
+  let line = 1;
+  let column = 1;
+
+  return (offset: number): SourceLocation => {
+    if (offset < scannedOffset) return locationForOffset(text, offset);
+    for (let index = scannedOffset; index < offset; index += 1) {
+      if (text.charCodeAt(index) === 10) {
+        line += 1;
+        column = 1;
+      } else {
+        column += 1;
+      }
+    }
+    scannedOffset = offset;
+    return { line, column };
+  };
+};
+
 const appendUnique = (target: string[], values: readonly string[] = []): void => {
   for (const value of values) {
     if (!target.includes(value)) target.push(value);
@@ -163,6 +183,7 @@ export const createRegexRule = (config: RegexRuleConfig): BuiltInRule => ({
     const matches: DetectorRuleMatch[] = [];
     const regex = cloneRegExp(config.pattern);
     const valueGroup = config.valueGroup ?? 0;
+    const locationAt = createLocationTracker(text);
 
     for (const match of text.matchAll(regex)) {
       const fullMatch = match[0];
@@ -194,7 +215,7 @@ export const createRegexRule = (config: RegexRuleConfig): BuiltInRule => ({
       matches.push({
         sourceSpan,
         valueLength: value.length,
-        location: locationForOffset(text, sourceSpan.start),
+        location: locationAt(sourceSpan.start),
         hint: {
           suggestedType: suggestedTypeForName(nearbyName, config.suggestedType),
           provider: config.provider,

@@ -4,7 +4,7 @@ import type {
   PrivacyInputClassifierCallbackResultLike,
   PrivacyInputClassifierRequestLike,
   PrivacyInputClassifierVerdict,
-} from './runtime.js';
+} from './types.js';
 
 export { PrivacyInputClassifierError } from './classifier-diagnostics.js';
 export type { PrivacyInputClassifierFailureReasonCode } from './classifier-diagnostics.js';

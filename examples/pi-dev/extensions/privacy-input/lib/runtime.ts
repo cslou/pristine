@@ -1,173 +1,59 @@
 import {
   classifierFailureDetailFromError,
   PrivacyInputClassifierError,
-  type PrivacyInputClassifierFailureDetail,
 } from './classifier-diagnostics.js';
 
-export type PrivacyInputAction =
-  | { readonly action: 'continue'; readonly details?: PrivacyInputSafeDetails }
-  | {
-      readonly action: 'transform';
-      readonly text: string;
-      readonly details?: PrivacyInputSafeDetails;
-    }
-  | { readonly action: 'handled'; readonly details?: PrivacyInputSafeDetails };
+import type {
+  PrivacyInputAction,
+  PrivacyInputCandidateLike,
+  PrivacyInputClassifierCallbackLike,
+  PrivacyInputClassifierVerdict,
+  PrivacyInputClassifyDecisionLike,
+  PrivacyInputClassifyLike,
+  PrivacyInputClassifyResultLike,
+  PrivacyInputConfirmedSecretLike,
+  PrivacyInputDetectLike,
+  PrivacyInputDetectResultLike,
+  PrivacyInputEventLike,
+  PrivacyInputNotificationSink,
+  PrivacyInputPolicyConfig,
+  PrivacyInputRedactLike,
+  PrivacyInputRedactResultLike,
+  PrivacyInputRedactionLike,
+  PrivacyInputRuntimeConfig,
+  PrivacyInputRuntimeLike,
+  PrivacyInputSafeDetails,
+  PrivacyInputSpanLike,
+} from './types.js';
 
-export interface PrivacyInputEventLike {
-  readonly text: string;
-  readonly source?: 'interactive' | 'rpc' | 'extension' | string;
-}
-
-export interface PrivacyInputSpanLike {
-  readonly start: number;
-  readonly end: number;
-}
-
-export interface PrivacyInputCandidateLike {
-  readonly candidateId: string;
-  readonly sourceSpan: PrivacyInputSpanLike;
-  readonly kind?: string;
-  readonly ruleId?: string;
-  readonly valueLength?: number;
-  readonly hint?: unknown;
-}
-
-export interface PrivacyInputDetectResultLike {
-  readonly sourceSurface?: unknown;
-  readonly candidates: readonly PrivacyInputCandidateLike[];
-}
-
-export interface PrivacyInputClassifierRequestCandidateLike {
-  readonly candidateId: string;
-  readonly marker: string;
-  readonly kind?: string;
-  readonly ruleId?: string;
-  readonly sourceSpan?: PrivacyInputSpanLike;
-  readonly valueLength?: number;
-  readonly location?: unknown;
-  readonly hint?: unknown;
-}
-
-export interface PrivacyInputClassifierRequestLike {
-  readonly sanitizedContext: string;
-  readonly candidates: readonly PrivacyInputClassifierRequestCandidateLike[];
-}
-
-export type PrivacyInputClassifierVerdict = 'secret' | 'not_secret' | 'uncertain';
-
-export interface PrivacyInputClassifierCallbackResultLike {
-  readonly decisions: readonly PrivacyInputClassifierCallbackDecisionLike[];
-}
-
-export interface PrivacyInputClassifierCallbackDecisionLike {
-  readonly candidateId: string;
-  readonly verdict: PrivacyInputClassifierVerdict;
-  readonly type?: string;
-  readonly label?: string;
-  readonly confidence?: number;
-  readonly rationale?: string;
-}
-
-export type PrivacyInputClassifierCallbackLike = (
-  request: PrivacyInputClassifierRequestLike,
-) => PrivacyInputClassifierCallbackResultLike | Promise<PrivacyInputClassifierCallbackResultLike>;
-
-export interface PrivacyInputClassifyDecisionLike {
-  readonly candidateId: string;
-  readonly verdict: PrivacyInputClassifierVerdict;
-  readonly sourceSpan: PrivacyInputSpanLike;
-  readonly type?: string;
-  readonly label?: string;
-  readonly confidence?: number;
-  readonly rationale?: string;
-}
-
-export interface PrivacyInputClassifyResultLike {
-  readonly decisions: readonly PrivacyInputClassifyDecisionLike[];
-}
-
-export interface PrivacyInputConfirmedSecretLike {
-  readonly candidateId?: string;
-  readonly sourceSpan: PrivacyInputSpanLike;
-  readonly type: string;
-  readonly label?: string;
-}
-
-export interface PrivacyInputRedactionLike {
-  readonly candidateId?: string;
-  readonly sensitiveRef: string;
-  readonly placeholder: string;
-  readonly type: string;
-  readonly label?: string;
-  readonly redactedSpan: PrivacyInputSpanLike;
-}
-
-export interface PrivacyInputRedactResultLike {
-  readonly text: string;
-  readonly redactions: readonly PrivacyInputRedactionLike[];
-}
-
-export type PrivacyInputDetectLike = (
-  text: string,
-) => PrivacyInputDetectResultLike | Promise<PrivacyInputDetectResultLike>;
-
-export type PrivacyInputClassifyLike = (
-  text: string,
-  candidates: readonly PrivacyInputCandidateLike[],
-  classifierCallback: PrivacyInputClassifierCallbackLike,
-) => Promise<PrivacyInputClassifyResultLike>;
-
-export type PrivacyInputRedactLike = (
-  text: string,
-  confirmed: readonly PrivacyInputConfirmedSecretLike[],
-  userId: string,
-) => Promise<PrivacyInputRedactResultLike>;
-
-export interface PrivacyInputNotificationSink {
-  notify(message: string, level?: 'info' | 'success' | 'warning' | 'error'): void;
-}
-
-export interface PrivacyInputPolicyConfig {
-  readonly uncertainPolicy?: 'block' | 'redact' | 'allow';
-}
-
-export interface PrivacyInputSafeDecisionDetail {
-  readonly candidateId: string;
-  readonly verdict: PrivacyInputClassifierVerdict;
-  readonly type?: string;
-  readonly label?: string;
-}
-
-export interface PrivacyInputSafeRedactionDetail {
-  readonly candidateId?: string;
-  readonly sensitiveRef: string;
-  readonly placeholder: string;
-  readonly type: string;
-  readonly label?: string;
-  readonly redactedSpan: PrivacyInputSpanLike;
-}
-
-export interface PrivacyInputSafeDetails {
-  readonly decisions: readonly PrivacyInputSafeDecisionDetail[];
-  readonly redactions: readonly PrivacyInputSafeRedactionDetail[];
-  readonly classifierFailure?: PrivacyInputClassifierFailureDetail;
-}
-
-export interface PrivacyInputRuntimeConfig {
-  readonly detect: PrivacyInputDetectLike;
-  readonly classify: PrivacyInputClassifyLike;
-  readonly classifierCallback: PrivacyInputClassifierCallbackLike;
-  readonly redact: PrivacyInputRedactLike;
-  readonly policy?: PrivacyInputPolicyConfig;
-  readonly userId: string | (() => string | Promise<string>);
-  readonly notifications?: PrivacyInputNotificationSink;
-  readonly classifierTimeoutMs?: number;
-}
-
-export interface PrivacyInputRuntimeLike {
-  handleInput(event: PrivacyInputEventLike): Promise<PrivacyInputAction>;
-  close(): void;
-}
+export type {
+  PrivacyInputAction,
+  PrivacyInputCandidateLike,
+  PrivacyInputClassifierCallbackDecisionLike,
+  PrivacyInputClassifierCallbackLike,
+  PrivacyInputClassifierCallbackResultLike,
+  PrivacyInputClassifierRequestCandidateLike,
+  PrivacyInputClassifierRequestLike,
+  PrivacyInputClassifierVerdict,
+  PrivacyInputClassifyDecisionLike,
+  PrivacyInputClassifyLike,
+  PrivacyInputClassifyResultLike,
+  PrivacyInputConfirmedSecretLike,
+  PrivacyInputDetectLike,
+  PrivacyInputDetectResultLike,
+  PrivacyInputEventLike,
+  PrivacyInputNotificationSink,
+  PrivacyInputPolicyConfig,
+  PrivacyInputRedactLike,
+  PrivacyInputRedactResultLike,
+  PrivacyInputRedactionLike,
+  PrivacyInputRuntimeConfig,
+  PrivacyInputRuntimeLike,
+  PrivacyInputSafeDecisionDetail,
+  PrivacyInputSafeDetails,
+  PrivacyInputSafeRedactionDetail,
+  PrivacyInputSpanLike,
+} from './types.js';
 
 const resolveUserId = async (userId: PrivacyInputRuntimeConfig['userId']): Promise<string> =>
   typeof userId === 'function' ? userId() : userId;

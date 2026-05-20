@@ -36,15 +36,31 @@ export const registerPrivacyInputExtension = (
   runtimeFactory: (ctx: unknown) => PrivacyInputRuntimeLike | Promise<PrivacyInputRuntimeLike>,
 ): void => {
   let runtime: PrivacyInputRuntimeLike | null = null;
+  let runtimePromise: Promise<PrivacyInputRuntimeLike | null> | null = null;
+  let runtimeGeneration = 0;
+
   const getRuntime = async (ctx: unknown): Promise<PrivacyInputRuntimeLike | null> => {
     if (runtime !== null) return runtime;
-    try {
-      runtime = await runtimeFactory(ctx);
-      return runtime;
-    } catch (error: unknown) {
-      notifyInitFailure(ctx, error);
-      return null;
-    }
+    if (runtimePromise !== null) return runtimePromise;
+
+    const generation = runtimeGeneration;
+    runtimePromise = (async () => {
+      try {
+        const initializedRuntime = await runtimeFactory(ctx);
+        if (generation !== runtimeGeneration) {
+          initializedRuntime.close();
+          return null;
+        }
+        runtime = initializedRuntime;
+        return initializedRuntime;
+      } catch (error: unknown) {
+        if (generation === runtimeGeneration) notifyInitFailure(ctx, error);
+        return null;
+      } finally {
+        if (generation === runtimeGeneration) runtimePromise = null;
+      }
+    })();
+    return runtimePromise;
   };
 
   pi.on('input', async (event, ctx) => {
@@ -56,6 +72,8 @@ export const registerPrivacyInputExtension = (
   });
 
   pi.on('session_shutdown', () => {
+    runtimeGeneration += 1;
+    runtimePromise = null;
     runtime?.close();
     runtime = null;
   });

@@ -17,6 +17,33 @@ import {
 } from '../../../examples/pi-dev/extensions/privacy-input/lib/runtime.js';
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
+type RuntimeStub = {
+  readonly handleInput: ReturnType<typeof vi.fn>;
+  readonly close: ReturnType<typeof vi.fn>;
+};
+type Deferred<T> = {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (error: unknown) => void;
+};
+
+const createDeferred = <T>(): Deferred<T> => {
+  let resolveDeferred: ((value: T) => void) | undefined;
+  let rejectDeferred: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveDeferred = resolve;
+    rejectDeferred = reject;
+  });
+  if (resolveDeferred === undefined || rejectDeferred === undefined) {
+    throw new Error('failed to initialize deferred promise');
+  }
+  return { promise, resolve: resolveDeferred, reject: rejectDeferred };
+};
+
+const createRuntimeStub = (): RuntimeStub => ({
+  handleInput: vi.fn(async () => ({ action: 'continue' as const })),
+  close: vi.fn(),
+});
 
 class FakePi {
   public readonly handlers = new Map<string, Handler[]>();
@@ -42,6 +69,12 @@ const createMockEmbedder = (): Embedder => ({
 
 const inputHandlerFrom = (pi: FakePi): Handler => {
   const handlers = pi.handlers.get('input') ?? [];
+  expect(handlers).toHaveLength(1);
+  return handlers[0]!;
+};
+
+const shutdownHandlerFrom = (pi: FakePi): Handler => {
+  const handlers = pi.handlers.get('session_shutdown') ?? [];
   expect(handlers).toHaveLength(1);
   return handlers[0]!;
 };
@@ -92,10 +125,7 @@ describe('privacy-input Pi extension scaffold', () => {
 
   it('supports async runtime setup for Pristine.create-style initialization', async () => {
     const pi = new FakePi();
-    const runtime = {
-      handleInput: vi.fn(async () => ({ action: 'continue' as const })),
-      close: vi.fn(),
-    };
+    const runtime = createRuntimeStub();
     const runtimeFactory = vi.fn(async () => runtime);
     registerPrivacyInputExtension(pi, runtimeFactory);
 
@@ -105,6 +135,66 @@ describe('privacy-input Pi extension scaffold', () => {
     expect(runtimeFactory).toHaveBeenCalledTimes(1);
     expect(runtime.handleInput).toHaveBeenCalledExactlyOnceWith({
       text: 'hello',
+      source: 'interactive',
+    });
+  });
+
+  it('shares one in-flight async runtime setup across concurrent inputs', async () => {
+    const pi = new FakePi();
+    const runtime = createRuntimeStub();
+    const runtimeDeferred = createDeferred<RuntimeStub>();
+    const runtimeFactory = vi.fn(() => runtimeDeferred.promise);
+    registerPrivacyInputExtension(pi, runtimeFactory);
+    const inputHandler = inputHandlerFrom(pi);
+
+    const firstInput = inputHandler({ text: 'first', source: 'interactive' }, {});
+    const secondInput = inputHandler({ text: 'second', source: 'interactive' }, {});
+    expect(runtimeFactory).toHaveBeenCalledTimes(1);
+
+    runtimeDeferred.resolve(runtime);
+
+    await expect(firstInput).resolves.toEqual({ action: 'continue' });
+    await expect(secondInput).resolves.toEqual({ action: 'continue' });
+    expect(runtimeFactory).toHaveBeenCalledTimes(1);
+    expect(runtime.handleInput).toHaveBeenCalledTimes(2);
+    expect(runtime.handleInput).toHaveBeenNthCalledWith(1, {
+      text: 'first',
+      source: 'interactive',
+    });
+    expect(runtime.handleInput).toHaveBeenNthCalledWith(2, {
+      text: 'second',
+      source: 'interactive',
+    });
+  });
+
+  it('closes a late-resolving async runtime after shutdown without caching it', async () => {
+    const pi = new FakePi();
+    const lateRuntime = createRuntimeStub();
+    const nextRuntime = createRuntimeStub();
+    const lateRuntimeDeferred = createDeferred<RuntimeStub>();
+    const runtimeFactory = vi
+      .fn<() => RuntimeStub | Promise<RuntimeStub>>()
+      .mockReturnValueOnce(lateRuntimeDeferred.promise)
+      .mockReturnValueOnce(nextRuntime);
+    registerPrivacyInputExtension(pi, runtimeFactory);
+    const inputHandler = inputHandlerFrom(pi);
+
+    const pendingInput = inputHandler({ text: 'before shutdown', source: 'interactive' }, {});
+    expect(runtimeFactory).toHaveBeenCalledTimes(1);
+
+    shutdownHandlerFrom(pi)(undefined, undefined);
+    lateRuntimeDeferred.resolve(lateRuntime);
+
+    await expect(pendingInput).resolves.toEqual({ action: 'handled' });
+    expect(lateRuntime.close).toHaveBeenCalledOnce();
+    expect(lateRuntime.handleInput).not.toHaveBeenCalled();
+
+    await expect(
+      inputHandler({ text: 'after shutdown', source: 'interactive' }, {}),
+    ).resolves.toEqual({ action: 'continue' });
+    expect(runtimeFactory).toHaveBeenCalledTimes(2);
+    expect(nextRuntime.handleInput).toHaveBeenCalledExactlyOnceWith({
+      text: 'after shutdown',
       source: 'interactive',
     });
   });

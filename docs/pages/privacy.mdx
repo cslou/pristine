@@ -27,7 +27,9 @@ The SDK does not implement a hosted classifier or bundled LLM classifier. Determ
 
 ## Reveal inside trusted local tools
 
-`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute. `resolveSensitive` can recover one `sensitiveRef` locally; `listSensitive`, `getSensitive`, `updateSensitive`, and `deleteSensitive` manage metadata-only sensitive refs. Classifier labels can become visible aliases through `updateSensitive`, so aliases must never contain raw secrets.
+`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute. `resolveSensitive` can recover one `sensitiveRef` locally; `listSensitive`, `getSensitive`, `updateSensitive`, and `deleteSensitive` manage metadata-only sensitive refs.
+
+`sensitiveType` is the canonical machine type stored in the vault, such as `api_key`; do not replace it with free-text display copy. Classifier labels are visible metadata on redaction results, while caller-managed aliases live in vault metadata after `updateSensitive`. Caller-managed aliases must never contain plaintext secrets. For display, prefer `alias ?? label` while preserving the canonical machine type for filtering, policy, and storage.
 
 ## Scrub before writing back
 

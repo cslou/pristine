@@ -26,12 +26,4 @@ export const persistRedactions = async (
       encrypted: encryptAndWrapValue(rawValue, vaultType, placeholderId, kek, fingerprint),
     })),
   );
-
-  for (const { redaction } of pending) {
-    if (redaction.alias) {
-      await options.vaultStore.updateEntry(userId, redaction.sensitiveRef, {
-        alias: redaction.alias,
-      });
-    }
-  }
 };

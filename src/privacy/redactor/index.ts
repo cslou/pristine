@@ -119,7 +119,6 @@ const buildRedactionWrites = (
       placeholder,
       type: secret.type,
       label,
-      alias: label,
       sourceSpan: secret.sourceSpan,
       redactedSpan: { start: redactedStart, end: redactedEnd },
     };

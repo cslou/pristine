@@ -243,11 +243,6 @@ export interface RedactConfirmedSecret {
 
 export interface RedactVaultStore {
   addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
-  updateEntry(
-    userId: string,
-    sensitiveRef: SensitiveRef,
-    input: UpdateSensitiveInput,
-  ): Promise<SensitiveSummary>;
 }
 
 export interface RedactKeyManager {

@@ -60,7 +60,7 @@ Classifier timeout, thrown errors, malformed responses, unknown candidate IDs, a
 
 ## Local vault responsibilities
 
-Raw-value slicing and vault storage happen locally in `redact`. Classifier labels are visible aliases/metadata; do not put raw secrets in labels.
+Raw-value slicing and vault storage happen locally in `redact`. `sensitiveType` remains the canonical machine type such as `api_key`; classifier labels are visible metadata on redaction results, and caller-managed aliases live in vault metadata after `updateSensitive`. Caller-managed aliases must never contain plaintext secrets. For display, prefer `alias ?? label` without overwriting the canonical machine type.
 
 ## v1 limitations
 

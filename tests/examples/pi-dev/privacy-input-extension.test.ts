@@ -597,6 +597,7 @@ describe('privacy-input Pi extension scaffold', () => {
 
   it.each([
     ['missing decision', []],
+    ['null decision', [null]],
     [
       'duplicate decision',
       [
@@ -641,6 +642,62 @@ describe('privacy-input Pi extension scaffold', () => {
       'error',
     );
     expect(JSON.stringify(result)).not.toContain('raw-value-123');
+  });
+
+  it('blocks duplicate detected candidate IDs before trusting classifier decisions', async () => {
+    const { runtime, detect, classifyDependency, redact, notifications } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [
+        { candidateId: 'candidate-0001', sourceSpan: { start: 6, end: 19 } },
+        { candidateId: 'candidate-0001', sourceSpan: { start: 20, end: 33 } },
+      ],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'not_secret',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123 raw-value-456', source: 'interactive' }),
+    ).resolves.toEqual({ action: 'handled', details: { decisions: [], redactions: [] } });
+    expect(redact).not.toHaveBeenCalled();
+    expect(notifications.notify).toHaveBeenCalledWith(
+      'Pristine privacy input blocked this message because classifier output did not match detected candidates safely.',
+      'error',
+    );
+  });
+
+  it('ignores malformed provider-prefix hint signals instead of throwing', async () => {
+    const { runtime, detect, classifyDependency, redact } = createRuntime();
+    detect.mockResolvedValueOnce({
+      candidates: [
+        {
+          candidateId: 'candidate-0001',
+          kind: 'key_value_assignment',
+          sourceSpan: { start: 6, end: 19 },
+          hint: { signals: 'known_provider_prefix' },
+        },
+      ],
+    });
+    classifyDependency.mockResolvedValueOnce({
+      decisions: [
+        {
+          candidateId: 'candidate-0001',
+          verdict: 'not_secret',
+          sourceSpan: { start: 6, end: 19 },
+        },
+      ],
+    });
+
+    await expect(
+      runtime.handleInput({ text: 'token raw-value-123', source: 'interactive' }),
+    ).resolves.toMatchObject({ action: 'continue' });
+    expect(redact).not.toHaveBeenCalled();
   });
 
   it('blocks provider-prefix candidates that classifiers mark as not-secret', async () => {

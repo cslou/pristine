@@ -205,6 +205,7 @@ export interface ClassifyOptions {
   readonly requestId?: string;
   readonly sourceSurface?: SourceSurface;
   readonly contextWindow?: number;
+  readonly providerPrefixPolicy?: 'conservative' | 'trust_callback';
 }
 
 interface ClassifyDecisionMetadata extends ClassifierDecisionMetadata {

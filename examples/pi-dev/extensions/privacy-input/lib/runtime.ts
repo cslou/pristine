@@ -207,8 +207,8 @@ const isSpanLike = (value: unknown): value is PrivacyInputSpanLike =>
 const hasSameSpan = (left: PrivacyInputSpanLike, right: PrivacyInputSpanLike): boolean =>
   left.start === right.start && left.end === right.end;
 
-const includesKnownProviderPrefixSignal = (signals: readonly string[] | undefined): boolean =>
-  signals?.includes('known_provider_prefix') ?? false;
+const includesKnownProviderPrefixSignal = (signals: unknown): boolean =>
+  Array.isArray(signals) && signals.some((signal) => signal === 'known_provider_prefix');
 
 const hintForCandidate = (candidate: PrivacyInputCandidateLike): Record<string, unknown> | undefined =>
   typeof candidate.hint === 'object' && candidate.hint !== null
@@ -219,8 +219,8 @@ const isStrongProviderPrefixCandidate = (candidate: PrivacyInputCandidateLike): 
   const hint = hintForCandidate(candidate);
   return (
     candidate.kind === 'known_provider_prefix' ||
-    includesKnownProviderPrefixSignal(hint?.signals as readonly string[] | undefined) ||
-    includesKnownProviderPrefixSignal(hint?.positiveSignals as readonly string[] | undefined)
+    includesKnownProviderPrefixSignal(hint?.signals) ||
+    includesKnownProviderPrefixSignal(hint?.positiveSignals)
   );
 };
 
@@ -246,12 +246,22 @@ const validateAndNormalizeClassifiedDecisions = (
   decisions: readonly PrivacyInputClassifyDecisionLike[],
   candidates: readonly PrivacyInputCandidateLike[],
 ): readonly PrivacyInputClassifyDecisionLike[] | undefined => {
-  const candidatesById = new Map(candidates.map((candidate) => [candidate.candidateId, candidate]));
+  const candidatesById = new Map<string, PrivacyInputCandidateLike>();
+  for (const candidate of candidates) {
+    if (candidatesById.has(candidate.candidateId)) return undefined;
+    candidatesById.set(candidate.candidateId, candidate);
+  }
   const seen = new Set<string>();
   const normalized: PrivacyInputClassifyDecisionLike[] = [];
 
-  for (const decision of decisions) {
-    if (seen.has(decision.candidateId) || !RUNTIME_CLASSIFIER_VERDICTS.has(decision.verdict)) {
+  for (const rawDecision of decisions as readonly unknown[]) {
+    if (typeof rawDecision !== 'object' || rawDecision === null) return undefined;
+    const decision = rawDecision as Partial<PrivacyInputClassifyDecisionLike>;
+    if (
+      typeof decision.candidateId !== 'string' ||
+      seen.has(decision.candidateId) ||
+      !RUNTIME_CLASSIFIER_VERDICTS.has(decision.verdict as PrivacyInputClassifierVerdict)
+    ) {
       return undefined;
     }
     const candidate = candidatesById.get(decision.candidateId);
@@ -262,8 +272,17 @@ const validateAndNormalizeClassifiedDecisions = (
     ) {
       return undefined;
     }
+    const validDecision: PrivacyInputClassifyDecisionLike = {
+      candidateId: decision.candidateId,
+      verdict: decision.verdict as PrivacyInputClassifierVerdict,
+      sourceSpan: decision.sourceSpan,
+      type: decision.type,
+      label: decision.label,
+      confidence: decision.confidence,
+      rationale: decision.rationale,
+    };
     seen.add(decision.candidateId);
-    normalized.push(applyRuntimeProviderPrefixPolicy(decision, candidate));
+    normalized.push(applyRuntimeProviderPrefixPolicy(validDecision, candidate));
   }
 
   return seen.size === candidatesById.size ? normalized : undefined;

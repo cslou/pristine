@@ -308,7 +308,7 @@ describe('classify privacy primitive', () => {
     'My fake API-key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
     'My test API key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
     'My example OpenAI token is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
-  ])('preserves caller-owned provider-prefix classifier decisions: %s', async (text) => {
+  ])('provider-prefix fixtures are conservatively normalized by default: %s', async (text) => {
     const rawToken = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
     const detected = detect(text);
     const candidate = detected.candidates.find(
@@ -327,8 +327,40 @@ describe('classify privacy primitive', () => {
 
     expect(result.decisions[0]).toMatchObject({
       candidateId: candidate.candidateId,
+      verdict: 'uncertain',
+      type: 'api_key',
+      rationale: 'known provider prefix requires conservative handling',
+    });
+    expect(JSON.stringify(result)).not.toContain(rawToken);
+  });
+
+  it('allows explicit caller-owned provider-prefix policy opt-out', async () => {
+    const rawToken = 'sk-proj-abcdefghijklmnopqrstuvwxyz123456';
+    const text = `My fake API key is ${rawToken}`;
+    const detected = detect(text);
+    const candidate = detected.candidates.find(
+      (candidate) => text.slice(candidate.sourceSpan.start, candidate.sourceSpan.end) === rawToken,
+    );
+    expect(candidate).toBeDefined();
+    if (candidate === undefined) throw new Error('expected provider-prefix candidate');
+
+    const result = await classify(
+      text,
+      [candidate],
+      async (request) => ({
+        decisions: request.candidates.map((requestCandidate) => ({
+          candidateId: requestCandidate.candidateId,
+          verdict: 'not_secret' as const,
+          rationale: 'trusted harness policy',
+        })),
+      }),
+      { providerPrefixPolicy: 'trust_callback' },
+    );
+
+    expect(result.decisions[0]).toMatchObject({
+      candidateId: candidate.candidateId,
       verdict: 'not_secret',
-      rationale: 'fake/test/example wording',
+      rationale: 'trusted harness policy',
     });
     expect(JSON.stringify(result)).not.toContain(rawToken);
   });

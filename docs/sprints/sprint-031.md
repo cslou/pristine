@@ -406,7 +406,7 @@ Before integrating `sprint-30-and-31` to `main`, four standalone hardening PRs w
 
 - PR #270 removed unreleased deprecated source-memory compatibility aliases/methods/docs/tests.
 - PR #271 added canonical raw-free privacy-input classifier failure reason codes and runtime-safe details.
-- PR #272 added conservative provider-prefix handling to the privacy-input runtime so known provider-prefix candidates cannot pass through to model context as `not_secret` because of fake/test/example wording, while the primitive `classify` callback result remains caller-owned policy.
+- PR #272 added conservative provider-prefix handling so known provider-prefix candidates cannot pass through to model context as `not_secret` because of fake/test/example wording; `classify` keeps this safe default and advanced callers can opt into `providerPrefixPolicy: "trust_callback"` when they intentionally own that risk.
 - PR #273 clarified vault `sensitiveType` versus `label`/`alias` semantics, made aliases caller-managed via `updateSensitive`, and narrowed `RedactVaultStore` to the `addEntries` capability used by `redact`.
 
 Post-hardening full regression passed: `.checks/regression.sh --tier=full`; log `/tmp/pristine-checks/sprint-30-31-final-full.log`.

@@ -97,7 +97,7 @@ export class PrivacyInputToolBoundaryController {
   private readonly policy: PrivacyInputToolRevealPolicyConfig;
   private readonly resolveUserId: () => Promise<string>;
   private readonly revealedByToolCallId = new Map<string, TrackedReveal>();
-  private readonly expiredRevealToolCallIds = new Set<string>();
+  private hasExpiredRevealWithoutResult = false;
 
   public constructor(config: {
     readonly resolveSensitive?: PrivacyInputResolveSensitiveLike;
@@ -136,7 +136,7 @@ export class PrivacyInputToolBoundaryController {
   ): Promise<PrivacyInputToolResultPatchLike | undefined> {
     const tracked = this.revealedByToolCallId.get(event.toolCallId);
     if (tracked === undefined) {
-      if (!this.expiredRevealToolCallIds.delete(event.toolCallId)) return undefined;
+      if (!this.hasExpiredRevealWithoutResult) return undefined;
       return {
         content: [{ type: 'text', text: EXPIRED_REVEAL_RESULT_MESSAGE }],
         details: undefined,
@@ -155,7 +155,7 @@ export class PrivacyInputToolBoundaryController {
   public close(): void {
     for (const tracked of this.revealedByToolCallId.values()) clearTimeout(tracked.timeout);
     this.revealedByToolCallId.clear();
-    this.expiredRevealToolCallIds.clear();
+    this.hasExpiredRevealWithoutResult = false;
   }
 
   private async revealAllowedFields(
@@ -255,13 +255,12 @@ export class PrivacyInputToolBoundaryController {
 
     const timeout = setTimeout(() => {
       this.revealedByToolCallId.delete(toolCallId);
-      this.expiredRevealToolCallIds.add(toolCallId);
+      this.hasExpiredRevealWithoutResult = true;
     }, REVEALED_TOOL_CALL_RETENTION_MS);
     if (typeof timeout === 'object' && timeout !== null && 'unref' in timeout) {
       const unref = timeout.unref;
       if (typeof unref === 'function') unref.call(timeout);
     }
-    this.expiredRevealToolCallIds.delete(toolCallId);
     this.revealedByToolCallId.set(toolCallId, { revealed, timeout });
   }
 }

@@ -302,6 +302,55 @@ describe('privacy-input Pi extension scaffold', () => {
     });
   });
 
+  it('returns a safe error if a revealed tool result arrives after reveal context expiry', async () => {
+    vi.useFakeTimers();
+    try {
+      const pi = new FakePi();
+      const secretRef = '66666666-6666-4666-8666-666666666666';
+      const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+      const secret = 'sk-proj-expired-reveal-secret-123456';
+      const runtime = new PrivacyInputRuntime({
+        ...createRuntimeConfig(),
+        resolveSensitive: vi.fn(async () => secret),
+        userId: 'tool-user',
+      });
+      registerPrivacyInputExtension(pi, () => runtime);
+      const toolCall: ToolCallEvent = {
+        toolCallId: 'tool-call-expired',
+        toolName: 'write',
+        input: { path: 'secret.txt', content: `token=${placeholder}` },
+      };
+
+      await expect(toolCallHandlerFrom(pi)(toolCall, {})).resolves.toBeUndefined();
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+
+      await expect(
+        toolResultHandlerFrom(pi)(
+          {
+            toolCallId: 'tool-call-expired',
+            toolName: 'write',
+            input: toolCall.input,
+            content: [{ type: 'text', text: `echoed ${secret}` }],
+            details: { echoed: secret },
+            isError: false,
+          },
+          {},
+        ),
+      ).resolves.toMatchObject({
+        content: [
+          {
+            type: 'text',
+            text: expect.stringContaining('reveal context expired'),
+          },
+        ],
+        details: undefined,
+        isError: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reveals edit newText while leaving non-allowlisted fields as placeholders', async () => {
     const pi = new FakePi();
     const secretRef = '22222222-2222-4222-8222-222222222222';

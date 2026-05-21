@@ -9,6 +9,9 @@ import type {
 } from './types.js';
 
 const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z0-9_]+):([0-9a-f-]+)\]/gu;
+const REVEALED_TOOL_CALL_RETENTION_MS = 5 * 60 * 1000;
+const EXPIRED_REVEAL_RESULT_MESSAGE =
+  'Pristine scrubbed this tool result because its reveal context expired before result handling.';
 
 class PrivacyInputToolBoundaryError extends Error {
   public constructor(message: string) {
@@ -30,6 +33,11 @@ interface RevealedPlaceholder {
 interface RevealedString {
   readonly text: string;
   readonly revealed: readonly RevealedPlaceholder[];
+}
+
+interface TrackedReveal {
+  readonly revealed: readonly RevealedPlaceholder[];
+  readonly timeout: ReturnType<typeof setTimeout>;
 }
 
 const collectPlaceholdersFromText = (text: string): readonly SensitivePlaceholderMatch[] => {
@@ -88,7 +96,8 @@ export class PrivacyInputToolBoundaryController {
   private readonly resolveSensitive: PrivacyInputResolveSensitiveLike | undefined;
   private readonly policy: PrivacyInputToolRevealPolicyConfig;
   private readonly resolveUserId: () => Promise<string>;
-  private readonly revealedByToolCallId = new Map<string, readonly RevealedPlaceholder[]>();
+  private readonly revealedByToolCallId = new Map<string, TrackedReveal>();
+  private readonly expiredRevealToolCallIds = new Set<string>();
 
   public constructor(config: {
     readonly resolveSensitive?: PrivacyInputResolveSensitiveLike;
@@ -110,7 +119,7 @@ export class PrivacyInputToolBoundaryController {
     try {
       const revealed = await this.revealAllowedFields(event);
       if (revealed.length > 0) {
-        this.revealedByToolCallId.set(event.toolCallId, revealed);
+        this.trackRevealed(event.toolCallId, revealed);
       }
       return undefined;
     } catch (error: unknown) {
@@ -125,18 +134,28 @@ export class PrivacyInputToolBoundaryController {
   public async handleToolResult(
     event: PrivacyInputToolResultEventLike,
   ): Promise<PrivacyInputToolResultPatchLike | undefined> {
-    const revealed = this.revealedByToolCallId.get(event.toolCallId);
-    this.revealedByToolCallId.delete(event.toolCallId);
-    if (revealed === undefined || revealed.length === 0) return undefined;
+    const tracked = this.revealedByToolCallId.get(event.toolCallId);
+    if (tracked === undefined) {
+      if (!this.expiredRevealToolCallIds.delete(event.toolCallId)) return undefined;
+      return {
+        content: [{ type: 'text', text: EXPIRED_REVEAL_RESULT_MESSAGE }],
+        details: undefined,
+        isError: true,
+      };
+    }
 
+    clearTimeout(tracked.timeout);
+    this.revealedByToolCallId.delete(event.toolCallId);
     return {
-      content: scrubContent(event.content, revealed),
-      details: scrubUnknown(event.details, revealed),
+      content: scrubContent(event.content, tracked.revealed),
+      details: scrubUnknown(event.details, tracked.revealed),
     };
   }
 
   public close(): void {
+    for (const tracked of this.revealedByToolCallId.values()) clearTimeout(tracked.timeout);
     this.revealedByToolCallId.clear();
+    this.expiredRevealToolCallIds.clear();
   }
 
   private async revealAllowedFields(
@@ -225,5 +244,24 @@ export class PrivacyInputToolBoundaryController {
     }
 
     return { text: revealedText, revealed };
+  }
+
+  private trackRevealed(
+    toolCallId: string,
+    revealed: readonly RevealedPlaceholder[],
+  ): void {
+    const existing = this.revealedByToolCallId.get(toolCallId);
+    if (existing !== undefined) clearTimeout(existing.timeout);
+
+    const timeout = setTimeout(() => {
+      this.revealedByToolCallId.delete(toolCallId);
+      this.expiredRevealToolCallIds.add(toolCallId);
+    }, REVEALED_TOOL_CALL_RETENTION_MS);
+    if (typeof timeout === 'object' && timeout !== null && 'unref' in timeout) {
+      const unref = timeout.unref;
+      if (typeof unref === 'function') unref.call(timeout);
+    }
+    this.expiredRevealToolCallIds.delete(toolCallId);
+    this.revealedByToolCallId.set(toolCallId, { revealed, timeout });
   }
 }

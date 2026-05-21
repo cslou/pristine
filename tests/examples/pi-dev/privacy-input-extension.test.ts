@@ -29,7 +29,11 @@ type ToolCallEvent = {
 };
 
 type ToolResultEvent = ToolCallEvent & {
-  readonly content: ReadonlyArray<{ readonly type: 'text'; readonly text: string }>;
+  readonly content: ReadonlyArray<{
+    readonly type: string;
+    readonly text?: string;
+    readonly [key: string]: unknown;
+  }>;
   readonly details?: unknown;
   readonly isError: boolean;
 };
@@ -257,7 +261,7 @@ describe('privacy-input Pi extension scaffold', () => {
   it('reveals write content for tool execution and scrubs the tool result', async () => {
     const pi = new FakePi();
     const secretRef = '11111111-1111-4111-8111-111111111111';
-    const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+    const placeholder = `[SENSITIVE:oauth2_token:${secretRef}]`;
     const secret = 'sk-proj-tool-reveal-secret-123456';
     const runtime = new PrivacyInputRuntime({
       ...createRuntimeConfig(),
@@ -282,12 +286,18 @@ describe('privacy-input Pi extension scaffold', () => {
       toolCallId: 'tool-call-1',
       toolName: 'write',
       input: toolCall.input,
-      content: [{ type: 'text', text: `wrote token=${secret}` }],
+      content: [
+        { type: 'text', text: `wrote token=${secret}`, metadata: { preview: secret } },
+        { type: 'custom', payload: { echoed: secret } },
+      ],
       details: { preview: `token=${secret}` },
       isError: false,
     };
     await expect(toolResultHandlerFrom(pi)(toolResult, {})).resolves.toEqual({
-      content: [{ type: 'text', text: `wrote token=${placeholder}` }],
+      content: [
+        { type: 'text', text: `wrote token=${placeholder}`, metadata: { preview: placeholder } },
+        { type: 'custom', payload: { echoed: placeholder } },
+      ],
       details: { preview: `token=${placeholder}` },
     });
   });

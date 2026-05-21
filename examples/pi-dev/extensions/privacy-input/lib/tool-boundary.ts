@@ -8,7 +8,15 @@ import type {
   PrivacyInputToolRevealPolicyConfig,
 } from './types.js';
 
-const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z_]+):([0-9a-f-]+)\]/gu;
+const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z0-9_]+):([0-9a-f-]+)\]/gu;
+const MAX_TRACKED_TOOL_CALLS = 100;
+
+class PrivacyInputToolBoundaryError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'PrivacyInputToolBoundaryError';
+  }
+}
 
 interface SensitivePlaceholderMatch {
   readonly placeholder: string;
@@ -47,17 +55,6 @@ export const containsSensitivePlaceholder = (value: unknown): boolean => {
 
 const replaceAllLiteral = (text: string, from: string, to: string): string => text.split(from).join(to);
 
-const mergeRevealed = (
-  left: readonly RevealedPlaceholder[],
-  right: readonly RevealedPlaceholder[],
-): readonly RevealedPlaceholder[] => {
-  const byPlaceholderAndValue = new Map<string, RevealedPlaceholder>();
-  for (const entry of [...left, ...right]) {
-    byPlaceholderAndValue.set(`${entry.placeholder}\u0000${entry.value}`, entry);
-  }
-  return [...byPlaceholderAndValue.values()];
-};
-
 const scrubString = (text: string, revealed: readonly RevealedPlaceholder[]): string => {
   const byValue = new Map<string, string>();
   for (const entry of revealed) {
@@ -86,10 +83,7 @@ const scrubContent = (
   content: readonly PrivacyInputToolContentLike[],
   revealed: readonly RevealedPlaceholder[],
 ): readonly PrivacyInputToolContentLike[] =>
-  content.map((entry) => {
-    if (entry.type !== 'text' || typeof entry.text !== 'string') return entry;
-    return { ...entry, text: scrubString(entry.text, revealed) };
-  });
+  content.map((entry) => scrubUnknown(entry, revealed) as PrivacyInputToolContentLike);
 
 export class PrivacyInputToolBoundaryController {
   private readonly resolveSensitive: PrivacyInputResolveSensitiveLike | undefined;
@@ -105,7 +99,6 @@ export class PrivacyInputToolBoundaryController {
     this.resolveSensitive = config.resolveSensitive;
     this.policy = {
       enabled: config.policy?.enabled ?? true,
-      revealBashCommand: config.policy?.revealBashCommand ?? false,
     };
     this.resolveUserId = config.resolveUserId;
   }
@@ -118,7 +111,7 @@ export class PrivacyInputToolBoundaryController {
     try {
       const revealed = await this.revealAllowedFields(event);
       if (revealed.length > 0) {
-        this.revealedByToolCallId.set(event.toolCallId, revealed);
+        this.rememberRevealed(event.toolCallId, revealed);
       }
       return undefined;
     } catch (error: unknown) {
@@ -158,10 +151,6 @@ export class PrivacyInputToolBoundaryController {
       return this.revealEditNewText(event.input);
     }
 
-    if (event.toolName === 'bash' && this.policy.revealBashCommand === true) {
-      return this.revealStringField(event.input, 'command');
-    }
-
     return [];
   }
 
@@ -183,7 +172,7 @@ export class PrivacyInputToolBoundaryController {
     if (!Array.isArray(edits)) return [];
 
     const replacements: Array<{ readonly edit: Record<string, unknown>; readonly text: string }> = [];
-    let revealedValues: readonly RevealedPlaceholder[] = [];
+    const revealedByPlaceholderAndValue = new Map<string, RevealedPlaceholder>();
 
     for (const edit of edits) {
       if (typeof edit !== 'object' || edit === null || Array.isArray(edit)) continue;
@@ -192,41 +181,62 @@ export class PrivacyInputToolBoundaryController {
       const revealed = await this.revealString(editable.newText);
       if (revealed.revealed.length === 0) continue;
       replacements.push({ edit: editable, text: revealed.text });
-      revealedValues = mergeRevealed(revealedValues, revealed.revealed);
+      for (const entry of revealed.revealed) {
+        revealedByPlaceholderAndValue.set(`${entry.placeholder}\u0000${entry.value}`, entry);
+      }
     }
 
     for (const replacement of replacements) {
       replacement.edit.newText = replacement.text;
     }
-    return revealedValues;
+    return [...revealedByPlaceholderAndValue.values()];
   }
 
   private async revealString(text: string): Promise<RevealedString> {
     const matches = collectPlaceholdersFromText(text);
     if (matches.length === 0) return { text, revealed: [] };
     if (this.resolveSensitive === undefined) {
-      throw new Error('sensitive resolver is not configured');
+      throw new PrivacyInputToolBoundaryError('sensitive resolver is not configured');
     }
 
     const userId = await this.resolveUserId();
     let revealedText = text;
-    const revealed: RevealedPlaceholder[] = [];
-    const valuesByPlaceholder = new Map<string, string>();
+    const uniqueMatchesByPlaceholder = new Map<string, SensitivePlaceholderMatch>();
+    for (const match of matches) uniqueMatchesByPlaceholder.set(match.placeholder, match);
 
-    for (const match of matches) {
-      if (valuesByPlaceholder.has(match.placeholder)) continue;
-      const value = await this.resolveSensitive(match.sensitiveRef, userId);
-      if (typeof value !== 'string' || value.length === 0) {
-        throw new Error('sensitive resolver returned an invalid value');
-      }
-      valuesByPlaceholder.set(match.placeholder, value);
-      revealed.push({ placeholder: match.placeholder, value });
-    }
+    const resolved = await Promise.all(
+      [...uniqueMatchesByPlaceholder.values()].map(async (match) => {
+        const value = await this.resolveSensitive?.(match.sensitiveRef, userId);
+        if (typeof value !== 'string' || value.length === 0) {
+          throw new PrivacyInputToolBoundaryError('sensitive resolver returned an invalid value');
+        }
+        return { placeholder: match.placeholder, value };
+      }),
+    );
+    const valuesByPlaceholder = new Map(
+      resolved.map((entry) => [entry.placeholder, entry.value] as const),
+    );
+    const revealed = resolved.map((entry) => ({
+      placeholder: entry.placeholder,
+      value: entry.value,
+    }));
 
     for (const [placeholder, value] of valuesByPlaceholder.entries()) {
       revealedText = replaceAllLiteral(revealedText, placeholder, value);
     }
 
     return { text: revealedText, revealed };
+  }
+
+  private rememberRevealed(
+    toolCallId: string,
+    revealed: readonly RevealedPlaceholder[],
+  ): void {
+    this.revealedByToolCallId.set(toolCallId, revealed);
+    while (this.revealedByToolCallId.size > MAX_TRACKED_TOOL_CALLS) {
+      const oldestToolCallId = this.revealedByToolCallId.keys().next().value;
+      if (typeof oldestToolCallId !== 'string') return;
+      this.revealedByToolCallId.delete(oldestToolCallId);
+    }
   }
 }

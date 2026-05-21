@@ -146,7 +146,7 @@ Policy modes:
 - `uncertainPolicy: "redact"` stores/redacts uncertain candidates using detector `hint.suggestedType` or a fallback type.
 - `uncertainPolicy: "allow"` is an explicit unsafe opt-in; uncertain raw input can continue to model/session history and is excluded from the default no-raw-secret guarantee.
 
-Execution-boundary reveal is intentionally narrow. By default it applies to `write.content` and `edit.edits[].newText`; non-allowlisted fields remain placeholders. `bash.command` reveal is disabled by default because shell commands can stream or exfiltrate secrets. If a placeholder cannot be resolved locally, the tool call fails closed before execution. Tool results after a revealed call are scrubbed before returning to model/session context.
+Execution-boundary reveal is intentionally narrow. It applies to `write.content` and `edit.edits[].newText`; non-allowlisted fields remain placeholders. This reference does not reveal `bash.command` because shell commands can stream or exfiltrate secrets. If a placeholder cannot be resolved locally, the tool call fails closed before execution. Tool results after a revealed call are scrubbed before returning to model/session context.
 
 ### Privacy-input smoke check
 

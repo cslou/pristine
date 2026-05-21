@@ -69,13 +69,13 @@ Raw-value slicing and vault storage happen locally in `redact`. `sensitiveType` 
 
 ## Tool execution-boundary reveal
 
-When configured with `resolveSensitive`, the runtime reveals `[SENSITIVE:<type>:<ref>]` placeholders only inside allowlisted local tool fields immediately before tool execution. The default allowlist covers `write.content` and `edit.edits[].newText`; other fields stay as placeholders. `bash.command` reveal is disabled by default because shell commands can echo secrets through streaming output and can send data to arbitrary processes. If a placeholder in an allowlisted field cannot be resolved locally, the tool call fails closed before execution.
+When configured with `resolveSensitive`, the runtime reveals `[SENSITIVE:<type>:<ref>]` placeholders only inside allowlisted local tool fields immediately before tool execution. The default allowlist covers `write.content` and `edit.edits[].newText`; other fields stay as placeholders. This reference does not reveal `bash.command` because shell commands can echo secrets through streaming output and can send data to arbitrary processes. If a placeholder in an allowlisted field cannot be resolved locally, the tool call fails closed before execution.
 
 After a tool call receives a revealed value, the matching `tool_result` hook scrubs that raw value from text content and structured details before the result returns to model/session context. This is a return-path safety net for diffs, previews, and command/tool messages that might echo the secret.
 
 ## v1 limitations
 
-This reference protects user input plus selected local tool execution boundaries. It does not reveal placeholders for arbitrary custom tools, does not reveal remote/network tool calls, and does not scrub streaming partial tool updates before the final `tool_result` hook. Future tool-specific policies should be added deliberately with dedicated verification.
+This reference protects user input plus selected local tool execution boundaries. It does not reveal placeholders for shell commands, arbitrary custom tools, or remote/network tool calls, and it does not scrub streaming partial tool updates before the final `tool_result` hook. Future tool-specific policies should be added deliberately with dedicated verification.
 
 ## Smoke checks
 

@@ -168,7 +168,6 @@ export interface PrivacyInputToolResultPatchLike {
 
 export interface PrivacyInputToolRevealPolicyConfig {
   readonly enabled?: boolean;
-  readonly revealBashCommand?: boolean;
 }
 
 export interface PrivacyInputNotificationSink {

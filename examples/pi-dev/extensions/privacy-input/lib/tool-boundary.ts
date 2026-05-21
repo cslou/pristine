@@ -9,7 +9,6 @@ import type {
 } from './types.js';
 
 const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z0-9_]+):([0-9a-f-]+)\]/gu;
-const MAX_TRACKED_TOOL_CALLS = 100;
 
 class PrivacyInputToolBoundaryError extends Error {
   public constructor(message: string) {
@@ -111,7 +110,7 @@ export class PrivacyInputToolBoundaryController {
     try {
       const revealed = await this.revealAllowedFields(event);
       if (revealed.length > 0) {
-        this.rememberRevealed(event.toolCallId, revealed);
+        this.revealedByToolCallId.set(event.toolCallId, revealed);
       }
       return undefined;
     } catch (error: unknown) {
@@ -226,17 +225,5 @@ export class PrivacyInputToolBoundaryController {
     }
 
     return { text: revealedText, revealed };
-  }
-
-  private rememberRevealed(
-    toolCallId: string,
-    revealed: readonly RevealedPlaceholder[],
-  ): void {
-    this.revealedByToolCallId.set(toolCallId, revealed);
-    while (this.revealedByToolCallId.size > MAX_TRACKED_TOOL_CALLS) {
-      const oldestToolCallId = this.revealedByToolCallId.keys().next().value;
-      if (typeof oldestToolCallId !== 'string') return;
-      this.revealedByToolCallId.delete(oldestToolCallId);
-    }
   }
 }

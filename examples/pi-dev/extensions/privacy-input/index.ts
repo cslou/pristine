@@ -3,7 +3,10 @@ import {
   type PrivacyInputEventLike,
   type PrivacyInputRuntimeConfig,
   type PrivacyInputRuntimeLike,
+  type PrivacyInputToolCallEventLike,
+  type PrivacyInputToolResultEventLike,
 } from './lib/runtime.js';
+import { containsSensitivePlaceholder } from './lib/tool-boundary.js';
 
 interface PiInputContextLike {
   readonly ui?: {
@@ -13,16 +16,32 @@ interface PiInputContextLike {
 
 interface PiExtensionApiLike {
   on(
-    event: 'input' | 'session_shutdown',
+    event: 'input' | 'session_shutdown' | 'tool_call' | 'tool_result',
     handler: (event: unknown, ctx: unknown) => Promise<unknown> | unknown,
   ): void;
 }
 
+const isRecordLike = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null;
+
 const isInputEventLike = (event: unknown): event is PrivacyInputEventLike =>
-  typeof event === 'object' &&
-  event !== null &&
-  'text' in event &&
-  typeof (event as { readonly text?: unknown }).text === 'string';
+  isRecordLike(event) && 'text' in event && typeof event.text === 'string';
+
+const isToolCallEventLike = (event: unknown): event is PrivacyInputToolCallEventLike =>
+  isRecordLike(event) &&
+  typeof event.toolCallId === 'string' &&
+  typeof event.toolName === 'string' &&
+  isRecordLike(event.input) &&
+  !Array.isArray(event.input);
+
+const isToolResultEventLike = (event: unknown): event is PrivacyInputToolResultEventLike =>
+  isRecordLike(event) &&
+  typeof event.toolCallId === 'string' &&
+  typeof event.toolName === 'string' &&
+  isRecordLike(event.input) &&
+  !Array.isArray(event.input) &&
+  Array.isArray(event.content) &&
+  typeof event.isError === 'boolean';
 
 const notifyInitFailure = (ctx: unknown, error: unknown): void => {
   void error;
@@ -72,6 +91,26 @@ export const registerPrivacyInputExtension = (
     const activeRuntime = await getRuntime(ctx);
     if (activeRuntime === null) return { action: 'handled' };
     return activeRuntime.handleInput(event);
+  });
+
+  pi.on('tool_call', async (event, ctx) => {
+    if (!isToolCallEventLike(event)) return undefined;
+    const activeRuntime = await getRuntime(ctx);
+    if (activeRuntime === null) {
+      if (!containsSensitivePlaceholder(event.input)) return undefined;
+      return {
+        block: true,
+        reason: 'Pristine blocked this tool call because privacy runtime initialization failed.',
+      };
+    }
+    return activeRuntime.handleToolCall?.(event);
+  });
+
+  pi.on('tool_result', async (event, ctx) => {
+    if (!isToolResultEventLike(event)) return undefined;
+    const activeRuntime = await getRuntime(ctx);
+    if (activeRuntime === null) return undefined;
+    return activeRuntime.handleToolResult?.(event);
   });
 
   pi.on('session_shutdown', () => {

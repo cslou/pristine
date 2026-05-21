@@ -14,7 +14,7 @@ Pi artifacts are grouped by the runtime shape users install: extensions live und
 | ------------------------------------------------ | ------------------------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `examples/pi-dev/extensions/jsonl-index/`        | `.pi/extensions/jsonl-index/`        | Pi extension               | Ingestion/indexing: parses the active Pi JSONL session and writes snippets, vectors, and source pointers.       |
 | `examples/pi-dev/extensions/search-memory/`      | `.pi/extensions/search-memory/`      | Pi extension / custom tool | Registers `pristine_recall` for semantic vector search over indexed Pi snippets.                                |
-| `examples/pi-dev/extensions/privacy-input/`      | `.pi/extensions/privacy-input/`      | Pi input extension         | Input-only privacy reference: detects/classifies/redacts user-pasted secrets before model context.              |
+| `examples/pi-dev/extensions/privacy-input/`      | `.pi/extensions/privacy-input/`      | Pi input/tool extension    | Privacy reference: detects/classifies/redacts user input, reveals allowlisted placeholders for local tools, and scrubs tool results. |
 | `examples/pi-dev/skills/search-session-history/` | `.pi/skills/search-session-history/` | Pi skill                   | User-facing skill for memory/history questions; uses vector search when needed, then directed JSONL inspection. |
 | `examples/pi-dev/shared/`                        | `.pi/shared/`                        | Shared helper code         | Imported by memory extensions. It is not loaded directly by Pi and has no user-facing tool.                     |
 
@@ -91,7 +91,7 @@ npm install --omit=dev
 # npm install --omit=dev /path/to/pristine
 ```
 
-Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). Local-first deployments should use a local/fake/manual classifier callback. For real classifier smoke with an explicit non-local/provider-backed Pi model opt-in, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport sends sanitized classifier context to Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
+Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, `resolveSensitive`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). Local-first deployments should use a local/fake/manual classifier callback. For real classifier smoke with an explicit non-local/provider-backed Pi model opt-in, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport sends sanitized classifier context to Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
 
 ## Embedding model and Nomic warmup
 
@@ -113,10 +113,12 @@ Pass condition: Pi starts, loads the extensions/skill, and returns `OK` without 
 
 ## Privacy input reference
 
-The `privacy-input` extension is an input-only v1 reference. It runs before skill/template expansion and composes:
+The `privacy-input` extension is a v1 privacy reference. It runs before skill/template expansion for user input and at the local tool execution boundary for selected tool fields:
 
 ```text
 input hook → detect(text) → classify(text, candidates, classifierCallback) → policy → redact(text, confirmed, userId)
+tool_call hook → reveal placeholders only in allowlisted local tool fields
+tool_result hook → scrub revealed raw values from model/session-facing results
 ```
 
 Classifier prompts/tasks receive sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata only. They must never receive raw candidates, raw prefixes/suffixes, decoded JWT payload values, URL passwords, query secret values, seed phrase words, vault refs, or reveal data.
@@ -144,7 +146,7 @@ Policy modes:
 - `uncertainPolicy: "redact"` stores/redacts uncertain candidates using detector `hint.suggestedType` or a fallback type.
 - `uncertainPolicy: "allow"` is an explicit unsafe opt-in; uncertain raw input can continue to model/session history and is excluded from the default no-raw-secret guarantee.
 
-The reference is limited to user input. Future tool-call reveal and future tool-result scrub hooks are intentionally not implemented in this v1.
+Execution-boundary reveal is intentionally narrow. It applies to `write.content` and `edit.edits[].newText`; non-allowlisted fields remain placeholders. This reference does not reveal `bash.command` because shell commands can stream or exfiltrate secrets. If a placeholder cannot be resolved locally, the tool call fails closed before execution. Tool results after a revealed call are scrubbed before returning to model/session context.
 
 ### Privacy-input smoke check
 

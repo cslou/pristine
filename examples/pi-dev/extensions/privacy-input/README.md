@@ -1,6 +1,6 @@
 # Pristine Pi Privacy Input Reference
 
-Reference Pi extension for user-input privacy protection. The extension registers a Pi `input` handler and delegates behavior to a testable runtime so hosts can inject their own detector, classifier callback, redactor, policy, user ID, and notification lifecycle.
+Reference Pi extension for user-input privacy protection and local tool execution-boundary reveal. The extension registers Pi `input`, `tool_call`, and `tool_result` handlers and delegates behavior to a testable runtime so hosts can inject their own detector, classifier callback, redactor, resolver, policy, user ID, and notification lifecycle.
 
 ## Runtime dependencies
 
@@ -10,7 +10,8 @@ The runtime is intentionally host-wired. Provide:
 - `classify(text, candidates, classifierCallback)` from `@pristine/sdk`.
 - `classifierCallback`, preferably a local/fake/manual callback for local-first deployments. The reference adapter from `lib/classifier-adapter.ts` can also be paired with the Pi model transport from `lib/pi-model-classifier-transport.ts` when you explicitly opt into sending sanitized classifier context to the configured Pi model provider.
 - `redact(text, confirmed, userId)`, usually `Pristine.redact` from a configured local client.
-- `userId`, policy, optional `classifierTimeoutMs`, and optional notifications.
+- `resolveSensitive(sensitiveRef, userId)`, usually `Pristine.resolveSensitive`, for execution-boundary reveal of placeholders in allowlisted local tool fields.
+- `userId`, policy, optional `classifierTimeoutMs`, optional `toolReveal`, and optional notifications.
 
 `package.json` intentionally installs only the Pi model transport dependency required by this reference extension. If your wrapper imports `@pristine/sdk` from inside the copied extension directory, install the SDK beside the wrapper too (for local checkout smoke: `npm install --omit=dev /path/to/pristine`; for a published SDK: `npm install --omit=dev @pristine/sdk`). Hosts may also inject compatible detector/classifier/redactor functions without installing the SDK in the extension package.
 
@@ -45,6 +46,7 @@ export default function privacyInput(pi) {
         }),
       ),
       redact: (text, confirmed, userId) => client.redact(text, confirmed, userId),
+      resolveSensitive: (sensitiveRef, userId) => client.resolveSensitive(userId, sensitiveRef),
       userId: 'local-pi-user',
       policy: { uncertainPolicy: 'block' },
       notifications: ctx.ui,
@@ -65,9 +67,15 @@ Classifier timeout, thrown errors, malformed responses, unknown candidate IDs, a
 
 Raw-value slicing and vault storage happen locally in `redact`. `sensitiveType` remains the canonical machine type such as `api_key`; classifier labels are visible metadata on redaction results, and caller-managed aliases live in vault metadata after `updateSensitive`. Caller-managed aliases must never contain plaintext secrets. For display, prefer `alias ?? label` without overwriting the canonical machine type.
 
+## Tool execution-boundary reveal
+
+When configured with `resolveSensitive`, the runtime reveals `[SENSITIVE:<type>:<ref>]` placeholders only inside allowlisted local tool fields immediately before tool execution. The default allowlist covers `write.content` and `edit.edits[].newText`; other fields stay as placeholders. `bash.command` reveal is disabled by default because shell commands can echo secrets through streaming output and can send data to arbitrary processes. If a placeholder in an allowlisted field cannot be resolved locally, the tool call fails closed before execution.
+
+After a tool call receives a revealed value, the matching `tool_result` hook scrubs that raw value from text content and structured details before the result returns to model/session context. This is a return-path safety net for diffs, previews, and command/tool messages that might echo the secret.
+
 ## v1 limitations
 
-This reference is input-only: it does not reveal secrets for tool calls and does not scrub tool results. Future tool-call reveal and future tool-result scrub hooks need dedicated implementation and verification.
+This reference protects user input plus selected local tool execution boundaries. It does not reveal placeholders for arbitrary custom tools, does not reveal remote/network tool calls, and does not scrub streaming partial tool updates before the final `tool_result` hook. Future tool-specific policies should be added deliberately with dedicated verification.
 
 ## Smoke checks
 

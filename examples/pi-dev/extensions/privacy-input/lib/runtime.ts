@@ -2,6 +2,7 @@ import {
   classifierFailureDetailFromError,
   PrivacyInputClassifierError,
 } from './classifier-diagnostics.js';
+import { PrivacyInputToolBoundaryController } from './tool-boundary.js';
 
 import type {
   PrivacyInputAction,
@@ -24,6 +25,10 @@ import type {
   PrivacyInputRuntimeLike,
   PrivacyInputSafeDetails,
   PrivacyInputSpanLike,
+  PrivacyInputToolCallEventLike,
+  PrivacyInputToolCallResultLike,
+  PrivacyInputToolResultEventLike,
+  PrivacyInputToolResultPatchLike,
 } from './types.js';
 
 export type {
@@ -47,12 +52,19 @@ export type {
   PrivacyInputRedactLike,
   PrivacyInputRedactResultLike,
   PrivacyInputRedactionLike,
+  PrivacyInputResolveSensitiveLike,
   PrivacyInputRuntimeConfig,
   PrivacyInputRuntimeLike,
   PrivacyInputSafeDecisionDetail,
   PrivacyInputSafeDetails,
   PrivacyInputSafeRedactionDetail,
   PrivacyInputSpanLike,
+  PrivacyInputToolCallEventLike,
+  PrivacyInputToolCallResultLike,
+  PrivacyInputToolContentLike,
+  PrivacyInputToolResultEventLike,
+  PrivacyInputToolResultPatchLike,
+  PrivacyInputToolRevealPolicyConfig,
 } from './types.js';
 
 const resolveUserId = async (userId: PrivacyInputRuntimeConfig['userId']): Promise<string> =>
@@ -288,6 +300,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
   private readonly userId: PrivacyInputRuntimeConfig['userId'];
   private readonly notifications?: PrivacyInputNotificationSink;
   private readonly classifierTimeoutMs: number | undefined;
+  private readonly toolBoundary: PrivacyInputToolBoundaryController;
 
   public constructor(config: PrivacyInputRuntimeConfig) {
     this.detect = config.detect;
@@ -298,6 +311,11 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     this.userId = config.userId;
     this.notifications = config.notifications;
     this.classifierTimeoutMs = config.classifierTimeoutMs;
+    this.toolBoundary = new PrivacyInputToolBoundaryController({
+      resolveSensitive: config.resolveSensitive,
+      policy: config.toolReveal,
+      resolveUserId: () => resolveUserId(this.userId),
+    });
   }
 
   public async handleInput(event: PrivacyInputEventLike): Promise<PrivacyInputAction> {
@@ -423,7 +441,20 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     return { action: 'transform', text: redacted.text, details };
   }
 
+  public async handleToolCall(
+    event: PrivacyInputToolCallEventLike,
+  ): Promise<PrivacyInputToolCallResultLike | undefined> {
+    return this.toolBoundary.handleToolCall(event);
+  }
+
+  public async handleToolResult(
+    event: PrivacyInputToolResultEventLike,
+  ): Promise<PrivacyInputToolResultPatchLike | undefined> {
+    return this.toolBoundary.handleToolResult(event);
+  }
+
   public close(): void {
+    this.toolBoundary.close();
     // Runtime dependencies are injected and owned by the host.
   }
 }

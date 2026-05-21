@@ -119,6 +119,58 @@ export type PrivacyInputRedactLike = (
   userId: string,
 ) => Promise<PrivacyInputRedactResultLike>;
 
+export type PrivacyInputResolveSensitiveLike = (
+  sensitiveRef: string,
+  userId: string,
+) => string | Promise<string>;
+
+export interface PrivacyInputTextContentLike {
+  readonly type: 'text';
+  readonly text: string;
+  readonly [key: string]: unknown;
+}
+
+export interface PrivacyInputImageContentLike {
+  readonly type: 'image';
+  readonly [key: string]: unknown;
+}
+
+export type PrivacyInputToolContentLike =
+  | PrivacyInputTextContentLike
+  | PrivacyInputImageContentLike
+  | Readonly<Record<string, unknown>>;
+
+export interface PrivacyInputToolCallEventLike {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+}
+
+export interface PrivacyInputToolResultEventLike {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+  readonly content: readonly PrivacyInputToolContentLike[];
+  readonly details?: unknown;
+  readonly isError: boolean;
+}
+
+export interface PrivacyInputToolCallResultLike {
+  readonly block?: true;
+  readonly reason?: string;
+}
+
+export interface PrivacyInputToolResultPatchLike {
+  readonly content?: readonly PrivacyInputToolContentLike[];
+  readonly details?: unknown;
+  readonly isError?: boolean;
+}
+
+export interface PrivacyInputToolRevealPolicyConfig {
+  readonly enabled?: boolean;
+  readonly revealBashCommand?: boolean;
+}
+
 export interface PrivacyInputNotificationSink {
   notify(message: string, level?: 'info' | 'success' | 'warning' | 'error'): void;
 }
@@ -154,13 +206,19 @@ export interface PrivacyInputRuntimeConfig {
   readonly classify: PrivacyInputClassifyLike;
   readonly classifierCallback: PrivacyInputClassifierCallbackLike;
   readonly redact: PrivacyInputRedactLike;
+  readonly resolveSensitive?: PrivacyInputResolveSensitiveLike;
   readonly policy?: PrivacyInputPolicyConfig;
   readonly userId: string | (() => string | Promise<string>);
   readonly notifications?: PrivacyInputNotificationSink;
   readonly classifierTimeoutMs?: number;
+  readonly toolReveal?: PrivacyInputToolRevealPolicyConfig;
 }
 
 export interface PrivacyInputRuntimeLike {
   handleInput(event: PrivacyInputEventLike): Promise<PrivacyInputAction>;
+  handleToolCall?(event: PrivacyInputToolCallEventLike): Promise<PrivacyInputToolCallResultLike | undefined>;
+  handleToolResult?(
+    event: PrivacyInputToolResultEventLike,
+  ): Promise<PrivacyInputToolResultPatchLike | undefined>;
   close(): void;
 }

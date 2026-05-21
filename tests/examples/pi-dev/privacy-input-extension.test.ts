@@ -21,6 +21,18 @@ type RuntimeStub = {
   readonly handleInput: ReturnType<typeof vi.fn>;
   readonly close: ReturnType<typeof vi.fn>;
 };
+
+type ToolCallEvent = {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+};
+
+type ToolResultEvent = ToolCallEvent & {
+  readonly content: ReadonlyArray<{ readonly type: 'text'; readonly text: string }>;
+  readonly details?: unknown;
+  readonly isError: boolean;
+};
 type Deferred<T> = {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
@@ -48,7 +60,10 @@ const createRuntimeStub = (): RuntimeStub => ({
 class FakePi {
   public readonly handlers = new Map<string, Handler[]>();
 
-  public on(event: 'input' | 'session_shutdown', handler: Handler): void {
+  public on(
+    event: 'input' | 'session_shutdown' | 'tool_call' | 'tool_result',
+    handler: Handler,
+  ): void {
     const handlers = this.handlers.get(event) ?? [];
     handlers.push(handler);
     this.handlers.set(event, handlers);
@@ -79,6 +94,18 @@ const shutdownHandlerFrom = (pi: FakePi): Handler => {
   return handlers[0]!;
 };
 
+const toolCallHandlerFrom = (pi: FakePi): Handler => {
+  const handlers = pi.handlers.get('tool_call') ?? [];
+  expect(handlers).toHaveLength(1);
+  return handlers[0]!;
+};
+
+const toolResultHandlerFrom = (pi: FakePi): Handler => {
+  const handlers = pi.handlers.get('tool_result') ?? [];
+  expect(handlers).toHaveLength(1);
+  return handlers[0]!;
+};
+
 const createRuntime = () => {
   const detect = vi.fn(async () => ({ candidates: [] as PrivacyInputCandidateLike[] }));
   const classifyDependency = vi.fn(async () => ({
@@ -102,6 +129,18 @@ const createRuntime = () => {
   return { runtime, detect, classifyDependency, classifierCallback, redact, notifications };
 };
 
+const createRuntimeConfig = () => {
+  const { detect, classifyDependency, classifierCallback, redact, notifications } = createRuntime();
+  return {
+    detect,
+    classify: classifyDependency,
+    classifierCallback,
+    redact,
+    policy: { uncertainPolicy: 'block' as const },
+    notifications,
+  };
+};
+
 describe('privacy-input Pi extension scaffold', () => {
   it('registers exactly one input handler and delegates user input to the runtime', async () => {
     const pi = new FakePi();
@@ -112,6 +151,8 @@ describe('privacy-input Pi extension scaffold', () => {
     registerPrivacyInputExtension(pi, () => runtime);
 
     expect(pi.handlers.get('input')).toHaveLength(1);
+    expect(pi.handlers.get('tool_call')).toHaveLength(1);
+    expect(pi.handlers.get('tool_result')).toHaveLength(1);
     expect(pi.handlers.get('session_shutdown')).toHaveLength(1);
 
     await expect(
@@ -211,6 +252,137 @@ describe('privacy-input Pi extension scaffold', () => {
       inputHandlerFrom(pi)({ text: 'already transformed', source: 'extension' }, {}),
     ).resolves.toEqual({ action: 'continue' });
     expect(runtimeFactory).not.toHaveBeenCalled();
+  });
+
+  it('reveals write content for tool execution and scrubs the tool result', async () => {
+    const pi = new FakePi();
+    const secretRef = '11111111-1111-4111-8111-111111111111';
+    const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+    const secret = 'sk-proj-tool-reveal-secret-123456';
+    const runtime = new PrivacyInputRuntime({
+      ...createRuntimeConfig(),
+      resolveSensitive: vi.fn(async (sensitiveRef: string, userId: string) => {
+        expect(userId).toBe('tool-user');
+        expect(sensitiveRef).toBe(secretRef);
+        return secret;
+      }),
+      userId: 'tool-user',
+    });
+    registerPrivacyInputExtension(pi, () => runtime);
+    const toolCall: ToolCallEvent = {
+      toolCallId: 'tool-call-1',
+      toolName: 'write',
+      input: { path: 'secret.txt', content: `token=${placeholder}` },
+    };
+
+    await expect(toolCallHandlerFrom(pi)(toolCall, {})).resolves.toBeUndefined();
+    expect(toolCall.input.content).toBe(`token=${secret}`);
+
+    const toolResult: ToolResultEvent = {
+      toolCallId: 'tool-call-1',
+      toolName: 'write',
+      input: toolCall.input,
+      content: [{ type: 'text', text: `wrote token=${secret}` }],
+      details: { preview: `token=${secret}` },
+      isError: false,
+    };
+    await expect(toolResultHandlerFrom(pi)(toolResult, {})).resolves.toEqual({
+      content: [{ type: 'text', text: `wrote token=${placeholder}` }],
+      details: { preview: `token=${placeholder}` },
+    });
+  });
+
+  it('reveals edit newText while leaving non-allowlisted fields as placeholders', async () => {
+    const pi = new FakePi();
+    const secretRef = '22222222-2222-4222-8222-222222222222';
+    const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+    const secret = 'sk-proj-edit-reveal-secret-123456';
+    const resolveSensitive = vi.fn(async () => secret);
+    const runtime = new PrivacyInputRuntime({
+      ...createRuntimeConfig(),
+      resolveSensitive,
+      userId: 'tool-user',
+    });
+    registerPrivacyInputExtension(pi, () => runtime);
+    const toolCall: ToolCallEvent = {
+      toolCallId: 'tool-call-2',
+      toolName: 'edit',
+      input: {
+        path: placeholder,
+        edits: [{ oldText: placeholder, newText: `token=${placeholder}` }],
+      },
+    };
+
+    await expect(toolCallHandlerFrom(pi)(toolCall, {})).resolves.toBeUndefined();
+    expect(toolCall.input.path).toBe(placeholder);
+    expect(toolCall.input.edits).toEqual([{ oldText: placeholder, newText: `token=${secret}` }]);
+    expect(resolveSensitive).toHaveBeenCalledExactlyOnceWith(secretRef, 'tool-user');
+  });
+
+  it('fails closed when an allowlisted tool placeholder cannot be revealed', async () => {
+    const pi = new FakePi();
+    const secretRef = '33333333-3333-4333-8333-333333333333';
+    const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+    const runtime = new PrivacyInputRuntime({
+      ...createRuntimeConfig(),
+      resolveSensitive: vi.fn(async () => {
+        throw new Error('missing sensitive entry');
+      }),
+      userId: 'tool-user',
+    });
+    registerPrivacyInputExtension(pi, () => runtime);
+    const toolCall: ToolCallEvent = {
+      toolCallId: 'tool-call-3',
+      toolName: 'write',
+      input: { path: 'secret.txt', content: `token=${placeholder}` },
+    };
+
+    await expect(toolCallHandlerFrom(pi)(toolCall, {})).resolves.toMatchObject({
+      block: true,
+    });
+    expect(toolCall.input.content).toBe(`token=${placeholder}`);
+  });
+
+  it('does not reveal bash commands by default', async () => {
+    const pi = new FakePi();
+    const secretRef = '44444444-4444-4444-8444-444444444444';
+    const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+    const resolveSensitive = vi.fn(async () => 'sk-proj-bash-secret-123456');
+    const runtime = new PrivacyInputRuntime({
+      ...createRuntimeConfig(),
+      resolveSensitive,
+      userId: 'tool-user',
+    });
+    registerPrivacyInputExtension(pi, () => runtime);
+    const toolCall: ToolCallEvent = {
+      toolCallId: 'tool-call-4',
+      toolName: 'bash',
+      input: { command: `printf ${placeholder}` },
+    };
+
+    await expect(toolCallHandlerFrom(pi)(toolCall, {})).resolves.toBeUndefined();
+    expect(toolCall.input.command).toBe(`printf ${placeholder}`);
+    expect(resolveSensitive).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when runtime initialization fails before revealing a tool placeholder', async () => {
+    const pi = new FakePi();
+    const secretRef = '55555555-5555-4555-8555-555555555555';
+    const placeholder = `[SENSITIVE:api_key:${secretRef}]`;
+    registerPrivacyInputExtension(pi, () => {
+      throw new Error('missing runtime dependencies');
+    });
+
+    await expect(
+      toolCallHandlerFrom(pi)(
+        {
+          toolCallId: 'tool-call-5',
+          toolName: 'write',
+          input: { content: placeholder },
+        },
+        {},
+      ),
+    ).resolves.toMatchObject({ block: true });
   });
 
   it('fails closed when runtime initialization fails', async () => {

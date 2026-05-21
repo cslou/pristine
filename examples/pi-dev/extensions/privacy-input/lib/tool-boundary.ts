@@ -10,6 +10,7 @@ import type {
 
 const PLACEHOLDER_REGEX = /\[SENSITIVE:([a-z0-9_]+):([0-9a-f-]+)\]/gu;
 const REVEALED_TOOL_CALL_RETENTION_MS = 5 * 60 * 1000;
+const MAX_EXPIRED_REVEAL_TOOL_CALL_IDS = 1000;
 const EXPIRED_REVEAL_RESULT_MESSAGE =
   'Pristine scrubbed this tool result because its reveal context expired before result handling.';
 
@@ -97,7 +98,8 @@ export class PrivacyInputToolBoundaryController {
   private readonly policy: PrivacyInputToolRevealPolicyConfig;
   private readonly resolveUserId: () => Promise<string>;
   private readonly revealedByToolCallId = new Map<string, TrackedReveal>();
-  private hasExpiredRevealWithoutResult = false;
+  private readonly expiredRevealToolCallIds = new Set<string>();
+  private scrubAllUntrackedResults = false;
 
   public constructor(config: {
     readonly resolveSensitive?: PrivacyInputResolveSensitiveLike;
@@ -136,7 +138,9 @@ export class PrivacyInputToolBoundaryController {
   ): Promise<PrivacyInputToolResultPatchLike | undefined> {
     const tracked = this.revealedByToolCallId.get(event.toolCallId);
     if (tracked === undefined) {
-      if (!this.hasExpiredRevealWithoutResult) return undefined;
+      if (!this.scrubAllUntrackedResults && !this.expiredRevealToolCallIds.delete(event.toolCallId)) {
+        return undefined;
+      }
       return {
         content: [{ type: 'text', text: EXPIRED_REVEAL_RESULT_MESSAGE }],
         details: undefined,
@@ -155,7 +159,8 @@ export class PrivacyInputToolBoundaryController {
   public close(): void {
     for (const tracked of this.revealedByToolCallId.values()) clearTimeout(tracked.timeout);
     this.revealedByToolCallId.clear();
-    this.hasExpiredRevealWithoutResult = false;
+    this.expiredRevealToolCallIds.clear();
+    this.scrubAllUntrackedResults = false;
   }
 
   private async revealAllowedFields(
@@ -255,12 +260,22 @@ export class PrivacyInputToolBoundaryController {
 
     const timeout = setTimeout(() => {
       this.revealedByToolCallId.delete(toolCallId);
-      this.hasExpiredRevealWithoutResult = true;
+      this.rememberExpiredReveal(toolCallId);
     }, REVEALED_TOOL_CALL_RETENTION_MS);
     if (typeof timeout === 'object' && timeout !== null && 'unref' in timeout) {
       const unref = timeout.unref;
       if (typeof unref === 'function') unref.call(timeout);
     }
+    this.expiredRevealToolCallIds.delete(toolCallId);
     this.revealedByToolCallId.set(toolCallId, { revealed, timeout });
+  }
+
+  private rememberExpiredReveal(toolCallId: string): void {
+    if (this.scrubAllUntrackedResults) return;
+    this.expiredRevealToolCallIds.add(toolCallId);
+    if (this.expiredRevealToolCallIds.size > MAX_EXPIRED_REVEAL_TOOL_CALL_IDS) {
+      this.expiredRevealToolCallIds.clear();
+      this.scrubAllUntrackedResults = true;
+    }
   }
 }

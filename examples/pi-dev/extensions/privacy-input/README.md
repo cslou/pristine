@@ -61,7 +61,7 @@ Classifier prompts must never include raw candidates, raw prefixes/suffixes, dec
 
 `uncertainPolicy` defaults to `block`, which stops a turn before model context when the classifier cannot decide whether a candidate is safe. `uncertainPolicy: "redact"` stores/redacts uncertain candidates using detector hints or a fallback type. `uncertainPolicy: "allow"` is an explicit unsafe opt-in: uncertain raw input can continue to model/session history, so it is excluded from the default no-raw-secret guarantee.
 
-Classifier timeout, thrown errors, malformed responses, unknown candidate IDs, and duplicate candidate IDs return `{ action: "handled" }` with one raw-value-free notification.
+Classifier timeout, thrown errors, malformed responses, unknown candidate IDs, and duplicate candidate IDs return `{ action: "handled" }` with one raw-value-free notification. When `notifications.setStatus` is available, the runtime also shows generic TUI status text while scanning, classifying, and redacting input, then clears it on every completion path. Status text never includes raw candidate values.
 
 ## Local vault responsibilities
 

@@ -70,6 +70,8 @@ export type {
 const resolveUserId = async (userId: PrivacyInputRuntimeConfig['userId']): Promise<string> =>
   typeof userId === 'function' ? userId() : userId;
 
+const PRIVACY_STATUS_KEY = 'pristine-privacy-input';
+
 const SAFE_DETAIL_LABEL = /^[A-Za-z0-9 _./:-]{1,80}$/u;
 
 const safeDecisionLabel = (
@@ -321,6 +323,15 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
   public async handleInput(event: PrivacyInputEventLike): Promise<PrivacyInputAction> {
     if (event.source === 'extension') return { action: 'continue' };
 
+    this.setStatus('Pristine: scanning input…');
+    try {
+      return await this.handleInputWithStatus(event);
+    } finally {
+      this.setStatus(undefined);
+    }
+  }
+
+  private async handleInputWithStatus(event: PrivacyInputEventLike): Promise<PrivacyInputAction> {
     let detected: PrivacyInputDetectResultLike;
     try {
       const detectResult = await this.detect(event.text);
@@ -336,6 +347,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
     }
     if (detected.candidates.length === 0) return { action: 'continue' };
 
+    this.setStatus('Pristine: checking sensitive input…');
     let classified: PrivacyInputClassifyResultLike;
     try {
       const classifyPromise = this.classify(
@@ -417,6 +429,7 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       return { action: 'continue', details: detailsWithoutRedactions };
     }
 
+    this.setStatus('Pristine: redacting locally…');
     let redacted: PrivacyInputRedactResultLike;
     try {
       const userId = await resolveUserId(this.userId);
@@ -439,6 +452,10 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
       'success',
     );
     return { action: 'transform', text: redacted.text, details };
+  }
+
+  private setStatus(text: string | undefined): void {
+    this.notifications?.setStatus?.(PRIVACY_STATUS_KEY, text);
   }
 
   public async handleToolCall(

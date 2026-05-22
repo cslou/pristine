@@ -172,6 +172,7 @@ export interface PrivacyInputToolRevealPolicyConfig {
 
 export interface PrivacyInputNotificationSink {
   notify(message: string, level?: 'info' | 'success' | 'warning' | 'error'): void;
+  setStatus?(key: string, text: string | undefined): void;
 }
 
 export interface PrivacyInputPolicyConfig {

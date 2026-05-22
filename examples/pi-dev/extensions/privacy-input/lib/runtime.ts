@@ -455,7 +455,11 @@ export class PrivacyInputRuntime implements PrivacyInputRuntimeLike {
   }
 
   private setStatus(text: string | undefined): void {
-    this.notifications?.setStatus?.(PRIVACY_STATUS_KEY, text);
+    try {
+      this.notifications?.setStatus?.(PRIVACY_STATUS_KEY, text);
+    } catch (error: unknown) {
+      void error;
+    }
   }
 
   public async handleToolCall(

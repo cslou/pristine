@@ -10,15 +10,17 @@ import { Pristine } from '@pristine/sdk';
 const pristine = await Pristine.create();
 ```
 
-The default setup initializes local paths for database and keys.
+The default setup initializes local storage automatically. On macOS, RSA private keys default to the login Keychain. On other platforms, Pristine defaults to local key files under the standard data directory.
 
 ## Local paths
 
-Use `baseDir` or `keysDir` when your application needs explicit storage locations. Keep those paths on the local device when preserving the default privacy model matters; see [Privacy](/privacy) for local database, key backup, and network wrapper responsibilities.
+Use `baseDir` or `keysDir` when your application needs explicit storage locations. Supplying `keysDir` forces filesystem-backed key storage even on macOS; otherwise, the default macOS path uses Keychain instead of plaintext private-key files. Keep those paths on the local device when preserving the default privacy model matters; see [Privacy](/privacy) for local database, key backup, and network wrapper responsibilities.
 
-## Injected database or embedder
+## Injected database, embedder, or key manager
 
-Advanced applications and tests can inject a `better-sqlite3` database or a custom embedder. If you inject an embedder, its vector dimension must match the vector storage initialized for the database.
+Advanced applications and tests can inject a `better-sqlite3` database, a custom embedder, or a custom `keyManager`. If you inject an embedder, its vector dimension must match the vector storage initialized for the database. If you inject a key manager, it becomes the root of local privacy key access used by `redact`, `reveal`, and KEK rotation.
+
+For explicit macOS-specific key storage, pass `new MacOsKeychainKeyManager()` into `Pristine.create({ keyManager })`. This is also the default when running on macOS without an explicit `keysDir` override.
 
 ## Project IDs
 

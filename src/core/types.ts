@@ -46,6 +46,244 @@ export type SensitivitySource = 'deterministic';
 
 export type SensitivityType = string;
 
+/** UTF-16 half-open [start, end) offsets into a text string. */
+export interface TextSpan {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** UTF-16 half-open [start, end) offsets into the original source text. */
+export type SourceSpan = TextSpan;
+
+export interface SourceLocation {
+  readonly line: number;
+  readonly column: number;
+}
+
+export type SourceSurfaceMetadata = Readonly<Record<string, unknown>>;
+
+export interface SourceSurface {
+  readonly kind?: string;
+  readonly uri?: string;
+  readonly entryId?: string;
+  readonly parentId?: string;
+  readonly lineNumber?: number;
+  readonly metadata?: SourceSurfaceMetadata;
+}
+
+export type DetectSensitivityPreset = 'broad' | 'balanced' | 'strict';
+
+export type BuiltInDetectCandidateKind =
+  | 'private_key_block'
+  | 'key_value_assignment'
+  | 'auth_header'
+  | 'known_provider_prefix'
+  | 'structured_token'
+  | 'credential_url'
+  | 'cookie_or_session'
+  | 'signed_url_or_query_secret'
+  | 'cloud_credential_block'
+  | 'recovery_or_seed_phrase'
+  | 'opaque_generated_value';
+
+export type DetectCandidateKind = BuiltInDetectCandidateKind | string;
+
+export type PrivacyHintFeatureValue =
+  | string
+  | number
+  | boolean
+  | readonly string[]
+  | readonly number[]
+  | readonly boolean[];
+
+export type PrivacyHintFeatures = Readonly<Record<string, PrivacyHintFeatureValue>>;
+
+export interface DetectHint {
+  readonly suggestedType?: SensitivityType;
+  readonly provider?: string;
+  readonly prefixFamily?: string;
+  readonly nearbyName?: string;
+  readonly signals?: readonly string[];
+  readonly positiveSignals?: readonly string[];
+  readonly negativeSignals?: readonly string[];
+  readonly features?: PrivacyHintFeatures;
+}
+
+export interface DetectorRuleContext {
+  readonly sourceSurface?: SourceSurface;
+  readonly sensitivity?: DetectSensitivityPreset;
+}
+
+export interface DetectorRuleMatch {
+  readonly sourceSpan: SourceSpan;
+  readonly valueLength: number;
+  readonly location?: SourceLocation;
+  readonly hint?: DetectHint;
+}
+
+export interface DetectorRule {
+  readonly ruleId: string;
+  readonly kind: DetectCandidateKind;
+  findCandidates(text: string, context: DetectorRuleContext): readonly DetectorRuleMatch[];
+}
+
+export interface DetectOptions {
+  readonly sourceSurface?: SourceSurface;
+  readonly sensitivity?: DetectSensitivityPreset;
+  readonly enabledRuleIds?: readonly string[];
+  readonly disabledRuleIds?: readonly string[];
+  readonly customRules?: readonly DetectorRule[];
+}
+
+export interface DetectCandidate {
+  readonly candidateId: string;
+  readonly kind: DetectCandidateKind;
+  readonly ruleId: string;
+  readonly sourceSpan: SourceSpan;
+  readonly valueLength: number;
+  readonly location?: SourceLocation;
+  readonly hint: DetectHint;
+}
+
+export interface DetectResult {
+  readonly sourceSurface?: SourceSurface;
+  readonly candidates: readonly DetectCandidate[];
+}
+
+export type DetectPrimitive = (text: string, options?: DetectOptions) => DetectResult;
+
+export type ClassifierVerdict = 'secret' | 'not_secret' | 'uncertain';
+
+export interface ClassifierRequestCandidate {
+  readonly candidateId: string;
+  readonly marker: string;
+  readonly kind?: DetectCandidateKind;
+  readonly ruleId?: string;
+  readonly sourceSpan: SourceSpan;
+  readonly valueLength: number;
+  readonly location?: SourceLocation;
+  readonly hint: DetectHint;
+}
+
+export interface ClassifierRequest {
+  readonly requestId: string;
+  readonly sourceSurface?: SourceSurface;
+  readonly sanitizedContext: string;
+  readonly candidates: readonly ClassifierRequestCandidate[];
+}
+
+interface ClassifierDecisionMetadata {
+  readonly candidateId: string;
+  readonly label?: string;
+  readonly confidence?: number;
+  readonly rationale?: string;
+}
+
+export interface SecretClassifierCallbackDecision extends ClassifierDecisionMetadata {
+  readonly verdict: 'secret';
+  readonly type: SensitivityType;
+}
+
+export interface NonSecretClassifierCallbackDecision extends ClassifierDecisionMetadata {
+  readonly verdict: 'not_secret' | 'uncertain';
+  readonly type?: SensitivityType;
+}
+
+export type ClassifierCallbackDecision =
+  | SecretClassifierCallbackDecision
+  | NonSecretClassifierCallbackDecision;
+
+export interface ClassifierCallbackResult {
+  readonly decisions: readonly ClassifierCallbackDecision[];
+}
+
+export type ClassifierCallback = (
+  request: ClassifierRequest,
+) => ClassifierCallbackResult | Promise<ClassifierCallbackResult>;
+
+export interface ClassifyOptions {
+  readonly requestId?: string;
+  readonly sourceSurface?: SourceSurface;
+  readonly contextWindow?: number;
+  readonly providerPrefixPolicy?: 'conservative' | 'trust_callback';
+}
+
+interface ClassifyDecisionMetadata extends ClassifierDecisionMetadata {
+  readonly sourceSpan: SourceSpan;
+}
+
+export interface SecretClassifyDecision extends ClassifyDecisionMetadata {
+  readonly verdict: 'secret';
+  readonly type: SensitivityType;
+}
+
+export interface NonSecretClassifyDecision extends ClassifyDecisionMetadata {
+  readonly verdict: 'not_secret' | 'uncertain';
+  readonly type?: SensitivityType;
+}
+
+export type ClassifyDecision = SecretClassifyDecision | NonSecretClassifyDecision;
+
+export interface ClassifyResult {
+  readonly decisions: readonly ClassifyDecision[];
+}
+
+export type ClassifyPrimitive = (
+  text: string,
+  candidates: readonly DetectCandidate[],
+  classifierCallback: ClassifierCallback,
+  options?: ClassifyOptions,
+) => Promise<ClassifyResult>;
+
+export interface RedactConfirmedSecret {
+  readonly candidateId?: string;
+  readonly sourceSpan: SourceSpan;
+  readonly type: SensitivityType;
+  readonly label?: string;
+}
+
+export interface RedactVaultStore {
+  addEntries(entries: VaultEntryInput[]): Promise<VaultEntry[]>;
+}
+
+export interface RedactKeyManager {
+  getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus>;
+}
+
+export interface RedactKekManager {
+  getOrCreate(userId: string): Promise<Buffer>;
+}
+
+export interface RedactOptions {
+  readonly sourceSurface?: SourceSurface;
+  readonly vaultStore: RedactVaultStore;
+  readonly keyManager: RedactKeyManager;
+  readonly kekManager: RedactKekManager;
+}
+
+export interface RedactResultRedaction {
+  readonly candidateId?: string;
+  readonly sensitiveRef: SensitiveRef;
+  readonly placeholder: string;
+  readonly type: SensitivityType;
+  readonly label?: string;
+  readonly alias?: string;
+  readonly sourceSpan: SourceSpan;
+  readonly redactedSpan: TextSpan;
+}
+
+export interface RedactResult {
+  readonly text: string;
+  readonly redactions: readonly RedactResultRedaction[];
+}
+
+export type RedactPrimitive = (
+  text: string,
+  confirmed: readonly RedactConfirmedSecret[],
+  userId: string,
+  options: RedactOptions,
+) => Promise<RedactResult>;
+
 export interface DetectedEntity {
   readonly type: SensitivityType;
   readonly source: SensitivitySource;

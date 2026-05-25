@@ -6,7 +6,7 @@ Pristine is designed for local-first privacy: no Pristine-hosted API is required
 
 Pristine does not decide your entire privacy policy. It gives your application local operations for the places where secrets can enter agent/model context or session history.
 
-Use `secureAndRedact` before sensitive text is sent to an agent or model, so third-party LLM providers see placeholders instead of original secrets. Use `reveal` only inside trusted local tool runners that need the original value to execute. Use `scrubOutput` before tool results or generated output are written back into agent/model context or session history.
+Compose `detect` → `classify` → `redact` before sensitive text is sent to an agent or model, so third-party LLM providers see placeholders instead of original secrets. `classify` sends sanitized context with `[CANDIDATE:<id>]` markers, raw-value-free `hint` metadata, and numeric `sourceSpan` offsets to a caller-owned `classifierCallback`; raw candidates are not sent to classifiers. The [Pi-dev privacy-input reference](/pi-dev#privacy-input-reference) shows this composition in an input hook. Use `reveal` only inside trusted local tool runners that need the original value to execute. Use `scrubOutput` before tool results or generated output are written back into agent/model context or session history.
 
 Because agents are non-deterministic, privacy behavior that must always happen should be made deterministic in the harness where possible. Use prompts, hooks, command guards, approval gates, logging controls, or local checks to enforce required behavior. Use Pristine's privacy primitives at the text-handling points those workflows create.
 
@@ -14,18 +14,22 @@ Because agents are non-deterministic, privacy behavior that must always happen s
 
 The privacy vault and source-index memory have different jobs:
 
-- **Privacy vault:** encrypted local storage for sensitive originals captured by `secureAndRedact`, used later by trusted local `reveal` flows.
+- **Privacy vault:** encrypted local storage for sensitive originals captured by `redact`, used later by trusted local `reveal` flows.
 - **Source-index memory:** searchable local chunks, embeddings, snippets, and source metadata used by `store`, `recall`, and `forget`.
 
 Do not treat the source-index memory database as a plaintext-safe cache. It is optimized for search and source references, not for hiding every indexed snippet from local readers.
 
 ## Redact before sharing context
 
-`secureAndRedact` detects sensitive values, stores encrypted originals locally in the privacy vault, and returns text with placeholders. Use it before an application places text into an agent or model context.
+`detect` finds candidate spans, `classify` lets caller-owned policy decide which candidates are `secret`, `not_secret`, or `uncertain` from sanitized context, and `redact` stores confirmed originals locally in the privacy vault while returning text with placeholders, `sensitiveRef`s, original `sourceSpan`s, and output `redactedSpan`s. Classifier context uses candidate markers plus bounded/scrubbed non-candidate text by default; use this composition before an application places text into an agent or model context.
+
+The SDK does not implement a hosted classifier or bundled LLM classifier. Deterministic regex-only behavior can be implemented as a local classifier callback, and uncertain handling belongs to the harness policy. Known provider-prefix `not_secret` decisions are conservatively normalized to `uncertain` by default as a safety floor; only set `providerPrefixPolicy: "trust_callback"` when your harness intentionally accepts that risk. New integrations should use the primitive-first API rather than a composed SDK policy wrapper.
 
 ## Reveal inside trusted local tools
 
-`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute.
+`reveal` can restore placeholders when the caller has local access to the vault and keys. Treat reveal as a privileged local operation for trusted tool runners that need originals to execute. `resolveSensitive` can recover one `sensitiveRef` locally; `listSensitive`, `getSensitive`, `updateSensitive`, and `deleteSensitive` manage metadata-only sensitive refs.
+
+`sensitiveType` is the canonical machine type stored in the vault, such as `api_key`; do not replace it with free-text display copy. Classifier labels are visible metadata on redaction results, while caller-managed aliases live in vault metadata after `updateSensitive`. Caller-managed aliases must never contain plaintext secrets. For display, prefer `alias ?? label` while preserving the canonical machine type for filtering, policy, and storage.
 
 ## Scrub before writing back
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Pristine } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import type { Embedder } from '../src/core/interfaces.js';
+import { seedClientSensitiveValue } from './client/privacy-seed-helpers.js';
 
 const vector = (first: number, second = 0): number[] => [
   first,
@@ -61,11 +62,31 @@ describe('Pristine', () => {
       });
 
       const secret = 'sk' + '-ant-' + 'api03-' + 'abcdefghijklmnopqrstuvwxyz123456';
-      const secured = await client.secureAndRedact(`Token ${secret}`, 'user-a');
-      expect(secured.redactedText).toContain('[' + 'SENSITIVE:' + 'api_key:');
+      await seedClientSensitiveValue({
+        db: deps.db,
+        keysDir,
+        userId: 'user-a',
+        text: `Token ${secret}`,
+        customPatternsPath: '/tmp/pristine-client-missing-redaction.json',
+      });
+
+      const redacted = await client.redact(
+        `Manual ${secret}`,
+        [
+          {
+            sourceSpan: { start: 'Manual '.length, end: `Manual ${secret}`.length },
+            type: 'api_key',
+          },
+        ],
+        'user-a',
+      );
+      expect(redacted.text).not.toContain(secret);
+      await expect(client.reveal(redacted.text, 'user-a')).resolves.toMatchObject({
+        text: `Manual ${secret}`,
+      });
 
       const summaries = await client.listSensitive('user-a', { limit: 10 });
-      expect(summaries).toHaveLength(1);
+      expect(summaries).toHaveLength(2);
       expect(summaries[0]!.label).toMatch(/^api_key-[0-9a-z]+$/);
 
       const updated = await client.updateSensitive('user-a', summaries[0]!.sensitiveRef, {

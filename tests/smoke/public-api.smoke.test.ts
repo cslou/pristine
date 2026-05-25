@@ -9,7 +9,10 @@ import {
   EmbedderError,
   SensitiveNotFoundError,
   Pristine,
+  classify,
   createDatabase as createDatabaseFromBarrel,
+  detect,
+  redact,
 } from '../../src/index.js';
 
 const makeEmbedderStub = (): Embedder => ({
@@ -34,6 +37,8 @@ describe('public-API smoke — source chunk API', () => {
     try {
       expect(client).toBeInstanceOf(Pristine);
       expect('pendingEmbedTasks' in client).toBe(false);
+      expect(client.redact).toBeTypeOf('function');
+      expect('secureAndRedact' in client).toBe(false);
       await client.dispose();
     } finally {
       db.close();
@@ -47,6 +52,9 @@ describe('public-API smoke — source chunk API', () => {
     expect(ConfigError).toBeTypeOf('function');
     expect(EmbedderError).toBeTypeOf('function');
     expect(SensitiveNotFoundError).toBeTypeOf('function');
+    expect(classify).toBeTypeOf('function');
+    expect(detect).toBeTypeOf('function');
+    expect(redact).toBeTypeOf('function');
 
     expect(Object.keys(PristineBarrel).sort()).toEqual([
       'AppError',
@@ -59,10 +67,14 @@ describe('public-API smoke — source chunk API', () => {
       'SensitiveNotFoundError',
       'SourceChunkStore',
       'buildSourceChunkVectorDdl',
+      'classify',
       'createDatabase',
+      'detect',
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
+      'redact',
     ]);
+    expect(PristineBarrel).not.toHaveProperty('secureAndRedact');
   });
 
   it('public surface indexes and searches a source chunk', async () => {

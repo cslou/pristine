@@ -13,24 +13,6 @@ import {
 describe('Pristine store memory verb', () => {
   const { getDeps } = withSourceMemoryClient();
 
-  it('keeps source-chunk method names as deprecated compatibility aliases', async () => {
-    vi.mocked(getDeps().embedder.embedBatch).mockResolvedValueOnce([vector(1)]);
-    vi.mocked(getDeps().embedder.embed).mockResolvedValueOnce(vector(1));
-    const client = await createClient(getDeps());
-
-    await expect(
-      client.indexSourceChunks([{ text: 'legacy alias memory', chunkId: 'legacy' }], {
-        projectId: 'project-a',
-      }),
-    ).resolves.toHaveLength(1);
-    await expect(
-      client.searchSourceChunks('legacy alias', { projectId: 'project-a', limit: 1 }),
-    ).resolves.toHaveLength(1);
-    expect(client.deleteSourceChunks(['legacy'], { projectId: 'project-a' })).toEqual({
-      deletedCount: 1,
-    });
-  });
-
   it('store embeds and writes source chunks synchronously', async () => {
     const client = await createClient(getDeps());
 

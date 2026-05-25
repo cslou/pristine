@@ -20,31 +20,64 @@ export type {
   StoreOptions,
 } from './client.js';
 
-// Deprecated compatibility exports for the pre-`store`/`recall`/`forget` memory API.
-// New code should use StoreOptions, StoredMemory, RecallOptions, RecalledMemory,
-// ForgetOptions, and ForgetResult instead.
-export type {
-  DeleteSourceChunksOptions,
-  DeleteSourceChunksResult,
-  IndexedSourceChunk,
-  IndexSourceChunksOptions,
-  SearchSourceChunksOptions,
-  SourceChunkSearchHit,
-} from './client.js';
+export { classify } from './privacy/classifier/index.js';
+export { detect } from './privacy/detector/index.js';
+export { redact } from './privacy/redactor/index.js';
 
 export type {
+  BuiltInDetectCandidateKind,
+  ClassifierCallback,
+  ClassifierCallbackDecision,
+  ClassifierCallbackResult,
+  ClassifierRequest,
+  ClassifierRequestCandidate,
+  ClassifierVerdict,
+  ClassifyDecision,
+  ClassifyOptions,
+  ClassifyPrimitive,
+  ClassifyResult,
+  NonSecretClassifierCallbackDecision,
+  NonSecretClassifyDecision,
+  SecretClassifierCallbackDecision,
+  SecretClassifyDecision,
+  DetectCandidate,
+  DetectCandidateKind,
+  DetectHint,
+  DetectOptions,
+  DetectPrimitive,
+  DetectResult,
+  DetectSensitivityPreset,
   DeleteSensitiveResult,
   ListSensitiveOptions,
+  PrivacyHintFeatures,
+  PrivacyHintFeatureValue,
+  RedactConfirmedSecret,
+  RedactKeyManager,
+  RedactKekManager,
+  RedactOptions,
+  RedactPrimitive,
+  RedactResult,
+  RedactResultRedaction,
+  RedactVaultStore,
   RevealResult,
-  SecureAndRedactResult,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
+  SourceLocation,
+  SourceSpan,
+  SourceSurface,
+  SourceSurfaceMetadata,
+  TextSpan,
   UpdateSensitiveInput,
 } from './core/types.js';
 
-export type { Embedder } from './core/interfaces.js';
+export type {
+  Embedder,
+  PrivacyClassifier,
+  PrivacyDetector,
+  PrivacyRedactor,
+} from './core/interfaces.js';
 
 export {
   SOURCE_CHUNK_METADATA_JSON_LIMIT,

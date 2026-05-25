@@ -28,9 +28,13 @@ Deletes stored chunks by ID within one project and returns a deletion count.
 
 ## Privacy API
 
-### `secureAndRedact(text, userId, classifier?)`
+### `detect`, `classify`, and `redact`
 
-Detects sensitive values for a local user, stores encrypted originals in the local vault, and returns redacted text when redaction succeeds. Pass an optional classifier override when a call needs privacy detection settings different from the client default. See [Privacy](/privacy) for threat-model responsibilities.
+The canonical privacy flow is primitive-first: `detect` finds local candidates with `sourceSpan` metadata, `classify` sends sanitized candidate markers and safe `hint` metadata to caller-owned `classifierCallback` policy, and `redact` stores confirmed `{ sourceSpan, type, label? }` spans in the local vault while returning model-safe text plus `sensitiveRef`, placeholder, original `sourceSpan`, and output `redactedSpan` metadata. The package root exports the low-level `redact` function for callers that inject vault/key managers; `Pristine.redact(text, confirmed, userId)` uses the client's configured local vault and key managers. The SDK does not implement a hosted classifier or bundled LLM classifier; if you want deterministic regex-only behavior, implement it as your classifier callback or harness policy.
+
+`classify` can return `secret`, `not_secret`, or `uncertain`. The harness owns uncertain handling and any policy that maps secret decisions to confirmed redaction inputs. As a safe default, known provider-prefix candidates that a callback marks `not_secret` are normalized to `uncertain`; advanced harnesses can opt into `providerPrefixPolicy: "trust_callback"` when they intentionally own that risk. Raw candidate values are not sent to the callback; the request uses `[CANDIDATE:<id>]` markers, raw-value-free hints, and bounded/scrubbed non-candidate context by default.
+
+The migration for new integrations is primitive-first `detect` → `classify` → `redact`, then use `reveal`, `resolveSensitive`, and `scrubOutput` in trusted local flows. See [Privacy](/privacy) for threat-model responsibilities.
 
 ### `reveal(redactedText, userId)`
 
@@ -38,7 +42,7 @@ Restores known redaction placeholders for a local user when vault and key access
 
 ### `listSensitive(userId, options?)`
 
-Lists metadata-only summaries for locally vaulted sensitive values. Results include placeholder refs, sensitivity type, generated labels, optional caller-provided aliases, and timestamps; they do not include plaintext secret values. When `limit` is omitted, the SQLite vault applies a bounded default of 100 summaries. Options support `limit`, `sensitiveType`, `createdFrom`, and `createdTo`.
+Lists metadata-only summaries for locally vaulted sensitive values. Results include placeholder refs, `sensitiveType` as the canonical machine type, generated labels, optional caller-provided aliases, and timestamps; they do not include plaintext secret values. When `limit` is omitted, the SQLite vault applies a bounded default of 100 summaries. Options support `limit`, `sensitiveType`, `createdFrom`, and `createdTo`.
 
 ### `getSensitive(userId, sensitiveRef)`
 
@@ -46,7 +50,7 @@ Returns one metadata-only summary for a sensitive placeholder ref, or `null` whe
 
 ### `updateSensitive(userId, sensitiveRef, input)`
 
-Updates caller-owned visible metadata for a sensitive placeholder ref. The current input supports `alias`, where `null` or an empty string clears the alias. Aliases are returned by `listSensitive` and `getSensitive`, so callers must treat aliases as visible metadata and must not put secret plaintext in them. Missing refs throw `SensitiveNotFoundError`.
+Updates caller-owned visible metadata for a sensitive placeholder ref. The current input supports `alias`, where `null` or an empty string clears the alias. Caller-managed aliases must never contain plaintext secrets. Aliases are returned by `listSensitive` and `getSensitive`, so callers should display `alias ?? label` while keeping `sensitiveType` as the canonical machine type. Missing refs throw `SensitiveNotFoundError`.
 
 ### `deleteSensitive(userId, sensitiveRefs)`
 
@@ -70,6 +74,9 @@ The package root is the supported import surface. It exports the SDK client, dom
 | ---------------------------------- | --------------------------------------------------------------------------------- |
 | `Pristine`                         | Main local SDK client.                                                            |
 | `createDatabase`                   | Create or open a SQLite database with Pristine's sqlite-vec loading behavior.     |
+| `detect`                           | Find raw-value-free sensitive candidates with `sourceSpan` and safe `hint` data.  |
+| `classify`                         | Build sanitized marker context and invoke a caller-owned classifier callback.     |
+| `redact`                           | Store confirmed spans in the local vault and return placeholder metadata.         |
 | `AppError`                         | Base domain error class.                                                          |
 | `ConfigError`                      | Configuration error class.                                                        |
 | `EmbedderError`                    | Embedder failure class.                                                           |
@@ -93,10 +100,26 @@ The package exports public option and result types for the launch API:
 - `ForgetOptions`
 - `ForgetResult`
 - `PristineConfig`
+- `DetectCandidate`
+- `DetectOptions`
+- `DetectPrimitive`
+- `DetectResult`
+- `ClassifierRequest`
+- `ClassifierCallbackDecision`
+- `ClassifyDecision`
+- `ClassifyOptions`
+- `ClassifyPrimitive`
+- `ClassifyResult`
+- `RedactConfirmedSecret`
+- `RedactKeyManager`
+- `RedactKekManager`
+- `RedactOptions`
+- `RedactPrimitive`
+- `RedactResult`
+- `RedactVaultStore`
 - `DeleteSensitiveResult`
 - `ListSensitiveOptions`
 - `RevealResult`
-- `SecureAndRedactResult`
 - `SensitiveRef`
 - `SensitiveSummary`
 - `SourceChunkInput`
@@ -108,15 +131,6 @@ The package exports public option and result types for the launch API:
 - `SourceChunkSearchOptions`
 - `SourceChunkStoreOptions`
 - `StoredSourceChunk`
-
-The root also keeps deprecated compatibility type exports for the pre-`store`/`recall`/`forget` memory API:
-
-- `DeleteSourceChunksOptions`
-- `DeleteSourceChunksResult`
-- `IndexedSourceChunk`
-- `IndexSourceChunksOptions`
-- `SearchSourceChunksOptions`
-- `SourceChunkSearchHit`
 
 ## Internal imports
 

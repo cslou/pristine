@@ -3,8 +3,9 @@ import type Database from 'better-sqlite3';
 import type {
   DeleteSensitiveResult,
   ListSensitiveOptions,
+  RedactConfirmedSecret,
+  RedactResult,
   RevealResult,
-  SecureAndRedactResult,
   SensitiveRef,
   SensitiveSummary,
   SourceChunkInput,
@@ -19,6 +20,7 @@ import { SourceChunkStore } from './memory/source-index/index.js';
 import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
+import { redact as privacyRedact } from './privacy/redactor/index.js';
 import {
   deleteSensitive as privacyDeleteSensitive,
   getSensitive as privacyGetSensitive,
@@ -26,7 +28,6 @@ import {
   resolveSensitive as privacyResolveSensitive,
   reveal as privacyReveal,
   scrubOutput as privacyScrubOutput,
-  secureAndRedact as privacySecureAndRedact,
   updateSensitive as privacyUpdateSensitive,
 } from './privacy/index.js';
 import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
@@ -66,19 +67,6 @@ export interface ForgetResult {
 export interface RecalledMemory extends StoredMemory {
   readonly score: number;
 }
-
-/** @deprecated Use StoreOptions. */
-export type IndexSourceChunksOptions = StoreOptions;
-/** @deprecated Use StoredMemory. */
-export type IndexedSourceChunk = StoredMemory;
-/** @deprecated Use RecallOptions. */
-export type SearchSourceChunksOptions = RecallOptions;
-/** @deprecated Use ForgetOptions. */
-export type DeleteSourceChunksOptions = ForgetOptions;
-/** @deprecated Use ForgetResult. */
-export type DeleteSourceChunksResult = ForgetResult;
-/** @deprecated Use RecalledMemory. */
-export type SourceChunkSearchHit = RecalledMemory;
 
 export interface PristineConfig {
   readonly baseDir?: string;
@@ -234,44 +222,6 @@ export class Pristine {
       .map((hit) => ({ ...toPublicChunk(hit.chunk), score: hit.score }));
   }
 
-  /** @deprecated Use store(). */
-  public async indexSourceChunks(
-    chunks: readonly SourceChunkInput[],
-    options: IndexSourceChunksOptions,
-  ): Promise<readonly IndexedSourceChunk[]> {
-    return this.store(chunks, options);
-  }
-
-  /** @deprecated Use forget(). */
-  public deleteSourceChunks(
-    chunkIds: readonly string[],
-    options: DeleteSourceChunksOptions,
-  ): DeleteSourceChunksResult {
-    return this.forget(chunkIds, options);
-  }
-
-  /** @deprecated Use recall(). */
-  public async searchSourceChunks(
-    query: string,
-    options: SearchSourceChunksOptions,
-  ): Promise<readonly SourceChunkSearchHit[]> {
-    return this.recall(query, options);
-  }
-
-  public async secureAndRedact(
-    text: string,
-    userId: string,
-    classifier?: DeterministicClassifierConfig,
-  ): Promise<SecureAndRedactResult> {
-    return privacySecureAndRedact(text, {
-      vaultStore: this.vaultStore,
-      keyManager: this.keyManager,
-      kekManager: this.kekManager,
-      userId,
-      classifier: classifier ?? this.privacyClassifierConfig,
-    });
-  }
-
   public async listSensitive(
     userId: string,
     options?: ListSensitiveOptions,
@@ -322,6 +272,18 @@ export class Pristine {
       keyManager: this.keyManager,
       kekManager: this.kekManager,
       userId,
+    });
+  }
+
+  public async redact(
+    text: string,
+    confirmed: readonly RedactConfirmedSecret[],
+    userId: string,
+  ): Promise<RedactResult> {
+    return privacyRedact(text, confirmed, userId, {
+      vaultStore: this.vaultStore,
+      keyManager: this.keyManager,
+      kekManager: this.kekManager,
     });
   }
 

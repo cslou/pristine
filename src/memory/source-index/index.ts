@@ -10,7 +10,7 @@ export type {
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
-  SourceChunkSearchHit,
+  SourceChunkStoreSearchHit,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
   StoredSourceChunk,

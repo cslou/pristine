@@ -51,6 +51,7 @@ export type {
   ListSensitiveOptions,
   PrivacyHintFeatures,
   PrivacyHintFeatureValue,
+  PublicKeyWithStatus,
   RedactConfirmedSecret,
   RedactKeyManager,
   RedactKekManager,
@@ -114,6 +115,6 @@ export {
 export { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 export {
   MacOsKeychainKeyManager,
+  type MacOsKeychainHelperRunner,
   type MacOsKeychainKeyManagerOptions,
-  type MacOsSecurityCommandRunner,
 } from './privacy/keys/macos-keychain.js';

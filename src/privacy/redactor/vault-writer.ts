@@ -15,7 +15,7 @@ export const persistRedactions = async (
   options: RedactOptions,
   pending: readonly PendingRedactionWrite[],
 ): Promise<void> => {
-  const { publicKey } = await options.keyManager.getOrCreateKeyPair(userId);
+  const { publicKey } = await options.keyManager.getOrCreatePublicKey(userId);
   const fingerprint = computeKeyFingerprint(publicKey);
   const kek = await options.kekManager.getOrCreate(userId);
 

@@ -7,7 +7,7 @@ import type {
   DetectOptions,
   DetectResult,
   DeleteSensitiveResult,
-  KeyPairWithStatus,
+  PublicKeyWithStatus,
   ListSensitiveOptions,
   RedactConfirmedSecret,
   RedactOptions,
@@ -77,8 +77,9 @@ export interface PrivacyRedactor {
 // ---------------------------------------------------------------------------
 
 export interface KeyManager {
-  getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus>;
-  saveKeyPair(userId: string, keyPair: { publicKey: string; privateKey: string }): Promise<void>;
+  getOrCreatePublicKey(userId: string): Promise<PublicKeyWithStatus>;
+  unwrap(userId: string, wrappedValue: Buffer): Promise<Buffer>;
+  rotateKeyPair(userId: string): Promise<PublicKeyWithStatus>;
 }
 
 // ---------------------------------------------------------------------------

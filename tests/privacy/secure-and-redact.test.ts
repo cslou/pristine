@@ -14,8 +14,9 @@ const unusedVaultStore = {
 } satisfies VaultStore;
 
 const unusedKeyManager = {
-  getOrCreateKeyPair: vi.fn(),
-  saveKeyPair: vi.fn(),
+  getOrCreatePublicKey: vi.fn(),
+  unwrap: vi.fn(),
+  rotateKeyPair: vi.fn(),
 } satisfies KeyManager;
 
 const unusedKekManager = {
@@ -64,6 +65,6 @@ describe('secureAndRedact blocked results', () => {
     expect(result.safetyViolations[0]!.type).toBe('email_address');
     expect(result.warnings).toBeUndefined();
     expect(unusedVaultStore.addEntries).not.toHaveBeenCalled();
-    expect(unusedKeyManager.getOrCreateKeyPair).not.toHaveBeenCalled();
+    expect(unusedKeyManager.getOrCreatePublicKey).not.toHaveBeenCalled();
   });
 });

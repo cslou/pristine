@@ -12,7 +12,7 @@ import { resolve, sep } from 'node:path';
 import { KeyManagerError } from '../../core/errors.js';
 import type { KeyManager } from '../../core/interfaces.js';
 import type { KeyPairWithStatus } from '../../core/types.js';
-import { generateKeyPair, validatePublicKey } from '../vault/asymmetric-crypto.js';
+import { generateKeyPair, unwrapDek, validatePublicKey } from '../vault/asymmetric-crypto.js';
 import { encodeKeyUserId, validateKeyUserId } from './shared.js';
 
 interface FileSystemKeyManagerOptions {
@@ -70,7 +70,7 @@ export class FileSystemKeyManager implements KeyManager {
     this.resolvedKeysDir = resolve(options.keysDir);
   }
 
-  public async getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus> {
+  public async getOrCreatePublicKey(userId: string): Promise<KeyPairWithStatus> {
     validateKeyUserId(userId);
     const cached = this.cache.get(userId);
     if (cached) {
@@ -95,6 +95,21 @@ export class FileSystemKeyManager implements KeyManager {
     this.writeToDisk(userId, keyPair.publicKey, keyPair.privateKey);
     this.cache.set(userId, { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey });
     return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey, created: true };
+  }
+
+  public async unwrap(userId: string, wrappedValue: Buffer): Promise<Buffer> {
+    const { privateKey } = await this.getOrCreatePublicKey(userId);
+    return unwrapDek(wrappedValue, privateKey);
+  }
+
+  public async rotateKeyPair(userId: string): Promise<KeyPairWithStatus> {
+    const keyPair = await generateKeyPair();
+    await this.saveKeyPair(userId, keyPair);
+    return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey, created: true };
+  }
+
+  public async getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus> {
+    return this.getOrCreatePublicKey(userId);
   }
 
   public async saveKeyPair(

@@ -7,10 +7,13 @@ import {
   AppError,
   ConfigError,
   EmbedderError,
+  FileSystemKeyManager,
+  MacOsKeychainKeyManager,
   SensitiveNotFoundError,
   Pristine,
   classify,
   createDatabase as createDatabaseFromBarrel,
+  createDefaultKeyManager,
   detect,
   redact,
 } from '../../src/index.js';
@@ -52,6 +55,9 @@ describe('public-API smoke — source chunk API', () => {
     expect(ConfigError).toBeTypeOf('function');
     expect(EmbedderError).toBeTypeOf('function');
     expect(SensitiveNotFoundError).toBeTypeOf('function');
+    expect(FileSystemKeyManager).toBeTypeOf('function');
+    expect(MacOsKeychainKeyManager).toBeTypeOf('function');
+    expect(createDefaultKeyManager).toBeTypeOf('function');
     expect(classify).toBeTypeOf('function');
     expect(detect).toBeTypeOf('function');
     expect(redact).toBeTypeOf('function');
@@ -60,7 +66,9 @@ describe('public-API smoke — source chunk API', () => {
       'AppError',
       'ConfigError',
       'EmbedderError',
+      'FileSystemKeyManager',
       'InvalidArgumentError',
+      'MacOsKeychainKeyManager',
       'Pristine',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
@@ -69,6 +77,7 @@ describe('public-API smoke — source chunk API', () => {
       'buildSourceChunkVectorDdl',
       'classify',
       'createDatabase',
+      'createDefaultKeyManager',
       'detect',
       'initSourceChunkTables',
       'normalizeSourceChunkInput',

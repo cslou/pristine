@@ -32,6 +32,12 @@ export const wrapKek = (kek: Buffer, publicKeyPem: string): Buffer => {
 export const unwrapKek = (wrappedKek: Buffer, privateKeyPem: string): Buffer =>
   unwrapDek(wrappedKek, privateKeyPem);
 
+const unwrapKekForUser = async (
+  wrappedKek: Buffer,
+  keyManager: KeyManager,
+  userId: string,
+): Promise<Buffer> => await keyManager.unwrap(userId, wrappedKek);
+
 // AES-256-KW (RFC 3394) uses a fixed 8-byte IV
 const AES_KW_IV = Buffer.from('A6A6A6A6A6A6A6A6', 'hex');
 const DEK_LENGTH_BYTES = 32;
@@ -96,13 +102,12 @@ export class KekManager {
       .get(userId) as KekRow | undefined;
 
     if (existing) {
-      const { privateKey } = await this.keyManager.getOrCreateKeyPair(userId);
-      const kek = unwrapKek(existing.wrapped_kek, privateKey);
+      const kek = await unwrapKekForUser(existing.wrapped_kek, this.keyManager, userId);
       this.cache.set(userId, kek);
       return kek;
     }
 
-    const { publicKey, privateKey } = await this.keyManager.getOrCreateKeyPair(userId);
+    const { publicKey } = await this.keyManager.getOrCreatePublicKey(userId);
     const fingerprint = computeKeyFingerprint(publicKey);
     const kek = generateKek();
     const wrappedKek = wrapKek(kek, publicKey);
@@ -121,7 +126,7 @@ export class KekManager {
       .prepare('SELECT wrapped_kek FROM user_keks WHERE user_id = ?')
       .get(userId) as KekRow;
 
-    const resolvedKek = unwrapKek(row.wrapped_kek, privateKey);
+    const resolvedKek = await unwrapKekForUser(row.wrapped_kek, this.keyManager, userId);
     this.cache.set(userId, resolvedKek);
     return resolvedKek;
   }

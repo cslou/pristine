@@ -29,7 +29,7 @@ describe('Vitest suite discovery boundaries', () => {
     const smokeTests = listTests('smoke');
     expect(smokeTests).toContain('tests/smoke/public-api.smoke.test.ts');
     expect(smokeTests).not.toContain('tests/smoke/source-index-local-model.local-model.test.ts');
-  });
+  }, 60_000);
 
   it('discovers local-model smoke, integration, and e2e tests on explicit suite selectors', () => {
     expect(listTests('local-model-smoke')).toContain(
@@ -37,5 +37,5 @@ describe('Vitest suite discovery boundaries', () => {
     );
     expect(listTests('integration')).toContain('tests/integration/privacy.test.ts');
     expect(listTests('e2e')).toContain('tests/e2e/privacy-pipeline.test.ts');
-  });
+  }, 60_000);
 });

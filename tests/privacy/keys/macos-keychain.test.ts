@@ -2,109 +2,142 @@ import { describe, expect, it } from 'vitest';
 import { KeyManagerError } from '../../../src/core/errors.js';
 import {
   MacOsKeychainKeyManager,
-  type MacOsSecurityCommandRunner,
+  type MacOsKeychainHelperRunner,
 } from '../../../src/privacy/keys/macos-keychain.js';
-import { generateKeyPair } from '../../../src/privacy/vault/asymmetric-crypto.js';
+import {
+  generateKeyPair,
+  unwrapDek,
+  validatePublicKey,
+  wrapDek,
+} from '../../../src/privacy/vault/asymmetric-crypto.js';
 
 const makeRunner = (): {
-  runner: MacOsSecurityCommandRunner;
-  store: Map<string, string>;
+  runner: MacOsKeychainHelperRunner;
+  store: Map<string, { publicKey: string; privateKey: string }>;
   calls: string[][];
 } => {
-  const store = new Map<string, string>();
+  const store = new Map<string, { publicKey: string; privateKey: string }>();
   const calls: string[][] = [];
 
-  const runner = async (args: readonly string[]) => {
+  const runner: MacOsKeychainHelperRunner = async (args: readonly string[]) => {
     calls.push([...args]);
 
-    const accountIndex = args.indexOf('-a');
-    const serviceIndex = args.indexOf('-s');
-    const account = accountIndex >= 0 ? args[accountIndex + 1] : '';
-    const service = serviceIndex >= 0 ? args[serviceIndex + 1] : '';
+    const service = args[1] ?? '';
+    const account = args[2] ?? '';
     const key = `${service}:${account}`;
 
-    if (args[0] === 'find-generic-password') {
-      const value = store.get(key);
-      if (value === undefined) {
+    if (args[0] === 'get-or-create-public-key') {
+      const existing = store.get(key);
+      if (existing) {
         return {
-          stdout: '',
-          stderr:
-            'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.',
-          exitCode: 44,
+          stdout: JSON.stringify({ ok: true, publicKey: existing.publicKey, created: false }),
+          stderr: '',
+          exitCode: 0,
         };
       }
 
-      return { stdout: value, stderr: '', exitCode: 0 };
+      const created = await generateKeyPair();
+      store.set(key, created);
+      return {
+        stdout: JSON.stringify({ ok: true, publicKey: created.publicKey, created: true }),
+        stderr: '',
+        exitCode: 0,
+      };
     }
 
-    if (args[0] === 'add-generic-password') {
-      const passwordIndex = args.indexOf('-w');
-      if (passwordIndex < 0) {
-        return { stdout: '', stderr: 'missing -w', exitCode: 1 };
+    if (args[0] === 'unwrap') {
+      const existing = store.get(key);
+      if (!existing) {
+        return {
+          stdout: JSON.stringify({ ok: false, error: 'missing key pair' }),
+          stderr: '',
+          exitCode: 1,
+        };
       }
-      store.set(key, args[passwordIndex + 1] ?? '');
-      return { stdout: '', stderr: '', exitCode: 0 };
+
+      const ciphertext = Buffer.from(args[3] ?? '', 'base64');
+      const plaintext = unwrapDek(ciphertext, existing.privateKey);
+      return {
+        stdout: JSON.stringify({ ok: true, plaintextBase64: plaintext.toString('base64') }),
+        stderr: '',
+        exitCode: 0,
+      };
     }
 
-    return { stdout: '', stderr: `unsupported command: ${args[0] ?? ''}`, exitCode: 1 };
+    if (args[0] === 'rotate-keypair') {
+      const rotated = await generateKeyPair();
+      store.set(key, rotated);
+      return {
+        stdout: JSON.stringify({ ok: true, publicKey: rotated.publicKey, created: true }),
+        stderr: '',
+        exitCode: 0,
+      };
+    }
+
+    return {
+      stdout: JSON.stringify({ ok: false, error: `unsupported command: ${args[0] ?? ''}` }),
+      stderr: '',
+      exitCode: 1,
+    };
   };
 
   return { runner, store, calls };
 };
 
 describe('MacOsKeychainKeyManager', () => {
-  it('generates and stores a key pair on first call', async () => {
+  it('gets or creates a keychain-backed public key', async () => {
     const { runner, store } = makeRunner();
     const manager = new MacOsKeychainKeyManager({ runner, platform: 'darwin' });
 
-    const result = await manager.getOrCreateKeyPair('user-1');
+    const result = await manager.getOrCreatePublicKey('user-1');
 
     expect(result.created).toBe(true);
     expect(result.publicKey).toContain('BEGIN PUBLIC KEY');
-    expect(result.privateKey).toContain('BEGIN PRIVATE KEY');
     expect(store.size).toBe(1);
   }, 15000);
 
-  it('reloads an existing private key from keychain and derives the public key', async () => {
+  it('reloads an existing keychain-backed public key', async () => {
     const { runner, store } = makeRunner();
     const keyPair = await generateKeyPair();
-    store.set('dev.pristine.rsa.private-key:user-1', keyPair.privateKey);
+    store.set('dev.pristine.rsa.private-key:user-1', keyPair);
 
     const manager = new MacOsKeychainKeyManager({ runner, platform: 'darwin' });
-    const result = await manager.getOrCreateKeyPair('user-1');
+    const result = await manager.getOrCreatePublicKey('user-1');
 
     expect(result.created).toBe(false);
-    expect(result.privateKey).toBe(keyPair.privateKey);
     expect(result.publicKey).toBe(keyPair.publicKey);
   }, 15000);
 
-  it('saveKeyPair overwrites the stored private key', async () => {
+  it('unwraps RSA ciphertext via the helper without exposing the private key', async () => {
     const { runner, store } = makeRunner();
-    const manager = new MacOsKeychainKeyManager({ runner, platform: 'darwin' });
     const keyPair = await generateKeyPair();
+    store.set('dev.pristine.rsa.private-key:user-1', keyPair);
+    const manager = new MacOsKeychainKeyManager({ runner, platform: 'darwin' });
 
-    await manager.saveKeyPair('user-1', keyPair);
+    const wrapped = wrapDek(Buffer.alloc(32, 7), keyPair.publicKey);
+    const plaintext = await manager.unwrap('user-1', wrapped);
 
-    expect(store.get('dev.pristine.rsa.private-key:user-1')).toBe(keyPair.privateKey);
+    expect(plaintext.equals(Buffer.alloc(32, 7))).toBe(true);
+  }, 15000);
 
-    const reloaded = await manager.getOrCreateKeyPair('user-1');
-    expect(reloaded.created).toBe(false);
-    expect(reloaded.publicKey).toBe(keyPair.publicKey);
+  it('rotates the key pair and returns the new public key', async () => {
+    const { runner } = makeRunner();
+    const manager = new MacOsKeychainKeyManager({ runner, platform: 'darwin' });
+
+    const first = await manager.getOrCreatePublicKey('user-1');
+    const rotated = await manager.rotateKeyPair('user-1');
+
+    expect(rotated.created).toBe(true);
+    expect(rotated.publicKey).not.toBe(first.publicKey);
+    expect(() => validatePublicKey(rotated.publicKey)).not.toThrow();
   }, 15000);
 
   it('rejects non-macOS platforms', async () => {
     const manager = new MacOsKeychainKeyManager({ runner: makeRunner().runner, platform: 'linux' });
 
-    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(KeyManagerError);
-    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(/only supported on macOS/i);
-  });
-
-  it('rejects corrupt private keys returned by keychain', async () => {
-    const { runner, store } = makeRunner();
-    store.set('dev.pristine.rsa.private-key:user-1', 'not a valid private key');
-    const manager = new MacOsKeychainKeyManager({ runner, platform: 'darwin' });
-
-    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(KeyManagerError);
-    await expect(manager.getOrCreateKeyPair('user-1')).rejects.toThrow(/Corrupt private key/);
+    await expect(manager.getOrCreatePublicKey('user-1')).rejects.toThrow(KeyManagerError);
+    await expect(manager.getOrCreatePublicKey('user-1')).rejects.toThrow(
+      /only supported on macOS/i,
+    );
   });
 });

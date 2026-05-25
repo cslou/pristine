@@ -1,4 +1,3 @@
-import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
 import type {
   DeleteSensitiveResult,
@@ -17,7 +16,7 @@ import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createEmbedder } from './embedder/index.js';
 import { SourceChunkStore } from './memory/source-index/index.js';
-import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
+import { createDefaultKeyManager } from './privacy/keys/default.js';
 import { KekManager } from './privacy/kek/kek-manager.js';
 import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
 import { redact as privacyRedact } from './privacy/redactor/index.js';
@@ -153,8 +152,9 @@ export class Pristine {
     const sourceChunkStore = new SourceChunkStore(db, embedder.dim);
     const keyManager =
       config.keyManager ??
-      new FileSystemKeyManager({
-        keysDir: config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`),
+      createDefaultKeyManager({
+        keysDir: config.keysDir,
+        baseDir: init?.baseDir,
       });
     const kekManager = new KekManager(db, keyManager);
     const vaultStore = createSqliteVaultStore(db);

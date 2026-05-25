@@ -107,6 +107,10 @@ export {
 } from './core/errors.js';
 
 export { createDatabase } from './core/database.js';
+export {
+  createDefaultKeyManager,
+  type CreateDefaultKeyManagerOptions,
+} from './privacy/keys/default.js';
 export { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 export {
   MacOsKeychainKeyManager,

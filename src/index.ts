@@ -74,9 +74,11 @@ export type {
 
 export type {
   Embedder,
+  KeyManager,
   PrivacyClassifier,
   PrivacyDetector,
   PrivacyRedactor,
+  VaultStore,
 } from './core/interfaces.js';
 
 export {
@@ -105,3 +107,9 @@ export {
 } from './core/errors.js';
 
 export { createDatabase } from './core/database.js';
+export { FileSystemKeyManager } from './privacy/keys/filesystem.js';
+export {
+  MacOsKeychainKeyManager,
+  type MacOsKeychainKeyManagerOptions,
+  type MacOsSecurityCommandRunner,
+} from './privacy/keys/macos-keychain.js';

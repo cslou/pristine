@@ -71,6 +71,7 @@ export interface RecalledMemory extends StoredMemory {
 export interface PristineConfig {
   readonly baseDir?: string;
   readonly keysDir?: string;
+  readonly keyManager?: KeyManager;
   readonly db?: Database.Database;
   readonly embedder?: Embedder;
   readonly privacy?: DeterministicClassifierConfig;
@@ -150,9 +151,11 @@ export class Pristine {
     const embedder =
       config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
     const sourceChunkStore = new SourceChunkStore(db, embedder.dim);
-    const keysDir =
-      config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
-    const keyManager = new FileSystemKeyManager({ keysDir });
+    const keyManager =
+      config.keyManager ??
+      new FileSystemKeyManager({
+        keysDir: config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`),
+      });
     const kekManager = new KekManager(db, keyManager);
     const vaultStore = createSqliteVaultStore(db);
 

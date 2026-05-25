@@ -15,6 +15,8 @@ The runtime is intentionally host-wired. Provide:
 
 `package.json` intentionally installs only the Pi model transport dependency required by this reference extension. If your wrapper imports `@pristine/sdk` from inside the copied extension directory, install the SDK beside the wrapper too (for local checkout smoke: `npm install --omit=dev /path/to/pristine`; for a published SDK: `npm install --omit=dev @pristine/sdk`). Hosts may also inject compatible detector/classifier/redactor functions without installing the SDK in the extension package.
 
+On macOS, `Pristine.create()` now defaults to Keychain-backed RSA keys for privacy vault access. Host wrappers that want this default should avoid passing `keysDir`; supplying `keysDir` forces the older filesystem key path instead. First local `redact`, `reveal`, or `resolveSensitive` use for a user may create a Keychain keypair and may trigger a one-time system prompt depending on local Keychain policy.
+
 ## Classifier adapter contract
 
 The reference classifier adapter builds tasks from `classify` callback requests: sanitized context, `[CANDIDATE:<id>]` markers, non-value-derived candidate IDs, safe `sourceSpan` metadata, and safe `hint` metadata. Hosts can replace it with a fake/local/manual classifier callback by implementing the same callback interface.
@@ -29,7 +31,7 @@ import { createPiModelClassifierTransport } from './lib/pi-model-classifier-tran
 import { PrivacyInputRuntime } from './lib/runtime.js';
 
 export default function privacyInput(pi) {
-  const clientPromise = Pristine.create();
+  const clientPromise = Pristine.create(); // macOS default: Keychain-backed RSA keys when keysDir is omitted
   registerPrivacyInputExtension(pi, async (ctx) => {
     const client = await clientPromise;
     return new PrivacyInputRuntime({

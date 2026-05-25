@@ -93,6 +93,8 @@ npm install --omit=dev
 
 Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, `resolveSensitive`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). Local-first deployments should use a local/fake/manual classifier callback. For real classifier smoke with an explicit non-local/provider-backed Pi model opt-in, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport sends sanitized classifier context to Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
 
+On macOS, a default `Pristine.create()` host client now uses Keychain-backed RSA keys for privacy vault access. Do not pass `keysDir` if you want the macOS Keychain default; passing `keysDir` intentionally opts back into filesystem key files. First privacy use for a user may create the Keychain keypair and may show a one-time macOS prompt depending on local Keychain policy.
+
 ## Embedding model and Nomic warmup
 
 This reference uses `nomic-ai/nomic-embed-text-v1.5` through `@huggingface/transformers`.

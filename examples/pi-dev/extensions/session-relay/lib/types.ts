@@ -24,11 +24,17 @@ export interface HistoricalSession {
   readonly lastMessageAt: string;
 }
 
-export interface SessionMetadataStore {
+export interface SessionMetadataWriter {
   upsertSession(metadata: MemorySessionMetadata): void;
-  getSession(sourceHarness: MemorySessionSourceHarness, sourceUri: string): MemorySessionRow | null;
-  findLatestPriorSession(query: HistoricalSessionQuery): HistoricalSession | null;
   close?(): void;
+}
+
+export interface PriorSessionLookup {
+  findLatestPriorSession(query: HistoricalSessionQuery): HistoricalSession | null;
+}
+
+export interface SessionMetadataStore extends SessionMetadataWriter, PriorSessionLookup {
+  getSession(sourceHarness: MemorySessionSourceHarness, sourceUri: string): MemorySessionRow | null;
 }
 
 export interface PiSessionManagerLike {

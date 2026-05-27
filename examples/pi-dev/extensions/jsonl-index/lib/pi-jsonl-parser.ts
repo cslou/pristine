@@ -1,6 +1,7 @@
 export {
   PiJsonlParseError,
   parsePiSessionJsonlFile,
+  loadPiSessionJsonlVisibleMessageTail,
   parsePiSessionJsonlText,
   summarizePiSessionJsonlFile,
 } from '../../../shared/lib/pi-jsonl-session.js';

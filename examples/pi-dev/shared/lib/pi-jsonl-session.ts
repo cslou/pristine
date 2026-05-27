@@ -198,6 +198,61 @@ export const parsePiSessionJsonlFile = async (
   return results;
 };
 
+export const loadPiSessionJsonlVisibleMessageTail = async (
+  sessionFilePath: string,
+  options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> & {
+    readonly charBudget: number;
+  },
+): Promise<{ readonly messages: readonly PiJsonlParsedMessage[]; readonly truncated: boolean }> => {
+  const charBudget = Math.max(0, Math.floor(options.charBudget));
+  if (charBudget === 0) return { messages: [], truncated: false };
+
+  const state: ParserState = {};
+  const parseOptions = { ...options, sourceUri: sessionFilePath };
+  const lines = createInterface({
+    input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  const tail: PiJsonlParsedMessage[] = [];
+  let usedChars = 0;
+  let truncated = false;
+  let lineNumber = 0;
+  for await (const line of lines) {
+    lineNumber++;
+    if (line.trim().length === 0) continue;
+    const parsed = parsePiJsonlEntry(
+      parseJsonLine(line, lineNumber, sessionFilePath),
+      lineNumber,
+      parseOptions,
+      state,
+    );
+    if (parsed === null) continue;
+
+    tail.push(parsed);
+    usedChars += parsed.text.length;
+    while (usedChars > charBudget) {
+      const overflow = usedChars - charBudget;
+      const first = tail[0];
+      if (first === undefined) break;
+      if (first.text.length <= overflow) {
+        tail.shift();
+        usedChars -= first.text.length;
+        truncated = true;
+        continue;
+      }
+      tail[0] = {
+        ...first,
+        text: first.text.slice(overflow),
+      };
+      usedChars -= overflow;
+      truncated = true;
+    }
+  }
+
+  return { messages: tail, truncated };
+};
+
 export const summarizePiSessionJsonlFile = async (
   sessionFilePath: string,
   options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> = {},

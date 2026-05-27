@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS ${MEMORY_SESSIONS_TABLE} (
 );
 CREATE INDEX IF NOT EXISTS ix_memory_sessions_cwd_last_message
   ON ${MEMORY_SESSIONS_TABLE}(cwd, last_message_at);
+CREATE INDEX IF NOT EXISTS ix_memory_sessions_harness_cwd_last_message
+  ON ${MEMORY_SESSIONS_TABLE}(source_harness, cwd, last_message_at DESC, updated_at DESC);
 `);
   }
 }

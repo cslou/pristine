@@ -9,7 +9,7 @@ import { createSqliteSessionMetadataStore } from './session-store.js';
 import type {
   MemorySessionMetadata,
   PiSessionRelayContextLike,
-  SessionMetadataStore,
+  SessionMetadataWriter,
 } from './types.js';
 
 export type PiSessionRelayLifecycleReason = 'startup' | 'reload' | 'resume' | 'new' | 'fork' | string;
@@ -18,7 +18,7 @@ export interface PiSessionRelayRuntimeConfig {
   readonly dbPath?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly homeDir?: string;
-  readonly store?: SessionMetadataStore;
+  readonly store?: SessionMetadataWriter;
   readonly now?: () => Date;
 }
 
@@ -72,7 +72,7 @@ export interface PiSessionRelayRuntimeLike {
 }
 
 export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
-  private readonly store: SessionMetadataStore;
+  private readonly store: SessionMetadataWriter;
   private readonly now: () => Date;
 
   public constructor(config: PiSessionRelayRuntimeConfig = {}) {

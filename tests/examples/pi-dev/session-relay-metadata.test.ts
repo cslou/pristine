@@ -345,6 +345,7 @@ describe('Pi session relay metadata extension reference', () => {
     const store = new SqliteSessionMetadataStore({
       db: new Database(join(await makeTempDir(), 'pristine.db')),
     });
+    const notifications: string[] = [];
 
     expect(
       findLatestPriorSession(store, {
@@ -352,6 +353,7 @@ describe('Pi session relay metadata extension reference', () => {
         cwd: '/repo/missing',
       }),
     ).toBeNull();
+    expect(notifications).toEqual([]);
   });
 
   it('loads visible prior-session Pi messages and enforces a tail character budget', async () => {
@@ -377,6 +379,90 @@ describe('Pi session relay metadata extension reference', () => {
       'thinking-only assistant should be ignored',
     );
     expect(loaded.messages.map((message) => message.text).join('\n')).not.toContain('abc123');
+  });
+
+  it('filters loaded prior-session messages to the latest active branch', async () => {
+    const sessionFile = join(await makeTempDir(), 'loader-forked-session.jsonl');
+    await writeFile(
+      sessionFile,
+      [
+        {
+          type: 'message',
+          id: 'root',
+          parentId: null,
+          timestamp: '2026-05-06T10:00:01.000Z',
+          message: { role: 'user', content: 'root should load' },
+        },
+        {
+          type: 'message',
+          id: 'orphan',
+          parentId: 'root',
+          timestamp: '2026-05-06T10:00:02.000Z',
+          message: { role: 'assistant', content: 'orphan branch should not load' },
+        },
+        {
+          type: 'message',
+          id: 'active',
+          parentId: 'root',
+          timestamp: '2026-05-06T10:00:03.000Z',
+          message: { role: 'assistant', content: 'active branch should load' },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+    );
+
+    const loaded = await loadBoundedPiPriorSessionMessages({
+      session: {
+        sourceHarness: 'pi',
+        sourceUri: sessionFile,
+        cwd: '/repo/one',
+        lastMessageAt: '2026-05-06T10:00:03.000Z',
+      },
+      charBudget: 200,
+    });
+
+    expect(loaded.messages.map((message) => message.text)).toEqual([
+      'root should load',
+      'active branch should load',
+    ]);
+  });
+
+  it('excludes system-role content and truncates oversized newest messages from the front', async () => {
+    const sessionFile = join(await makeTempDir(), 'system-and-oversized.jsonl');
+    await writeFile(
+      sessionFile,
+      [
+        {
+          type: 'message',
+          id: 'system',
+          timestamp: '2026-05-06T10:00:01.000Z',
+          message: { role: 'system', content: 'system content should not load' },
+        },
+        {
+          type: 'message',
+          id: 'visible',
+          parentId: 'system',
+          timestamp: '2026-05-06T10:00:02.000Z',
+          message: { role: 'user', content: '0123456789ABCDEFGHIJ' },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+    );
+
+    const loaded = await loadBoundedPiPriorSessionMessages({
+      session: {
+        sourceHarness: 'pi',
+        sourceUri: sessionFile,
+        cwd: '/repo/one',
+        lastMessageAt: '2026-05-06T10:00:02.000Z',
+      },
+      charBudget: 8,
+    });
+
+    expect(loaded.messages).toEqual([{ role: 'user', text: 'CDEFGHIJ' }]);
+    expect(loaded.truncated).toBe(true);
   });
 
   it('keeps session-relay independent from vector, embedder, and semantic search internals', () => {

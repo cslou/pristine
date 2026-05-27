@@ -229,13 +229,13 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
       if (cwd === undefined || cwd.trim().length === 0) {
         return { ok: true, injected: false };
       }
+      this.attemptedSessionFiles.add(currentSessionFile);
       if (await currentSessionHasRelayMarker(currentSessionFile)) {
         return { ok: true, injected: false };
       }
       if ((await currentSessionVisibleMessageCount(currentSessionFile)) > 1) {
         return { ok: true, injected: false };
       }
-      this.attemptedSessionFiles.add(currentSessionFile);
 
       const priorSession = this.store.findLatestPriorSession({
         sourceHarness: 'pi',

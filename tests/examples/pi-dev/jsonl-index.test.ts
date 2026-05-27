@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { registerJsonlIndexExtension } from '../../../examples/pi-dev/extensions/jsonl-index/index.js';
@@ -22,6 +22,39 @@ import {
 } from '../../../examples/pi-dev/extensions/jsonl-index/lib/source-index.js';
 
 const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
+const forbiddenSharedHelperDependencies = [
+  '@huggingface/transformers',
+  'sqlite-vec',
+  'local-embedder',
+  'source-index',
+];
+
+const collectLocalImportGraph = async (
+  entryPath: string,
+  visited: Set<string> = new Set(),
+): Promise<ReadonlyMap<string, string>> => {
+  const absolutePath = resolve(entryPath);
+  if (visited.has(absolutePath)) return new Map();
+  visited.add(absolutePath);
+
+  const source = await readFile(absolutePath, 'utf8');
+  const graph = new Map<string, string>([[absolutePath, source]]);
+  const importSpecifiers = [
+    ...source.matchAll(/import(?:\s+type)?(?:[\s\S]*?from\s+)?['"]([^'"]+)['"]/g),
+    ...source.matchAll(/export(?:\s+type)?[\s\S]*?from\s+['"]([^'"]+)['"]/g),
+  ]
+    .map((match) => match[1])
+    .filter(
+      (specifier): specifier is string => specifier !== undefined && specifier.startsWith('.'),
+    );
+
+  for (const specifier of importSpecifiers) {
+    const importedPath = resolve(dirname(absolutePath), specifier).replace(/\.js$/, '.ts');
+    const nestedGraph = await collectLocalImportGraph(importedPath, visited);
+    for (const [filePath, fileSource] of nestedGraph) graph.set(filePath, fileSource);
+  }
+  return graph;
+};
 
 class StubEmbedder {
   public readonly texts: string[] = [];
@@ -184,12 +217,18 @@ describe('Pi JSONL index extension reference', () => {
   });
 
   it('keeps shared Pi JSONL helpers independent from vector and embedding modules', async () => {
-    const helperSource = await readFile('examples/pi-dev/shared/lib/pi-jsonl-session.ts', 'utf8');
+    const importGraph = await collectLocalImportGraph(
+      'examples/pi-dev/shared/lib/pi-jsonl-session.ts',
+    );
 
-    expect(helperSource).not.toContain('@huggingface/transformers');
-    expect(helperSource).not.toContain('sqlite-vec');
-    expect(helperSource).not.toContain('local-embedder');
-    expect(helperSource).not.toContain('source-index');
+    expect(
+      [...importGraph.keys()].map((filePath) => filePath.replace(process.cwd(), '')),
+    ).toContain('/examples/pi-dev/shared/lib/pi-jsonl-session.ts');
+    for (const source of importGraph.values()) {
+      for (const forbiddenDependency of forbiddenSharedHelperDependencies) {
+        expect(source).not.toContain(forbiddenDependency);
+      }
+    }
   });
 
   it('indexes Pi JSONL snippets with source pointers and vector rows in a temporary DB', async () => {

@@ -70,6 +70,7 @@ The Final Verification Story runs all sprint functional verification plus the fu
   - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts` and verify existing chunk/vector indexing, stale active-branch cleanup, duplicate suppression, and startup missing-file behavior still pass.
   - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify source-pointer exact-context behavior still passes after helper extraction.
   - [x] Run `pnpm run typecheck` and verify the shared helper refactor compiles under strict TypeScript.
+- **Story 1 evidence:** PASS — `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts`; PASS — `pnpm run typecheck`; PASS — pre-push standard regression (`pnpm run lint`, `pnpm run typecheck`, full `pnpm run test:unit`).
 - **Manual-only verification:** N/A — this is a refactor with automatable parser/runtime regression checks.
 - **Planned commits:**
   1. `refactor: extract shared pi jsonl helpers` — shared helper modules, jsonl-index import updates, and regression-preserving tests.

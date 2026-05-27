@@ -10,7 +10,9 @@ describe('package entrypoint smoke', () => {
       'AppError',
       'ConfigError',
       'EmbedderError',
+      'FileSystemKeyManager',
       'InvalidArgumentError',
+      'MacOsKeychainKeyManager',
       'Pristine',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
@@ -19,6 +21,7 @@ describe('package entrypoint smoke', () => {
       'buildSourceChunkVectorDdl',
       'classify',
       'createDatabase',
+      'createDefaultKeyManager',
       'detect',
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
@@ -29,6 +32,9 @@ describe('package entrypoint smoke', () => {
     expect(pkg.createDatabase).toBeTypeOf('function');
     expect(pkg.classify).toBeTypeOf('function');
     expect(pkg.detect).toBeTypeOf('function');
+    expect(pkg.createDefaultKeyManager).toBeTypeOf('function');
+    expect(pkg.FileSystemKeyManager).toBeTypeOf('function');
+    expect(pkg.MacOsKeychainKeyManager).toBeTypeOf('function');
     expect(pkg.redact).toBeTypeOf('function');
     expect(pkg.SourceChunkStore).toBeTypeOf('function');
     expect(pkg.initSourceChunkTables).toBeTypeOf('function');

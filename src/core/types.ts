@@ -247,7 +247,7 @@ export interface RedactVaultStore {
 }
 
 export interface RedactKeyManager {
-  getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus>;
+  getOrCreatePublicKey(userId: string): Promise<PublicKeyWithStatus>;
 }
 
 export interface RedactKekManager {
@@ -489,8 +489,11 @@ export interface IngestOptions {
 // Key Management
 // ---------------------------------------------------------------------------
 
-export interface KeyPairWithStatus {
+export interface PublicKeyWithStatus {
   readonly publicKey: string;
-  readonly privateKey: string;
   readonly created: boolean;
+}
+
+export interface KeyPairWithStatus extends PublicKeyWithStatus {
+  readonly privateKey: string;
 }

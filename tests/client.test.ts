@@ -7,6 +7,7 @@ import { Pristine } from '../src/client.js';
 import { createDatabase } from '../src/core/database.js';
 import type { Embedder } from '../src/core/interfaces.js';
 import { seedClientSensitiveValue } from './client/privacy-seed-helpers.js';
+import { InMemoryKeyManager } from './helpers/in-memory-key-manager.js';
 
 const vector = (first: number, second = 0): number[] => [
   first,
@@ -109,6 +110,25 @@ describe('Pristine', () => {
     } finally {
       rmSync(keysDir, { force: true, recursive: true });
     }
+  });
+
+  it('supports an injected key manager', async () => {
+    const client = await Pristine.create({
+      db: deps.db,
+      embedder: deps.embedder,
+      keyManager: new InMemoryKeyManager(),
+    });
+
+    const secret = 'secret-value-123';
+    const redacted = await client.redact(
+      `token ${secret}`,
+      [{ sourceSpan: { start: 'token '.length, end: `token ${secret}`.length }, type: 'api_key' }],
+      'user-a',
+    );
+
+    await expect(client.reveal(redacted.text, 'user-a')).resolves.toMatchObject({
+      text: `token ${secret}`,
+    });
   });
 
   it('dispose does not dispose DI-provided resources', async () => {

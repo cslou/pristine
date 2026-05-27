@@ -39,6 +39,6 @@ The SDK does not implement a hosted classifier or bundled LLM classifier. Determ
 
 Pristine stores source-index chunks, snippets, embeddings, and source metadata in the local SQLite database as searchable index data. Treat local database sensitivity seriously: it is not a public cache, and it is not the authoritative full raw source store.
 
-Privacy vault entries are encrypted locally, but database backups and key backups must be managed together. Backing up encrypted vault data without the matching keys can make reveal impossible; backing up keys without protecting them can weaken the local privacy model.
+Privacy vault entries are encrypted locally, but database backups and key backups must be managed together. Backing up encrypted vault data without the matching keys can make reveal impossible; backing up keys without protecting them can weaken the local privacy model. On macOS, default stores keep RSA vault keys in the login Keychain under a store-specific namespace rather than plaintext key files unless an application explicitly configures `keysDir` or injects another key manager.
 
 The default embedder may perform model downloads on first use unless model assets are pre-cached or the runtime is configured for offline operation. Applications remain responsible for filesystem permissions, backup policy, logging policy, model configuration, and any network wrappers they add around the SDK.

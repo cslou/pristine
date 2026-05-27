@@ -2,7 +2,6 @@ import type Database from 'better-sqlite3';
 import type { KeyManager } from '../core/interfaces.js';
 import type { ZkV2EncryptedValueMetadata } from '../core/types.js';
 import { VaultEntryContractError } from '../core/errors.js';
-import { unwrapDek } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url, encodeBase64Url } from './vault/base64url.js';
 import { type KekManager, wrapDekWithKek } from './kek/kek-manager.js';
 
@@ -45,7 +44,8 @@ export async function migrateToKek(
     let metadata: ZkV2EncryptedValueMetadata;
     try {
       metadata = JSON.parse(row.encryption_metadata) as ZkV2EncryptedValueMetadata;
-    } catch {
+    } catch (error: unknown) {
+      void error;
       throw new VaultEntryContractError(`Corrupt encryption_metadata on vault entry ${row.id}`);
     }
     if (metadata.keyWrapping === 'rsa-oaep-256') {
@@ -59,28 +59,34 @@ export async function migrateToKek(
     return { migrated: 0, skipped };
   }
 
-  const { privateKey } = await keyManager.getOrCreateKeyPair(userId);
   const kek = await kekManager.getOrCreate(userId);
+  const migratedRows: { id: string; metadataJson: string }[] = [];
+
+  for (const { id, metadata } of toMigrate) {
+    const wrappedDekBuf = Buffer.from(decodeBase64Url(metadata.wrappedDek));
+    const dek = await keyManager.unwrap(userId, wrappedDekBuf);
+    const newWrappedDek = wrapDekWithKek(dek, kek);
+
+    const updated: ZkV2EncryptedValueMetadata = {
+      ...metadata,
+      keyWrapping: 'aes-256-kw+rsa-oaep-256',
+      wrappedDek: encodeBase64Url(new Uint8Array(newWrappedDek)),
+    };
+
+    migratedRows.push({ id, metadataJson: JSON.stringify(updated) });
+  }
 
   const updateStmt = db.prepare('UPDATE vault_entries SET encryption_metadata = ? WHERE id = ?');
 
-  const migrateAll = db.transaction(() => {
-    for (const { id, metadata } of toMigrate) {
-      const wrappedDekBuf = Buffer.from(decodeBase64Url(metadata.wrappedDek));
-      const dek = unwrapDek(wrappedDekBuf, privateKey);
-      const newWrappedDek = wrapDekWithKek(dek, kek);
+  const migrateAll = db.transaction(
+    (rowsToUpdate: readonly { id: string; metadataJson: string }[]) => {
+      for (const row of rowsToUpdate) {
+        updateStmt.run(row.metadataJson, row.id);
+      }
+    },
+  );
 
-      const updated: ZkV2EncryptedValueMetadata = {
-        ...metadata,
-        keyWrapping: 'aes-256-kw+rsa-oaep-256',
-        wrappedDek: encodeBase64Url(new Uint8Array(newWrappedDek)),
-      };
-
-      updateStmt.run(JSON.stringify(updated), id);
-    }
-  });
-
-  migrateAll();
+  migrateAll(migratedRows);
 
   return { migrated: toMigrate.length, skipped };
 }

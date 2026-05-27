@@ -1,5 +1,5 @@
 import type { KeyManager } from '../core/interfaces.js';
-import { computeKeyFingerprint, generateKeyPair } from './vault/asymmetric-crypto.js';
+import { computeKeyFingerprint } from './vault/asymmetric-crypto.js';
 import { type KekManager, wrapKek } from './kek/kek-manager.js';
 
 /**
@@ -18,17 +18,19 @@ export async function rotateKey(
   // Get the plaintext KEK (getOrCreate handles RSA unwrap internally)
   const kek = await kekManager.getOrCreate(userId);
 
-  // Generate new RSA key pair
-  const newKeyPair = await generateKeyPair();
-  const newFingerprint = computeKeyFingerprint(newKeyPair.publicKey);
+  const preparedRotation = await keyManager.prepareKeyPairRotation(userId);
+  const newFingerprint = computeKeyFingerprint(preparedRotation.publicKey);
+  const newWrappedKek = wrapKek(kek, preparedRotation.publicKey);
 
-  const newWrappedKek = wrapKek(kek, newKeyPair.publicKey);
-
-  // Persist new RSA key pair FIRST — if this fails, the DB still holds the
-  // old wrapped KEK which remains decryptable with the old private key.
-  // Updating the DB first would risk leaving the KEK unrecoverable.
-  await keyManager.saveKeyPair(userId, newKeyPair);
-
-  // Now update DB with new wrapped KEK (updateWrappedKek also clears cache)
-  kekManager.updateWrappedKek(userId, newWrappedKek, newFingerprint);
+  let updated = false;
+  try {
+    kekManager.updateWrappedKek(userId, newWrappedKek, newFingerprint);
+    updated = true;
+    await preparedRotation.commit();
+  } catch (error) {
+    if (!updated) {
+      await preparedRotation.rollback();
+    }
+    throw error;
+  }
 }

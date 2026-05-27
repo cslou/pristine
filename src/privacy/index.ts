@@ -2,7 +2,7 @@ import { createDecipheriv } from 'node:crypto';
 import type { KeyManager, PrivacyPipeline, VaultStore } from '../core/interfaces.js';
 import { PLACEHOLDER_REGEX, collectPlaceholders, resolve } from './sanitizer/index.js';
 import { encryptAndWrapValue } from './vault/asymmetric-encrypt.js';
-import { computeKeyFingerprint, unwrapDek } from './vault/asymmetric-crypto.js';
+import { computeKeyFingerprint } from './vault/asymmetric-crypto.js';
 import { decodeBase64Url } from './vault/base64url.js';
 import { toApprovedValue } from './vault/sqlite/index.js';
 import { createPrivacyPipeline } from './pipeline.js';
@@ -111,7 +111,6 @@ const decryptEntries = async (
     return new Map();
   }
 
-  const { privateKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
   const kek = await config.kekManager.getOrCreate(config.userId);
   const approvedValues = new Map<string, string>();
 
@@ -125,7 +124,7 @@ const decryptEntries = async (
     if (envelope.keyWrapping === 'aes-256-kw+rsa-oaep-256') {
       dek = unwrapDekWithKek(wrappedDekBuf, kek);
     } else {
-      dek = unwrapDek(wrappedDekBuf, privateKey);
+      dek = await config.keyManager.unwrap(config.userId, wrappedDekBuf);
     }
 
     const ciphertext = Buffer.from(decodeBase64Url(envelope.ciphertext));
@@ -174,7 +173,7 @@ export async function secureAndRedact(
     return includeWarnings({ ok: true, redactedText, placeholderIds: [] }, warnings);
   }
 
-  const { publicKey } = await config.keyManager.getOrCreateKeyPair(config.userId);
+  const { publicKey } = await config.keyManager.getOrCreatePublicKey(config.userId);
   const fingerprint = computeKeyFingerprint(publicKey);
   const kek = await config.kekManager.getOrCreate(config.userId);
 

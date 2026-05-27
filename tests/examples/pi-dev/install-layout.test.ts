@@ -1,11 +1,11 @@
+import { AssertionError } from 'node:assert';
 import { cpSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const repoRoot = resolve(import.meta.dirname, '../../..');
-const piDevRoot = join(repoRoot, 'examples/pi-dev');
+const piDevRoot = resolve(import.meta.dirname, '../../../examples/pi-dev');
 
 const copyReferenceLayout = (targetRoot: string): void => {
   cpSync(join(piDevRoot, 'shared'), join(targetRoot, '.pi/shared'), { recursive: true });
@@ -31,6 +31,13 @@ const copyReferenceLayout = (targetRoot: string): void => {
     },
   );
   cpSync(
+    join(piDevRoot, 'extensions/session-relay'),
+    join(targetRoot, '.pi/extensions/session-relay'),
+    {
+      recursive: true,
+    },
+  );
+  cpSync(
     join(piDevRoot, 'skills/search-session-history'),
     join(targetRoot, '.pi/skills/search-session-history'),
     { recursive: true },
@@ -50,7 +57,9 @@ const resolveTypeScriptImport = (fromFile: string, specifier: string): string =>
     }
   });
   if (resolved === undefined) {
-    throw new Error(`Unable to resolve ${specifier} from ${fromFile}`);
+    throw new AssertionError({
+      message: `Unable to resolve ${specifier} from ${fromFile}`,
+    });
   }
   return resolved;
 };
@@ -72,6 +81,11 @@ describe('Pi dev reference install layout', () => {
         join(targetRoot, '.pi/extensions/privacy-input/lib/runtime.ts'),
         join(targetRoot, '.pi/extensions/privacy-input/lib/classifier-adapter.ts'),
         join(targetRoot, '.pi/extensions/privacy-input/lib/pi-model-classifier-transport.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/index.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/extension-runtime.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/prior-session.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/relay-generator.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/session-store.ts'),
       ];
 
       const resolvedImports = extensionFiles.flatMap((file) => {
@@ -85,8 +99,33 @@ describe('Pi dev reference install layout', () => {
       expect(resolvedImports).toContain(
         join(targetRoot, '.pi/shared/lib/pi-jsonl-index-schema.ts'),
       );
+      expect(resolvedImports).toContain(join(targetRoot, '.pi/shared/lib/pi-jsonl-session.ts'));
+      expect(resolvedImports).toContain(join(targetRoot, '.pi/shared/lib/session-relay-schema.ts'));
     } finally {
       rmSync(targetRoot, { recursive: true, force: true });
     }
+  });
+
+  it('documents session-relay install behavior and boundaries', () => {
+    const readme = readFileSync(join(piDevRoot, 'README.md'), 'utf8');
+
+    for (const requiredText of [
+      'session-relay',
+      'memory_sessions',
+      "source_harness = 'pi'",
+      'No-history behavior is a silent no-op',
+      'does not require embeddings, `sqlite-vec`, `jsonl-index`, `search-memory`, or `pristine_recall`',
+      'selects the latest prior `memory_sessions` row for the same `cwd`',
+      'generates a fresh six-section relay (no cache)',
+      'Pi receives a non-blocking warning',
+      'Pi-first. Codex and Claude adapters are deferred',
+      'node examples/pi-dev/scripts/session-relay-smoke.mjs',
+      'Session relay smoke PASS',
+      'Pass condition',
+    ]) {
+      expect(readme).toContain(requiredText);
+    }
+
+    expect(statSync(join(piDevRoot, 'scripts/session-relay-smoke.mjs')).isFile()).toBe(true);
   });
 });

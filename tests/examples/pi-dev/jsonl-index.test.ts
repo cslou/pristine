@@ -1,6 +1,6 @@
-import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { registerJsonlIndexExtension } from '../../../examples/pi-dev/extensions/jsonl-index/index.js';
@@ -9,7 +9,12 @@ import {
   createPiJsonlIndexRuntime,
   type PiExtensionContextLike,
 } from '../../../examples/pi-dev/extensions/jsonl-index/lib/extension-runtime.js';
-import type { PiJsonlParsedMessage } from '../../../examples/pi-dev/extensions/jsonl-index/lib/pi-jsonl-parser.js';
+import {
+  activeEntryIdsFromBranchEntries,
+  deriveActiveEntryIdsFromPiSessionFile,
+  parsePiSessionJsonlText,
+  type PiJsonlParsedMessage,
+} from '../../../examples/pi-dev/shared/lib/pi-jsonl-session.js';
 import {
   openPiJsonlIndexDatabase,
   SqlitePiJsonlSourceIndexer,
@@ -17,6 +22,39 @@ import {
 } from '../../../examples/pi-dev/extensions/jsonl-index/lib/source-index.js';
 
 const fixturePath = 'tests/fixtures/pi-jsonl/mixed-session.jsonl';
+const forbiddenSharedHelperDependencies = [
+  '@huggingface/transformers',
+  'sqlite-vec',
+  'local-embedder',
+  'source-index',
+];
+
+const collectLocalImportGraph = async (
+  entryPath: string,
+  visited: Set<string> = new Set(),
+): Promise<ReadonlyMap<string, string>> => {
+  const absolutePath = resolve(entryPath);
+  if (visited.has(absolutePath)) return new Map();
+  visited.add(absolutePath);
+
+  const source = await readFile(absolutePath, 'utf8');
+  const graph = new Map<string, string>([[absolutePath, source]]);
+  const importSpecifiers = [
+    ...source.matchAll(/import(?:\s+type)?(?:[\s\S]*?from\s+)?['"]([^'"]+)['"]/g),
+    ...source.matchAll(/export(?:\s+type)?[\s\S]*?from\s+['"]([^'"]+)['"]/g),
+  ]
+    .map((match) => match[1])
+    .filter(
+      (specifier): specifier is string => specifier !== undefined && specifier.startsWith('.'),
+    );
+
+  for (const specifier of importSpecifiers) {
+    const importedPath = resolve(dirname(absolutePath), specifier).replace(/\.js$/, '.ts');
+    const nestedGraph = await collectLocalImportGraph(importedPath, visited);
+    for (const [filePath, fileSource] of nestedGraph) graph.set(filePath, fileSource);
+  }
+  return graph;
+};
 
 class StubEmbedder {
   public readonly texts: string[] = [];
@@ -109,6 +147,88 @@ describe('Pi JSONL index extension reference', () => {
     expect(resolvePiPristineDbPath({ env: {}, homeDir: '/home/test' })).toBe(
       '/home/test/.pi/pristine/pristine.db',
     );
+  });
+
+  it('parses visible Pi user/assistant messages through the shared JSONL helper', async () => {
+    const fixture = await readFile(fixturePath, 'utf8');
+
+    const messages = parsePiSessionJsonlText(fixture, { sourceUri: fixturePath });
+
+    expect(messages.map((message) => message.pointer.entryId)).toEqual([
+      'u0000001',
+      'a0000002',
+      'u0000004',
+    ]);
+    expect(messages.map((message) => message.role)).toEqual(['user', 'assistant', 'user']);
+    expect(messages.map((message) => message.text)).toEqual([
+      'Please remember the sapphire migration note.',
+      'Noted: sapphire migration note is important.',
+      'The repo-local install phrase is amber-coyote.',
+    ]);
+    expect(messages[0]?.pointer).toMatchObject({
+      sourceKind: 'pi-jsonl',
+      sourceUri: fixturePath,
+      entryId: 'u0000001',
+      lineNumber: 2,
+      timestamp: '2026-05-06T10:00:01.000Z',
+      cwd: '/Users/lou/projects/test-pristine',
+    });
+  });
+
+  it('filters active branches and derives fallback parent chains through shared helpers', async () => {
+    const fixture = await readFile(fixturePath, 'utf8');
+    const activeEntryIds = activeEntryIdsFromBranchEntries([
+      { id: 'u0000001' },
+      { id: 'a0000002' },
+      { id: 't0000003' },
+    ]);
+
+    expect(
+      parsePiSessionJsonlText(fixture, { sourceUri: fixturePath, activeEntryIds }).map(
+        (message) => message.pointer.entryId,
+      ),
+    ).toEqual(['u0000001', 'a0000002']);
+
+    const dir = await makeTempDir();
+    const sessionFile = join(dir, 'forked-session.jsonl');
+    await writeFile(
+      sessionFile,
+      [
+        { type: 'message', id: 'root', parentId: null, message: { role: 'user', content: 'root' } },
+        {
+          type: 'message',
+          id: 'orphan',
+          parentId: 'root',
+          message: { role: 'user', content: 'orphan branch should not index' },
+        },
+        {
+          type: 'message',
+          id: 'active',
+          parentId: 'root',
+          message: { role: 'user', content: 'active branch should index' },
+        },
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join('\n'),
+    );
+
+    const derivedEntryIds = await deriveActiveEntryIdsFromPiSessionFile(sessionFile);
+    expect([...derivedEntryIds]).toEqual([]);
+  });
+
+  it('keeps shared Pi JSONL helpers independent from vector and embedding modules', async () => {
+    const importGraph = await collectLocalImportGraph(
+      'examples/pi-dev/shared/lib/pi-jsonl-session.ts',
+    );
+
+    expect(
+      [...importGraph.keys()].map((filePath) => filePath.replace(process.cwd(), '')),
+    ).toContain('/examples/pi-dev/shared/lib/pi-jsonl-session.ts');
+    for (const source of importGraph.values()) {
+      for (const forbiddenDependency of forbiddenSharedHelperDependencies) {
+        expect(source).not.toContain(forbiddenDependency);
+      }
+    }
   });
 
   it('indexes Pi JSONL snippets with source pointers and vector rows in a temporary DB', async () => {
@@ -239,7 +359,7 @@ describe('Pi JSONL index extension reference', () => {
     ]);
   });
 
-  it('derives the latest parent chain from forked sessions when branch data is empty', async () => {
+  it('fails closed for ambiguous forked sessions when branch data is empty', async () => {
     const dir = await makeTempDir();
     const sessionFile = join(dir, 'forked-session.jsonl');
     await writeFile(
@@ -268,10 +388,7 @@ describe('Pi JSONL index extension reference', () => {
     await runtime.indexAfterAgentEnd(makeCtx({ sessionFile, branchIds: [] }));
 
     expect(indexer.batches).toHaveLength(1);
-    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([
-      'root',
-      'active',
-    ]);
+    expect(indexer.batches[0]?.map((message) => message.pointer.entryId)).toEqual([]);
   });
 
   it('derives active ids from linear sessions when agent_end has empty branch data', async () => {

@@ -1,12 +1,12 @@
 import { realpath, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { loadPiSessionJsonlVisibleMessageTail } from '../../../shared/lib/pi-jsonl-session.js';
-import type { HistoricalSession, HistoricalSessionQuery, PriorSessionLookup } from './types.js';
-
-export interface RelayVisibleMessage {
-  readonly role: 'user' | 'assistant';
-  readonly text: string;
-}
+import type {
+  HistoricalSession,
+  HistoricalSessionQuery,
+  PriorSessionLookup,
+  RelayVisibleMessage,
+} from './types.js';
 
 export interface LoadedPriorSessionMessages {
   readonly session: HistoricalSession;

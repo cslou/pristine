@@ -1,6 +1,11 @@
 import type { PiJsonlBranchEntryLike } from '../../../shared/lib/pi-jsonl-session.js';
 import type { MemorySessionRow, MemorySessionSourceHarness } from '../../../shared/lib/session-relay-schema.js';
 
+export interface RelayVisibleMessage {
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+}
+
 export interface MemorySessionMetadata {
   readonly sourceHarness: MemorySessionSourceHarness;
   readonly sourceUri: string;

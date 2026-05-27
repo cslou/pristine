@@ -163,19 +163,20 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** user starting a new session, **I want** the prior-session handoff to use the existing relay structure, **so that** the new agent receives concise continuity rather than raw message dumps.
 - **Dependencies:** Story 3
 - **Acceptance criteria:**
-  - [ ] A relay generator module builds a prompt/input using the existing six-section relay format: Current task, Progress, Key files, Decisions made, Blockers/open questions, Next steps.
-  - [ ] The generator is dependency-injected so tests can use a fake summarizer/model transport without calling an external provider.
-  - [ ] Relay output is validated enough to reject empty/whitespace-only summaries and preserve a clear non-blocking failure result for callers.
-  - [ ] Generated relay content includes a clear heading/preamble identifying the source harness/session pointer before injection.
-  - [ ] Relay generation does not require embeddings, vector search, `pristine_recall`, or a prior semantic index.
+  - [x] A relay generator module builds a prompt/input using the existing six-section relay format: Current task, Progress, Key files, Decisions made, Blockers/open questions, Next steps.
+  - [x] The generator is dependency-injected so tests can use a fake summarizer/model transport without calling an external provider.
+  - [x] Relay output is validated enough to reject empty/whitespace-only summaries and preserve a clear non-blocking failure result for callers.
+  - [x] Generated relay content includes a clear heading/preamble identifying the source harness/session pointer before injection.
+  - [x] Relay generation does not require embeddings, vector search, `pristine_recall`, or a prior semantic index.
 - **Functional verification:**
-  - [ ] Add Vitest coverage proving the fake summarizer receives bounded prior-session visible messages and a prompt containing all six required relay sections.
-  - [ ] Add Vitest coverage proving a non-empty summarizer result is formatted as a `Prior Session Handoff` payload with source harness/session metadata.
-  - [ ] Add Vitest coverage proving summarizer errors and empty summaries return a failure result without throwing to the top-level caller.
-  - [ ] Add Vitest/import-boundary coverage proving relay generation does not import vector/embedder/search-memory modules.
+  - [x] Add Vitest coverage proving the fake summarizer receives bounded prior-session visible messages and a prompt containing all six required relay sections.
+  - [x] Add Vitest coverage proving a non-empty summarizer result is formatted as a `Prior Session Handoff` payload with source harness/session metadata.
+  - [x] Add Vitest coverage proving summarizer errors and empty summaries return a failure result without throwing to the top-level caller.
+  - [x] Add Vitest/import-boundary coverage proving relay generation does not import vector/embedder/search-memory modules.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify existing pointer-first exact-context skill expectations still pass.
-  - [ ] Run `pnpm run typecheck` and verify the generator abstraction has explicit types and no `any`.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify existing pointer-first exact-context skill expectations still pass.
+  - [x] Run `pnpm run typecheck` and verify the generator abstraction has explicit types and no `any`.
+- **Story 4 evidence:** PASS — `pnpm run test:unit -- tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/search-session-history.test.ts`; PASS — `pnpm run typecheck`.
 - **Manual-only verification:** N/A for unit behavior. Real model behavior is covered by the sprint manual smoke in Story 7 / Final Story.
 - **Planned commits:**
   1. `feat: add relay handoff generator` — six-section prompt builder, injectable summarizer interface, result formatting, dependency-boundary check, and tests.

@@ -40,9 +40,9 @@ The agent should then:
 
 `pristine_recall` is the discovery layer: it returns ranked source pointers and bounded snippet previews. `search-session-history` is the exact-context layer.
 
-## Install into another repo
+## Install vector-search memory into another repo
 
-From the repo where you want Pi memory support, copy the reference artifacts into Pi's repo-local discovery layout. Replace `/path/to/pristine` with this repository path.
+From the repo where you want Pi vector-search memory support, copy the source-index artifacts into Pi's repo-local discovery layout. Replace `/path/to/pristine` with this repository path. `session-relay` is optional and has its own install section below because it does not depend on the vector-search artifacts.
 
 ```bash
 cd /path/to/your/repo
@@ -52,7 +52,6 @@ mkdir -p .pi/extensions .pi/skills .pi/shared
 rsync -a --delete /path/to/pristine/examples/pi-dev/shared/ .pi/shared/
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/jsonl-index/ .pi/extensions/jsonl-index/
 rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/search-memory/ .pi/extensions/search-memory/
-rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/session-relay/ .pi/extensions/session-relay/
 rsync -a --delete /path/to/pristine/examples/pi-dev/skills/search-session-history/ .pi/skills/search-session-history/
 ```
 
@@ -63,9 +62,6 @@ cd /path/to/your/repo/.pi/extensions/jsonl-index
 npm install --omit=dev
 
 cd /path/to/your/repo/.pi/extensions/search-memory
-npm install --omit=dev
-
-cd /path/to/your/repo/.pi/extensions/session-relay
 npm install --omit=dev
 ```
 
@@ -79,7 +75,7 @@ If discovery is disabled or you want explicit settings, add paths like this to t
 
 ```json
 {
-  "extensions": ["./extensions/jsonl-index", "./extensions/search-memory", "./extensions/session-relay"],
+  "extensions": ["./extensions/jsonl-index", "./extensions/search-memory"],
   "skills": ["./skills/search-session-history"]
 }
 ```
@@ -98,13 +94,32 @@ npm install --omit=dev
 
 Then wire the runtime from your host extension code before adding `./extensions/privacy-input` to `.pi/settings.json` or relying on project-local discovery. The copied package installs only the Pi model transport dependency; the host supplies `detect`, `classify`, `redact`, `resolveSensitive`, and the configured `Pristine` client (from `@pristine/sdk` or compatible local functions). Local-first deployments should use a local/fake/manual classifier callback. For real classifier smoke with an explicit non-local/provider-backed Pi model opt-in, use `createPrivacyInputClassifierCallback(createPiModelClassifierTransport(...))`; the transport sends sanitized classifier context to Pi `completeSimple` with `ctx.modelRegistry` auth, supports OAuth/header-backed providers, defaults examples to `openai-codex/gpt-5.5`, and falls back to the current Pi model when configured preferences are unavailable.
 
-## Session relay reference
+## Optional session relay reference
 
 `session-relay` is a separate optional reference artifact. It does not require embeddings, `sqlite-vec`, `jsonl-index`, `search-memory`, or `pristine_recall`; it can be installed by itself with only shared helpers and its `better-sqlite3` dependency. It records one generic `memory_sessions` row per processed session with `source_harness = 'pi'`, `source_uri`, `cwd`, first/last visible-message timestamps, visible-message count, active-entry metadata, and `updated_at`.
 
+Copy and install only the relay artifacts when you want new-session handoff without vector search:
+
+```bash
+cd /path/to/your/repo
+mkdir -p .pi/extensions .pi/shared
+rsync -a --delete /path/to/pristine/examples/pi-dev/shared/ .pi/shared/
+rsync -a --delete /path/to/pristine/examples/pi-dev/extensions/session-relay/ .pi/extensions/session-relay/
+cd .pi/extensions/session-relay
+npm install --omit=dev
+```
+
+If explicit settings are required for this optional artifact, add only the relay extension path:
+
+```json
+{
+  "extensions": ["./extensions/session-relay"]
+}
+```
+
 On `before_agent_start`, the extension selects the latest prior `memory_sessions` row for the same `cwd`, excludes the current session URI, loads a bounded visible user/assistant tail, generates a fresh six-section relay (no cache), and returns a hidden model-visible custom context message. No-history behavior is a silent no-op: no injection, no warning, no thrown error. Relay generation failures fail open: no partial injection, the session continues, and Pi receives a non-blocking warning. Successful injection emits no success notification or visible chat/TUI noise.
 
-This sprint's reference is Pi-first. Codex and Claude adapters are deferred; the generic metadata contract leaves room for future `source_harness` values without implementing those adapters now.
+The reference is Pi-first. Codex and Claude adapters are deferred; the generic metadata contract leaves room for future `source_harness` values without implementing those adapters now.
 
 ### Session-relay manual smoke checklist
 
@@ -113,8 +128,8 @@ This sprint's reference is Pi-first. Codex and Claude adapters are deferred; the
 3. Pass condition: the new session receives exactly one hidden prior-session handoff; repeated prompts or reloads do not duplicate it; no `jsonl-index`, vectors, `search-memory`, or `pristine_recall` are installed.
 4. Start Pi in a different temporary repo with no `memory_sessions` history.
 5. Pass condition: no handoff is injected and no warning appears.
-6. To simulate failure, configure a test summarizer that returns an empty summary.
-7. Pass condition: Pi shows one non-blocking warning, no partial relay is injected, and the session continues.
+6. To simulate failure in a disposable copy, temporarily wrap `registerSessionRelayExtension` with a `runtimeFactory` whose relay generator returns an empty summary, or run the unit-level failure tests if you are not changing the copied artifact.
+7. Pass condition: Pi shows one non-blocking warning for a failed relay generation path, no partial relay is injected, and the session continues.
 8. Record evidence in the Story 7 PR and final sprint review; do not commit generated Pi sessions, local DBs, or relay transcripts.
 
 ## Embedding model and Nomic warmup

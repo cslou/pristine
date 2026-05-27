@@ -1,11 +1,11 @@
+import { AssertionError } from 'node:assert';
 import { cpSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const repoRoot = resolve(import.meta.dirname, '../../..');
-const piDevRoot = join(repoRoot, 'examples/pi-dev');
+const piDevRoot = resolve(import.meta.dirname, '../../../examples/pi-dev');
 
 const copyReferenceLayout = (targetRoot: string): void => {
   cpSync(join(piDevRoot, 'shared'), join(targetRoot, '.pi/shared'), { recursive: true });
@@ -57,7 +57,9 @@ const resolveTypeScriptImport = (fromFile: string, specifier: string): string =>
     }
   });
   if (resolved === undefined) {
-    throw new Error(`Unable to resolve ${specifier} from ${fromFile}`);
+    throw new AssertionError({
+      message: `Unable to resolve ${specifier} from ${fromFile}`,
+    });
   }
   return resolved;
 };
@@ -106,7 +108,6 @@ describe('Pi dev reference install layout', () => {
 
   it('documents session-relay install behavior and boundaries', () => {
     const readme = readFileSync(join(piDevRoot, 'README.md'), 'utf8');
-    const spec = readFileSync(join(repoRoot, 'docs/specs/implementation-spec-005.md'), 'utf8');
 
     for (const requiredText of [
       'session-relay',
@@ -114,12 +115,13 @@ describe('Pi dev reference install layout', () => {
       "source_harness = 'pi'",
       'No-history behavior is a silent no-op',
       'does not require embeddings, `sqlite-vec`, `jsonl-index`, `search-memory`, or `pristine_recall`',
+      'selects the latest prior `memory_sessions` row for the same `cwd`',
+      'generates a fresh six-section relay (no cache)',
+      'Pi receives a non-blocking warning',
+      'Pi-first. Codex and Claude adapters are deferred',
       'Pass condition',
     ]) {
       expect(readme).toContain(requiredText);
     }
-    expect(spec).toContain('session-relay');
-    expect(spec).toContain('independent of the vector index');
-    expect(spec).toContain('memory_sessions');
   });
 });

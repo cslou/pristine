@@ -666,8 +666,93 @@ describe('Pi session relay metadata extension reference', () => {
     }
   });
 
+  it('injects one hidden prior-session relay custom message when repo history exists', async () => {
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const store = new SqliteSessionMetadataStore({ db });
+    upsertTestSession({
+      store,
+      sourceUri: fixturePath,
+      cwd: '/Users/lou/projects/test-pristine',
+      lastMessageAt: '2026-05-06T10:00:04.000Z',
+      activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
+    });
+    const runtime = createPiSessionRelayRuntime({
+      store,
+      summarizer: { summarize: async () => 'Current task: Continue the sprint.' },
+      relayCharBudget: 90,
+    });
+    const currentSessionFile = join(await makeTempDir(), 'current.jsonl');
+
+    const first = await runtime.injectPriorSessionRelay(
+      makeCtx({ sessionFile: currentSessionFile }),
+      { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
+    );
+    const second = await runtime.injectPriorSessionRelay(
+      makeCtx({ sessionFile: currentSessionFile }),
+      { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
+    );
+
+    expect(first).toMatchObject({ ok: true, injected: true });
+    expect(first.message).toMatchObject({
+      customType: 'pristine-session-relay',
+      display: false,
+    });
+    expect(first.message?.content).toContain('## Prior Session Handoff');
+    expect(first.message?.content).toContain(`Source: pi session ${fixturePath}`);
+    expect(second).toEqual({ ok: true, injected: false });
+  });
+
+  it('silently skips injection when no prior repo history exists', async () => {
+    const runtime = createPiSessionRelayRuntime({
+      store: new SqliteSessionMetadataStore({
+        db: new Database(join(await makeTempDir(), 'db.sqlite')),
+      }),
+      summarizer: { summarize: async () => 'unreachable' },
+    });
+    const notifications: string[] = [];
+
+    const result = await runtime.injectPriorSessionRelay(
+      makeCtx({ sessionFile: '/tmp/current.jsonl', notifications }),
+      { systemPromptOptions: { cwd: '/repo/missing' } },
+    );
+
+    expect(result).toEqual({ ok: true, injected: false });
+    expect(notifications).toEqual([]);
+  });
+
+  it('warns without injection when relay generation fails', async () => {
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const store = new SqliteSessionMetadataStore({ db });
+    upsertTestSession({
+      store,
+      sourceUri: fixturePath,
+      cwd: '/Users/lou/projects/test-pristine',
+      lastMessageAt: '2026-05-06T10:00:04.000Z',
+      activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
+    });
+    const runtime = createPiSessionRelayRuntime({
+      store,
+      summarizer: { summarize: async () => '   ' },
+    });
+    const notifications: string[] = [];
+
+    const result = await runtime.injectPriorSessionRelay(
+      makeCtx({ sessionFile: '/tmp/current.jsonl', notifications }),
+      { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
+    );
+
+    expect(result.injected).toBe(false);
+    expect(result.warning).toContain('Pristine session relay skipped');
+    expect(notifications).toEqual([
+      'warning:Pristine session relay skipped: Relay summarizer returned an empty summary',
+    ]);
+  });
+
   it('registers metadata lifecycle handlers without requiring jsonl-index', async () => {
-    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void> | void>();
+    const handlers = new Map<
+      string,
+      (event: unknown, ctx: unknown) => Promise<unknown> | unknown
+    >();
     const calls: string[] = [];
     registerSessionRelayExtension(
       {
@@ -678,6 +763,7 @@ describe('Pi session relay metadata extension reference', () => {
           calls.push(trigger);
           return { ok: true, upserted: false };
         },
+        injectPriorSessionRelay: async () => ({ ok: true, injected: false }),
         close: () => calls.push('session_shutdown'),
       }),
     );

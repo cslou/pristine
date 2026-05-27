@@ -5,11 +5,13 @@ import {
   deriveActiveEntryIdsFromPiSessionFile,
   summarizePiSessionJsonlFile,
 } from '../../../shared/lib/pi-jsonl-session.js';
+import { loadBoundedPiPriorSessionMessages } from './prior-session.js';
+import { generatePriorSessionHandoff, type RelaySummarizer } from './relay-generator.js';
 import { createSqliteSessionMetadataStore } from './session-store.js';
 import type {
   MemorySessionMetadata,
   PiSessionRelayContextLike,
-  SessionMetadataWriter,
+  SessionMetadataStore,
 } from './types.js';
 
 export type PiSessionRelayLifecycleReason = 'startup' | 'reload' | 'resume' | 'new' | 'fork' | string;
@@ -18,8 +20,10 @@ export interface PiSessionRelayRuntimeConfig {
   readonly dbPath?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly homeDir?: string;
-  readonly store?: SessionMetadataWriter;
+  readonly store?: SessionMetadataStore;
   readonly now?: () => Date;
+  readonly summarizer?: RelaySummarizer;
+  readonly relayCharBudget?: number;
 }
 
 export interface PiSessionRelayRuntimeResult {
@@ -27,6 +31,26 @@ export interface PiSessionRelayRuntimeResult {
   readonly sessionFile?: string;
   readonly upserted: boolean;
   readonly skippedReason?: 'missing-session-file' | 'unpersisted-session' | 'no-visible-messages';
+  readonly error?: string;
+}
+
+export interface PiBeforeAgentStartEventLike {
+  readonly systemPromptOptions?: {
+    readonly cwd?: string;
+  };
+}
+
+export interface PiCustomContextMessageLike {
+  readonly customType: string;
+  readonly content: string;
+  readonly display: boolean;
+}
+
+export interface PiSessionRelayInjectionResult {
+  readonly ok: boolean;
+  readonly injected: boolean;
+  readonly message?: PiCustomContextMessageLike;
+  readonly warning?: string;
   readonly error?: string;
 }
 
@@ -69,12 +93,19 @@ export interface PiSessionRelayRuntimeLike {
     ctx: PiSessionRelayContextLike,
     trigger: string,
   ): Promise<PiSessionRelayRuntimeResult>;
+  injectPriorSessionRelay(
+    ctx: PiSessionRelayContextLike,
+    event: PiBeforeAgentStartEventLike,
+  ): Promise<PiSessionRelayInjectionResult>;
   close(): void;
 }
 
 export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
-  private readonly store: SessionMetadataWriter;
+  private readonly store: SessionMetadataStore;
   private readonly now: () => Date;
+  private readonly summarizer?: RelaySummarizer;
+  private readonly relayCharBudget: number;
+  private readonly injectedSessionFiles = new Set<string>();
 
   public constructor(config: PiSessionRelayRuntimeConfig = {}) {
     this.store =
@@ -87,6 +118,8 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
         }),
       });
     this.now = config.now ?? (() => new Date());
+    this.summarizer = config.summarizer;
+    this.relayCharBudget = config.relayCharBudget ?? 12000;
   }
 
   public async recordActiveSession(
@@ -129,6 +162,60 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
       const message = error instanceof Error ? error.message : String(error);
       notify(ctx, `Pristine session relay metadata failed (${trigger}): ${message}`, 'warning');
       return { ok: false, sessionFile, upserted: false, error: message };
+    }
+  }
+
+  public async injectPriorSessionRelay(
+    ctx: PiSessionRelayContextLike,
+    event: PiBeforeAgentStartEventLike,
+  ): Promise<PiSessionRelayInjectionResult> {
+    const currentSessionFile = ctx.sessionManager.getSessionFile();
+    if (currentSessionFile === undefined || this.injectedSessionFiles.has(currentSessionFile)) {
+      return { ok: true, injected: false };
+    }
+
+    try {
+      const cwd = event.systemPromptOptions?.cwd;
+      if (cwd === undefined || cwd.trim().length === 0 || this.summarizer === undefined) {
+        return { ok: true, injected: false };
+      }
+      const priorSession = this.store.findLatestPriorSession({
+        sourceHarness: 'pi',
+        cwd,
+        excludeSourceUri: currentSessionFile,
+      });
+      if (priorSession === null) return { ok: true, injected: false };
+
+      const loaded = await loadBoundedPiPriorSessionMessages({
+        session: priorSession,
+        charBudget: this.relayCharBudget,
+      });
+      const generated = await generatePriorSessionHandoff({
+        session: priorSession,
+        messages: loaded.messages,
+        summarizer: this.summarizer,
+      });
+      if (!generated.ok) {
+        const warning = `Pristine session relay skipped: ${generated.error}`;
+        notify(ctx, warning, 'warning');
+        return { ok: false, injected: false, warning, error: generated.error };
+      }
+
+      this.injectedSessionFiles.add(currentSessionFile);
+      return {
+        ok: true,
+        injected: true,
+        message: {
+          customType: 'pristine-session-relay',
+          content: generated.content,
+          display: false,
+        },
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const warning = `Pristine session relay skipped: ${message}`;
+      notify(ctx, warning, 'warning');
+      return { ok: false, injected: false, warning, error: message };
     }
   }
 

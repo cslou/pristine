@@ -6,6 +6,7 @@ import {
   readFileSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { resolve, sep } from 'node:path';
@@ -98,14 +99,51 @@ export class FileSystemKeyManager implements KeyManager {
   }
 
   public async unwrap(userId: string, wrappedValue: Buffer): Promise<Buffer> {
-    const { privateKey } = await this.getOrCreatePublicKey(userId);
-    return unwrapDek(wrappedValue, privateKey);
+    validateKeyUserId(userId);
+
+    const active = this.loadKeyPairFromDisk(userId, false);
+    if (active) {
+      try {
+        return unwrapDek(wrappedValue, active.privateKey);
+      } catch (error: unknown) {
+        void error;
+        // Try a staged keypair before failing.
+      }
+    }
+
+    const staged = this.loadKeyPairFromDisk(userId, true);
+    if (staged) {
+      const unwrapped = unwrapDek(wrappedValue, staged.privateKey);
+      this.writeToDisk(userId, staged.publicKey, staged.privateKey);
+      this.deleteStagedFiles(userId);
+      this.cache.set(userId, { publicKey: staged.publicKey, privateKey: staged.privateKey });
+      return unwrapped;
+    }
+
+    throw new KeyManagerError(`No private key available for user ${userId}.`);
   }
 
-  public async rotateKeyPair(userId: string): Promise<KeyPairWithStatus> {
+  public async prepareKeyPairRotation(userId: string): Promise<{
+    readonly publicKey: string;
+    commit(): Promise<void>;
+    rollback(): Promise<void>;
+  }> {
+    validateKeyUserId(userId);
+
     const keyPair = await generateKeyPair();
-    await this.saveKeyPair(userId, keyPair);
-    return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey, created: true };
+    this.writeToDisk(userId, keyPair.publicKey, keyPair.privateKey, true);
+
+    return {
+      publicKey: keyPair.publicKey,
+      commit: async () => {
+        this.writeToDisk(userId, keyPair.publicKey, keyPair.privateKey);
+        this.deleteStagedFiles(userId);
+        this.cache.set(userId, { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey });
+      },
+      rollback: async () => {
+        this.deleteStagedFiles(userId);
+      },
+    };
   }
 
   public async getOrCreateKeyPair(userId: string): Promise<KeyPairWithStatus> {
@@ -138,20 +176,50 @@ export class FileSystemKeyManager implements KeyManager {
     return resolvedPath;
   }
 
-  private publicKeyPath(userId: string): string {
-    return this.resolvePathInsideKeysDir(`${this.userFilenameComponent(userId)}-public.pem`);
+  private publicKeyPath(userId: string, staged = false): string {
+    const suffix = staged ? '-next-public.pem' : '-public.pem';
+    return this.resolvePathInsideKeysDir(`${this.userFilenameComponent(userId)}${suffix}`);
   }
 
-  private privateKeyPath(userId: string): string {
-    return this.resolvePathInsideKeysDir(`${this.userFilenameComponent(userId)}-private.pem`);
+  private privateKeyPath(userId: string, staged = false): string {
+    const suffix = staged ? '-next-private.pem' : '-private.pem';
+    return this.resolvePathInsideKeysDir(`${this.userFilenameComponent(userId)}${suffix}`);
   }
 
-  private writeToDisk(userId: string, publicKey: string, privateKey: string): void {
+  private loadKeyPairFromDisk(
+    userId: string,
+    staged: boolean,
+  ): { publicKey: string; privateKey: string } | null {
+    const publicKeyPath = this.publicKeyPath(userId, staged);
+    const privateKeyPath = this.privateKeyPath(userId, staged);
+
+    if (!existsSync(publicKeyPath) || !existsSync(privateKeyPath)) {
+      return null;
+    }
+
+    validateDirectoryPermissions(this.resolvedKeysDir);
+    validateFilePermissions(privateKeyPath);
+    const publicKey = readFileSync(publicKeyPath, 'utf-8');
+    const privateKey = readFileSync(privateKeyPath, 'utf-8');
+    validatePem(publicKey, 'public', publicKeyPath);
+    validatePem(privateKey, 'private', privateKeyPath);
+    return { publicKey, privateKey };
+  }
+
+  private writeToDisk(userId: string, publicKey: string, privateKey: string, staged = false): void {
     mkdirSync(this.resolvedKeysDir, { recursive: true });
     if (process.platform !== 'win32') {
       chmodSync(this.resolvedKeysDir, 0o700);
     }
-    atomicWriteFile(this.publicKeyPath(userId), publicKey);
-    atomicWriteFile(this.privateKeyPath(userId), privateKey, 0o600);
+    atomicWriteFile(this.publicKeyPath(userId, staged), publicKey);
+    atomicWriteFile(this.privateKeyPath(userId, staged), privateKey, 0o600);
+  }
+
+  private deleteStagedFiles(userId: string): void {
+    for (const path of [this.publicKeyPath(userId, true), this.privateKeyPath(userId, true)]) {
+      if (existsSync(path)) {
+        unlinkSync(path);
+      }
+    }
   }
 }

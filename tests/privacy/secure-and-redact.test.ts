@@ -16,7 +16,7 @@ const unusedVaultStore = {
 const unusedKeyManager = {
   getOrCreatePublicKey: vi.fn(),
   unwrap: vi.fn(),
-  rotateKeyPair: vi.fn(),
+  prepareKeyPairRotation: vi.fn(),
 } satisfies KeyManager;
 
 const unusedKekManager = {

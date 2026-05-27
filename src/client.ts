@@ -154,7 +154,7 @@ export class Pristine {
       config.keyManager ??
       createDefaultKeyManager({
         keysDir: config.keysDir,
-        baseDir: init?.baseDir,
+        baseDir: config.baseDir ?? init?.baseDir,
       });
     const kekManager = new KekManager(db, keyManager);
     const vaultStore = createSqliteVaultStore(db);

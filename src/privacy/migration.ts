@@ -44,7 +44,8 @@ export async function migrateToKek(
     let metadata: ZkV2EncryptedValueMetadata;
     try {
       metadata = JSON.parse(row.encryption_metadata) as ZkV2EncryptedValueMetadata;
-    } catch {
+    } catch (error: unknown) {
+      void error;
       throw new VaultEntryContractError(`Corrupt encryption_metadata on vault entry ${row.id}`);
     }
     if (metadata.keyWrapping === 'rsa-oaep-256') {

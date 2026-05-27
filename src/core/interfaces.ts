@@ -79,7 +79,11 @@ export interface PrivacyRedactor {
 export interface KeyManager {
   getOrCreatePublicKey(userId: string): Promise<PublicKeyWithStatus>;
   unwrap(userId: string, wrappedValue: Buffer): Promise<Buffer>;
-  rotateKeyPair(userId: string): Promise<PublicKeyWithStatus>;
+  prepareKeyPairRotation(userId: string): Promise<{
+    readonly publicKey: string;
+    commit(): Promise<void>;
+    rollback(): Promise<void>;
+  }>;
 }
 
 // ---------------------------------------------------------------------------

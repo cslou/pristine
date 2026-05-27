@@ -18,12 +18,19 @@ export async function rotateKey(
   // Get the plaintext KEK (getOrCreate handles RSA unwrap internally)
   const kek = await kekManager.getOrCreate(userId);
 
-  const rotatedKey = await keyManager.rotateKeyPair(userId);
-  const newFingerprint = computeKeyFingerprint(rotatedKey.publicKey);
-  const newWrappedKek = wrapKek(kek, rotatedKey.publicKey);
+  const preparedRotation = await keyManager.prepareKeyPairRotation(userId);
+  const newFingerprint = computeKeyFingerprint(preparedRotation.publicKey);
+  const newWrappedKek = wrapKek(kek, preparedRotation.publicKey);
 
-  // Rotation replaces the active RSA key pair before updating the KEK row.
-  // If the DB update fails after this point, operator repair is required because
-  // the old wrapped KEK can no longer be unwrapped by the new private key.
-  kekManager.updateWrappedKek(userId, newWrappedKek, newFingerprint);
+  let updated = false;
+  try {
+    kekManager.updateWrappedKek(userId, newWrappedKek, newFingerprint);
+    updated = true;
+    await preparedRotation.commit();
+  } catch (error) {
+    if (!updated) {
+      await preparedRotation.rollback();
+    }
+    throw error;
+  }
 }

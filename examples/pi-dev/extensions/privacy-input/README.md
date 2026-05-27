@@ -15,7 +15,7 @@ The runtime is intentionally host-wired. Provide:
 
 `package.json` intentionally installs only the Pi model transport dependency required by this reference extension. If your wrapper imports `@pristine/sdk` from inside the copied extension directory, install the SDK beside the wrapper too (for local checkout smoke: `npm install --omit=dev /path/to/pristine`; for a published SDK: `npm install --omit=dev @pristine/sdk`). Hosts may also inject compatible detector/classifier/redactor functions without installing the SDK in the extension package.
 
-On macOS, `Pristine.create()` now defaults to Keychain-backed RSA keys for privacy vault access. Host wrappers that want this default should avoid passing `keysDir`; supplying `keysDir` forces the older filesystem key path instead. First local `redact`, `reveal`, or `resolveSensitive` use for a user may create a Keychain keypair and may trigger a one-time system prompt depending on local Keychain policy.
+On macOS, `Pristine.create()` now defaults to store-namespaced Keychain-backed RSA keys for new privacy vaults. Host wrappers that want this default should avoid passing `keysDir`; supplying `keysDir` forces the filesystem key path instead. Existing stores with legacy `keys/` material continue using filesystem keys automatically so previously wrapped KEKs remain revealable. First local `redact`, `reveal`, or `resolveSensitive` use for a new user/store may create a Keychain keypair and may trigger a one-time system prompt depending on local Keychain policy.
 
 ## Classifier adapter contract
 

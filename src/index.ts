@@ -115,6 +115,5 @@ export {
 export { FileSystemKeyManager } from './privacy/keys/filesystem.js';
 export {
   MacOsKeychainKeyManager,
-  type MacOsKeychainHelperRunner,
   type MacOsKeychainKeyManagerOptions,
 } from './privacy/keys/macos-keychain.js';

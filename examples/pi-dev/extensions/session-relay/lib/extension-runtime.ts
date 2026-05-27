@@ -1,9 +1,9 @@
-import { existsSync, createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline/promises';
+import { existsSync } from 'node:fs';
 import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import {
   activeEntryIdsFromBranchEntries,
   deriveActiveEntryIdsFromPiSessionFile,
+  inspectPiSessionJsonlForCustomContextGuard,
   summarizePiSessionJsonlFile,
 } from '../../../shared/lib/pi-jsonl-session.js';
 import { loadBoundedPiPriorSessionMessages } from './prior-session.js';
@@ -74,63 +74,19 @@ const notify = (
   }
 };
 
-const visibleTextFromMessageEntry = (entry: unknown): string | null => {
-  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return null;
-  if (!('type' in entry) || entry.type !== 'message') return null;
-  if (!('message' in entry)) return null;
-  const message = entry.message;
-  if (typeof message !== 'object' || message === null || Array.isArray(message)) return null;
-  if (!('role' in message) || (message.role !== 'user' && message.role !== 'assistant')) return null;
-  if (!('content' in message)) return null;
-  if (typeof message.content === 'string') {
-    const text = message.content.trim();
-    return text.length > 0 ? text : null;
-  }
-  if (!Array.isArray(message.content)) return null;
-  const text = message.content
-    .map((part) =>
-      typeof part === 'object' &&
-      part !== null &&
-      !Array.isArray(part) &&
-      'type' in part &&
-      part.type === 'text' &&
-      'text' in part &&
-      typeof part.text === 'string'
-        ? part.text
-        : '',
-    )
-    .join('\n')
-    .trim();
-  return text.length > 0 ? text : null;
-};
-
 const inspectCurrentSessionForRelayGuard = async (
   sessionFile: string,
 ): Promise<{ readonly hasRelayMarker: boolean; readonly visibleMessageCount: number }> => {
   if (!existsSync(sessionFile)) return { hasRelayMarker: false, visibleMessageCount: 0 };
-  const lines = createInterface({
-    input: createReadStream(sessionFile, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
+  const inspection = await inspectPiSessionJsonlForCustomContextGuard({
+    sessionFilePath: sessionFile,
+    customType: 'pristine-session-relay',
+    stopAfterVisibleMessageCount: 1,
   });
-
-  let visibleMessageCount = 0;
-  try {
-    for await (const line of lines) {
-      if (line.trim().length === 0) continue;
-      const parsed = JSON.parse(line) as unknown;
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
-      if ('customType' in parsed && parsed.customType === 'pristine-session-relay') {
-        return { hasRelayMarker: true, visibleMessageCount };
-      }
-      if (visibleTextFromMessageEntry(parsed) !== null) {
-        visibleMessageCount++;
-        if (visibleMessageCount > 1) return { hasRelayMarker: false, visibleMessageCount };
-      }
-    }
-    return { hasRelayMarker: false, visibleMessageCount };
-  } finally {
-    lines.close();
-  }
+  return {
+    hasRelayMarker: inspection.hasCustomContext,
+    visibleMessageCount: inspection.visibleMessageCount,
+  };
 };
 
 class RelayTimeoutError extends Error {
@@ -243,7 +199,7 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
 
       const contextEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
       const activeEntryIds =
-        contextEntryIds !== undefined && contextEntryIds.size === 0
+        contextEntryIds === undefined || contextEntryIds.size === 0
           ? await deriveActiveEntryIdsFromPiSessionFile(sessionFile)
           : contextEntryIds;
       const metadata = await metadataFromSession(sessionFile, this.now, activeEntryIds);

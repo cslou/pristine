@@ -1,5 +1,4 @@
 import { createReadStream } from 'node:fs';
-import { open } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 
 export type PiJsonlRole = 'user' | 'assistant';
@@ -259,29 +258,12 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
     return { messages: tail, truncated };
   }
 
-  const file = await open(sessionFilePath, 'r');
-  let rawTail = '';
-  let truncatedByBytes = false;
-  try {
-    const stats = await file.stat();
-    const maxReadBytes = Math.max(
-      4096,
-      Math.floor(options.maxReadBytes ?? Math.min(Math.max(charBudget * 16, 65536), 1024 * 1024)),
-    );
-    const readLength = Math.min(stats.size, maxReadBytes);
-    const start = Math.max(0, stats.size - readLength);
-    const buffer = Buffer.alloc(readLength);
-    await file.read(buffer, 0, readLength, start);
-    rawTail = buffer.toString('utf8');
-    truncatedByBytes = start > 0;
-  } finally {
-    await file.close();
-  }
-
-  const parseableLines = truncatedByBytes ? rawTail.split(/\r?\n/).slice(1) : rawTail.split(/\r?\n/);
-  truncated = truncatedByBytes;
+  const lines = createInterface({
+    input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
   let lineNumber = 0;
-  for (const line of parseableLines) {
+  for await (const line of lines) {
     lineNumber++;
     if (line.trim().length === 0) continue;
     const parsed = parsePiJsonlEntry(
@@ -294,6 +276,42 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
   }
 
   return { messages: tail, truncated };
+};
+
+export const inspectPiSessionJsonlForCustomContextGuard = async (params: {
+  readonly sessionFilePath: string;
+  readonly customType: string;
+  readonly stopAfterVisibleMessageCount: number;
+}): Promise<{ readonly hasCustomContext: boolean; readonly visibleMessageCount: number }> => {
+  const state: ParserState = {};
+  const parseOptions = { sourceUri: params.sessionFilePath };
+  const lines = createInterface({
+    input: createReadStream(params.sessionFilePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  let lineNumber = 0;
+  let visibleMessageCount = 0;
+  try {
+    for await (const line of lines) {
+      lineNumber++;
+      if (line.trim().length === 0) continue;
+      const rawEntry = parseJsonLine(line, lineNumber, params.sessionFilePath);
+      if (isObject(rawEntry) && rawEntry.customType === params.customType) {
+        return { hasCustomContext: true, visibleMessageCount };
+      }
+      const parsed = parsePiJsonlEntry(rawEntry, lineNumber, parseOptions, state);
+      if (parsed !== null) {
+        visibleMessageCount++;
+        if (visibleMessageCount > params.stopAfterVisibleMessageCount) {
+          return { hasCustomContext: false, visibleMessageCount };
+        }
+      }
+    }
+    return { hasCustomContext: false, visibleMessageCount };
+  } finally {
+    lines.close();
+  }
 };
 
 export const summarizePiSessionJsonlFile = async (

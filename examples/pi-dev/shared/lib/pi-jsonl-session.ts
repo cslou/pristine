@@ -211,6 +211,7 @@ export const summarizePiSessionJsonlFile = async (
 
   let firstMessageAt: string | undefined;
   let lastMessageAt: string | undefined;
+  let hasFirstVisibleMessage = false;
   let visibleMessageCount = 0;
   let cwd: string | undefined;
   let lineNumber = 0;
@@ -225,8 +226,11 @@ export const summarizePiSessionJsonlFile = async (
     );
     if (parsed === null) continue;
     visibleMessageCount++;
-    firstMessageAt ??= parsed.pointer.timestamp;
-    lastMessageAt = parsed.pointer.timestamp ?? lastMessageAt;
+    if (!hasFirstVisibleMessage) {
+      firstMessageAt = parsed.pointer.timestamp;
+      hasFirstVisibleMessage = true;
+    }
+    lastMessageAt = parsed.pointer.timestamp;
     cwd = parsed.pointer.cwd ?? cwd;
   }
 

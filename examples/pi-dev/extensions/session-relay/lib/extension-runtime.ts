@@ -3,7 +3,7 @@ import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import {
   activeEntryIdsFromBranchEntries,
   deriveActiveEntryIdsFromPiSessionFile,
-  parsePiSessionJsonlFile,
+  summarizePiSessionJsonlFile,
 } from '../../../shared/lib/pi-jsonl-session.js';
 import { createSqliteSessionMetadataStore } from './session-store.js';
 import type {
@@ -49,20 +49,16 @@ const metadataFromSession = async (
   now: () => Date,
   activeEntryIds?: ReadonlySet<string>,
 ): Promise<MemorySessionMetadata | null> => {
-  const messages = await parsePiSessionJsonlFile(sessionFile, { activeEntryIds });
-  if (messages.length === 0) return null;
-
-  const firstMessage = messages[0];
-  const lastMessage = messages[messages.length - 1];
-  if (firstMessage === undefined || lastMessage === undefined) return null;
+  const summary = await summarizePiSessionJsonlFile(sessionFile, { activeEntryIds });
+  if (summary.visibleMessageCount === 0) return null;
 
   return {
     sourceHarness: 'pi',
     sourceUri: sessionFile,
-    cwd: lastMessage.pointer.cwd ?? firstMessage.pointer.cwd ?? '',
-    firstMessageAt: firstMessage.pointer.timestamp ?? '',
-    lastMessageAt: lastMessage.pointer.timestamp ?? '',
-    visibleMessageCount: messages.length,
+    cwd: summary.cwd ?? '',
+    firstMessageAt: summary.firstMessageAt ?? '',
+    lastMessageAt: summary.lastMessageAt ?? '',
+    visibleMessageCount: summary.visibleMessageCount,
     updatedAt: now().toISOString(),
   };
 };

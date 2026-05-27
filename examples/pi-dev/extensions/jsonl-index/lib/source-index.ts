@@ -8,7 +8,7 @@ import {
   PI_JSONL_CHUNKS_TABLE,
   PI_JSONL_VECTOR_TABLE,
 } from '../../../shared/lib/pi-jsonl-index-schema.js';
-import type { PiJsonlParsedMessage, PiJsonlSourcePointer } from './pi-jsonl-parser.js';
+import type { PiJsonlParsedMessage, PiJsonlSourcePointer } from '../../../shared/lib/pi-jsonl-session.js';
 import type { PiJsonlEmbedder } from './local-embedder.js';
 
 export interface PiJsonlChunkRecord {

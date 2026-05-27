@@ -7,6 +7,7 @@ export const MEMORY_SESSION_COLUMNS = [
   'first_message_at',
   'last_message_at',
   'visible_message_count',
+  'active_entry_ids_json',
   'updated_at',
 ] as const;
 
@@ -19,5 +20,6 @@ export interface MemorySessionRow {
   readonly first_message_at: string;
   readonly last_message_at: string;
   readonly visible_message_count: number | bigint;
+  readonly active_entry_ids_json: string | null;
   readonly updated_at: string;
 }

@@ -6,7 +6,22 @@ import {
   type MemorySessionRow,
   type MemorySessionSourceHarness,
 } from '../../../shared/lib/session-relay-schema.js';
-import type { MemorySessionMetadata, SessionMetadataStore } from './types.js';
+import type {
+  HistoricalSession,
+  HistoricalSessionQuery,
+  MemorySessionMetadata,
+  SessionMetadataStore,
+} from './types.js';
+
+const encodeActiveEntryIds = (activeEntryIds: readonly string[] | undefined): string | null =>
+  activeEntryIds === undefined ? null : JSON.stringify(activeEntryIds);
+
+const decodeActiveEntryIds = (value: string | null): readonly string[] | undefined => {
+  if (value === null) return undefined;
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed)) return undefined;
+  return parsed.filter((entryId): entryId is string => typeof entryId === 'string');
+};
 
 export class SessionRelayStoreError extends Error {
   public constructor(message: string) {
@@ -60,13 +75,14 @@ export class SqliteSessionMetadataStore implements SessionMetadataStore {
     this.db
       .prepare(
         `INSERT INTO ${MEMORY_SESSIONS_TABLE}
-           (source_harness, source_uri, cwd, first_message_at, last_message_at, visible_message_count, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+           (source_harness, source_uri, cwd, first_message_at, last_message_at, visible_message_count, active_entry_ids_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(source_harness, source_uri) DO UPDATE SET
            cwd = excluded.cwd,
            first_message_at = excluded.first_message_at,
            last_message_at = excluded.last_message_at,
            visible_message_count = excluded.visible_message_count,
+           active_entry_ids_json = excluded.active_entry_ids_json,
            updated_at = excluded.updated_at`,
       )
       .run(
@@ -76,6 +92,7 @@ export class SqliteSessionMetadataStore implements SessionMetadataStore {
         metadata.firstMessageAt,
         metadata.lastMessageAt,
         metadata.visibleMessageCount,
+        encodeActiveEntryIds(metadata.activeEntryIds),
         metadata.updatedAt,
       );
   }
@@ -86,12 +103,48 @@ export class SqliteSessionMetadataStore implements SessionMetadataStore {
   ): MemorySessionRow | null {
     const row = this.db
       .prepare(
-        `SELECT source_harness, source_uri, cwd, first_message_at, last_message_at, visible_message_count, updated_at
+        `SELECT source_harness, source_uri, cwd, first_message_at, last_message_at, visible_message_count, active_entry_ids_json, updated_at
            FROM ${MEMORY_SESSIONS_TABLE}
           WHERE source_harness = ? AND source_uri = ?`,
       )
       .get(sourceHarness, sourceUri) as MemorySessionRow | undefined;
     return row ?? null;
+  }
+
+  public findLatestPriorSession(query: HistoricalSessionQuery): HistoricalSession | null {
+    const row = this.db
+      .prepare(
+        `SELECT source_harness, source_uri, cwd, last_message_at, active_entry_ids_json
+           FROM ${MEMORY_SESSIONS_TABLE}
+          WHERE source_harness = ?
+            AND cwd = ?
+            AND (? IS NULL OR source_uri <> ?)
+          ORDER BY last_message_at DESC, updated_at DESC
+          LIMIT 1`,
+      )
+      .get(
+        query.sourceHarness,
+        query.cwd,
+        query.excludeSourceUri ?? null,
+        query.excludeSourceUri ?? null,
+      ) as
+      | {
+          readonly source_harness: MemorySessionSourceHarness;
+          readonly source_uri: string;
+          readonly cwd: string;
+          readonly last_message_at: string;
+          readonly active_entry_ids_json: string | null;
+        }
+      | undefined;
+    if (row === undefined) return null;
+    const activeEntryIds = decodeActiveEntryIds(row.active_entry_ids_json);
+    return {
+      sourceHarness: row.source_harness,
+      sourceUri: row.source_uri,
+      cwd: row.cwd,
+      lastMessageAt: row.last_message_at,
+      ...(activeEntryIds !== undefined ? { activeEntryIds } : {}),
+    };
   }
 
   public close(): void {
@@ -108,12 +161,21 @@ CREATE TABLE IF NOT EXISTS ${MEMORY_SESSIONS_TABLE} (
   first_message_at TEXT NOT NULL,
   last_message_at TEXT NOT NULL,
   visible_message_count INTEGER NOT NULL CHECK (visible_message_count >= 0),
+  active_entry_ids_json TEXT,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (source_harness, source_uri)
 );
 CREATE INDEX IF NOT EXISTS ix_memory_sessions_cwd_last_message
   ON ${MEMORY_SESSIONS_TABLE}(cwd, last_message_at);
+CREATE INDEX IF NOT EXISTS ix_memory_sessions_harness_cwd_last_message
+  ON ${MEMORY_SESSIONS_TABLE}(source_harness, cwd, last_message_at DESC, updated_at DESC);
 `);
+    const columns = this.db.prepare(`PRAGMA table_info(${MEMORY_SESSIONS_TABLE})`).all() as {
+      readonly name: string;
+    }[];
+    if (!columns.some((column) => column.name === 'active_entry_ids_json')) {
+      this.db.exec(`ALTER TABLE ${MEMORY_SESSIONS_TABLE} ADD COLUMN active_entry_ids_json TEXT`);
+    }
   }
 }
 

@@ -127,19 +127,20 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi extension developer, **I want** `session-relay` to find and load the latest prior Pi session, **so that** relay generation receives only the relevant bounded source material.
 - **Dependencies:** Story 2
 - **Acceptance criteria:**
-  - [ ] `session-relay` exposes a small harness-agnostic discovery interface for historical sessions using `sourceHarness`, `sourceUri`, `projectId` or `cwd`, and `lastMessageAt`.
-  - [ ] The Pi implementation selects the latest prior `memory_sessions` row for the same repo/project by `last_message_at`, excluding the current session URI when supplied.
-  - [ ] No historical rows for the repo/project produce a clean `null`/no-prior-session result without warnings or thrown errors.
-  - [ ] The Pi message loader reads only visible user/assistant natural-language text from the selected Pi JSONL source and excludes tool results, hidden custom/context messages, system content, images, thinking blocks, and non-text blocks.
-  - [ ] The loader returns the tail of visible messages bounded by an explicit char/token-budget approximation, truncating from the front when oversized.
+  - [x] `session-relay` exposes a small harness-agnostic discovery interface for historical sessions using `sourceHarness`, `sourceUri`, `projectId` or `cwd`, and `lastMessageAt`.
+  - [x] The Pi implementation selects the latest prior `memory_sessions` row for the same repo/project by `last_message_at`, excluding the current session URI when supplied.
+  - [x] No historical rows for the repo/project produce a clean `null`/no-prior-session result without warnings or thrown errors.
+  - [x] The Pi message loader reads only visible user/assistant natural-language text from the selected Pi JSONL source and excludes tool results, hidden custom/context messages, system content, images, thinking blocks, and non-text blocks.
+  - [x] The loader returns the tail of visible messages bounded by an explicit char/token-budget approximation, truncating from the front when oversized.
 - **Functional verification:**
-  - [ ] Add Vitest coverage proving two historical Pi session rows in a temp DB select the one with the newest `last_message_at` for the same repo/project.
-  - [ ] Add Vitest coverage proving the current session URI is excluded even if it has the newest timestamp.
-  - [ ] Add Vitest coverage proving no historical rows for a repo/project return `null`/no prior session without throwing or warning.
-  - [ ] Add Vitest coverage using JSONL fixtures proving visible-message extraction excludes tool/hidden/system/thinking/image/non-text content and enforces the configured tail budget.
+  - [x] Add Vitest coverage proving two historical Pi session rows in a temp DB select the one with the newest `last_message_at` for the same repo/project.
+  - [x] Add Vitest coverage proving the current session URI is excluded even if it has the newest timestamp.
+  - [x] Add Vitest coverage proving no historical rows for a repo/project return `null`/no prior session without throwing or warning.
+  - [x] Add Vitest coverage using JSONL fixtures proving visible-message extraction excludes tool/hidden/system/thinking/image/non-text content and enforces the configured tail budget.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts` and verify existing JSONL parser/source-pointer inspection expectations still pass.
-  - [ ] Run `pnpm run typecheck` and verify relay/discovery interfaces compile without `any`.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts` and verify existing JSONL parser/source-pointer inspection expectations still pass.
+  - [x] Run `pnpm run typecheck` and verify relay/discovery interfaces compile without `any`.
+- **Story 3 evidence:** PASS — `pnpm run test:unit -- tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts`; PASS — `pnpm run typecheck`.
 - **Manual-only verification:** N/A — latest-session selection and message filtering are automatable with SQLite/JSONL fixtures.
 - **Planned commits:**
   1. `feat: add pi prior session discovery` — discovery interface, Pi SQL implementation, and latest-session tests.

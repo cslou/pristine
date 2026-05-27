@@ -1,7 +1,7 @@
 # Pristine — Sprint 032
 **Date:** 2026-05-27 – 2026-06-03
 **Goal:** New Pi sessions receive a bounded relay handoff from the latest prior session in the same repo through a lightweight session-relay extension that is independent of embeddings/vector search, while shared Pi JSONL helpers keep existing semantic indexing behavior intact.
-**Status:** 🟡 Planning
+**Status:** 🟢 Complete
 
 ---
 
@@ -297,21 +297,22 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** all sprint functional verification and all available regression verification run, **so that** the sprint can be integrated with evidence that new behavior works and existing behavior did not regress.
 - **Dependencies:** All implementation stories
 - **Acceptance criteria:**
-  - [ ] Every story’s acceptance criteria are evaluated against implementation evidence.
-  - [ ] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
-  - [ ] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
-  - [ ] Failed, ambiguous, manual-only, or unrun verification items are documented.
-  - [ ] The sprint’s new functional verification is identified as future regression verification.
-  - [ ] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, and includes rows for every canonical verification type even when the count is zero.
-  - [ ] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
-  - [ ] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
+  - [x] Every story’s acceptance criteria are evaluated against implementation evidence.
+  - [x] Every story’s functional verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] Every story’s targeted regression verification checkboxes are run, checked, or explicitly marked failed/ambiguous/unrun.
+  - [x] The full available regression verification suite is run, including existing unit, integration, e2e, smoke, simulator/browser/device, static, and manual-only checks where applicable.
+  - [x] Failed, ambiguous, manual-only, or unrun verification items are documented.
+  - [x] The sprint’s new functional verification is identified as future regression verification.
+  - [x] Verification delta is reported by canonical type, showing before sprint, added this sprint, removed, pending/not yet run, and after sprint totals, and includes rows for every canonical verification type even when the count is zero.
+  - [x] The sprint doc status is updated to `🟢 Complete` only if completion criteria are met.
+  - [x] A `## Final Review` section is appended to the sprint doc with the final completion message quoted for auditability.
 - **Functional verification:**
-  - [ ] Run all functional verification items from every story and record pass/fail evidence.
+  - [x] Run all functional verification items from every story and record pass/fail evidence.
 - **Regression verification:**
-  - [ ] Run all targeted regression verification items from every story and record pass/fail evidence.
-  - [ ] Run the full available regression verification suite and record pass/fail evidence.
-- **Manual-only verification:** Manual Pi smoke from Story 7 must be run or explicitly documented as unrun/blocked with rationale.
+  - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
+  - [x] Run the full available regression verification suite and record pass/fail evidence.
+- **Final Story evidence:** PASS — `node examples/pi-dev/scripts/session-relay-smoke.mjs` (log: `/tmp/pristine-final/session-relay-smoke.log`; evidence dirs listed in the log); PASS — `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/install-layout.test.ts`; PASS — `.checks/regression.sh --tier=full` (log: `/tmp/pristine-final/full-regression.log`; includes lint, typecheck, unit, build, smoke, deterministic integration, e2e, full integration, and source-index local-model smoke).
+- **Manual-only verification:** Satisfied by the reproducible real-path Pi CLI helper (`node examples/pi-dev/scripts/session-relay-smoke.mjs`), which installs only `session-relay`, creates prior history, verifies one injected handoff, verifies no duplicate injection on resume, verifies empty-history no-op, and verifies failure warning/no-partial-injection behavior.
 - **Planned commits:**
   1. `test: complete sprint 032 verification` — final verification evidence and sprint doc completion update.
 - **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc.
@@ -334,3 +335,69 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - Sprint doc includes `## Final Review` with the final completion message and a New Dependencies field containing dependencies or `None`.
 - Sprint-integration PR is reviewed, passes the required gates, and is merged only after the explicit user merge command.
 - If the sprint introduces new flows, they are folded into the implementation spec before sprint integration.
+
+## Final Review
+
+**Mergeability:** 5/5
+
+## Sprint objective + accomplishments
+
+**Objective:** New Pi sessions receive a bounded relay handoff from the latest prior session in the same repo through a lightweight session-relay extension that is independent of embeddings/vector search, while shared Pi JSONL helpers keep existing semantic indexing behavior intact.
+
+**What was accomplished:**
+- **Story 1: Extract Shared Pi JSONL Helpers Without Changing Vector Indexing** — Moved reusable Pi JSONL/session parsing into `examples/pi-dev/shared/` while preserving the existing vector indexing behavior. Evidence lives in the Story 1 unit/typecheck runs and the later full sprint regression suite.
+- **Story 2: Add Lightweight Session Metadata Store in a New Session Relay Extension** — Added the independent `session-relay` extension scaffold and `memory_sessions` metadata contract without embedding/vector dependencies. Evidence lives in `tests/examples/pi-dev/session-relay-metadata.test.ts` and typecheck.
+- **Story 3: Select Latest Prior Session and Load Bounded Visible Context** — Implemented latest-prior-session lookup by `cwd` plus bounded visible user/assistant tail loading from authoritative Pi JSONL. Evidence lives in the session-relay metadata/prior-session unit coverage.
+- **Story 4: Generate Safe Six-Section Relay Content** — Added a relay generator abstraction with six-section output, untrusted-transcript wrapping, sanitization, and failure semantics. Evidence lives in session-relay generator/runtime unit coverage.
+- **Story 5: Inject Relay Once at Pi Agent Start** — Wired `before_agent_start` injection, no-history no-op behavior, once-per-session guard, and fail-open warnings while keeping relay vector-independent. Evidence lives in session-relay runtime tests and review/fix gates.
+- **Story 6: Document Installation, Configuration, and Cross-Harness Boundaries** — Documented optional install/configuration for `session-relay`, its vector independence, metadata contract, Pi-first scope, and manual smoke expectations without reintroducing internal specs. Evidence lives in README assertions, grep checks, and install-layout tests.
+- **Story 7: Real-Path Pi Smoke and Sprint Evidence Prep** — Added `examples/pi-dev/scripts/session-relay-smoke.mjs`, a reproducible real Pi CLI smoke using a local fake provider. It proves prior-session injection, no duplicate injection, empty-history no-op, and failure-path warning/no-partial-injection behavior without installing vector search.
+
+## Verification delta
+
+| Verification type | Before sprint | Added this sprint | Removed | Pending / not yet run | After sprint | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| Unit | 4 | +2 | 0 | 0 | 6 | Added `session-relay-metadata.test.ts`; extended `install-layout.test.ts` for relay docs/helper coverage. Existing Pi JSONL/search tests remain. |
+| Integration / contract | 1 | +0 | 0 | 0 | 1 | Deterministic integration suite passed in final `.checks/pre-merge.sh`; real-model integration remains intentionally outside deep tier. |
+| E2E / smoke | 2 | +1 | 0 | 0 | 3 | Added `examples/pi-dev/scripts/session-relay-smoke.mjs`; existing package/API smoke, source-index local-model smoke, and e2e privacy smoke passed. |
+| Simulator / device | 0 | +0 | 0 | 0 | 0 | Not applicable for this Node/Pi reference sprint. |
+| AI / model evals | 0 | +0 | 0 | 0 | 0 | No model-eval suite added; smoke helper uses a local fake provider to avoid paid/provider calls. |
+| Static / local checks | 2 | +0 | 0 | 0 | 2 | Lint and typecheck passed in final pre-merge gate. |
+| Performance / load | 0 | +0 | 0 | 0 | 0 | No performance/load surface changed. |
+| Security / dependency | 1 | +0 | 0 | 0 | 1 | Security posture verified via review; no new dependencies added. |
+| Accessibility / visual | 0 | +0 | 0 | 0 | 0 | Not applicable. |
+| Manual-only | 0 | +0 | 0 | 0 | 0 | The planned manual Pi lifecycle check was converted into the reproducible real-path smoke helper counted under E2E / smoke; generated evidence remains in `/tmp` and is not committed. |
+| Other verification | 0 | +0 | 0 | 0 | 0 | None. |
+| **Total** | **10** | **+3** | **0** | **0** | **13** |  |
+
+Counting basis: verification surfaces/checklist rows, not individual Vitest test cases. Unit surfaces count Pi-dev test files directly relevant to this sprint; E2E/smoke includes package/API smoke, existing e2e, and the new Pi CLI smoke helper.
+Regression summary: 0 existing regression verifications pending/not yet run; full available regression gate passed, including local-model smoke/integration surfaces.
+
+## Why ready
+- All story ACs are checked and have evidence recorded in their story sections.
+- Sprint functional verification passed, including the real-path Pi CLI smoke (`/tmp/pristine-final/session-relay-smoke.log`).
+- Full available regression verification passed via `.checks/regression.sh --tier=full` (`/tmp/pristine-final/full-regression.log`).
+- Story PRs #277–#283 merged into `sprint-032` after review gates; final story review remains the last story PR gate before sprint integration.
+
+## Open for your decision
+- None — the sprint is ready for the final story PR review and then sprint-integration review.
+
+## Delivered
+
+| Story | Item | Status | Evidence |
+|---|---|---|---|
+| Story 1 | Shared Pi JSONL helpers extracted without vector behavior regression | ✅ | `tests/examples/pi-dev/jsonl-index.test.ts`, `tests/examples/pi-dev/search-session-history.test.ts`, typecheck |
+| Story 2 | `memory_sessions` metadata store and extension scaffold | ✅ | `tests/examples/pi-dev/session-relay-metadata.test.ts`, typecheck |
+| Story 3 | Latest-prior-session lookup and bounded visible context loading | ✅ | `tests/examples/pi-dev/session-relay-metadata.test.ts` |
+| Story 4 | Safe six-section relay generation/failure handling | ✅ | `tests/examples/pi-dev/session-relay-metadata.test.ts` |
+| Story 5 | Once-per-session `before_agent_start` injection and no-history/failure behavior | ✅ | `tests/examples/pi-dev/session-relay-metadata.test.ts`; PR #281 review/fix gates |
+| Story 6 | Optional install/docs/boundary coverage | ✅ | `examples/pi-dev/README.md`; `tests/examples/pi-dev/install-layout.test.ts`; PR #282 review/fix gates |
+| Story 7 | Real-path Pi CLI smoke helper and evidence hooks | ✅ | `node examples/pi-dev/scripts/session-relay-smoke.mjs`; PR #283 review/fix gates |
+| Final Story | Full available regression suite | ✅ | `.checks/regression.sh --tier=full` log `/tmp/pristine-final/full-regression.log` |
+
+## Drift from spec
+- `docs/specs/implementation-spec-005.md` remains intentionally untracked/absent from the public repo after commit `01fdefd`; Story 6 records the DoD replacement source of truth as `examples/pi-dev/README.md` public boundary documentation rather than reintroducing internal specs.
+- The relay smoke helper exports `createPiSessionRelayRuntime` from the session-relay entrypoint so the failure wrapper can verify warning behavior through the public extension module.
+
+## New Dependencies
+- None

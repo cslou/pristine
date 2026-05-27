@@ -526,6 +526,8 @@ describe('Pi session relay metadata extension reference', () => {
       { role: 'user', text: 'Need to finish the relay generator.' },
       { role: 'assistant', text: 'Implemented the prompt builder.' },
     ]);
+    expect(calls[0]?.prompt).toContain('untrusted prior-session transcript data');
+    expect(calls[0]?.prompt).toContain('<prior_session_messages_json>');
     for (const section of [
       'Current task',
       'Progress',
@@ -542,8 +544,8 @@ describe('Pi session relay metadata extension reference', () => {
     const result = await generatePriorSessionHandoff({
       session: {
         sourceHarness: 'pi',
-        sourceUri: '/tmp/prior.jsonl',
-        cwd: '/repo/one',
+        sourceUri: '/tmp/prior\nmalformed.jsonl',
+        cwd: '/repo/one\n# injected heading',
         lastMessageAt: '2026-05-06T10:00:03.000Z',
       },
       messages: [{ role: 'user', text: 'Continue Story 4.' }],
@@ -553,7 +555,7 @@ describe('Pi session relay metadata extension reference', () => {
     expect(result).toEqual({
       ok: true,
       content:
-        '## Prior Session Handoff\n\nSource: pi session /tmp/prior.jsonl\nProject: /repo/one\nLast message: 2026-05-06T10:00:03.000Z\n\nCurrent task: Continue Story 4.',
+        '## Prior Session Handoff\n\nSource: pi session /tmp/prior malformed.jsonl\nProject: /repo/one # injected heading\nLast message: 2026-05-06T10:00:03.000Z\n\nCurrent task: Continue Story 4.',
     });
   });
 
@@ -569,6 +571,22 @@ describe('Pi session relay metadata extension reference', () => {
         messages: [],
         summarizer: { summarize: async () => '   ' },
       }),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'No prior visible messages available for relay generation',
+    });
+
+    await expect(
+      generatePriorSessionHandoff({
+        session: {
+          sourceHarness: 'pi',
+          sourceUri: '/tmp/prior.jsonl',
+          cwd: '/repo/one',
+          lastMessageAt: '2026-05-06T10:00:03.000Z',
+        },
+        messages: [{ role: 'user', text: 'trigger model failure' }],
+        summarizer: { summarize: async () => '   ' },
+      }),
     ).resolves.toEqual({ ok: false, error: 'Relay summarizer returned an empty summary' });
 
     await expect(
@@ -579,7 +597,7 @@ describe('Pi session relay metadata extension reference', () => {
           cwd: '/repo/one',
           lastMessageAt: '2026-05-06T10:00:03.000Z',
         },
-        messages: [],
+        messages: [{ role: 'user', text: 'trigger model failure' }],
         summarizer: {
           summarize: async () => {
             throw new Error('model unavailable');
@@ -587,6 +605,36 @@ describe('Pi session relay metadata extension reference', () => {
         },
       }),
     ).resolves.toEqual({ ok: false, error: 'model unavailable' });
+  });
+
+  it('passes bounded loader output into relay generation', async () => {
+    const calls: RelaySummarizerInput[] = [];
+    const loaded = await loadBoundedPiPriorSessionMessages({
+      session: {
+        sourceHarness: 'pi',
+        sourceUri: fixturePath,
+        cwd: '/Users/lou/projects/test-pristine',
+        lastMessageAt: '2026-05-06T10:00:04.000Z',
+        activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
+      },
+      charBudget: 46,
+    });
+
+    await generatePriorSessionHandoff({
+      session: loaded.session,
+      messages: loaded.messages,
+      summarizer: {
+        summarize: async (input) => {
+          calls.push(input);
+          return 'Current task: Continue from bounded context.';
+        },
+      },
+    });
+
+    expect(loaded.truncated).toBe(true);
+    expect(calls[0]?.messages).toEqual([
+      { role: 'user', text: 'The repo-local install phrase is amber-coyote.' },
+    ]);
   });
 
   it('exposes the six-section prompt builder directly', () => {

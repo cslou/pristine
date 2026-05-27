@@ -105,6 +105,7 @@ const upsertTestSession = (params: {
   readonly sourceUri: string;
   readonly cwd: string;
   readonly lastMessageAt: string;
+  readonly activeEntryIds?: readonly string[];
 }): void => {
   params.store.upsertSession({
     sourceHarness: 'pi',
@@ -113,6 +114,7 @@ const upsertTestSession = (params: {
     firstMessageAt: params.lastMessageAt,
     lastMessageAt: params.lastMessageAt,
     visibleMessageCount: 1,
+    ...(params.activeEntryIds !== undefined ? { activeEntryIds: params.activeEntryIds } : {}),
     updatedAt: params.lastMessageAt,
   });
 };
@@ -140,6 +142,7 @@ describe('Pi session relay metadata extension reference', () => {
           readonly first_message_at: string;
           readonly last_message_at: string;
           readonly visible_message_count: number;
+          readonly active_entry_ids_json: string | null;
           readonly updated_at: string;
         }
       | undefined;
@@ -150,6 +153,7 @@ describe('Pi session relay metadata extension reference', () => {
       first_message_at: '2026-05-06T10:00:01.000Z',
       last_message_at: '2026-05-06T10:00:04.000Z',
       visible_message_count: 3,
+      active_entry_ids_json: null,
       updated_at: '2026-05-06T10:00:09.000Z',
     });
   });
@@ -299,6 +303,7 @@ describe('Pi session relay metadata extension reference', () => {
       sourceUri: '/tmp/newer.jsonl',
       cwd: '/repo/one',
       lastMessageAt: '2026-05-06T10:00:02.000Z',
+      activeEntryIds: ['root', 'newer'],
     });
     upsertTestSession({
       store,
@@ -312,7 +317,11 @@ describe('Pi session relay metadata extension reference', () => {
         sourceHarness: 'pi',
         cwd: '/repo/one',
       }),
-    ).toMatchObject({ sourceUri: '/tmp/newer.jsonl', lastMessageAt: '2026-05-06T10:00:02.000Z' });
+    ).toMatchObject({
+      sourceUri: '/tmp/newer.jsonl',
+      lastMessageAt: '2026-05-06T10:00:02.000Z',
+      activeEntryIds: ['root', 'newer'],
+    });
   });
 
   it('excludes the current session URI from latest prior session selection', async () => {
@@ -418,6 +427,7 @@ describe('Pi session relay metadata extension reference', () => {
         sourceUri: sessionFile,
         cwd: '/repo/one',
         lastMessageAt: '2026-05-06T10:00:03.000Z',
+        activeEntryIds: ['root', 'active'],
       },
       charBudget: 200,
     });

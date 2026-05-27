@@ -59,6 +59,7 @@ const metadataFromSession = async (
     firstMessageAt: summary.firstMessageAt ?? '',
     lastMessageAt: summary.lastMessageAt ?? '',
     visibleMessageCount: summary.visibleMessageCount,
+    ...(activeEntryIds !== undefined ? { activeEntryIds: [...activeEntryIds] } : {}),
     updatedAt: now().toISOString(),
   };
 };

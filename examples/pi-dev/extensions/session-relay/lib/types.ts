@@ -8,6 +8,7 @@ export interface MemorySessionMetadata {
   readonly firstMessageAt: string;
   readonly lastMessageAt: string;
   readonly visibleMessageCount: number;
+  readonly activeEntryIds?: readonly string[];
   readonly updatedAt: string;
 }
 
@@ -22,6 +23,7 @@ export interface HistoricalSession {
   readonly sourceUri: string;
   readonly cwd: string;
   readonly lastMessageAt: string;
+  readonly activeEntryIds?: readonly string[];
 }
 
 export interface SessionMetadataWriter {

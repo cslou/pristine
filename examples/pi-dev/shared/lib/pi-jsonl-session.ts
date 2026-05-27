@@ -19,6 +19,13 @@ export interface PiJsonlParsedMessage {
   readonly pointer: PiJsonlSourcePointer;
 }
 
+export interface PiJsonlVisibleMessageSummary {
+  readonly cwd?: string;
+  readonly firstMessageAt?: string;
+  readonly lastMessageAt?: string;
+  readonly visibleMessageCount: number;
+}
+
 export interface ParsePiSessionJsonlOptions {
   readonly sourceUri: string;
   /**
@@ -189,6 +196,50 @@ export const parsePiSessionJsonlFile = async (
   }
 
   return results;
+};
+
+export const summarizePiSessionJsonlFile = async (
+  sessionFilePath: string,
+  options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> = {},
+): Promise<PiJsonlVisibleMessageSummary> => {
+  const state: ParserState = {};
+  const parseOptions = { ...options, sourceUri: sessionFilePath };
+  const lines = createInterface({
+    input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  let firstMessageAt: string | undefined;
+  let lastMessageAt: string | undefined;
+  let hasFirstVisibleMessage = false;
+  let visibleMessageCount = 0;
+  let cwd: string | undefined;
+  let lineNumber = 0;
+  for await (const line of lines) {
+    lineNumber++;
+    if (line.trim().length === 0) continue;
+    const parsed = parsePiJsonlEntry(
+      parseJsonLine(line, lineNumber, sessionFilePath),
+      lineNumber,
+      parseOptions,
+      state,
+    );
+    if (parsed === null) continue;
+    visibleMessageCount++;
+    if (!hasFirstVisibleMessage) {
+      firstMessageAt = parsed.pointer.timestamp;
+      hasFirstVisibleMessage = true;
+    }
+    lastMessageAt = parsed.pointer.timestamp;
+    cwd = parsed.pointer.cwd ?? cwd;
+  }
+
+  return {
+    visibleMessageCount,
+    ...(cwd !== undefined ? { cwd } : {}),
+    ...(firstMessageAt !== undefined ? { firstMessageAt } : {}),
+    ...(lastMessageAt !== undefined ? { lastMessageAt } : {}),
+  };
 };
 
 export const activeEntryIdsFromBranchEntries = (

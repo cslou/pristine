@@ -92,19 +92,20 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** `session-relay` to maintain generic session metadata without vector dependencies, **so that** start-session handoff can work for users who do not install semantic search.
 - **Dependencies:** Story 1
 - **Acceptance criteria:**
-  - [ ] A new reference extension exists at `examples/pi-dev/extensions/session-relay/` with its own `package.json`, runtime entry point, and tests.
-  - [ ] The extension creates/maintains a generic `memory_sessions` table in the Pi-dev SQLite DB using shared schema constants, with fields including `source_harness`, `source_uri`, `project_id` or `cwd`, `first_message_at`, `last_message_at`, `visible_message_count`, and `updated_at`.
-  - [ ] Pi rows use `source_harness = 'pi'`, `source_uri = ctx.sessionManager.getSessionFile()`, and timestamps/counts derived from visible user/assistant messages parsed through shared helpers.
-  - [ ] Reprocessing the same Pi session upserts one metadata row idempotently and updates timestamps/counts without duplicating `memory_sessions` rows.
-  - [ ] `session-relay` package/runtime does not import `jsonl-index`, `search-memory`, `sqlite-vec`, local embedder modules, or `@huggingface/transformers`.
-  - [ ] `jsonl-index` remains usable without installing `session-relay`, and `session-relay` remains usable without installing `jsonl-index`.
+  - [x] A new reference extension exists at `examples/pi-dev/extensions/session-relay/` with its own `package.json`, runtime entry point, and tests.
+  - [x] The extension creates/maintains a generic `memory_sessions` table in the Pi-dev SQLite DB using shared schema constants, with fields including `source_harness`, `source_uri`, `project_id` or `cwd`, `first_message_at`, `last_message_at`, `visible_message_count`, and `updated_at`.
+  - [x] Pi rows use `source_harness = 'pi'`, `source_uri = ctx.sessionManager.getSessionFile()`, and timestamps/counts derived from visible user/assistant messages parsed through shared helpers.
+  - [x] Reprocessing the same Pi session upserts one metadata row idempotently and updates timestamps/counts without duplicating `memory_sessions` rows.
+  - [x] `session-relay` package/runtime does not import `jsonl-index`, `search-memory`, `sqlite-vec`, local embedder modules, or `@huggingface/transformers`.
+  - [x] `jsonl-index` remains usable without installing `session-relay`, and `session-relay` remains usable without installing `jsonl-index`.
 - **Functional verification:**
-  - [ ] Add Vitest coverage proving a temporary DB receives one `memory_sessions` row after the `session-relay` metadata runtime processes `tests/fixtures/pi-jsonl/mixed-session.jsonl`, with assertions for every required metadata field: `source_harness = 'pi'`, expected `source_uri`, `project_id` or `cwd`, `first_message_at`, `last_message_at`, `visible_message_count`, and `updated_at`.
-  - [ ] Add Vitest coverage proving a second processing pass for the same session leaves exactly one matching `memory_sessions` row and updates it idempotently.
-  - [ ] Add a static/import-boundary test proving `session-relay` source files do not import vector/embedder modules or `jsonl-index`/`search-memory` extension internals.
+  - [x] Add Vitest coverage proving a temporary DB receives one `memory_sessions` row after the `session-relay` metadata runtime processes `tests/fixtures/pi-jsonl/mixed-session.jsonl`, with assertions for every required metadata field: `source_harness = 'pi'`, expected `source_uri`, `project_id` or `cwd`, `first_message_at`, `last_message_at`, `visible_message_count`, and `updated_at`.
+  - [x] Add Vitest coverage proving a second processing pass for the same session leaves exactly one matching `memory_sessions` row and updates it idempotently.
+  - [x] Add a static/import-boundary test proving `session-relay` source files do not import vector/embedder modules or `jsonl-index`/`search-memory` extension internals.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts` and verify existing vector index/search tool behavior still passes despite the new independent metadata store.
-  - [ ] Run `pnpm run typecheck` and verify the new extension package and shared schema types compile.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts` and verify existing vector index/search tool behavior still passes despite the new independent metadata store.
+  - [x] Run `pnpm run typecheck` and verify the new extension package and shared schema types compile.
+- **Story 2 evidence:** PASS — `pnpm run test:unit -- tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts`; PASS — `pnpm run typecheck`.
 - **Manual-only verification:** N/A — table creation, idempotence, and dependency boundaries are automatable.
 - **Planned commits:**
   1. `feat: add lightweight pi session relay metadata` — new extension scaffold, `memory_sessions` schema, metadata upsert runtime, dependency-boundary tests.

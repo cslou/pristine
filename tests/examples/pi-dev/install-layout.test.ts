@@ -31,6 +31,13 @@ const copyReferenceLayout = (targetRoot: string): void => {
     },
   );
   cpSync(
+    join(piDevRoot, 'extensions/session-relay'),
+    join(targetRoot, '.pi/extensions/session-relay'),
+    {
+      recursive: true,
+    },
+  );
+  cpSync(
     join(piDevRoot, 'skills/search-session-history'),
     join(targetRoot, '.pi/skills/search-session-history'),
     { recursive: true },
@@ -72,6 +79,11 @@ describe('Pi dev reference install layout', () => {
         join(targetRoot, '.pi/extensions/privacy-input/lib/runtime.ts'),
         join(targetRoot, '.pi/extensions/privacy-input/lib/classifier-adapter.ts'),
         join(targetRoot, '.pi/extensions/privacy-input/lib/pi-model-classifier-transport.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/index.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/extension-runtime.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/prior-session.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/relay-generator.ts'),
+        join(targetRoot, '.pi/extensions/session-relay/lib/session-store.ts'),
       ];
 
       const resolvedImports = extensionFiles.flatMap((file) => {
@@ -85,8 +97,29 @@ describe('Pi dev reference install layout', () => {
       expect(resolvedImports).toContain(
         join(targetRoot, '.pi/shared/lib/pi-jsonl-index-schema.ts'),
       );
+      expect(resolvedImports).toContain(join(targetRoot, '.pi/shared/lib/pi-jsonl-session.ts'));
+      expect(resolvedImports).toContain(join(targetRoot, '.pi/shared/lib/session-relay-schema.ts'));
     } finally {
       rmSync(targetRoot, { recursive: true, force: true });
     }
+  });
+
+  it('documents session-relay install behavior and boundaries', () => {
+    const readme = readFileSync(join(piDevRoot, 'README.md'), 'utf8');
+    const spec = readFileSync(join(repoRoot, 'docs/specs/implementation-spec-005.md'), 'utf8');
+
+    for (const requiredText of [
+      'session-relay',
+      'memory_sessions',
+      "source_harness = 'pi'",
+      'No-history behavior is a silent no-op',
+      'does not require embeddings, `sqlite-vec`, `jsonl-index`, `search-memory`, or `pristine_recall`',
+      'Pass condition',
+    ]) {
+      expect(readme).toContain(requiredText);
+    }
+    expect(spec).toContain('session-relay');
+    expect(spec).toContain('independent of the vector index');
+    expect(spec).toContain('memory_sessions');
   });
 });

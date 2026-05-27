@@ -237,20 +237,21 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** developer adopting the Pi reference, **I want** clear docs for start-session relay behavior and boundaries, **so that** I know what is installed, what is automatic, and which artifacts are optional.
 - **Dependencies:** Story 5
 - **Acceptance criteria:**
-  - [ ] `examples/pi-dev/README.md` documents `session-relay` as a separate optional artifact with copy/install target, dependency install expectations, and how it relates to existing `jsonl-index`, `search-memory`, and `search-session-history` artifacts.
-  - [ ] Documentation explicitly states that `session-relay` does not require embeddings, `sqlite-vec`, `jsonl-index`, `search-memory`, or `pristine_recall`.
-  - [ ] Documentation explicitly states no-history behavior, latest-prior-session selection, fresh relay generation/no cache, failure warning behavior, and Pi-first scope with Codex/Claude deferred.
-  - [ ] Documentation identifies the generic `memory_sessions` metadata contract and the meaning of `source_harness = 'pi'` for current rows.
-  - [ ] `docs/specs/implementation-spec-005.md` is updated with a concise reference-flow addendum for `session-relay`, including its vector independence, generic `memory_sessions` metadata, and relationship to the source-pointer semantic index boundary.
-  - [ ] A manual Pi smoke checklist is added with setup steps, pass/fail conditions, and expected evidence to record.
+  - [x] `examples/pi-dev/README.md` documents `session-relay` as a separate optional artifact with copy/install target, dependency install expectations, and how it relates to existing `jsonl-index`, `search-memory`, and `search-session-history` artifacts.
+  - [x] Documentation explicitly states that `session-relay` does not require embeddings, `sqlite-vec`, `jsonl-index`, `search-memory`, or `pristine_recall`.
+  - [x] Documentation explicitly states no-history behavior, latest-prior-session selection, fresh relay generation/no cache, failure warning behavior, and Pi-first scope with Codex/Claude deferred.
+  - [x] Documentation identifies the generic `memory_sessions` metadata contract and the meaning of `source_harness = 'pi'` for current rows.
+  - [x] `docs/specs/implementation-spec-005.md` is updated with a concise reference-flow addendum for `session-relay`, including its vector independence, generic `memory_sessions` metadata, and relationship to the source-pointer semantic index boundary.
+  - [x] A manual Pi smoke checklist is added with setup steps, pass/fail conditions, and expected evidence to record.
 - **Functional verification:**
-  - [ ] Add/extend docs-focused Vitest coverage (for example `tests/examples/pi-dev/install-layout.test.ts`) proving the new `session-relay` extension/docs path is represented in the install layout and README text includes the required behavior statements.
-  - [ ] Run a markdown/static grep check proving the README contains `session-relay`, `memory_sessions`, `source_harness`, no-history behavior, vector-independence language, and manual smoke pass/fail language.
-  - [ ] Run a markdown/static grep check proving `docs/specs/implementation-spec-005.md` mentions `session-relay`, vector independence, and `memory_sessions` as the session-relay metadata contract.
+  - [x] Add/extend docs-focused Vitest coverage (for example `tests/examples/pi-dev/install-layout.test.ts`) proving the new `session-relay` extension/docs path is represented in the install layout and README text includes the required behavior statements.
+  - [x] Run a markdown/static grep check proving the README contains `session-relay`, `memory_sessions`, `source_harness`, no-history behavior, vector-independence language, and manual smoke pass/fail language.
+  - [x] Run a markdown/static grep check proving `docs/specs/implementation-spec-005.md` mentions `session-relay`, vector independence, and `memory_sessions` as the session-relay metadata contract.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts` and verify existing Pi-dev artifact layout expectations still pass.
-  - [ ] Run `pnpm run docs:build` or, if docs build is unrelated/unavailable for examples-only docs, run `pnpm run typecheck` and record why docs build was not the relevant regression check.
-  - [ ] Review the `docs/specs/implementation-spec-005.md` update and verify it preserves the source-pointer semantic index boundary instead of reintroducing raw transcript ownership or fact extraction.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts` and verify existing Pi-dev artifact layout expectations still pass.
+  - [x] Run `pnpm run docs:build` or, if docs build is unrelated/unavailable for examples-only docs, run `pnpm run typecheck` and record why docs build was not the relevant regression check.
+  - [x] Review the `docs/specs/implementation-spec-005.md` update and verify it preserves the source-pointer semantic index boundary instead of reintroducing raw transcript ownership or fact extraction.
+- **Story 6 evidence:** PASS — `pnpm run test:unit -- tests/examples/pi-dev/install-layout.test.ts`; PASS — static grep checks for README/spec required terms; PASS — `pnpm run typecheck` used because docs build is unrelated/unavailable for examples-only docs.
 - **Manual-only verification:** N/A for docs content; the manual smoke checklist is executed in Story 7 / Final Story.
 - **Planned commits:**
   1. `docs: document pi session relay reference` — README updates, install layout references, and docs/static tests.

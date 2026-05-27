@@ -209,6 +209,56 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
   const charBudget = Math.max(0, Math.floor(options.charBudget));
   if (charBudget === 0) return { messages: [], truncated: false };
 
+  const state: ParserState = {};
+  const parseOptions = { ...options, sourceUri: sessionFilePath };
+  const tail: PiJsonlParsedMessage[] = [];
+  let usedChars = 0;
+  let truncated = false;
+
+  const retainParsed = (parsed: PiJsonlParsedMessage): void => {
+    tail.push(parsed);
+    usedChars += parsed.text.length;
+    while (usedChars > charBudget) {
+      const overflow = usedChars - charBudget;
+      const first = tail[0];
+      if (first === undefined) break;
+      if (first.text.length <= overflow) {
+        tail.shift();
+        usedChars -= first.text.length;
+        truncated = true;
+        continue;
+      }
+      tail[0] = { ...first, text: first.text.slice(overflow) };
+      usedChars -= overflow;
+      truncated = true;
+    }
+  };
+
+  if (options.activeEntryIds !== undefined) {
+    const expectedEntryIds = new Set(options.activeEntryIds);
+    const seenEntryIds = new Set<string>();
+    const lines = createInterface({
+      input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    let lineNumber = 0;
+    for await (const line of lines) {
+      lineNumber++;
+      if (line.trim().length === 0) continue;
+      const rawEntry = parseJsonLine(line, lineNumber, sessionFilePath);
+      if (isObject(rawEntry) && typeof rawEntry.id === 'string' && expectedEntryIds.has(rawEntry.id)) {
+        seenEntryIds.add(rawEntry.id);
+      }
+      const parsed = parsePiJsonlEntry(rawEntry, lineNumber, parseOptions, state);
+      if (parsed !== null) retainParsed(parsed);
+      if (seenEntryIds.size >= expectedEntryIds.size) {
+        lines.close();
+        break;
+      }
+    }
+    return { messages: tail, truncated };
+  }
+
   const file = await open(sessionFilePath, 'r');
   let rawTail = '';
   let truncatedByBytes = false;
@@ -228,14 +278,8 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
     await file.close();
   }
 
-  const state: ParserState = {};
-  const parseOptions = { ...options, sourceUri: sessionFilePath };
-  const lines = rawTail.split(/\r?\n/);
-  const parseableLines = truncatedByBytes ? lines.slice(1) : lines;
-
-  const tail: PiJsonlParsedMessage[] = [];
-  let usedChars = 0;
-  let truncated = truncatedByBytes;
+  const parseableLines = truncatedByBytes ? rawTail.split(/\r?\n/).slice(1) : rawTail.split(/\r?\n/);
+  truncated = truncatedByBytes;
   let lineNumber = 0;
   for (const line of parseableLines) {
     lineNumber++;
@@ -246,27 +290,7 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
       parseOptions,
       state,
     );
-    if (parsed === null) continue;
-
-    tail.push(parsed);
-    usedChars += parsed.text.length;
-    while (usedChars > charBudget) {
-      const overflow = usedChars - charBudget;
-      const first = tail[0];
-      if (first === undefined) break;
-      if (first.text.length <= overflow) {
-        tail.shift();
-        usedChars -= first.text.length;
-        truncated = true;
-        continue;
-      }
-      tail[0] = {
-        ...first,
-        text: first.text.slice(overflow),
-      };
-      usedChars -= overflow;
-      truncated = true;
-    }
+    if (parsed !== null) retainParsed(parsed);
   }
 
   return { messages: tail, truncated };

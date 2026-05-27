@@ -82,7 +82,10 @@ const visibleTextFromMessageEntry = (entry: unknown): string | null => {
   if (typeof message !== 'object' || message === null || Array.isArray(message)) return null;
   if (!('role' in message) || (message.role !== 'user' && message.role !== 'assistant')) return null;
   if (!('content' in message)) return null;
-  if (typeof message.content === 'string') return message.content;
+  if (typeof message.content === 'string') {
+    const text = message.content.trim();
+    return text.length > 0 ? text : null;
+  }
   if (!Array.isArray(message.content)) return null;
   const text = message.content
     .map((part) =>
@@ -96,7 +99,7 @@ const visibleTextFromMessageEntry = (entry: unknown): string | null => {
         ? part.text
         : '',
     )
-    .join('')
+    .join('\n')
     .trim();
   return text.length > 0 ? text : null;
 };

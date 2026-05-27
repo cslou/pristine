@@ -273,15 +273,16 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** a documented real-path Pi smoke and consolidated evidence hooks before final verification, **so that** the feature is proven in the actual harness path, not only unit tests.
 - **Dependencies:** Story 6
 - **Acceptance criteria:**
-  - [ ] The sprint doc or a linked docs/checklist section records a manual Pi smoke procedure that installs/enables `session-relay` without `jsonl-index`, creates prior Pi history, starts a new session in the same repo, observes relay injection, verifies no duplicate injection, and verifies no-history behavior in a temporary/empty repo.
-  - [ ] The manual smoke procedure includes explicit pass/fail conditions and where to record evidence.
-  - [ ] The sprint implementation includes test fixtures or helper scripts needed to make final verification reproducible without committing generated logs, local DBs, model output dumps, or local session data.
+  - [x] The sprint doc or a linked docs/checklist section records a manual Pi smoke procedure that installs/enables `session-relay` without `jsonl-index`, creates prior Pi history, starts a new session in the same repo, observes relay injection, verifies no duplicate injection, and verifies no-history behavior in a temporary/empty repo.
+  - [x] The manual smoke procedure includes explicit pass/fail conditions and where to record evidence.
+  - [x] The sprint implementation includes test fixtures or helper scripts needed to make final verification reproducible without committing generated logs, local DBs, model output dumps, or local session data.
 - **Functional verification:**
-  - [ ] Run the documented manual Pi smoke checklist once after implementation and record pass/fail evidence path or transcript summary in the story PR and final sprint review.
-  - [ ] Run all new Pi relay unit/integration tests introduced by Stories 1-6 and record the command plus pass/fail status.
+  - [x] Run the documented manual Pi smoke checklist once after implementation and record pass/fail evidence path or transcript summary in the story PR and final sprint review.
+  - [x] Run all new Pi relay unit/integration tests introduced by Stories 1-6 and record the command plus pass/fail status.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/install-layout.test.ts` and verify existing Pi reference tests pass.
-  - [ ] Run `pnpm run typecheck` and verify the repository still compiles.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/install-layout.test.ts` and verify existing Pi reference tests pass.
+  - [x] Run `pnpm run typecheck` and verify the repository still compiles.
+- **Story 7 evidence:** PASS — `node examples/pi-dev/scripts/session-relay-smoke.mjs` (log: `/tmp/pristine-story7-fix/session-relay-smoke.log`; success evidence `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-pi-relay-smoke-pXcJ8H/evidence`, empty-history evidence `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-pi-relay-empty-v4JveR/evidence`, failure evidence `/var/folders/d9/c72wvkps2px78k5rcxwg8rdr0000gn/T/pristine-pi-relay-failure-ek49jP/evidence`); PASS — `pnpm run test:unit -- tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/install-layout.test.ts`; PASS — `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/install-layout.test.ts`; PASS — `pnpm run typecheck`.
 - **Manual-only verification:** Manual Pi smoke is required because lifecycle injection must be proven in the actual Pi harness. Pass condition: a new session in a repo with prior `session-relay` metadata receives exactly one prior-session handoff without installing vector indexing; a new session in an empty-history repo receives none; relay generation failure, if simulated manually, warns without blocking.
 - **Planned commits:**
   1. `test: add pi relay smoke evidence hooks` — any fixture/checklist refinements and evidence prep updates.

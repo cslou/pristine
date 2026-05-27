@@ -123,6 +123,16 @@ The reference is Pi-first. Codex and Claude adapters are deferred; the generic m
 
 ### Session-relay manual smoke checklist
 
+You can run the reproducible helper instead of performing the steps by hand:
+
+```bash
+node examples/pi-dev/scripts/session-relay-smoke.mjs
+```
+
+Pass condition: the helper exits 0, prints `Session relay smoke PASS`, and prints temporary evidence directories for success, empty-history, and failure scenarios. The helper uses a local fake Pi provider, installs only `session-relay` plus shared helpers, and leaves generated temp repos/DBs under `/tmp` for inspection; do not commit them.
+
+Manual equivalent:
+
 1. Copy only `examples/pi-dev/shared/` and `examples/pi-dev/extensions/session-relay/` into a temporary repo's `.pi/` layout and run `npm install --omit=dev` in `.pi/extensions/session-relay`.
 2. Start Pi in that repo, create a short prior session, then start a new Pi session in the same repo.
 3. Pass condition: the new session receives exactly one hidden prior-session handoff; repeated prompts or reloads do not duplicate it; no `jsonl-index`, vectors, `search-memory`, or `pristine_recall` are installed.

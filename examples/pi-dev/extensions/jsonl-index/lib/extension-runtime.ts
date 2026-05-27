@@ -1,8 +1,12 @@
-import { createReadStream, existsSync } from 'node:fs';
-import { createInterface } from 'node:readline/promises';
+import { existsSync } from 'node:fs';
 import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
+import {
+  activeEntryIdsFromBranchEntries,
+  deriveActiveEntryIdsFromPiSessionFile,
+  parsePiSessionJsonlFile,
+  type PiJsonlBranchEntryLike,
+} from '../../../shared/lib/pi-jsonl-session.js';
 import { LocalNomicEmbedder } from './local-embedder.js';
-import { parsePiSessionJsonlFile } from './pi-jsonl-parser.js';
 import {
   createSqlitePiJsonlSourceIndexer,
   type PiJsonlIndexResult,
@@ -26,13 +30,9 @@ export interface PiJsonlIndexRuntimeResult {
   readonly error?: string;
 }
 
-interface PiSessionEntryLike {
-  readonly id?: unknown;
-}
-
 interface PiSessionManagerLike {
   getSessionFile(): string | undefined;
-  getBranch?(): readonly PiSessionEntryLike[];
+  getBranch?(): readonly PiJsonlBranchEntryLike[];
 }
 
 interface PiUiLike {
@@ -44,48 +44,8 @@ export interface PiExtensionContextLike {
   readonly ui?: PiUiLike;
 }
 
-const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | undefined => {
-  const branch = ctx.sessionManager.getBranch?.();
-  if (branch === undefined) return undefined;
-
-  const ids = new Set<string>();
-  for (const entry of branch) {
-    if (typeof entry.id === 'string' && entry.id.length > 0) ids.add(entry.id);
-  }
-  return ids;
-};
-
-const isJsonObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const deriveActiveEntryIdsFromSessionFile = async (
-  sessionFile: string,
-): Promise<ReadonlySet<string>> => {
-  const parents = new Map<string, string | null>();
-  let latestEntryId: string | null = null;
-  const lines = createInterface({
-    input: createReadStream(sessionFile, { encoding: 'utf8' }),
-    crlfDelay: Number.POSITIVE_INFINITY,
-  });
-
-  for await (const line of lines) {
-    if (line.trim().length === 0) continue;
-    const parsed = JSON.parse(line) as unknown;
-    if (!isJsonObject(parsed)) continue;
-    if (typeof parsed.id !== 'string' || parsed.id.length === 0) continue;
-    const parentId = typeof parsed.parentId === 'string' ? parsed.parentId : null;
-    parents.set(parsed.id, parentId);
-    if (parsed.type === 'message') latestEntryId = parsed.id;
-  }
-
-  const activeIds = new Set<string>();
-  let cursor = latestEntryId;
-  while (cursor !== null && !activeIds.has(cursor)) {
-    activeIds.add(cursor);
-    cursor = parents.get(cursor) ?? null;
-  }
-  return activeIds;
-};
+const activeEntryIdsFrom = (ctx: PiExtensionContextLike): ReadonlySet<string> | undefined =>
+  activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
 
 const notify = (
   ctx: PiExtensionContextLike,
@@ -164,7 +124,7 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
       const contextEntryIds = activeEntryIdsFrom(ctx);
       const activeEntryIds =
         contextEntryIds !== undefined && contextEntryIds.size === 0
-          ? await deriveActiveEntryIdsFromSessionFile(sessionFile)
+          ? await deriveActiveEntryIdsFromPiSessionFile(sessionFile)
           : contextEntryIds;
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);

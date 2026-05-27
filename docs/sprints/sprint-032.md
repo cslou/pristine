@@ -59,17 +59,17 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** maintainer, **I want** reusable Pi JSONL/session helpers moved out of `jsonl-index`, **so that** both vector indexing and session relay can share source parsing without making relay depend on embeddings.
 - **Dependencies:** None
 - **Acceptance criteria:**
-  - [ ] Reusable non-vector Pi JSONL logic is available under `examples/pi-dev/shared/`, including visible user/assistant text extraction, source pointer construction, active-branch/active-entry selection, and session-file handling where currently duplicated or trapped inside `jsonl-index`.
-  - [ ] `examples/pi-dev/extensions/jsonl-index/` imports the shared helpers and preserves its existing public runtime behavior, table writes, duplicate suppression, active-branch reconciliation, and notifications.
-  - [ ] Shared helper APIs expose explicit TypeScript types and do not import `@huggingface/transformers`, `sqlite-vec`, local embedder code, or vector-index code.
-  - [ ] Existing Pi JSONL fixtures remain valid and do not need semantic/content rewrites.
+  - [x] Reusable non-vector Pi JSONL logic is available under `examples/pi-dev/shared/`, including visible user/assistant text extraction, source pointer construction, active-branch/active-entry selection, and session-file handling where currently duplicated or trapped inside `jsonl-index`.
+  - [x] `examples/pi-dev/extensions/jsonl-index/` imports the shared helpers and preserves its existing public runtime behavior, table writes, duplicate suppression, active-branch reconciliation, and notifications.
+  - [x] Shared helper APIs expose explicit TypeScript types and do not import `@huggingface/transformers`, `sqlite-vec`, local embedder code, or vector-index code.
+  - [x] Existing Pi JSONL fixtures remain valid and do not need semantic/content rewrites.
 - **Functional verification:**
-  - [ ] Add/extend Vitest coverage proving the shared visible-message parser returns the same indexed user/assistant entries from `tests/fixtures/pi-jsonl/mixed-session.jsonl` that `jsonl-index` indexed before extraction.
-  - [ ] Add/extend Vitest coverage proving active-branch filtering and fallback parent-chain derivation behave the same through the shared helper API.
+  - [x] Add/extend Vitest coverage proving the shared visible-message parser returns the same indexed user/assistant entries from `tests/fixtures/pi-jsonl/mixed-session.jsonl` that `jsonl-index` indexed before extraction.
+  - [x] Add/extend Vitest coverage proving active-branch filtering and fallback parent-chain derivation behave the same through the shared helper API.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts` and verify existing chunk/vector indexing, stale active-branch cleanup, duplicate suppression, and startup missing-file behavior still pass.
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify source-pointer exact-context behavior still passes after helper extraction.
-  - [ ] Run `pnpm run typecheck` and verify the shared helper refactor compiles under strict TypeScript.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts` and verify existing chunk/vector indexing, stale active-branch cleanup, duplicate suppression, and startup missing-file behavior still pass.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/search-session-history.test.ts` and verify source-pointer exact-context behavior still passes after helper extraction.
+  - [x] Run `pnpm run typecheck` and verify the shared helper refactor compiles under strict TypeScript.
 - **Manual-only verification:** N/A — this is a refactor with automatable parser/runtime regression checks.
 - **Planned commits:**
   1. `refactor: extract shared pi jsonl helpers` — shared helper modules, jsonl-index import updates, and regression-preserving tests.

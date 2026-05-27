@@ -11,9 +11,23 @@ export interface MemorySessionMetadata {
   readonly updatedAt: string;
 }
 
+export interface HistoricalSessionQuery {
+  readonly sourceHarness: MemorySessionSourceHarness;
+  readonly cwd: string;
+  readonly excludeSourceUri?: string;
+}
+
+export interface HistoricalSession {
+  readonly sourceHarness: MemorySessionSourceHarness;
+  readonly sourceUri: string;
+  readonly cwd: string;
+  readonly lastMessageAt: string;
+}
+
 export interface SessionMetadataStore {
   upsertSession(metadata: MemorySessionMetadata): void;
   getSession(sourceHarness: MemorySessionSourceHarness, sourceUri: string): MemorySessionRow | null;
+  findLatestPriorSession(query: HistoricalSessionQuery): HistoricalSession | null;
   close?(): void;
 }
 

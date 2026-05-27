@@ -6,7 +6,12 @@ import {
   type MemorySessionRow,
   type MemorySessionSourceHarness,
 } from '../../../shared/lib/session-relay-schema.js';
-import type { MemorySessionMetadata, SessionMetadataStore } from './types.js';
+import type {
+  HistoricalSession,
+  HistoricalSessionQuery,
+  MemorySessionMetadata,
+  SessionMetadataStore,
+} from './types.js';
 
 export class SessionRelayStoreError extends Error {
   public constructor(message: string) {
@@ -92,6 +97,39 @@ export class SqliteSessionMetadataStore implements SessionMetadataStore {
       )
       .get(sourceHarness, sourceUri) as MemorySessionRow | undefined;
     return row ?? null;
+  }
+
+  public findLatestPriorSession(query: HistoricalSessionQuery): HistoricalSession | null {
+    const row = this.db
+      .prepare(
+        `SELECT source_harness, source_uri, cwd, last_message_at
+           FROM ${MEMORY_SESSIONS_TABLE}
+          WHERE source_harness = ?
+            AND cwd = ?
+            AND (? IS NULL OR source_uri <> ?)
+          ORDER BY last_message_at DESC, updated_at DESC
+          LIMIT 1`,
+      )
+      .get(
+        query.sourceHarness,
+        query.cwd,
+        query.excludeSourceUri ?? null,
+        query.excludeSourceUri ?? null,
+      ) as
+      | {
+          readonly source_harness: MemorySessionSourceHarness;
+          readonly source_uri: string;
+          readonly cwd: string;
+          readonly last_message_at: string;
+        }
+      | undefined;
+    if (row === undefined) return null;
+    return {
+      sourceHarness: row.source_harness,
+      sourceUri: row.source_uri,
+      cwd: row.cwd,
+      lastMessageAt: row.last_message_at,
+    };
   }
 
   public close(): void {

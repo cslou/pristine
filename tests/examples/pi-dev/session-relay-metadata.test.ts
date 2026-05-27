@@ -9,6 +9,10 @@ import {
   createPiSessionRelayRuntime,
   type PiSessionRelayContextLike,
 } from '../../../examples/pi-dev/extensions/session-relay/lib/extension-runtime.js';
+import {
+  findLatestPriorSession,
+  loadBoundedPiPriorSessionMessages,
+} from '../../../examples/pi-dev/extensions/session-relay/lib/prior-session.js';
 import { SqliteSessionMetadataStore } from '../../../examples/pi-dev/extensions/session-relay/lib/session-store.js';
 import { MEMORY_SESSIONS_TABLE } from '../../../examples/pi-dev/shared/lib/session-relay-schema.js';
 
@@ -23,6 +27,7 @@ const forbiddenSessionRelayDependencies = [
 const sessionRelaySourceFiles = [
   'examples/pi-dev/extensions/session-relay/index.ts',
   'examples/pi-dev/extensions/session-relay/lib/extension-runtime.ts',
+  'examples/pi-dev/extensions/session-relay/lib/prior-session.ts',
   'examples/pi-dev/extensions/session-relay/lib/session-store.ts',
 ];
 
@@ -93,6 +98,23 @@ const collectLocalImportGraph = (
     for (const [filePath, fileSource] of nestedGraph) graph.set(filePath, fileSource);
   }
   return graph;
+};
+
+const upsertTestSession = (params: {
+  readonly store: SqliteSessionMetadataStore;
+  readonly sourceUri: string;
+  readonly cwd: string;
+  readonly lastMessageAt: string;
+}): void => {
+  params.store.upsertSession({
+    sourceHarness: 'pi',
+    sourceUri: params.sourceUri,
+    cwd: params.cwd,
+    firstMessageAt: params.lastMessageAt,
+    lastMessageAt: params.lastMessageAt,
+    visibleMessageCount: 1,
+    updatedAt: params.lastMessageAt,
+  });
 };
 
 describe('Pi session relay metadata extension reference', () => {
@@ -260,6 +282,101 @@ describe('Pi session relay metadata extension reference', () => {
       last_message_at: '2026-05-06T10:00:03.000Z',
       visible_message_count: 2,
     });
+  });
+
+  it('selects the latest prior session for the same repo', async () => {
+    const store = new SqliteSessionMetadataStore({
+      db: new Database(join(await makeTempDir(), 'pristine.db')),
+    });
+    upsertTestSession({
+      store,
+      sourceUri: '/tmp/older.jsonl',
+      cwd: '/repo/one',
+      lastMessageAt: '2026-05-06T10:00:01.000Z',
+    });
+    upsertTestSession({
+      store,
+      sourceUri: '/tmp/newer.jsonl',
+      cwd: '/repo/one',
+      lastMessageAt: '2026-05-06T10:00:02.000Z',
+    });
+    upsertTestSession({
+      store,
+      sourceUri: '/tmp/other-repo.jsonl',
+      cwd: '/repo/two',
+      lastMessageAt: '2026-05-06T10:00:03.000Z',
+    });
+
+    expect(
+      findLatestPriorSession(store, {
+        sourceHarness: 'pi',
+        cwd: '/repo/one',
+      }),
+    ).toMatchObject({ sourceUri: '/tmp/newer.jsonl', lastMessageAt: '2026-05-06T10:00:02.000Z' });
+  });
+
+  it('excludes the current session URI from latest prior session selection', async () => {
+    const store = new SqliteSessionMetadataStore({
+      db: new Database(join(await makeTempDir(), 'pristine.db')),
+    });
+    upsertTestSession({
+      store,
+      sourceUri: '/tmp/prior.jsonl',
+      cwd: '/repo/one',
+      lastMessageAt: '2026-05-06T10:00:01.000Z',
+    });
+    upsertTestSession({
+      store,
+      sourceUri: '/tmp/current.jsonl',
+      cwd: '/repo/one',
+      lastMessageAt: '2026-05-06T10:00:02.000Z',
+    });
+
+    expect(
+      findLatestPriorSession(store, {
+        sourceHarness: 'pi',
+        cwd: '/repo/one',
+        excludeSourceUri: '/tmp/current.jsonl',
+      }),
+    ).toMatchObject({ sourceUri: '/tmp/prior.jsonl' });
+  });
+
+  it('returns null without warning when no historical session exists for the repo', async () => {
+    const store = new SqliteSessionMetadataStore({
+      db: new Database(join(await makeTempDir(), 'pristine.db')),
+    });
+
+    expect(
+      findLatestPriorSession(store, {
+        sourceHarness: 'pi',
+        cwd: '/repo/missing',
+      }),
+    ).toBeNull();
+  });
+
+  it('loads visible prior-session Pi messages and enforces a tail character budget', async () => {
+    const loaded = await loadBoundedPiPriorSessionMessages({
+      session: {
+        sourceHarness: 'pi',
+        sourceUri: fixturePath,
+        cwd: '/Users/lou/projects/test-pristine',
+        lastMessageAt: '2026-05-06T10:00:04.000Z',
+      },
+      charBudget: 90,
+    });
+
+    expect(loaded.truncated).toBe(true);
+    expect(loaded.messages).toEqual([
+      { role: 'assistant', text: 'Noted: sapphire migration note is important.' },
+      { role: 'user', text: 'The repo-local install phrase is amber-coyote.' },
+    ]);
+    expect(loaded.messages.map((message) => message.text).join('\n')).not.toContain(
+      'tool output should be ignored',
+    );
+    expect(loaded.messages.map((message) => message.text).join('\n')).not.toContain(
+      'thinking-only assistant should be ignored',
+    );
+    expect(loaded.messages.map((message) => message.text).join('\n')).not.toContain('abc123');
   });
 
   it('keeps session-relay independent from vector, embedder, and semantic search internals', () => {

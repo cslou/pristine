@@ -4,7 +4,9 @@ import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import {
   activeEntryIdsFromBranchEntries,
   inspectPiSessionJsonlForCustomContextGuard,
+  parseActivePiSessionJsonlFile,
   summarizePiSessionJsonlFile,
+  type PiJsonlParsedMessage,
 } from '../../../shared/lib/pi-jsonl-session.js';
 import { loadBoundedPiPriorSessionMessages } from './prior-session.js';
 import {
@@ -122,6 +124,27 @@ const wrapUntrustedRelayContent = (content: string): string =>
     '</prior_session_handoff>',
   ].join('\n');
 
+const metadataFromParsedMessages = (
+  sessionFile: string,
+  now: () => Date,
+  messages: readonly PiJsonlParsedMessage[],
+  activeEntryIds: ReadonlySet<string>,
+): MemorySessionMetadata | null => {
+  if (messages.length === 0) return null;
+  const first = messages[0];
+  const last = messages.at(-1);
+  return {
+    sourceHarness: 'pi',
+    sourceUri: sessionFile,
+    cwd: last?.pointer.cwd ?? first?.pointer.cwd ?? '',
+    firstMessageAt: first?.pointer.timestamp ?? '',
+    lastMessageAt: last?.pointer.timestamp ?? '',
+    visibleMessageCount: messages.length,
+    activeEntryIds: [...activeEntryIds],
+    updatedAt: now().toISOString(),
+  };
+};
+
 const metadataFromSession = async (
   sessionFile: string,
   now: () => Date,
@@ -197,8 +220,19 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
         };
       }
 
-      const activeEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
-      const metadata = await metadataFromSession(sessionFile, this.now, activeEntryIds);
+      const activeSessionFile = sessionFile;
+      const contextEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
+      const metadata =
+        contextEntryIds !== undefined && contextEntryIds.size === 0
+          ? await parseActivePiSessionJsonlFile(activeSessionFile).then((activeParse) =>
+              metadataFromParsedMessages(
+                activeSessionFile,
+                this.now,
+                activeParse.messages,
+                activeParse.activeEntryIds,
+              ),
+            )
+          : await metadataFromSession(activeSessionFile, this.now, contextEntryIds);
       if (metadata === null) {
         return {
           ok: true,

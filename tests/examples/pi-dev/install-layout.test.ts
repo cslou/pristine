@@ -119,9 +119,13 @@ describe('Pi dev reference install layout', () => {
       'generates a fresh six-section relay (no cache)',
       'Pi receives a non-blocking warning',
       'Pi-first. Codex and Claude adapters are deferred',
+      'node examples/pi-dev/scripts/session-relay-smoke.mjs',
+      'Session relay smoke PASS',
       'Pass condition',
     ]) {
       expect(readme).toContain(requiredText);
     }
+
+    expect(statSync(join(piDevRoot, 'scripts/session-relay-smoke.mjs')).isFile()).toBe(true);
   });
 });

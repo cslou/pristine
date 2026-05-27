@@ -682,9 +682,10 @@ describe('Pi session relay metadata extension reference', () => {
       relayCharBudget: 90,
     });
     const currentSessionFile = join(await makeTempDir(), 'current.jsonl');
+    const notifications: string[] = [];
 
     const first = await runtime.injectPriorSessionRelay(
-      makeCtx({ sessionFile: currentSessionFile }),
+      makeCtx({ sessionFile: currentSessionFile, notifications }),
       { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
     );
     const second = await runtime.injectPriorSessionRelay(
@@ -697,9 +698,11 @@ describe('Pi session relay metadata extension reference', () => {
       customType: 'pristine-session-relay',
       display: false,
     });
+    expect(first.message?.content).toContain('untrusted historical context');
     expect(first.message?.content).toContain('## Prior Session Handoff');
     expect(first.message?.content).toContain(`Source: pi session ${fixturePath}`);
     expect(second).toEqual({ ok: true, injected: false });
+    expect(notifications).toEqual([]);
   });
 
   it('silently skips injection when no prior repo history exists', async () => {
@@ -736,16 +739,119 @@ describe('Pi session relay metadata extension reference', () => {
     });
     const notifications: string[] = [];
 
+    const currentSessionFile = '/tmp/current.jsonl';
     const result = await runtime.injectPriorSessionRelay(
-      makeCtx({ sessionFile: '/tmp/current.jsonl', notifications }),
+      makeCtx({ sessionFile: currentSessionFile, notifications }),
+      { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
+    );
+    const repeated = await runtime.injectPriorSessionRelay(
+      makeCtx({ sessionFile: currentSessionFile, notifications }),
       { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
     );
 
     expect(result.injected).toBe(false);
     expect(result.warning).toContain('Pristine session relay skipped');
+    expect(repeated).toEqual({ ok: true, injected: false });
     expect(notifications).toEqual([
       'warning:Pristine session relay skipped: Relay summarizer returned an empty summary',
     ]);
+  });
+
+  it('excludes current session metadata during runtime relay selection', async () => {
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const store = new SqliteSessionMetadataStore({ db });
+    const currentSessionFile = join(await makeTempDir(), 'current.jsonl');
+    upsertTestSession({
+      store,
+      sourceUri: fixturePath,
+      cwd: '/Users/lou/projects/test-pristine',
+      lastMessageAt: '2026-05-06T10:00:04.000Z',
+      activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
+    });
+    upsertTestSession({
+      store,
+      sourceUri: currentSessionFile,
+      cwd: '/Users/lou/projects/test-pristine',
+      lastMessageAt: '2026-05-06T10:00:09.000Z',
+      activeEntryIds: ['current'],
+    });
+    const runtime = createPiSessionRelayRuntime({
+      store,
+      summarizer: { summarize: async () => 'Current task: Use prior, not current.' },
+    });
+
+    const result = await runtime.injectPriorSessionRelay(
+      makeCtx({ sessionFile: currentSessionFile }),
+      { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
+    );
+
+    expect(result.message?.content).toContain(`Source: pi session ${fixturePath}`);
+    expect(result.message?.content).not.toContain(`Source: pi session ${currentSessionFile}`);
+  });
+
+  it('does not inject into existing sessions with prior visible conversation', async () => {
+    const currentSessionFile = join(await makeTempDir(), 'existing-session.jsonl');
+    await writeFile(
+      currentSessionFile,
+      [
+        { type: 'message', id: 'u1', message: { role: 'user', content: 'existing prompt' } },
+        {
+          type: 'message',
+          id: 'a1',
+          parentId: 'u1',
+          message: { role: 'assistant', content: 'existing answer' },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+    );
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const store = new SqliteSessionMetadataStore({ db });
+    upsertTestSession({
+      store,
+      sourceUri: fixturePath,
+      cwd: '/Users/lou/projects/test-pristine',
+      lastMessageAt: '2026-05-06T10:00:04.000Z',
+      activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
+    });
+    const runtime = createPiSessionRelayRuntime({
+      store,
+      summarizer: { summarize: async () => 'should not run' },
+    });
+
+    await expect(
+      runtime.injectPriorSessionRelay(makeCtx({ sessionFile: currentSessionFile }), {
+        systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' },
+      }),
+    ).resolves.toEqual({ ok: true, injected: false });
+  });
+
+  it('does not reinject after reload when the current session already has a relay marker', async () => {
+    const currentSessionFile = join(await makeTempDir(), 'marked-session.jsonl');
+    await writeFile(
+      currentSessionFile,
+      JSON.stringify({
+        type: 'custom_message',
+        customType: 'pristine-session-relay',
+        content: 'done',
+      }),
+    );
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const store = new SqliteSessionMetadataStore({ db });
+    upsertTestSession({
+      store,
+      sourceUri: fixturePath,
+      cwd: '/Users/lou/projects/test-pristine',
+      lastMessageAt: '2026-05-06T10:00:04.000Z',
+      activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
+    });
+
+    await expect(
+      createPiSessionRelayRuntime({ store }).injectPriorSessionRelay(
+        makeCtx({ sessionFile: currentSessionFile }),
+        { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
+      ),
+    ).resolves.toEqual({ ok: true, injected: false });
   });
 
   it('registers metadata lifecycle handlers without requiring jsonl-index', async () => {
@@ -754,6 +860,11 @@ describe('Pi session relay metadata extension reference', () => {
       (event: unknown, ctx: unknown) => Promise<unknown> | unknown
     >();
     const calls: string[] = [];
+    const relayMessage = {
+      customType: 'pristine-session-relay',
+      content: 'relay',
+      display: false,
+    };
     registerSessionRelayExtension(
       {
         on: (event, handler) => handlers.set(event, handler),
@@ -763,7 +874,7 @@ describe('Pi session relay metadata extension reference', () => {
           calls.push(trigger);
           return { ok: true, upserted: false };
         },
-        injectPriorSessionRelay: async () => ({ ok: true, injected: false }),
+        injectPriorSessionRelay: async () => ({ ok: true, injected: true, message: relayMessage }),
         close: () => calls.push('session_shutdown'),
       }),
     );
@@ -773,8 +884,13 @@ describe('Pi session relay metadata extension reference', () => {
       { reason: 'resume' },
       makeCtx({ sessionFile: fixturePath }),
     );
+    const beforeAgentStartResult = await handlers.get('before_agent_start')?.(
+      { systemPromptOptions: { cwd: '/repo/one' } },
+      makeCtx({ sessionFile: fixturePath }),
+    );
     handlers.get('session_shutdown')?.({}, makeCtx({ sessionFile: fixturePath }));
 
+    expect(beforeAgentStartResult).toEqual({ message: relayMessage });
     expect(calls).toEqual(['agent_end', 'session_start:resume', 'session_shutdown']);
   });
 });

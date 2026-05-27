@@ -9,6 +9,29 @@ export interface RelaySummarizer {
   summarize(input: RelaySummarizerInput): Promise<string>;
 }
 
+export class ExtractiveRelaySummarizer implements RelaySummarizer {
+  public async summarize(input: RelaySummarizerInput): Promise<string> {
+    const recentText = input.messages
+      .slice(-6)
+      .map((message) => `- ${message.role}: ${message.text}`)
+      .join('\n');
+    return [
+      '## Current task',
+      recentText.length > 0 ? recentText : 'None identified.',
+      '## Progress',
+      'None identified.',
+      '## Key files',
+      'None identified.',
+      '## Decisions made',
+      'None identified.',
+      '## Blockers/open questions',
+      'None identified.',
+      '## Next steps',
+      'Continue from the prior-session context above.',
+    ].join('\n\n');
+  }
+}
+
 export type RelayGenerationResult =
   | {
       readonly ok: true;

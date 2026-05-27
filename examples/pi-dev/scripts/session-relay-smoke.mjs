@@ -68,15 +68,56 @@ export default function smokeProvider(pi) {
 }
 `;
 
-const failureRelaySource = `import { registerSessionRelayExtension } from './.pi/extensions/session-relay/index.ts';
-import { createPiSessionRelayRuntime } from './.pi/extensions/session-relay/lib/extension-runtime.ts';
+const failureRelaySource = `import { writeFileSync } from 'node:fs';
+import {
+  createPiSessionRelayRuntime,
+  registerSessionRelayExtension,
+} from './.pi/extensions/session-relay/index.ts';
+
+const markerPath = process.env.PRISTINE_RELAY_SMOKE_MARKER;
+
+const markFailurePath = (message) => {
+  process.stderr.write(\`[session-relay-smoke-warning] \${message}\\n\`);
+  if (markerPath !== undefined && markerPath.length > 0) {
+    writeFileSync(markerPath, message);
+  }
+};
 
 export default function failureRelay(pi) {
-  registerSessionRelayExtension(pi, () => createPiSessionRelayRuntime({
-    summarizer: { async summarize() { return ''; } },
-  }));
+  registerSessionRelayExtension(pi, () => {
+    const runtime = createPiSessionRelayRuntime({
+      summarizer: { async summarize() { return ''; } },
+    });
+    return {
+      async recordActiveSession(ctx, trigger) {
+        return runtime.recordActiveSession(ctx, trigger);
+      },
+      async injectPriorSessionRelay(ctx, event) {
+        const wrappedCtx = {
+          ...ctx,
+          ui: {
+            ...ctx.ui,
+            notify(message, level) {
+              markFailurePath(\`\${level}: \${message}\`);
+              return ctx.ui?.notify?.(message, level);
+            },
+          },
+        };
+        return runtime.injectPriorSessionRelay(wrappedCtx, event);
+      },
+      close() { runtime.close(); },
+    };
+  });
 }
 `;
+
+const safeEnv = (extra = {}) => {
+  const env = { ...extra };
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'USER', 'SHELL']) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+};
 
 const run = (label, command, args, options) => {
   const result = spawnSync(command, args, {
@@ -121,7 +162,7 @@ const createFixture = (prefix) => {
 const installRelayDeps = (fixture) => {
   run('npm-install-session-relay', 'npm', ['install', '--omit=dev', '--silent'], {
     cwd: join(fixture.repo, '.pi/extensions/session-relay'),
-    env: process.env,
+    env: safeEnv(),
     evidenceDir: fixture.evidenceDir,
   });
 };
@@ -147,12 +188,11 @@ const piArgs = (fixture, prompt, relayExtension = '.pi/extensions/session-relay'
 const runPi = (fixture, label, prompt, relayExtension) =>
   run(label, 'pi', piArgs(fixture, prompt, relayExtension), {
     cwd: fixture.repo,
-    env: {
-      ...process.env,
+    env: safeEnv({
       PI_CODING_AGENT_DIR: fixture.agentDir,
       PRISTINE_DB_PATH: fixture.dbPath,
       PRISTINE_SMOKE_API_KEY: 'unused',
-    },
+    }),
     evidenceDir: fixture.evidenceDir,
   });
 
@@ -220,12 +260,11 @@ const runSuccessSmoke = () => {
     'Prompt again in the same session.',
   ], {
     cwd: fixture.repo,
-    env: {
-      ...process.env,
+    env: safeEnv({
       PI_CODING_AGENT_DIR: fixture.agentDir,
       PRISTINE_DB_PATH: fixture.dbPath,
       PRISTINE_SMOKE_API_KEY: 'unused',
-    },
+    }),
     evidenceDir: fixture.evidenceDir,
   });
   assertCondition(relayEntryCount(secondSession) === 1, 'resumed session should not duplicate relay');
@@ -248,8 +287,24 @@ const runFailureSmoke = () => {
   const fixture = createFixture('pristine-pi-relay-failure-');
   installRelayDeps(fixture);
   runPi(fixture, '01-prior-session', 'Record prior visible history for a failure simulation.');
-  runPi(fixture, '02-empty-summary-failure', 'Trigger empty-summary failure.', './failure-relay.ts');
+  const markerPath = join(fixture.evidenceDir, 'failure-marker.txt');
+  run('02-empty-summary-failure', 'pi', piArgs(fixture, 'Trigger empty-summary failure.', './failure-relay.ts'), {
+    cwd: fixture.repo,
+    env: safeEnv({
+      PI_CODING_AGENT_DIR: fixture.agentDir,
+      PRISTINE_DB_PATH: fixture.dbPath,
+      PRISTINE_SMOKE_API_KEY: 'unused',
+      PRISTINE_RELAY_SMOKE_MARKER: markerPath,
+    }),
+    evidenceDir: fixture.evidenceDir,
+  });
   const session = newestSession(fixture);
+  const stderr = readFileSync(join(fixture.evidenceDir, '02-empty-summary-failure.stderr.log'), 'utf8');
+  assertCondition(existsSync(markerPath), 'failure summarizer path should write a marker');
+  assertCondition(
+    stderr.includes('Relay summarizer returned an empty summary'),
+    'failure smoke should surface the relay warning in stderr evidence',
+  );
   assertCondition(relayEntryCount(session) === 0, 'failure session should not receive partial relay');
   return fixture;
 };

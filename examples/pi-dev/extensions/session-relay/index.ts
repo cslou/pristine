@@ -4,6 +4,7 @@ import {
   type PiSessionRelayLifecycleReason,
   type PiSessionRelayRuntimeLike,
 } from './lib/extension-runtime.js';
+export { createPiSessionRelayRuntime } from './lib/extension-runtime.js';
 
 interface PiExtensionApiLike {
   on(

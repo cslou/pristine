@@ -311,8 +311,8 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **Regression verification:**
   - [x] Run all targeted regression verification items from every story and record pass/fail evidence.
   - [x] Run the full available regression verification suite and record pass/fail evidence.
-- **Final Story evidence:** PASS — `node examples/pi-dev/scripts/session-relay-smoke.mjs` (log: `/tmp/pristine-final/session-relay-smoke.log`; evidence dirs listed in the log); PASS — `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/install-layout.test.ts`; PASS — `.checks/pre-merge.sh` (log: `/tmp/pristine-final/pre-merge.log`; includes lint, typecheck, unit, build, smoke, deterministic integration, e2e).
-- **Manual-only verification:** Manual Pi smoke from Story 7 must be run or explicitly documented as unrun/blocked with rationale.
+- **Final Story evidence:** PASS — `node examples/pi-dev/scripts/session-relay-smoke.mjs` (log: `/tmp/pristine-final/session-relay-smoke.log`; evidence dirs listed in the log); PASS — `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-session-history.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/install-layout.test.ts`; PASS — `.checks/regression.sh --tier=full` (log: `/tmp/pristine-final/full-regression.log`; includes lint, typecheck, unit, build, smoke, deterministic integration, e2e, full integration, and source-index local-model smoke).
+- **Manual-only verification:** Satisfied by the reproducible real-path Pi CLI helper (`node examples/pi-dev/scripts/session-relay-smoke.mjs`), which installs only `session-relay`, creates prior history, verifies one injected handoff, verifies no duplicate injection on resume, verifies empty-history no-op, and verifies failure warning/no-partial-injection behavior.
 - **Planned commits:**
   1. `test: complete sprint 032 verification` — final verification evidence and sprint doc completion update.
 - **Technical notes:** Use the story sections plus the existing regression suite as the source of truth. Do not duplicate all AC/verification items here; run them, reference the evidence, compute the verification delta table, and record final results in `## Final Review`. Use `workflow-prompts/handle-sprint-completion.md` for the final completion message shape. `## Final Review` is the durable audit copy of that message; emit the same summary to the user and append it to the sprint doc.
@@ -359,24 +359,24 @@ The Final Verification Story runs all sprint functional verification plus the fu
 |---|---:|---:|---:|---:|---:|---|
 | Unit | 4 | +2 | 0 | 0 | 6 | Added `session-relay-metadata.test.ts`; extended `install-layout.test.ts` for relay docs/helper coverage. Existing Pi JSONL/search tests remain. |
 | Integration / contract | 1 | +0 | 0 | 0 | 1 | Deterministic integration suite passed in final `.checks/pre-merge.sh`; real-model integration remains intentionally outside deep tier. |
-| E2E / smoke | 2 | +1 | 0 | 0 | 3 | Added `examples/pi-dev/scripts/session-relay-smoke.mjs`; existing package/API smoke and e2e privacy smoke passed. |
+| E2E / smoke | 2 | +1 | 0 | 0 | 3 | Added `examples/pi-dev/scripts/session-relay-smoke.mjs`; existing package/API smoke, source-index local-model smoke, and e2e privacy smoke passed. |
 | Simulator / device | 0 | +0 | 0 | 0 | 0 | Not applicable for this Node/Pi reference sprint. |
 | AI / model evals | 0 | +0 | 0 | 0 | 0 | No model-eval suite added; smoke helper uses a local fake provider to avoid paid/provider calls. |
 | Static / local checks | 2 | +0 | 0 | 0 | 2 | Lint and typecheck passed in final pre-merge gate. |
 | Performance / load | 0 | +0 | 0 | 0 | 0 | No performance/load surface changed. |
 | Security / dependency | 1 | +0 | 0 | 0 | 1 | Security posture verified via review; no new dependencies added. |
 | Accessibility / visual | 0 | +0 | 0 | 0 | 0 | Not applicable. |
-| Manual-only | 0 | +1 | 0 | 0 | 1 | Real-path Pi lifecycle smoke is reproducible via the helper; generated evidence remains in `/tmp` and is not committed. |
+| Manual-only | 0 | +0 | 0 | 0 | 0 | The planned manual Pi lifecycle check was converted into the reproducible real-path smoke helper counted under E2E / smoke; generated evidence remains in `/tmp` and is not committed. |
 | Other verification | 0 | +0 | 0 | 0 | 0 | None. |
-| **Total** | **10** | **+4** | **0** | **0** | **14** |  |
+| **Total** | **10** | **+3** | **0** | **0** | **13** |  |
 
 Counting basis: verification surfaces/checklist rows, not individual Vitest test cases. Unit surfaces count Pi-dev test files directly relevant to this sprint; E2E/smoke includes package/API smoke, existing e2e, and the new Pi CLI smoke helper.
-Regression summary: 0 existing regression verifications pending/not yet run; full available deterministic regression gate passed.
+Regression summary: 0 existing regression verifications pending/not yet run; full available regression gate passed, including local-model smoke/integration surfaces.
 
 ## Why ready
 - All story ACs are checked and have evidence recorded in their story sections.
 - Sprint functional verification passed, including the real-path Pi CLI smoke (`/tmp/pristine-final/session-relay-smoke.log`).
-- Full available deterministic regression verification passed via `.checks/pre-merge.sh` (`/tmp/pristine-final/pre-merge.log`).
+- Full available regression verification passed via `.checks/regression.sh --tier=full` (`/tmp/pristine-final/full-regression.log`).
 - Story PRs #277–#283 merged into `sprint-032` after review gates; final story review remains the last story PR gate before sprint integration.
 
 ## Open for your decision
@@ -393,10 +393,10 @@ Regression summary: 0 existing regression verifications pending/not yet run; ful
 | Story 5 | Once-per-session `before_agent_start` injection and no-history/failure behavior | ✅ | `tests/examples/pi-dev/session-relay-metadata.test.ts`; PR #281 review/fix gates |
 | Story 6 | Optional install/docs/boundary coverage | ✅ | `examples/pi-dev/README.md`; `tests/examples/pi-dev/install-layout.test.ts`; PR #282 review/fix gates |
 | Story 7 | Real-path Pi CLI smoke helper and evidence hooks | ✅ | `node examples/pi-dev/scripts/session-relay-smoke.mjs`; PR #283 review/fix gates |
-| Final Story | Full available deterministic regression suite | ✅ | `.checks/pre-merge.sh` log `/tmp/pristine-final/pre-merge.log` |
+| Final Story | Full available regression suite | ✅ | `.checks/regression.sh --tier=full` log `/tmp/pristine-final/full-regression.log` |
 
 ## Drift from spec
-- `docs/specs/implementation-spec-005.md` remains intentionally untracked/absent from the public repo after commit `01fdefd`; Story 6 moved public boundary documentation into `examples/pi-dev/README.md` rather than reintroducing internal specs.
+- `docs/specs/implementation-spec-005.md` remains intentionally untracked/absent from the public repo after commit `01fdefd`; Story 6 records the DoD replacement source of truth as `examples/pi-dev/README.md` public boundary documentation rather than reintroducing internal specs.
 - The relay smoke helper exports `createPiSessionRelayRuntime` from the session-relay entrypoint so the failure wrapper can verify warning behavior through the public extension module.
 
 ## New Dependencies

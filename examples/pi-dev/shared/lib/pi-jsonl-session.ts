@@ -257,7 +257,8 @@ export const parseActivePiSessionJsonlFile = async (
 
 export const loadPiSessionJsonlVisibleMessageTail = async (
   sessionFilePath: string,
-  options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> & {
+  options: Omit<ParsePiSessionJsonlOptions, 'sourceUri' | 'activeEntryIds'> & {
+    readonly activeEntryIds: ReadonlySet<string>;
     readonly charBudget: number;
   },
 ): Promise<{ readonly messages: readonly PiJsonlParsedMessage[]; readonly truncated: boolean }> => {
@@ -289,31 +290,8 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
     }
   };
 
-  if (options.activeEntryIds !== undefined) {
-    const expectedEntryIds = new Set(options.activeEntryIds);
-    const seenEntryIds = new Set<string>();
-    const lines = createInterface({
-      input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
-      crlfDelay: Infinity,
-    });
-    let lineNumber = 0;
-    for await (const line of lines) {
-      lineNumber++;
-      if (line.trim().length === 0) continue;
-      const rawEntry = parseJsonLine(line, lineNumber, sessionFilePath);
-      if (isObject(rawEntry) && typeof rawEntry.id === 'string' && expectedEntryIds.has(rawEntry.id)) {
-        seenEntryIds.add(rawEntry.id);
-      }
-      const parsed = parsePiJsonlEntry(rawEntry, lineNumber, parseOptions, state);
-      if (parsed !== null) retainParsed(parsed);
-      if (seenEntryIds.size >= expectedEntryIds.size) {
-        lines.close();
-        break;
-      }
-    }
-    return { messages: tail, truncated };
-  }
-
+  const expectedEntryIds = new Set(options.activeEntryIds);
+  const seenEntryIds = new Set<string>();
   const lines = createInterface({
     input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
     crlfDelay: Infinity,
@@ -322,15 +300,17 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
   for await (const line of lines) {
     lineNumber++;
     if (line.trim().length === 0) continue;
-    const parsed = parsePiJsonlEntry(
-      parseJsonLine(line, lineNumber, sessionFilePath),
-      lineNumber,
-      parseOptions,
-      state,
-    );
+    const rawEntry = parseJsonLine(line, lineNumber, sessionFilePath);
+    if (isObject(rawEntry) && typeof rawEntry.id === 'string' && expectedEntryIds.has(rawEntry.id)) {
+      seenEntryIds.add(rawEntry.id);
+    }
+    const parsed = parsePiJsonlEntry(rawEntry, lineNumber, parseOptions, state);
     if (parsed !== null) retainParsed(parsed);
+    if (seenEntryIds.size >= expectedEntryIds.size) {
+      lines.close();
+      break;
+    }
   }
-
   return { messages: tail, truncated };
 };
 

@@ -149,7 +149,6 @@ export class SqlitePiJsonlSourceIndexer implements PiJsonlSourceIndexer {
   }
 
   public reconcileActiveEntries(sourceUri: string, activeEntryIds: ReadonlySet<string>): void {
-    if (activeEntryIds.size === 0) return;
     const existing = this.db
       .prepare(`SELECT chunk_id, entry_id FROM ${PI_JSONL_CHUNKS_TABLE} WHERE source_uri = ?`)
       .all(sourceUri) as { chunk_id: string; entry_id: string }[];

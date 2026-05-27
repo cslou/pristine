@@ -223,7 +223,7 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
       const activeSessionFile = sessionFile;
       const contextEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
       const metadata =
-        contextEntryIds !== undefined && contextEntryIds.size === 0
+        contextEntryIds === undefined || contextEntryIds.size === 0
           ? await parseActivePiSessionJsonlFile(activeSessionFile).then((activeParse) =>
               metadataFromParsedMessages(
                 activeSessionFile,

@@ -131,7 +131,7 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
       } else {
         parsed = await parsePiSessionJsonlFile(sessionFile, { activeEntryIds });
       }
-      if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
+      if (activeEntryIds !== undefined) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
       }
       const result: PiJsonlIndexResult = await this.indexer.indexMessages(parsed);

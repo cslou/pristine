@@ -167,7 +167,8 @@ describe('Pi session relay metadata extension reference', () => {
       first_message_at: '2026-05-06T10:00:01.000Z',
       last_message_at: '2026-05-06T10:00:04.000Z',
       visible_message_count: 3,
-      active_entry_ids_json: null,
+      active_entry_ids_json:
+        '["c0000007","c0000006","a0000005","u0000004","t0000003","a0000002","u0000001"]',
       updated_at: '2026-05-06T10:00:09.000Z',
     });
   });

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import {
   activeEntryIdsFromBranchEntries,
-  deriveActiveEntryIdsFromPiSessionFile,
+  parseActivePiSessionJsonlFile,
   parsePiSessionJsonlFile,
   type PiJsonlBranchEntryLike,
 } from '../../../shared/lib/pi-jsonl-session.js';
@@ -122,16 +122,18 @@ export class PiJsonlIndexRuntime implements PiJsonlIndexRuntimeLike {
       }
 
       const contextEntryIds = activeEntryIdsFrom(ctx);
-      const activeEntryIds =
-        contextEntryIds !== undefined && contextEntryIds.size === 0
-          ? await deriveActiveEntryIdsFromPiSessionFile(sessionFile)
-          : contextEntryIds;
+      let activeEntryIds = contextEntryIds;
+      let parsed;
+      if (contextEntryIds === undefined || contextEntryIds.size === 0) {
+        const activeParse = await parseActivePiSessionJsonlFile(sessionFile);
+        activeEntryIds = activeParse.activeEntryIds;
+        parsed = activeParse.messages;
+      } else {
+        parsed = await parsePiSessionJsonlFile(sessionFile, { activeEntryIds });
+      }
       if (activeEntryIds !== undefined && activeEntryIds.size > 0) {
         this.indexer.reconcileActiveEntries?.(sessionFile, activeEntryIds);
       }
-      const parsed = await parsePiSessionJsonlFile(sessionFile, {
-        activeEntryIds,
-      });
       const result: PiJsonlIndexResult = await this.indexer.indexMessages(parsed);
       notify(
         ctx,

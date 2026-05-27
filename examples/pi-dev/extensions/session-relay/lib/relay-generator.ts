@@ -154,8 +154,7 @@ export const formatPriorSessionHandoff = (params: {
   readonly summary: string;
 }): string => `## Prior Session Handoff
 
-Source: ${singleLine(params.session.sourceHarness)} session ${singleLine(params.session.sourceUri)}
-Project: ${singleLine(params.session.cwd)}
+Source: prior ${singleLine(params.session.sourceHarness)} session
 Last message: ${singleLine(params.session.lastMessageAt)}
 
 ${params.summary.trim()}`;

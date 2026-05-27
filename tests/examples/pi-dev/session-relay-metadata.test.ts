@@ -1,3 +1,4 @@
+import { AssertionError } from 'node:assert';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,10 +73,17 @@ const resolveTypeScriptImport = (fromFile: string, specifier: string): string =>
   const basePath = resolve(dirname(fromFile), specifier);
   const candidate = basePath.endsWith('.js') ? basePath.replace(/\.js$/, '.ts') : basePath;
   if (!statSync(candidate).isFile()) {
-    throw new Error(`Unable to resolve ${specifier} from ${fromFile}`);
+    throw new AssertionError({ message: `Unable to resolve ${specifier} from ${fromFile}` });
   }
   return candidate;
 };
+
+class TestRelaySummarizerError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'TestRelaySummarizerError';
+  }
+}
 
 const collectLocalImportGraph = (
   entryPath: string,
@@ -159,8 +167,7 @@ describe('Pi session relay metadata extension reference', () => {
       first_message_at: '2026-05-06T10:00:01.000Z',
       last_message_at: '2026-05-06T10:00:04.000Z',
       visible_message_count: 3,
-      active_entry_ids_json:
-        '["c0000007","c0000006","a0000005","u0000004","t0000003","a0000002","u0000001"]',
+      active_entry_ids_json: null,
       updated_at: '2026-05-06T10:00:09.000Z',
     });
   });
@@ -584,7 +591,7 @@ describe('Pi session relay metadata extension reference', () => {
     expect(result).toEqual({
       ok: true,
       content:
-        '## Prior Session Handoff\n\nSource: pi session /tmp/prior malformed.jsonl\nProject: /repo/one # injected heading\nLast message: 2026-05-06T10:00:03.000Z\n\nCurrent task: Continue Story 4.',
+        '## Prior Session Handoff\n\nSource: prior pi session\nLast message: 2026-05-06T10:00:03.000Z\n\nCurrent task: Continue Story 4.',
     });
   });
 
@@ -629,7 +636,7 @@ describe('Pi session relay metadata extension reference', () => {
         messages: [{ role: 'user', text: 'trigger model failure' }],
         summarizer: {
           summarize: async () => {
-            throw new Error('model unavailable');
+            throw new TestRelaySummarizerError('model unavailable');
           },
         },
       }),
@@ -710,7 +717,7 @@ describe('Pi session relay metadata extension reference', () => {
       summarizer: { summarize: async () => 'Current task: Continue the sprint.' },
       relayCharBudget: 90,
     });
-    const currentSessionFile = join(await makeTempDir(), 'current.jsonl');
+    const currentSessionFile = join(dirname(fixturePath), 'current-relay-test.jsonl');
     const notifications: string[] = [];
 
     const first = await runtime.injectPriorSessionRelay(
@@ -729,7 +736,7 @@ describe('Pi session relay metadata extension reference', () => {
     });
     expect(first.message?.content).toContain('untrusted historical context');
     expect(first.message?.content).toContain('## Prior Session Handoff');
-    expect(first.message?.content).toContain(`Source: pi session ${fixturePath}`);
+    expect(first.message?.content).toContain('Source: prior pi session');
     expect(second).toEqual({ ok: true, injected: false });
     expect(notifications).toEqual([]);
   });
@@ -780,7 +787,7 @@ describe('Pi session relay metadata extension reference', () => {
     });
 
     const result = await createPiSessionRelayRuntime({ store }).injectPriorSessionRelay(
-      makeCtx({ sessionFile: join(await makeTempDir(), 'current.jsonl') }),
+      makeCtx({ sessionFile: join(dirname(priorSessionFile), 'current.jsonl') }),
       { systemPromptOptions: { cwd: '/repo/one' } },
     );
 
@@ -827,7 +834,7 @@ describe('Pi session relay metadata extension reference', () => {
     });
     const notifications: string[] = [];
 
-    const currentSessionFile = '/tmp/current.jsonl';
+    const currentSessionFile = join(dirname(fixturePath), 'current-failure-test.jsonl');
     const result = await runtime.injectPriorSessionRelay(
       makeCtx({ sessionFile: currentSessionFile, notifications }),
       { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
@@ -848,7 +855,7 @@ describe('Pi session relay metadata extension reference', () => {
   it('excludes current session metadata during runtime relay selection', async () => {
     const db = new Database(join(await makeTempDir(), 'pristine.db'));
     const store = new SqliteSessionMetadataStore({ db });
-    const currentSessionFile = join(await makeTempDir(), 'current.jsonl');
+    const currentSessionFile = join(dirname(fixturePath), 'current-selection-test.jsonl');
     upsertTestSession({
       store,
       sourceUri: fixturePath,
@@ -873,8 +880,8 @@ describe('Pi session relay metadata extension reference', () => {
       { systemPromptOptions: { cwd: '/Users/lou/projects/test-pristine' } },
     );
 
-    expect(result.message?.content).toContain(`Source: pi session ${fixturePath}`);
-    expect(result.message?.content).not.toContain(`Source: pi session ${currentSessionFile}`);
+    expect(result.message?.content).toContain('Source: prior pi session');
+    expect(result.message?.content).not.toContain(currentSessionFile);
   });
 
   it('does not inject into existing sessions with prior visible conversation', async () => {

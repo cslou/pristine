@@ -1,5 +1,5 @@
 import { realpath, stat } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { extname, sep } from 'node:path';
 import { loadPiSessionJsonlVisibleMessageTail } from '../../../shared/lib/pi-jsonl-session.js';
 import type {
   HistoricalSession,
@@ -27,8 +27,19 @@ export const findLatestPriorSession = (
   query: HistoricalSessionQuery,
 ): HistoricalSession | null => store.findLatestPriorSession(query);
 
-const assertReadablePiJsonlSource = async (sourceUri: string): Promise<string> => {
+const isWithinRoot = (path: string, root: string): boolean => path === root || path.startsWith(`${root}${sep}`);
+
+const assertReadablePiJsonlSource = async (
+  sourceUri: string,
+  allowedSourceRoots?: readonly string[],
+): Promise<string> => {
   const resolvedPath = await realpath(sourceUri);
+  if (allowedSourceRoots !== undefined && allowedSourceRoots.length > 0) {
+    const resolvedRoots = await Promise.all(allowedSourceRoots.map((root) => realpath(root)));
+    if (!resolvedRoots.some((root) => isWithinRoot(resolvedPath, root))) {
+      throw new PriorSessionLoadError(`Prior session source is outside the allowed session roots: ${sourceUri}`);
+    }
+  }
   if (extname(resolvedPath) !== '.jsonl') {
     throw new PriorSessionLoadError(`Prior session source must be a .jsonl file: ${sourceUri}`);
   }
@@ -42,13 +53,17 @@ const assertReadablePiJsonlSource = async (sourceUri: string): Promise<string> =
 export const loadBoundedPiPriorSessionMessages = async (params: {
   readonly session: HistoricalSession;
   readonly charBudget: number;
+  readonly allowedSourceRoots?: readonly string[];
 }): Promise<LoadedPriorSessionMessages> => {
   const charBudget = Math.max(0, Math.floor(params.charBudget));
   if (charBudget === 0) {
     return { session: params.session, messages: [], truncated: false, charBudget };
   }
 
-  const sourcePath = await assertReadablePiJsonlSource(params.session.sourceUri);
+  const sourcePath = await assertReadablePiJsonlSource(
+    params.session.sourceUri,
+    params.allowedSourceRoots,
+  );
   if (params.session.activeEntryIds === undefined) {
     return { session: params.session, messages: [], truncated: false, charBudget };
   }

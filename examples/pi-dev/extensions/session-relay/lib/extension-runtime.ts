@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import {
   activeEntryIdsFromBranchEntries,
-  deriveActiveEntryIdsFromPiSessionFile,
   inspectPiSessionJsonlForCustomContextGuard,
   summarizePiSessionJsonlFile,
 } from '../../../shared/lib/pi-jsonl-session.js';
@@ -197,11 +197,7 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
         };
       }
 
-      const contextEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
-      const activeEntryIds =
-        contextEntryIds === undefined || contextEntryIds.size === 0
-          ? await deriveActiveEntryIdsFromPiSessionFile(sessionFile)
-          : contextEntryIds;
+      const activeEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
       const metadata = await metadataFromSession(sessionFile, this.now, activeEntryIds);
       if (metadata === null) {
         return {
@@ -254,6 +250,7 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
       const loaded = await loadBoundedPiPriorSessionMessages({
         session: priorSession,
         charBudget: this.relayCharBudget,
+        allowedSourceRoots: [dirname(currentSessionFile)],
       });
       if (loaded.messages.length === 0) return { ok: true, injected: false };
 

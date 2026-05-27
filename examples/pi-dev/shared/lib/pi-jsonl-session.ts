@@ -198,11 +198,67 @@ export const parsePiSessionJsonlFile = async (
   return results;
 };
 
+const deriveActiveIdsFromGraph = (
+  parents: ReadonlyMap<string, string | null>,
+  childCounts: ReadonlyMap<string, number>,
+  latestEntryId: string | null,
+): ReadonlySet<string> => {
+  if ([...childCounts.values()].some((count) => count > 1)) return new Set();
+
+  const activeIds = new Set<string>();
+  let cursor = latestEntryId;
+  while (cursor !== null && !activeIds.has(cursor)) {
+    activeIds.add(cursor);
+    cursor = parents.get(cursor) ?? null;
+  }
+  return activeIds;
+};
+
+export interface ActivePiSessionJsonlParseResult {
+  readonly messages: readonly PiJsonlParsedMessage[];
+  readonly activeEntryIds: ReadonlySet<string>;
+}
+
+export const parseActivePiSessionJsonlFile = async (
+  sessionFilePath: string,
+): Promise<ActivePiSessionJsonlParseResult> => {
+  const results: PiJsonlParsedMessage[] = [];
+  const parents = new Map<string, string | null>();
+  const childCounts = new Map<string, number>();
+  const state: ParserState = {};
+  const parseOptions = { sourceUri: sessionFilePath };
+  const lines = createInterface({
+    input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  let latestEntryId: string | null = null;
+  let lineNumber = 0;
+  for await (const line of lines) {
+    lineNumber++;
+    if (line.trim().length === 0) continue;
+    const rawEntry = parseJsonLine(line, lineNumber, sessionFilePath);
+    if (isObject(rawEntry) && typeof rawEntry.id === 'string' && rawEntry.id.length > 0) {
+      const parentId = typeof rawEntry.parentId === 'string' ? rawEntry.parentId : null;
+      parents.set(rawEntry.id, parentId);
+      if (parentId !== null) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
+      if (rawEntry.type === 'message') latestEntryId = rawEntry.id;
+    }
+    const parsed = parsePiJsonlEntry(rawEntry, lineNumber, parseOptions, state);
+    if (parsed !== null) results.push(parsed);
+  }
+
+  const activeEntryIds = deriveActiveIdsFromGraph(parents, childCounts, latestEntryId);
+  return {
+    activeEntryIds,
+    messages: results.filter((message) => activeEntryIds.has(message.pointer.entryId)),
+  };
+};
+
 export const loadPiSessionJsonlVisibleMessageTail = async (
   sessionFilePath: string,
   options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> & {
     readonly charBudget: number;
-    readonly maxReadBytes?: number;
   },
 ): Promise<{ readonly messages: readonly PiJsonlParsedMessage[]; readonly truncated: boolean }> => {
   const charBudget = Math.max(0, Math.floor(options.charBudget));
@@ -374,6 +430,7 @@ export const deriveActiveEntryIdsFromPiSessionFile = async (
   sessionFile: string,
 ): Promise<ReadonlySet<string>> => {
   const parents = new Map<string, string | null>();
+  const childCounts = new Map<string, number>();
   let latestEntryId: string | null = null;
   const lines = createInterface({
     input: createReadStream(sessionFile, { encoding: 'utf8' }),
@@ -389,14 +446,9 @@ export const deriveActiveEntryIdsFromPiSessionFile = async (
     if (typeof parsed.id !== 'string' || parsed.id.length === 0) continue;
     const parentId = typeof parsed.parentId === 'string' ? parsed.parentId : null;
     parents.set(parsed.id, parentId);
+    if (parentId !== null) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
     if (parsed.type === 'message') latestEntryId = parsed.id;
   }
 
-  const activeIds = new Set<string>();
-  let cursor = latestEntryId;
-  while (cursor !== null && !activeIds.has(cursor)) {
-    activeIds.add(cursor);
-    cursor = parents.get(cursor) ?? null;
-  }
-  return activeIds;
+  return deriveActiveIdsFromGraph(parents, childCounts, latestEntryId);
 };

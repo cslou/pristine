@@ -49,12 +49,10 @@ export const loadBoundedPiPriorSessionMessages = async (params: {
   }
 
   const sourcePath = await assertReadablePiJsonlSource(params.session.sourceUri);
-  if (params.session.activeEntryIds === undefined) {
-    return { session: params.session, messages: [], truncated: false, charBudget };
-  }
-
   const tail = await loadPiSessionJsonlVisibleMessageTail(sourcePath, {
-    activeEntryIds: new Set(params.session.activeEntryIds),
+    ...(params.session.activeEntryIds !== undefined
+      ? { activeEntryIds: new Set(params.session.activeEntryIds) }
+      : {}),
     charBudget,
   });
 

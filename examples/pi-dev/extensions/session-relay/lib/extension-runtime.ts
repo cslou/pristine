@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { existsSync, createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
 import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
 import {
   activeEntryIdsFromBranchEntries,
@@ -74,23 +74,60 @@ const notify = (
   }
 };
 
-const currentSessionHasRelayMarker = async (sessionFile: string): Promise<boolean> => {
-  if (!existsSync(sessionFile)) return false;
-  const contents = await readFile(sessionFile, 'utf8');
-  for (const line of contents.split(/\r?\n/)) {
-    if (line.trim().length === 0) continue;
-    const parsed = JSON.parse(line) as unknown;
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
-    if (!('customType' in parsed) || parsed.customType !== 'pristine-session-relay') continue;
-    return true;
-  }
-  return false;
+const visibleTextFromMessageEntry = (entry: unknown): string | null => {
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return null;
+  if (!('type' in entry) || entry.type !== 'message') return null;
+  if (!('message' in entry)) return null;
+  const message = entry.message;
+  if (typeof message !== 'object' || message === null || Array.isArray(message)) return null;
+  if (!('role' in message) || (message.role !== 'user' && message.role !== 'assistant')) return null;
+  if (!('content' in message)) return null;
+  if (typeof message.content === 'string') return message.content;
+  if (!Array.isArray(message.content)) return null;
+  const text = message.content
+    .map((part) =>
+      typeof part === 'object' &&
+      part !== null &&
+      !Array.isArray(part) &&
+      'type' in part &&
+      part.type === 'text' &&
+      'text' in part &&
+      typeof part.text === 'string'
+        ? part.text
+        : '',
+    )
+    .join('')
+    .trim();
+  return text.length > 0 ? text : null;
 };
 
-const currentSessionVisibleMessageCount = async (sessionFile: string): Promise<number> => {
-  if (!existsSync(sessionFile)) return 0;
-  const summary = await summarizePiSessionJsonlFile(sessionFile);
-  return summary.visibleMessageCount;
+const inspectCurrentSessionForRelayGuard = async (
+  sessionFile: string,
+): Promise<{ readonly hasRelayMarker: boolean; readonly visibleMessageCount: number }> => {
+  if (!existsSync(sessionFile)) return { hasRelayMarker: false, visibleMessageCount: 0 };
+  const lines = createInterface({
+    input: createReadStream(sessionFile, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+
+  let visibleMessageCount = 0;
+  try {
+    for await (const line of lines) {
+      if (line.trim().length === 0) continue;
+      const parsed = JSON.parse(line) as unknown;
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
+      if ('customType' in parsed && parsed.customType === 'pristine-session-relay') {
+        return { hasRelayMarker: true, visibleMessageCount };
+      }
+      if (visibleTextFromMessageEntry(parsed) !== null) {
+        visibleMessageCount++;
+        if (visibleMessageCount > 1) return { hasRelayMarker: false, visibleMessageCount };
+      }
+    }
+    return { hasRelayMarker: false, visibleMessageCount };
+  } finally {
+    lines.close();
+  }
 };
 
 class RelayTimeoutError extends Error {
@@ -240,10 +277,11 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
         return { ok: true, injected: false };
       }
       this.attemptedSessionFiles.add(currentSessionFile);
-      if (await currentSessionHasRelayMarker(currentSessionFile)) {
+      const currentSessionGuard = await inspectCurrentSessionForRelayGuard(currentSessionFile);
+      if (currentSessionGuard.hasRelayMarker) {
         return { ok: true, injected: false };
       }
-      if ((await currentSessionVisibleMessageCount(currentSessionFile)) > 1) {
+      if (currentSessionGuard.visibleMessageCount > 1) {
         return { ok: true, injected: false };
       }
 

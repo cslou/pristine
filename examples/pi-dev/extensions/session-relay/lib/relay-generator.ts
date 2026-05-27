@@ -12,13 +12,21 @@ export interface RelaySummarizer {
 const suspiciousInstructionPattern =
   /(?:^|\b)(?:system|developer|assistant)\s*:|ignore\s+(?:all\s+)?(?:previous|current)\s+instructions|forget\s+(?:the\s+)?(?:previous|current)\s+instructions|do\s+not\s+follow/i;
 
+const sensitiveDataPattern =
+  /\b(?:api[_ -]?key|secret|password|token|credential|private[_ -]?key)\b|\b(?:sk|pk|ghp|gho|github_pat|xox[baprs]|AKIA)[A-Za-z0-9_\-]{12,}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
+
 const sanitizeExcerpt = (text: string): string => {
   const withoutControlChars = text.replace(/[\u0000-\u001f\u007f]+/g, ' ');
   const withoutDelimiters = withoutControlChars.replace(/<[^>]*>/g, ' ');
   const safeSentences = withoutDelimiters
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0 && !suspiciousInstructionPattern.test(sentence));
+    .filter(
+      (sentence) =>
+        sentence.length > 0 &&
+        !suspiciousInstructionPattern.test(sentence) &&
+        !sensitiveDataPattern.test(sentence),
+    );
   return (safeSentences[0] ?? '').slice(0, 240).trim();
 };
 

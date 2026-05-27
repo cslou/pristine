@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 
 export type PiJsonlRole = 'user' | 'assistant';
@@ -202,23 +203,41 @@ export const loadPiSessionJsonlVisibleMessageTail = async (
   sessionFilePath: string,
   options: Omit<ParsePiSessionJsonlOptions, 'sourceUri'> & {
     readonly charBudget: number;
+    readonly maxReadBytes?: number;
   },
 ): Promise<{ readonly messages: readonly PiJsonlParsedMessage[]; readonly truncated: boolean }> => {
   const charBudget = Math.max(0, Math.floor(options.charBudget));
   if (charBudget === 0) return { messages: [], truncated: false };
 
+  const file = await open(sessionFilePath, 'r');
+  let rawTail = '';
+  let truncatedByBytes = false;
+  try {
+    const stats = await file.stat();
+    const maxReadBytes = Math.max(
+      4096,
+      Math.floor(options.maxReadBytes ?? Math.min(Math.max(charBudget * 16, 65536), 1024 * 1024)),
+    );
+    const readLength = Math.min(stats.size, maxReadBytes);
+    const start = Math.max(0, stats.size - readLength);
+    const buffer = Buffer.alloc(readLength);
+    await file.read(buffer, 0, readLength, start);
+    rawTail = buffer.toString('utf8');
+    truncatedByBytes = start > 0;
+  } finally {
+    await file.close();
+  }
+
   const state: ParserState = {};
   const parseOptions = { ...options, sourceUri: sessionFilePath };
-  const lines = createInterface({
-    input: createReadStream(sessionFilePath, { encoding: 'utf8' }),
-    crlfDelay: Infinity,
-  });
+  const lines = rawTail.split(/\r?\n/);
+  const parseableLines = truncatedByBytes ? lines.slice(1) : lines;
 
   const tail: PiJsonlParsedMessage[] = [];
   let usedChars = 0;
-  let truncated = false;
+  let truncated = truncatedByBytes;
   let lineNumber = 0;
-  for await (const line of lines) {
+  for (const line of parseableLines) {
     lineNumber++;
     if (line.trim().length === 0) continue;
     const parsed = parsePiJsonlEntry(

@@ -13,6 +13,11 @@ import {
   findLatestPriorSession,
   loadBoundedPiPriorSessionMessages,
 } from '../../../examples/pi-dev/extensions/session-relay/lib/prior-session.js';
+import {
+  buildRelayPrompt,
+  generatePriorSessionHandoff,
+  type RelaySummarizerInput,
+} from '../../../examples/pi-dev/extensions/session-relay/lib/relay-generator.js';
 import { SqliteSessionMetadataStore } from '../../../examples/pi-dev/extensions/session-relay/lib/session-store.js';
 import { MEMORY_SESSIONS_TABLE } from '../../../examples/pi-dev/shared/lib/session-relay-schema.js';
 
@@ -28,6 +33,7 @@ const sessionRelaySourceFiles = [
   'examples/pi-dev/extensions/session-relay/index.ts',
   'examples/pi-dev/extensions/session-relay/lib/extension-runtime.ts',
   'examples/pi-dev/extensions/session-relay/lib/prior-session.ts',
+  'examples/pi-dev/extensions/session-relay/lib/relay-generator.ts',
   'examples/pi-dev/extensions/session-relay/lib/session-store.ts',
 ];
 
@@ -489,6 +495,109 @@ describe('Pi session relay metadata extension reference', () => {
 
     expect(loaded.messages).toEqual([{ role: 'user', text: 'CDEFGHIJ' }]);
     expect(loaded.truncated).toBe(true);
+  });
+
+  it('builds a six-section relay prompt and passes bounded messages to the summarizer', async () => {
+    const calls: RelaySummarizerInput[] = [];
+    const session = {
+      sourceHarness: 'pi' as const,
+      sourceUri: '/tmp/prior.jsonl',
+      cwd: '/repo/one',
+      lastMessageAt: '2026-05-06T10:00:03.000Z',
+    };
+
+    const result = await generatePriorSessionHandoff({
+      session,
+      messages: [
+        { role: 'user', text: 'Need to finish the relay generator.' },
+        { role: 'assistant', text: 'Implemented the prompt builder.' },
+      ],
+      summarizer: {
+        summarize: async (input) => {
+          calls.push(input);
+          return '1. Current task: Finish relay generator.\n2. Progress: Prompt builder exists.\n3. Key files: examples/pi-dev/extensions/session-relay/lib/relay-generator.ts\n4. Decisions made: Use injected summarizer.\n5. Blockers/open questions: None identified.\n6. Next steps: Add runtime injection.';
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.messages).toEqual([
+      { role: 'user', text: 'Need to finish the relay generator.' },
+      { role: 'assistant', text: 'Implemented the prompt builder.' },
+    ]);
+    for (const section of [
+      'Current task',
+      'Progress',
+      'Key files',
+      'Decisions made',
+      'Blockers/open questions',
+      'Next steps',
+    ]) {
+      expect(calls[0]?.prompt).toContain(section);
+    }
+  });
+
+  it('formats non-empty relay summaries with source session metadata', async () => {
+    const result = await generatePriorSessionHandoff({
+      session: {
+        sourceHarness: 'pi',
+        sourceUri: '/tmp/prior.jsonl',
+        cwd: '/repo/one',
+        lastMessageAt: '2026-05-06T10:00:03.000Z',
+      },
+      messages: [{ role: 'user', text: 'Continue Story 4.' }],
+      summarizer: { summarize: async () => 'Current task: Continue Story 4.' },
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      content:
+        '## Prior Session Handoff\n\nSource: pi session /tmp/prior.jsonl\nProject: /repo/one\nLast message: 2026-05-06T10:00:03.000Z\n\nCurrent task: Continue Story 4.',
+    });
+  });
+
+  it('returns non-throwing relay generation failures for empty summaries and summarizer errors', async () => {
+    await expect(
+      generatePriorSessionHandoff({
+        session: {
+          sourceHarness: 'pi',
+          sourceUri: '/tmp/prior.jsonl',
+          cwd: '/repo/one',
+          lastMessageAt: '2026-05-06T10:00:03.000Z',
+        },
+        messages: [],
+        summarizer: { summarize: async () => '   ' },
+      }),
+    ).resolves.toEqual({ ok: false, error: 'Relay summarizer returned an empty summary' });
+
+    await expect(
+      generatePriorSessionHandoff({
+        session: {
+          sourceHarness: 'pi',
+          sourceUri: '/tmp/prior.jsonl',
+          cwd: '/repo/one',
+          lastMessageAt: '2026-05-06T10:00:03.000Z',
+        },
+        messages: [],
+        summarizer: {
+          summarize: async () => {
+            throw new Error('model unavailable');
+          },
+        },
+      }),
+    ).resolves.toEqual({ ok: false, error: 'model unavailable' });
+  });
+
+  it('exposes the six-section prompt builder directly', () => {
+    expect(
+      buildRelayPrompt({
+        sourceHarness: 'pi',
+        sourceUri: '/tmp/prior.jsonl',
+        cwd: '/repo/one',
+        lastMessageAt: '2026-05-06T10:00:03.000Z',
+      }),
+    ).toContain('exactly these six sections');
   });
 
   it('keeps session-relay independent from vector, embedder, and semantic search internals', () => {

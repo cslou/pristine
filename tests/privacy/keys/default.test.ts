@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -26,19 +26,9 @@ afterEach(() => {
 });
 
 describe('createDefaultKeyManager', () => {
-  it('uses macOS Keychain by default on darwin when no legacy filesystem keys exist', () => {
+  it('uses macOS Keychain by default on darwin', () => {
     const manager = createDefaultKeyManager({ platform: 'darwin', baseDir: makeBaseDir() });
     expect(manager).toBeInstanceOf(MacOsKeychainKeyManager);
-  });
-
-  it('keeps using filesystem keys for existing macOS stores with legacy key files', () => {
-    const baseDir = makeBaseDir();
-    const keysDir = join(baseDir, 'keys');
-    mkdirSync(keysDir, { recursive: true, mode: 0o700 });
-    writeFileSync(join(keysDir, 'legacy-user-private.pem'), 'placeholder');
-
-    const manager = createDefaultKeyManager({ platform: 'darwin', baseDir });
-    expect(manager).toBeInstanceOf(FileSystemKeyManager);
   });
 
   it('uses filesystem keys by default on non-macOS platforms', () => {

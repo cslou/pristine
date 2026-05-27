@@ -10,17 +10,17 @@ import { Pristine } from '@pristine/sdk';
 const pristine = await Pristine.create();
 ```
 
-The default setup initializes local storage automatically. On macOS, new stores default to login-Keychain-backed RSA private keys. Existing stores that already have legacy filesystem key material under their local `keys/` directory keep using those files so wrapped KEKs remain recoverable. On other platforms, Pristine defaults to local key files under the standard data directory.
+The default setup initializes local storage automatically. On macOS, stores default to login-Keychain-backed RSA private keys. On other platforms, Pristine defaults to local key files under the standard data directory.
 
 ## Local paths
 
-Use `baseDir` or `keysDir` when your application needs explicit storage locations. Supplying `keysDir` forces filesystem-backed key storage even on macOS; otherwise, the default macOS path uses a store-namespaced Keychain service instead of plaintext private-key files. Existing stores with legacy `keys/` material continue using filesystem keys automatically. Keep those paths on the local device when preserving the default privacy model matters; see [Privacy](/privacy) for local database, key backup, and network wrapper responsibilities.
+Use `baseDir` or `keysDir` when your application needs explicit storage locations. Supplying `keysDir` forces filesystem-backed key storage even on macOS; otherwise, the default macOS path uses a store-namespaced Keychain service instead of plaintext private-key files. Keep those paths on the local device when preserving the default privacy model matters; see [Privacy](/privacy) for local database, key backup, and network wrapper responsibilities.
 
 ## Injected database, embedder, or key manager
 
 Advanced applications and tests can inject a `better-sqlite3` database, a custom embedder, or a custom `keyManager`. If you inject an embedder, its vector dimension must match the vector storage initialized for the database. If you inject a key manager, it becomes the root of local privacy key access used by `redact`, `reveal`, and KEK rotation.
 
-For explicit macOS-specific key storage, pass `new MacOsKeychainKeyManager()` into `Pristine.create({ keyManager })`. This is also the default for new macOS stores when no explicit `keysDir` override or legacy filesystem key directory is present.
+For explicit macOS-specific key storage, pass `new MacOsKeychainKeyManager()` into `Pristine.create({ keyManager })`. This is also the default on macOS when no explicit `keysDir` override is present.
 
 ## Project IDs
 

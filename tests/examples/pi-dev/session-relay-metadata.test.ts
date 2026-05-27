@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -41,12 +41,19 @@ afterEach(async () => {
   }
 });
 
-const makeCtx = (sessionFile: string, notifications?: string[]): PiSessionRelayContextLike => ({
+const makeCtx = (params: {
+  readonly sessionFile: string;
+  readonly branchIds?: readonly string[];
+  readonly notifications?: string[];
+}): PiSessionRelayContextLike => ({
   sessionManager: {
-    getSessionFile: () => sessionFile,
+    getSessionFile: () => params.sessionFile,
+    ...(params.branchIds !== undefined
+      ? { getBranch: () => params.branchIds?.map((id) => ({ id })) ?? [] }
+      : {}),
   },
   ui: {
-    notify: (message, level) => notifications?.push(`${level ?? 'info'}:${message}`),
+    notify: (message, level) => params.notifications?.push(`${level ?? 'info'}:${message}`),
   },
 });
 
@@ -97,7 +104,10 @@ describe('Pi session relay metadata extension reference', () => {
       now: () => new Date('2026-05-06T10:00:09.000Z'),
     });
 
-    const result = await runtime.recordActiveSession(makeCtx(fixturePath), 'agent_end');
+    const result = await runtime.recordActiveSession(
+      makeCtx({ sessionFile: fixturePath }),
+      'agent_end',
+    );
 
     expect(result).toEqual({ ok: true, sessionFile: fixturePath, upserted: true });
     const row = db.prepare(`SELECT * FROM ${MEMORY_SESSIONS_TABLE}`).get() as
@@ -130,15 +140,126 @@ describe('Pi session relay metadata extension reference', () => {
       now: () => new Date('2026-05-06T10:00:09.000Z'),
     });
 
-    await runtime.recordActiveSession(makeCtx(fixturePath), 'agent_end');
-    await runtime.recordActiveSession(makeCtx(fixturePath), 'session_start:resume');
+    const sessionFile = join(await makeTempDir(), 'session.jsonl');
+    await writeFile(
+      sessionFile,
+      [
+        {
+          type: 'session',
+          cwd: '/Users/lou/projects/test-pristine',
+        },
+        {
+          type: 'message',
+          id: 'first',
+          timestamp: '2026-05-06T10:00:01.000Z',
+          message: { role: 'user', content: 'first' },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+    );
+    await runtime.recordActiveSession(makeCtx({ sessionFile }), 'agent_end');
+
+    await writeFile(
+      sessionFile,
+      [
+        {
+          type: 'session',
+          cwd: '/Users/lou/projects/test-pristine',
+        },
+        {
+          type: 'message',
+          id: 'first',
+          timestamp: '2026-05-06T10:00:01.000Z',
+          message: { role: 'user', content: 'first' },
+        },
+        {
+          type: 'message',
+          id: 'second',
+          parentId: 'first',
+          timestamp: '2026-05-06T10:00:02.000Z',
+          message: { role: 'assistant', content: 'second' },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+    );
+    await runtime.recordActiveSession(makeCtx({ sessionFile }), 'session_start:resume');
 
     expect(db.prepare(`SELECT count(*) AS count FROM ${MEMORY_SESSIONS_TABLE}`).get()).toEqual({
       count: 1,
     });
     expect(
-      db.prepare(`SELECT source_harness, source_uri FROM ${MEMORY_SESSIONS_TABLE}`).all(),
-    ).toEqual([{ source_harness: 'pi', source_uri: fixturePath }]);
+      db
+        .prepare(
+          `SELECT source_uri, last_message_at, visible_message_count FROM ${MEMORY_SESSIONS_TABLE}`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        source_uri: sessionFile,
+        last_message_at: '2026-05-06T10:00:02.000Z',
+        visible_message_count: 2,
+      },
+    ]);
+  });
+
+  it('filters metadata to the active Pi branch', async () => {
+    const sessionFile = join(await makeTempDir(), 'forked-session.jsonl');
+    await writeFile(
+      sessionFile,
+      [
+        {
+          type: 'session',
+          cwd: '/Users/lou/projects/test-pristine',
+        },
+        {
+          type: 'message',
+          id: 'root',
+          parentId: null,
+          timestamp: '2026-05-06T10:00:01.000Z',
+          message: { role: 'user', content: 'root' },
+        },
+        {
+          type: 'message',
+          id: 'orphan',
+          parentId: 'root',
+          timestamp: '2026-05-06T10:00:02.000Z',
+          message: { role: 'assistant', content: 'orphan branch should not count' },
+        },
+        {
+          type: 'message',
+          id: 'active',
+          parentId: 'root',
+          timestamp: '2026-05-06T10:00:03.000Z',
+          message: { role: 'assistant', content: 'active branch should count' },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+    );
+    const db = new Database(join(await makeTempDir(), 'pristine.db'));
+    const runtime = createPiSessionRelayRuntime({
+      store: new SqliteSessionMetadataStore({ db }),
+      now: () => new Date('2026-05-06T10:00:09.000Z'),
+    });
+
+    await runtime.recordActiveSession(
+      makeCtx({ sessionFile, branchIds: ['root', 'active'] }),
+      'agent_end',
+    );
+
+    expect(
+      db
+        .prepare(
+          `SELECT first_message_at, last_message_at, visible_message_count FROM ${MEMORY_SESSIONS_TABLE}`,
+        )
+        .get(),
+    ).toEqual({
+      first_message_at: '2026-05-06T10:00:01.000Z',
+      last_message_at: '2026-05-06T10:00:03.000Z',
+      visible_message_count: 2,
+    });
   });
 
   it('keeps session-relay independent from vector, embedder, and semantic search internals', () => {
@@ -175,9 +296,12 @@ describe('Pi session relay metadata extension reference', () => {
       }),
     );
 
-    await handlers.get('agent_end')?.({}, makeCtx(fixturePath));
-    await handlers.get('session_start')?.({ reason: 'resume' }, makeCtx(fixturePath));
-    handlers.get('session_shutdown')?.({}, makeCtx(fixturePath));
+    await handlers.get('agent_end')?.({}, makeCtx({ sessionFile: fixturePath }));
+    await handlers.get('session_start')?.(
+      { reason: 'resume' },
+      makeCtx({ sessionFile: fixturePath }),
+    );
+    handlers.get('session_shutdown')?.({}, makeCtx({ sessionFile: fixturePath }));
 
     expect(calls).toEqual(['agent_end', 'session_start:resume', 'session_shutdown']);
   });

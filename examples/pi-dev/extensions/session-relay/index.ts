@@ -17,7 +17,11 @@ const isContextLike = (ctx: unknown): ctx is PiSessionRelayContextLike =>
 
 const notifyInitFailure = (ctx: PiSessionRelayContextLike, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
-  ctx.ui?.notify(`Pristine session relay failed to initialize: ${message}`, 'error');
+  try {
+    ctx.ui?.notify(`Pristine session relay failed to initialize: ${message}`, 'error');
+  } catch (notifyError: unknown) {
+    void notifyError;
+  }
 };
 
 const lifecycleReasonFrom = (event: unknown): PiSessionRelayLifecycleReason =>

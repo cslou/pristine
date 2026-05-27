@@ -6,22 +6,13 @@ import {
   type MemorySessionRow,
   type MemorySessionSourceHarness,
 } from '../../../shared/lib/session-relay-schema.js';
+import type { MemorySessionMetadata, SessionMetadataStore } from './types.js';
 
 export class SessionRelayStoreError extends Error {
   public constructor(message: string) {
     super(message);
     this.name = 'SessionRelayStoreError';
   }
-}
-
-export interface MemorySessionMetadata {
-  readonly sourceHarness: MemorySessionSourceHarness;
-  readonly sourceUri: string;
-  readonly cwd: string;
-  readonly firstMessageAt: string;
-  readonly lastMessageAt: string;
-  readonly visibleMessageCount: number;
-  readonly updatedAt: string;
 }
 
 const assertSecureDirectory = (dirPath: string): void => {
@@ -54,12 +45,6 @@ export const openSessionRelayDatabase = (dbPath: string): Database.Database => {
   chmodDatabaseFiles(dbPath);
   return db;
 };
-
-export interface SessionMetadataStore {
-  upsertSession(metadata: MemorySessionMetadata): void;
-  getSession(sourceHarness: MemorySessionSourceHarness, sourceUri: string): MemorySessionRow | null;
-  close?(): void;
-}
 
 export class SqliteSessionMetadataStore implements SessionMetadataStore {
   private readonly db: Database.Database;

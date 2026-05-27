@@ -1,11 +1,16 @@
 import { existsSync } from 'node:fs';
 import { resolvePiPristineDbPath } from '../../../shared/lib/db-path.js';
-import { parsePiSessionJsonlFile } from '../../../shared/lib/pi-jsonl-session.js';
 import {
-  createSqliteSessionMetadataStore,
-  type MemorySessionMetadata,
-  type SessionMetadataStore,
-} from './session-store.js';
+  activeEntryIdsFromBranchEntries,
+  deriveActiveEntryIdsFromPiSessionFile,
+  parsePiSessionJsonlFile,
+} from '../../../shared/lib/pi-jsonl-session.js';
+import { createSqliteSessionMetadataStore } from './session-store.js';
+import type {
+  MemorySessionMetadata,
+  PiSessionRelayContextLike,
+  SessionMetadataStore,
+} from './types.js';
 
 export type PiSessionRelayLifecycleReason = 'startup' | 'reload' | 'resume' | 'new' | 'fork' | string;
 
@@ -25,18 +30,7 @@ export interface PiSessionRelayRuntimeResult {
   readonly error?: string;
 }
 
-interface PiSessionManagerLike {
-  getSessionFile(): string | undefined;
-}
-
-interface PiUiLike {
-  notify(message: string, level?: 'info' | 'success' | 'warning' | 'error'): void;
-}
-
-export interface PiSessionRelayContextLike {
-  readonly sessionManager: PiSessionManagerLike;
-  readonly ui?: PiUiLike;
-}
+export type { PiSessionRelayContextLike } from './types.js';
 
 const notify = (
   ctx: PiSessionRelayContextLike,
@@ -53,8 +47,9 @@ const notify = (
 const metadataFromSession = async (
   sessionFile: string,
   now: () => Date,
+  activeEntryIds?: ReadonlySet<string>,
 ): Promise<MemorySessionMetadata | null> => {
-  const messages = await parsePiSessionJsonlFile(sessionFile);
+  const messages = await parsePiSessionJsonlFile(sessionFile, { activeEntryIds });
   if (messages.length === 0) return null;
 
   const firstMessage = messages[0];
@@ -116,7 +111,12 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
         };
       }
 
-      const metadata = await metadataFromSession(sessionFile, this.now);
+      const contextEntryIds = activeEntryIdsFromBranchEntries(ctx.sessionManager.getBranch?.());
+      const activeEntryIds =
+        contextEntryIds !== undefined && contextEntryIds.size === 0
+          ? await deriveActiveEntryIdsFromPiSessionFile(sessionFile)
+          : contextEntryIds;
+      const metadata = await metadataFromSession(sessionFile, this.now, activeEntryIds);
       if (metadata === null) {
         return {
           ok: true,

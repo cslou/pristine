@@ -1,9 +1,6 @@
 import { realpath, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
-import {
-  deriveActiveEntryIdsFromPiSessionFile,
-  loadPiSessionJsonlVisibleMessageTail,
-} from '../../../shared/lib/pi-jsonl-session.js';
+import { loadPiSessionJsonlVisibleMessageTail } from '../../../shared/lib/pi-jsonl-session.js';
 import type { HistoricalSession, HistoricalSessionQuery, PriorSessionLookup } from './types.js';
 
 export interface RelayVisibleMessage {
@@ -52,12 +49,12 @@ export const loadBoundedPiPriorSessionMessages = async (params: {
   }
 
   const sourcePath = await assertReadablePiJsonlSource(params.session.sourceUri);
-  const activeEntryIds =
-    params.session.activeEntryIds !== undefined
-      ? new Set(params.session.activeEntryIds)
-      : await deriveActiveEntryIdsFromPiSessionFile(sourcePath);
+  if (params.session.activeEntryIds === undefined) {
+    return { session: params.session, messages: [], truncated: false, charBudget };
+  }
+
   const tail = await loadPiSessionJsonlVisibleMessageTail(sourcePath, {
-    activeEntryIds,
+    activeEntryIds: new Set(params.session.activeEntryIds),
     charBudget,
   });
 

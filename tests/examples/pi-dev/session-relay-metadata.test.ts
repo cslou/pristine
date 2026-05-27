@@ -372,6 +372,7 @@ describe('Pi session relay metadata extension reference', () => {
         sourceUri: fixturePath,
         cwd: '/Users/lou/projects/test-pristine',
         lastMessageAt: '2026-05-06T10:00:04.000Z',
+        activeEntryIds: ['u0000001', 'a0000002', 't0000003', 'u0000004'],
       },
       charBudget: 90,
     });
@@ -388,6 +389,20 @@ describe('Pi session relay metadata extension reference', () => {
       'thinking-only assistant should be ignored',
     );
     expect(loaded.messages.map((message) => message.text).join('\n')).not.toContain('abc123');
+  });
+
+  it('returns no loaded messages when historical active branch metadata is unavailable', async () => {
+    const loaded = await loadBoundedPiPriorSessionMessages({
+      session: {
+        sourceHarness: 'pi',
+        sourceUri: fixturePath,
+        cwd: '/Users/lou/projects/test-pristine',
+        lastMessageAt: '2026-05-06T10:00:04.000Z',
+      },
+      charBudget: 90,
+    });
+
+    expect(loaded).toMatchObject({ messages: [], truncated: false, charBudget: 90 });
   });
 
   it('filters loaded prior-session messages to the latest active branch', async () => {
@@ -467,6 +482,7 @@ describe('Pi session relay metadata extension reference', () => {
         sourceUri: sessionFile,
         cwd: '/repo/one',
         lastMessageAt: '2026-05-06T10:00:02.000Z',
+        activeEntryIds: ['system', 'visible'],
       },
       charBudget: 8,
     });

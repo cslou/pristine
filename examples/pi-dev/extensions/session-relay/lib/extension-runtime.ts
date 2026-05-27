@@ -223,7 +223,6 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
     if (currentSessionFile === undefined || this.attemptedSessionFiles.has(currentSessionFile)) {
       return { ok: true, injected: false };
     }
-    this.attemptedSessionFiles.add(currentSessionFile);
 
     try {
       const cwd = event.systemPromptOptions?.cwd;
@@ -236,6 +235,7 @@ export class PiSessionRelayRuntime implements PiSessionRelayRuntimeLike {
       if ((await currentSessionVisibleMessageCount(currentSessionFile)) > 1) {
         return { ok: true, injected: false };
       }
+      this.attemptedSessionFiles.add(currentSessionFile);
 
       const priorSession = this.store.findLatestPriorSession({
         sourceHarness: 'pi',

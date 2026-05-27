@@ -7,8 +7,8 @@ import {
 
 interface PiExtensionApiLike {
   on(
-    event: 'agent_end' | 'session_start' | 'session_shutdown',
-    handler: (event: unknown, ctx: unknown) => Promise<void> | void,
+    event: 'agent_end' | 'session_start' | 'before_agent_start' | 'session_shutdown',
+    handler: (event: unknown, ctx: unknown) => Promise<unknown> | unknown,
   ): void;
 }
 
@@ -57,6 +57,15 @@ export const registerSessionRelayExtension = (
     const activeRuntime = getRuntime(ctx);
     if (activeRuntime === null) return;
     await activeRuntime.recordActiveSession(ctx, `session_start:${lifecycleReasonFrom(event)}`);
+  });
+
+  pi.on('before_agent_start', async (event, ctx) => {
+    if (!isContextLike(ctx)) return;
+    const activeRuntime = getRuntime(ctx);
+    if (activeRuntime === null) return;
+    const result = await activeRuntime.injectPriorSessionRelay(ctx, event as { readonly systemPromptOptions?: { readonly cwd?: string } });
+    if (result.message !== undefined) return { message: result.message };
+    return undefined;
   });
 
   pi.on('session_shutdown', () => {

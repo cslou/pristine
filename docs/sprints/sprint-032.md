@@ -198,23 +198,24 @@ The Final Verification Story runs all sprint functional verification plus the fu
 - **As a** Pi user, **I want** a fresh new session to receive a prior-session relay only when repo history exists, **so that** continuity appears automatically without requiring semantic search setup.
 - **Dependencies:** Story 4
 - **Acceptance criteria:**
-  - [ ] `session-relay` hooks into the appropriate new-session/first-prompt path and injects a model-visible custom context message only when a latest prior session exists for the current repo/project.
-  - [ ] The runtime injects at most once per current session, including when the relevant Pi lifecycle callback is retried or reloaded.
-  - [ ] The runtime excludes the current session from prior-session selection.
-  - [ ] No-history behavior is a silent no-op: no injected message, no thrown error, and no user-facing warning.
-  - [ ] Relay generation failure is fail-open: no partial relay injection, session continues, and a non-blocking visible warning is sent to the user.
-  - [ ] Successful injection is routed through Pi's model-visible custom context/message channel, includes source harness/session pointer metadata for auditability, and emits no success notification or visible chat/TUI message; user-visible notification is reserved for fail-open relay generation warnings only.
-  - [ ] Injection works in tests with only `session-relay` and shared helpers present; it must not require vector tables, embeddings, `jsonl-index`, `search-memory`, or `pristine_recall`.
+  - [x] `session-relay` hooks into the appropriate new-session/first-prompt path and injects a model-visible custom context message only when a latest prior session exists for the current repo/project.
+  - [x] The runtime injects at most once per current session, including when the relevant Pi lifecycle callback is retried or reloaded.
+  - [x] The runtime excludes the current session from prior-session selection.
+  - [x] No-history behavior is a silent no-op: no injected message, no thrown error, and no user-facing warning.
+  - [x] Relay generation failure is fail-open: no partial relay injection, session continues, and a non-blocking visible warning is sent to the user.
+  - [x] Successful injection is routed through Pi's model-visible custom context/message channel, includes source harness/session pointer metadata for auditability, and emits no success notification or visible chat/TUI message; user-visible notification is reserved for fail-open relay generation warnings only.
+  - [x] Injection works in tests with only `session-relay` and shared helpers present; it must not require vector tables, embeddings, `jsonl-index`, `search-memory`, or `pristine_recall`.
 - **Functional verification:**
-  - [ ] Add Vitest coverage with fake Pi context/session manager proving a new session with prior metadata returns/appends exactly one relay custom message.
-  - [ ] Add Vitest coverage proving repeated lifecycle invocation for the same session does not duplicate the relay.
-  - [ ] Add Vitest coverage proving no-history returns no injection and no warning.
-  - [ ] Add Vitest coverage proving summarizer failure sends a non-blocking warning and returns no injection.
-  - [ ] Add Vitest coverage proving successful injection includes source harness/session pointer metadata and is routed through the model-visible custom context/message channel without a success notification or visible chat/TUI message.
-  - [ ] Add Vitest coverage proving injection succeeds when vector tables are absent from the temporary DB.
+  - [x] Add Vitest coverage with fake Pi context/session manager proving a new session with prior metadata returns/appends exactly one relay custom message.
+  - [x] Add Vitest coverage proving repeated lifecycle invocation for the same session does not duplicate the relay.
+  - [x] Add Vitest coverage proving no-history returns no injection and no warning.
+  - [x] Add Vitest coverage proving summarizer failure sends a non-blocking warning and returns no injection.
+  - [x] Add Vitest coverage proving successful injection includes source harness/session pointer metadata and is routed through the model-visible custom context/message channel without a success notification or visible chat/TUI message.
+  - [x] Add Vitest coverage proving injection succeeds when vector tables are absent from the temporary DB.
 - **Regression verification:**
-  - [ ] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/search-session-history.test.ts` and verify existing Pi reference index/search/session-history behavior still passes.
-  - [ ] Run `pnpm run typecheck` and verify the new extension/runtime types compile.
+  - [x] Run `pnpm run test:unit -- tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/search-session-history.test.ts` and verify existing Pi reference index/search/session-history behavior still passes.
+  - [x] Run `pnpm run typecheck` and verify the new extension/runtime types compile.
+- **Story 5 evidence:** PASS — `pnpm run test:unit -- tests/examples/pi-dev/session-relay-metadata.test.ts tests/examples/pi-dev/jsonl-index.test.ts tests/examples/pi-dev/search-memory-tool.test.ts tests/examples/pi-dev/search-session-history.test.ts`; PASS — `pnpm run typecheck`.
 - **Manual-only verification:** N/A for core injection decisions; real Pi lifecycle smoke is covered by Story 7.
 - **Planned commits:**
   1. `feat: add pi start-session relay runtime` — extension/runtime integration, once-per-session guard, injection/no-history/failure behavior, vector-independent tests.

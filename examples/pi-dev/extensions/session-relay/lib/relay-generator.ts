@@ -9,6 +9,82 @@ export interface RelaySummarizer {
   summarize(input: RelaySummarizerInput): Promise<string>;
 }
 
+const suspiciousInstructionPattern =
+  /(?:^|\b)(?:system|developer|assistant)\s*:|ignore\s+(?:all\s+)?(?:previous|current)\s+instructions|forget\s+(?:the\s+)?(?:previous|current)\s+instructions|do\s+not\s+follow/i;
+
+const sanitizeExcerpt = (text: string): string => {
+  const withoutControlChars = text.replace(/[\u0000-\u001f\u007f]+/g, ' ');
+  const withoutDelimiters = withoutControlChars.replace(/<[^>]*>/g, ' ');
+  const safeSentences = withoutDelimiters
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0 && !suspiciousInstructionPattern.test(sentence));
+  return (safeSentences[0] ?? '').slice(0, 240).trim();
+};
+
+const latestSafeText = (
+  messages: readonly RelayVisibleMessage[],
+  role: RelayVisibleMessage['role'],
+): string | null => {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message === undefined || message.role !== role) continue;
+    const excerpt = sanitizeExcerpt(message.text);
+    if (excerpt.length > 0) return excerpt;
+  }
+  return null;
+};
+
+const extractPaths = (messages: readonly RelayVisibleMessage[]): readonly string[] => {
+  const paths = new Set<string>();
+  for (const message of messages) {
+    const safeText = sanitizeExcerpt(message.text);
+    for (const match of safeText.matchAll(/(?:[\w.-]+\/)+(?:[\w.-]+)/g)) {
+      const path = match[0];
+      if (path !== undefined) paths.add(path);
+    }
+  }
+  return [...paths].slice(0, 5);
+};
+
+const extractMatchingExcerpts = (
+  messages: readonly RelayVisibleMessage[],
+  pattern: RegExp,
+): readonly string[] =>
+  messages
+    .map((message) => sanitizeExcerpt(message.text))
+    .filter((text) => text.length > 0 && pattern.test(text))
+    .slice(-3);
+
+const listOrNone = (items: readonly string[]): string =>
+  items.length === 0 ? 'None identified.' : items.map((item) => `- ${item}`).join('\n');
+
+export class ExtractiveRelaySummarizer implements RelaySummarizer {
+  public async summarize(input: RelaySummarizerInput): Promise<string> {
+    const latestUser = latestSafeText(input.messages, 'user');
+    const latestAssistant = latestSafeText(input.messages, 'assistant');
+    const paths = extractPaths(input.messages);
+    const decisions = extractMatchingExcerpts(input.messages, /\b(?:decided|decision|choose|chosen)\b/i);
+    const blockers = extractMatchingExcerpts(input.messages, /\b(?:blocked|blocker|open question|question|unknown|unclear)\b/i);
+    const nextSteps = extractMatchingExcerpts(input.messages, /\b(?:next|todo|continue|follow up|remaining)\b/i);
+
+    return [
+      '## Current task',
+      latestUser ?? 'None identified.',
+      '## Progress',
+      latestAssistant ?? 'None identified.',
+      '## Key files',
+      listOrNone(paths),
+      '## Decisions made',
+      listOrNone(decisions),
+      '## Blockers/open questions',
+      listOrNone(blockers),
+      '## Next steps',
+      listOrNone(nextSteps),
+    ].join('\n\n');
+  }
+}
+
 export type RelayGenerationResult =
   | {
       readonly ok: true;
@@ -34,8 +110,11 @@ ${relaySections.map((section, index) => `${index + 1}. ${section}`).join('\n')}
 
 Keep the handoff concise, concrete, and grounded only in the provided visible user/assistant messages. Include file paths, decisions, blockers, and next actions when present. If a section has no evidence, write "None identified."`;
 
+const escapeDelimiterChars = (value: string): string =>
+  value.replaceAll('&', '\\u0026').replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
+
 const formatPriorSessionMessages = (messages: readonly RelayVisibleMessage[]): string =>
-  JSON.stringify(messages, null, 2);
+  escapeDelimiterChars(JSON.stringify(messages, null, 2));
 
 const singleLine = (value: string): string => value.replace(/[\u0000-\u001f\u007f]+/g, ' ');
 

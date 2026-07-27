@@ -299,7 +299,7 @@ describe('SourceChunkStore schema', () => {
     expect(readTableSql(db, 'vec_source_chunks')).toContain('embedding float[64]');
   });
 
-  it('rebuilds incompatible draft source-index tables on init', () => {
+  it('rejects incompatible draft source-index tables without dropping data on init', () => {
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     db.exec(`
       CREATE TABLE source_chunks (
@@ -314,10 +314,9 @@ describe('SourceChunkStore schema', () => {
       );
     `);
 
-    new SourceChunkStore(db, 64);
-
-    expect(readTableSql(db, 'source_chunks')).toContain('PRIMARY KEY (project_id, chunk_id)');
-    expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_key TEXT PRIMARY KEY');
+    expect(() => new SourceChunkStore(db, 64)).toThrow(/rebuild the source index explicitly/);
+    expect(readTableSql(db, 'source_chunks')).toContain('chunk_id TEXT PRIMARY KEY');
+    expect(readTableSql(db, 'vec_source_chunks')).toContain('chunk_id TEXT PRIMARY KEY');
   });
 });
 

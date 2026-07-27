@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export const PRISTINE_DB_PATH_ENV = 'PRISTINE_DB_PATH';
+export const DEFAULT_PRISTINE_DB_RELATIVE_PATH = ['.pristine', 'data', 'pristine.db'] as const;
 
 export interface ResolveDbPathOptions {
   readonly explicitPath?: string;
@@ -20,5 +21,5 @@ export const resolvePiPristineDbPath = (options: ResolveDbPathOptions = {}): str
     return envPath;
   }
 
-  return join(options.homeDir ?? homedir(), '.pi', 'pristine', 'pristine.db');
+  return join(options.homeDir ?? homedir(), ...DEFAULT_PRISTINE_DB_RELATIVE_PATH);
 };

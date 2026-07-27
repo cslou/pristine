@@ -11,6 +11,23 @@ import {
 describe('Pristine recall and forget memory verbs', () => {
   const { getDeps } = withSourceMemoryClient();
 
+  it('reports project-scoped memory counts', async () => {
+    vi.mocked(getDeps().embedder.embedBatch).mockResolvedValue([vector(1), vector(2)]);
+    const client = await createClient(getDeps());
+
+    await client.store(
+      [
+        { text: 'first project memory', chunkId: 'first' },
+        { text: 'second project memory', chunkId: 'second' },
+      ],
+      { projectId: 'project-a' },
+    );
+
+    expect(client.status('project-a')).toEqual({ projectId: 'project-a', storedCount: 2 });
+    expect(client.status('project-b')).toEqual({ projectId: 'project-b', storedCount: 0 });
+    expect(() => client.status('')).toThrow(InvalidArgumentError);
+  });
+
   it('forget removes stale chunks and vectors within a project', async () => {
     vi.mocked(getDeps().embedder.embedBatch).mockResolvedValue([vector(1)]);
     vi.mocked(getDeps().embedder.embed).mockResolvedValue(vector(1));

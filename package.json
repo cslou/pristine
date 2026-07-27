@@ -1,7 +1,7 @@
 {
   "name": "@pristine/sdk",
   "version": "0.0.1",
-  "description": "Local-first privacy and source-pointer memory SDK — no server; no user data leaves by default",
+  "description": "Local-first source-pointer memory SDK — no server required",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -13,7 +13,6 @@
   "homepage": "https://github.com/getlou-gh/pristine#readme",
   "keywords": [
     "local-first",
-    "privacy",
     "memory",
     "semantic-search",
     "sqlite",
@@ -28,6 +27,7 @@
   "packageManager": "pnpm@11.1.1",
   "type": "module",
   "main": "dist/index.js",
+  "bin": { "pristine": "dist/cli.js" },
   "types": "dist/index.d.ts",
   "exports": {
     ".": {

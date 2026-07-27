@@ -1,4 +1,6 @@
 node_modules/
+.pi/
+.pnpm-store/
 dist/
 docs/dist/
 coverage/
@@ -24,8 +26,8 @@ docs/backlog.md
 docs/public-api.md
 docs/release-checklist.md
 
-# Local-only benchmark experiments are not tracked in the public repo
-benchmarks/
+# Benchmark run artifacts are local-only; the benchmark harness is tracked.
+.benchmarks/
 
 # Local-only maintainer security audit tooling
 scripts/audit-repository-secrets.mjs

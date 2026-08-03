@@ -39,11 +39,6 @@ export interface ForgetResult {
   readonly deletedCount: number;
 }
 
-export interface MemoryStatus {
-  readonly projectId: string;
-  readonly storedCount: number;
-}
-
 export interface RecalledMemory extends StoredMemory {
   readonly score: number;
 }
@@ -155,10 +150,6 @@ export class Pristine {
     }
     const deletedCount = this.sourceChunkStore.deleteMany(options.projectId, chunkIds);
     return { deletedCount };
-  }
-
-  public status(projectId: string): MemoryStatus {
-    return { projectId, storedCount: this.sourceChunkStore.count(projectId) };
   }
 
   public async recall(query: string, options: RecallOptions): Promise<readonly RecalledMemory[]> {

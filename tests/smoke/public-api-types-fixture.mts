@@ -1,11 +1,66 @@
-import { Pristine } from '../../src/index.js';
+import {
+  AppError,
+  ConfigError,
+  EmbedderError,
+  InvalidArgumentError,
+  SOURCE_CHUNK_METADATA_JSON_LIMIT,
+  SOURCE_CHUNK_TEXT_LIMIT,
+  SourceChunkStore,
+  buildSourceChunkVectorDdl,
+  createDatabase,
+  initSourceChunkTables,
+  normalizeSourceChunkInput,
+  Pristine,
+} from '@pristine/sdk';
 import type {
   Embedder,
   ForgetResult,
+  PristineConfig,
   RecalledMemory,
   SourceChunkInput,
+  SourceChunkMetadata,
+  SourceChunkNormalizeOptions,
+  SourceChunkSearchOptions,
+  SourceChunkStoreOptions,
   StoredMemory,
-} from '../../src/index.js';
+  StoredSourceChunk,
+  StoreOptions,
+} from '@pristine/sdk';
+
+type PublicApiTypes = [
+  Embedder,
+  ForgetResult,
+  PristineConfig,
+  RecalledMemory,
+  SourceChunkInput,
+  SourceChunkMetadata,
+  SourceChunkNormalizeOptions,
+  SourceChunkSearchOptions,
+  SourceChunkStoreOptions,
+  StoredMemory,
+  StoredSourceChunk,
+  StoreOptions,
+];
+
+type PublicApiValues = [
+  typeof AppError,
+  typeof ConfigError,
+  typeof EmbedderError,
+  typeof InvalidArgumentError,
+  typeof SOURCE_CHUNK_METADATA_JSON_LIMIT,
+  typeof SOURCE_CHUNK_TEXT_LIMIT,
+  typeof SourceChunkStore,
+  typeof buildSourceChunkVectorDdl,
+  typeof createDatabase,
+  typeof initSourceChunkTables,
+  typeof normalizeSourceChunkInput,
+  typeof Pristine,
+];
+
+// @ts-expect-error Privacy APIs are intentionally removed from the public package.
+import { secureAndRedact } from '@pristine/sdk';
+// @ts-expect-error Privacy types are intentionally removed from the public package.
+type RemovedPrivacyType = import('@pristine/sdk').SecureAndRedactResult;
 
 const embedder: Embedder = {
   dim: 768,
@@ -32,7 +87,13 @@ const recalled: readonly RecalledMemory[] = await pristine.recall('project memor
   limit: 1,
 });
 const forgotten: ForgetResult = pristine.forget([stored[0]!.chunkId], { projectId: 'fixture' });
+const publicApiTypes: PublicApiTypes | null = null;
+const publicApiValues: PublicApiValues | null = null;
 
 void recalled;
 void forgotten;
+void secureAndRedact;
+void (null as unknown as RemovedPrivacyType);
+void publicApiTypes;
+void publicApiValues;
 await pristine.dispose();

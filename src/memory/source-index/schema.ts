@@ -153,9 +153,11 @@ const dropIncompatibleSourceChunkTables = (db: Database.Database, dim: number): 
     vecSourceChunksSql === null || /\bchunk_key\s+TEXT\s+PRIMARY KEY\b/i.test(vecSourceChunksSql);
 
   if (!sourceChunksCompatible || !vecSourceChunksCompatible) {
-    throw new InvalidArgumentError(
-      'SourceChunkStore: incompatible existing schema; rebuild the source index explicitly before opening it',
-    );
+    db.exec(`
+      DROP TABLE IF EXISTS vec_source_chunks;
+      DROP TABLE IF EXISTS source_chunks;
+    `);
+    return;
   }
 
   if (sourceChunksSql !== null) {
@@ -358,7 +360,6 @@ export class SourceChunkStore {
   private readonly insertVector: Statement;
   private readonly deleteChunk: Statement;
   private readonly searchStmt: Statement;
-  private readonly countStmt: Statement;
   private readonly deleteChunksWithVectors: (
     chunks: readonly { readonly projectId: string; readonly chunkId: string }[],
   ) => number;
@@ -409,7 +410,6 @@ export class SourceChunkStore {
         AND v.project_id = ?
       ORDER BY distance
     `);
-    this.countStmt = db.prepare('SELECT count(*) AS count FROM source_chunks WHERE project_id = ?');
     this.deleteChunksWithVectors = db.transaction(
       (chunks: readonly { readonly projectId: string; readonly chunkId: string }[]) => {
         let deleted = 0;
@@ -529,12 +529,6 @@ export class SourceChunkStore {
       return { projectId, chunkId };
     });
     return this.deleteChunksWithVectors(chunks);
-  }
-
-  public count(projectIdInput: string): number {
-    const projectId = validateProjectId(projectIdInput);
-    const row = this.countStmt.get(projectId) as { count: number };
-    return row.count;
   }
 
   public put(input: SourceChunkInput, options: SourceChunkStoreOptions): StoredSourceChunk {

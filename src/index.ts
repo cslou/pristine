@@ -3,7 +3,6 @@ export { Pristine } from './client.js';
 export type {
   ForgetOptions,
   ForgetResult,
-  MemoryStatus,
   PristineConfig,
   RecalledMemory,
   RecallOptions,

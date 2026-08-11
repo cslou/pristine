@@ -27,7 +27,6 @@
   "packageManager": "pnpm@11.1.1",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "pristine": "dist/cli.js" },
   "types": "dist/index.d.ts",
   "exports": {
     ".": {

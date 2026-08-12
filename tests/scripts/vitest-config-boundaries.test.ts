@@ -26,7 +26,8 @@ describe('Vitest suite discovery boundaries', () => {
     expect(unitTests).not.toContain('tests/integration/embedder.test.ts');
 
     const smokeTests = listTests('smoke');
-    expect(smokeTests).toBe('');
+    expect(smokeTests).toContain('tests/smoke/package-entrypoint.smoke.test.ts');
+    expect(smokeTests).toContain('tests/smoke/public-api.smoke.test.ts');
     expect(smokeTests).not.toContain('tests/smoke/source-index-local-model.local-model.test.ts');
   });
 

@@ -1,18 +1,14 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDatabase } from '../../src/core/database.js';
 import type { Embedder } from '../../src/core/interfaces.js';
 import * as PristineBarrel from '../../src/index.js';
 import {
   AppError,
   ConfigError,
   EmbedderError,
-  SensitiveNotFoundError,
+  InvalidArgumentError,
   Pristine,
-  classify,
-  createDatabase as createDatabaseFromBarrel,
-  detect,
-  redact,
+  createDatabase,
 } from '../../src/index.js';
 
 const makeEmbedderStub = (): Embedder => ({
@@ -23,38 +19,32 @@ const makeEmbedderStub = (): Embedder => ({
   ),
 });
 
-describe('public-API smoke — source chunk API', () => {
+describe('public API smoke — source memory', () => {
   const databases: Database.Database[] = [];
 
   afterEach(() => {
     for (const db of databases.splice(0)) db.close();
   });
 
-  it('create() succeeds with DI overrides (no model contact)', async () => {
+  it('creates a client with dependency-injected memory components', async () => {
     const db = createDatabase(':memory:');
+    databases.push(db);
     const client = await Pristine.create({ db, embedder: makeEmbedderStub() });
 
     try {
       expect(client).toBeInstanceOf(Pristine);
-      expect('pendingEmbedTasks' in client).toBe(false);
-      expect(client.redact).toBeTypeOf('function');
-      expect('secureAndRedact' in client).toBe(false);
-      await client.dispose();
     } finally {
-      db.close();
+      await client.dispose();
     }
   });
 
-  it('src/index.ts public barrel exports the source-index surface', () => {
+  it('exports the source-memory public surface', () => {
     expect(Pristine).toBeTypeOf('function');
-    expect(createDatabaseFromBarrel).toBeTypeOf('function');
+    expect(createDatabase).toBeTypeOf('function');
     expect(AppError).toBeTypeOf('function');
     expect(ConfigError).toBeTypeOf('function');
     expect(EmbedderError).toBeTypeOf('function');
-    expect(SensitiveNotFoundError).toBeTypeOf('function');
-    expect(classify).toBeTypeOf('function');
-    expect(detect).toBeTypeOf('function');
-    expect(redact).toBeTypeOf('function');
+    expect(InvalidArgumentError).toBeTypeOf('function');
 
     expect(Object.keys(PristineBarrel).sort()).toEqual([
       'AppError',
@@ -64,21 +54,17 @@ describe('public-API smoke — source chunk API', () => {
       'Pristine',
       'SOURCE_CHUNK_METADATA_JSON_LIMIT',
       'SOURCE_CHUNK_TEXT_LIMIT',
-      'SensitiveNotFoundError',
       'SourceChunkStore',
       'buildSourceChunkVectorDdl',
-      'classify',
       'createDatabase',
-      'detect',
       'initSourceChunkTables',
       'normalizeSourceChunkInput',
-      'redact',
     ]);
-    expect(PristineBarrel).not.toHaveProperty('secureAndRedact');
   });
 
-  it('public surface indexes and searches a source chunk', async () => {
+  it('stores, recalls, and forgets source memory through the public API', async () => {
     const db = createDatabase(':memory:');
+    databases.push(db);
     const client = await Pristine.create({ db, embedder: makeEmbedderStub() });
 
     try {
@@ -93,23 +79,13 @@ describe('public-API smoke — source chunk API', () => {
         text: 'espresso with cardamom',
         sourceUri: '/tmp/session.jsonl',
       });
+
+      expect(client.forget(['chunk-1'], { projectId: 'project-a' })).toEqual({
+        deletedCount: 1,
+      });
+      await expect(client.recall('cardamom', { projectId: 'project-a' })).resolves.toEqual([]);
     } finally {
       await client.dispose();
-      db.close();
     }
-  });
-
-  it('privacy scrubOutput() works without ingest', async () => {
-    const db = createDatabase(':memory:');
-    databases.push(db);
-
-    const client = await Pristine.create({ db, embedder: makeEmbedderStub() });
-    const scrubbed = client.scrubOutput(
-      'Hello [SENSITIVE:name:abc-123], here is your confirmation.',
-      [],
-    );
-
-    expect(scrubbed).toBe('Hello , here is your confirmation.');
-    expect(scrubbed).not.toContain('[SENSITIVE:');
   });
 });

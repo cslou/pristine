@@ -1,36 +1,11 @@
-import { homedir } from 'node:os';
 import type Database from 'better-sqlite3';
-import type {
-  DeleteSensitiveResult,
-  ListSensitiveOptions,
-  RedactConfirmedSecret,
-  RedactResult,
-  RevealResult,
-  SensitiveRef,
-  SensitiveSummary,
-  SourceChunkInput,
-  UpdateSensitiveInput,
-} from './core/types.js';
-import type { Embedder, KeyManager, VaultStore } from './core/interfaces.js';
+import type { SourceChunkInput } from './core/types.js';
+import type { Embedder } from './core/interfaces.js';
 import { InvalidArgumentError } from './core/errors.js';
 import { initPristine } from './core/init.js';
 import { createDefaultDatabase } from './core/database.js';
 import { createEmbedder } from './embedder/index.js';
 import { SourceChunkStore } from './memory/source-index/index.js';
-import { FileSystemKeyManager } from './privacy/keys/filesystem.js';
-import { KekManager } from './privacy/kek/kek-manager.js';
-import { createSqliteVaultStore } from './privacy/vault/sqlite/index.js';
-import { redact as privacyRedact } from './privacy/redactor/index.js';
-import {
-  deleteSensitive as privacyDeleteSensitive,
-  getSensitive as privacyGetSensitive,
-  listSensitive as privacyListSensitive,
-  resolveSensitive as privacyResolveSensitive,
-  reveal as privacyReveal,
-  scrubOutput as privacyScrubOutput,
-  updateSensitive as privacyUpdateSensitive,
-} from './privacy/index.js';
-import type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
 
 export interface StoreOptions {
   readonly projectId: string;
@@ -70,10 +45,8 @@ export interface RecalledMemory extends StoredMemory {
 
 export interface PristineConfig {
   readonly baseDir?: string;
-  readonly keysDir?: string;
   readonly db?: Database.Database;
   readonly embedder?: Embedder;
-  readonly privacy?: DeterministicClassifierConfig;
 }
 
 const toPublicChunk = (chunk: {
@@ -111,33 +84,21 @@ export class Pristine {
   private readonly sourceChunkStore: SourceChunkStore;
   private readonly db: Database.Database;
   private readonly embedder: Embedder;
-  private readonly keyManager: KeyManager;
-  private readonly kekManager: KekManager;
-  private readonly vaultStore: VaultStore;
   private readonly ownsDb: boolean;
   private readonly ownsEmbedder: boolean;
-  private readonly privacyClassifierConfig: DeterministicClassifierConfig | undefined;
 
   private constructor(deps: {
     sourceChunkStore: SourceChunkStore;
     db: Database.Database;
     embedder: Embedder;
-    keyManager: KeyManager;
-    kekManager: KekManager;
-    vaultStore: VaultStore;
     ownsDb: boolean;
     ownsEmbedder: boolean;
-    privacyClassifierConfig?: DeterministicClassifierConfig;
   }) {
     this.sourceChunkStore = deps.sourceChunkStore;
     this.db = deps.db;
     this.embedder = deps.embedder;
-    this.keyManager = deps.keyManager;
-    this.kekManager = deps.kekManager;
-    this.vaultStore = deps.vaultStore;
     this.ownsDb = deps.ownsDb;
     this.ownsEmbedder = deps.ownsEmbedder;
-    this.privacyClassifierConfig = deps.privacyClassifierConfig;
   }
 
   public static async create(config: PristineConfig = {}): Promise<Pristine> {
@@ -150,22 +111,12 @@ export class Pristine {
     const embedder =
       config.embedder ?? createEmbedder(init?.config.embedder ?? { engine: 'local' });
     const sourceChunkStore = new SourceChunkStore(db, embedder.dim);
-    const keysDir =
-      config.keysDir ?? (init ? `${init.baseDir}/keys` : `${homedir()}/.pristine/keys`);
-    const keyManager = new FileSystemKeyManager({ keysDir });
-    const kekManager = new KekManager(db, keyManager);
-    const vaultStore = createSqliteVaultStore(db);
-
     return new Pristine({
       sourceChunkStore,
       db,
       embedder,
-      keyManager,
-      kekManager,
-      vaultStore,
       ownsDb,
       ownsEmbedder,
-      privacyClassifierConfig: config.privacy,
     });
   }
 
@@ -222,86 +173,7 @@ export class Pristine {
       .map((hit) => ({ ...toPublicChunk(hit.chunk), score: hit.score }));
   }
 
-  public async listSensitive(
-    userId: string,
-    options?: ListSensitiveOptions,
-  ): Promise<readonly SensitiveSummary[]> {
-    return privacyListSensitive(
-      {
-        vaultStore: this.vaultStore,
-        userId,
-      },
-      options,
-    );
-  }
-
-  public async getSensitive(
-    userId: string,
-    sensitiveRef: SensitiveRef,
-  ): Promise<SensitiveSummary | null> {
-    return privacyGetSensitive(sensitiveRef, {
-      vaultStore: this.vaultStore,
-      userId,
-    });
-  }
-
-  public async updateSensitive(
-    userId: string,
-    sensitiveRef: SensitiveRef,
-    input: UpdateSensitiveInput,
-  ): Promise<SensitiveSummary> {
-    return privacyUpdateSensitive(sensitiveRef, input, {
-      vaultStore: this.vaultStore,
-      userId,
-    });
-  }
-
-  public async deleteSensitive(
-    userId: string,
-    sensitiveRefs: readonly SensitiveRef[],
-  ): Promise<DeleteSensitiveResult> {
-    return privacyDeleteSensitive(sensitiveRefs, {
-      vaultStore: this.vaultStore,
-      userId,
-    });
-  }
-
-  public async resolveSensitive(userId: string, sensitiveRef: SensitiveRef): Promise<string> {
-    return privacyResolveSensitive(sensitiveRef, {
-      vaultStore: this.vaultStore,
-      keyManager: this.keyManager,
-      kekManager: this.kekManager,
-      userId,
-    });
-  }
-
-  public async redact(
-    text: string,
-    confirmed: readonly RedactConfirmedSecret[],
-    userId: string,
-  ): Promise<RedactResult> {
-    return privacyRedact(text, confirmed, userId, {
-      vaultStore: this.vaultStore,
-      keyManager: this.keyManager,
-      kekManager: this.kekManager,
-    });
-  }
-
-  public async reveal(redactedText: string, userId: string): Promise<RevealResult> {
-    return privacyReveal(redactedText, {
-      vaultStore: this.vaultStore,
-      keyManager: this.keyManager,
-      kekManager: this.kekManager,
-      userId,
-    });
-  }
-
-  public scrubOutput(text: string, allowlist: readonly string[] = []): string {
-    return privacyScrubOutput(text, allowlist, this.privacyClassifierConfig);
-  }
-
   public async dispose(): Promise<void> {
-    this.kekManager.clearCache();
     const disposable = this.embedder as { dispose?: () => Promise<void> };
     if (this.ownsEmbedder && typeof disposable.dispose === 'function') {
       await disposable.dispose();
@@ -309,6 +181,5 @@ export class Pristine {
     if (this.ownsDb) {
       this.db.close();
     }
-    void this.keyManager;
   }
 }

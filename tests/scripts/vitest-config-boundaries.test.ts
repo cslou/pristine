@@ -22,20 +22,17 @@ describe('Vitest suite discovery boundaries', () => {
   it('discovers unit and deterministic smoke tests without crossing suite boundaries', () => {
     const unitTests = listTests('unit');
     expect(unitTests).toContain('tests/scripts/vitest-config-boundaries.test.ts');
-    expect(unitTests).not.toContain('tests/smoke/public-api.smoke.test.ts');
-    expect(unitTests).not.toContain('tests/integration/privacy.test.ts');
-    expect(unitTests).not.toContain('tests/e2e/privacy-pipeline.test.ts');
+    expect(unitTests).not.toContain('tests/smoke/source-index-local-model.local-model.test.ts');
+    expect(unitTests).not.toContain('tests/integration/embedder.test.ts');
 
     const smokeTests = listTests('smoke');
+    expect(smokeTests).toContain('tests/smoke/package-entrypoint.smoke.test.ts');
     expect(smokeTests).toContain('tests/smoke/public-api.smoke.test.ts');
     expect(smokeTests).not.toContain('tests/smoke/source-index-local-model.local-model.test.ts');
   });
 
-  it('discovers local-model smoke, integration, and e2e tests on explicit suite selectors', () => {
-    expect(listTests('local-model-smoke')).toContain(
-      'tests/smoke/source-index-local-model.local-model.test.ts',
-    );
-    expect(listTests('integration')).toContain('tests/integration/privacy.test.ts');
-    expect(listTests('e2e')).toContain('tests/e2e/privacy-pipeline.test.ts');
+  it('discovers integration and e2e tests on explicit suite selectors', () => {
+    expect(listTests('integration')).toContain('tests/integration/embedder.test.ts');
+    expect(listTests('e2e')).toBe('');
   });
 });

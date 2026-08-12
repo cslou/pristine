@@ -18,7 +18,7 @@ cd ~/projects/test-pristine/.pi/extensions/search-memory
 npm install --omit=dev
 ```
 
-The tool reads the same DB as `jsonl-index`: explicit config when wired by an extension host, `PRISTINE_DB_PATH`, then `~/.pi/pristine/pristine.db`.
+The tool reads the same DB as `jsonl-index`: explicit config when wired by an extension host, `PRISTINE_DB_PATH`, then `~/.pristine/data/pristine.db`.
 
 ## Tool input
 
@@ -67,6 +67,6 @@ Each result includes:
 Remove the local index DB and let `jsonl-index` rebuild it:
 
 ```bash
-db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+db="${PRISTINE_DB_PATH:-$HOME/.pristine/data/pristine.db}"
 rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ```

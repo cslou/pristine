@@ -1,8 +1,0 @@
-{
-  "name": "pristine-pi-dev-privacy-input-reference",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@mariozechner/pi-ai": "0.73.0"
-  }
-}

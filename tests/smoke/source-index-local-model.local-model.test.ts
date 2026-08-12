@@ -17,7 +17,7 @@ describe('local-model source-index smoke', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pristine-source-index-smoke-'));
     tempDirs.push(dir);
     const db = createDatabase(join(dir, 'pristine.db'));
-    const client = await Pristine.create({ db, baseDir: dir, keysDir: join(dir, 'keys') });
+    const client = await Pristine.create({ db, baseDir: dir });
 
     try {
       await client.store(

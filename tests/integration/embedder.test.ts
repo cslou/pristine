@@ -55,7 +55,7 @@ describe.skipIf(skipSlow)('source-index integration (real local embedder)', () =
     let client: Pristine | undefined;
 
     try {
-      client = await Pristine.create({ db, embedder, keysDir: join(dir, 'keys') });
+      client = await Pristine.create({ db, embedder });
       await client.store(
         [
           {

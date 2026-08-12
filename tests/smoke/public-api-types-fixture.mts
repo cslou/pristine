@@ -1,174 +1,99 @@
 import {
-  classify,
-  detect,
-  redact,
-  type BuiltInDetectCandidateKind,
-  ClassifierCallback,
-  ClassifierCallbackDecision,
-  ClassifierCallbackResult,
-  ClassifierRequest,
-  ClassifierRequestCandidate,
-  ClassifierVerdict,
-  ClassifyDecision,
-  ClassifyOptions,
-  ClassifyPrimitive,
-  ClassifyResult,
-  DeleteSensitiveResult,
-  DetectCandidate,
-  DetectCandidateKind,
-  DetectHint,
-  DetectOptions,
-  DetectPrimitive,
-  DetectResult,
-  DetectSensitivityPreset,
-  DeterministicClassifierConfig,
-  Embedder,
-  ForgetOptions,
-  ForgetResult,
-  ListSensitiveOptions,
-  NonSecretClassifierCallbackDecision,
-  NonSecretClassifyDecision,
-  PrivacyClassifier,
-  PrivacyDetector,
-  PrivacyHintFeatures,
-  PrivacyHintFeatureValue,
-  PrivacyRedactor,
+  AppError,
+  ConfigError,
+  EmbedderError,
+  InvalidArgumentError,
+  SOURCE_CHUNK_METADATA_JSON_LIMIT,
+  SOURCE_CHUNK_TEXT_LIMIT,
+  SourceChunkStore,
+  buildSourceChunkVectorDdl,
+  createDatabase,
+  initSourceChunkTables,
+  normalizeSourceChunkInput,
   Pristine,
+} from '@pristine/sdk';
+import type {
+  Embedder,
+  ForgetResult,
   PristineConfig,
   RecalledMemory,
-  RecallOptions,
-  RedactConfirmedSecret,
-  RedactKeyManager,
-  RedactKekManager,
-  RedactOptions,
-  RedactPrimitive,
-  RedactResult,
-  RedactResultRedaction,
-  RedactVaultStore,
-  RevealResult,
-  SecretClassifierCallbackDecision,
-  SecretClassifyDecision,
-  SensitiveRef,
-  SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
-  SourceLocation,
-  SourceSpan,
-  SourceSurface,
-  SourceSurfaceMetadata,
-  TextSpan,
   StoredMemory,
   StoredSourceChunk,
   StoreOptions,
-  UpdateSensitiveInput,
 } from '@pristine/sdk';
 
-type CanonicalPublicRootTypes = [
-  BuiltInDetectCandidateKind,
-  ClassifierCallback,
-  ClassifierCallbackDecision,
-  ClassifierCallbackResult,
-  ClassifierRequest,
-  ClassifierRequestCandidate,
-  ClassifierVerdict,
-  ClassifyDecision,
-  ClassifyOptions,
-  ClassifyPrimitive,
-  ClassifyResult,
-  DeleteSensitiveResult,
-  DetectCandidate,
-  DetectCandidateKind,
-  DetectHint,
-  DetectOptions,
-  DetectPrimitive,
-  DetectResult,
-  DetectSensitivityPreset,
-  DeterministicClassifierConfig,
+type PublicApiTypes = [
   Embedder,
-  ForgetOptions,
   ForgetResult,
-  ListSensitiveOptions,
-  NonSecretClassifierCallbackDecision,
-  NonSecretClassifyDecision,
-  PrivacyClassifier,
-  PrivacyDetector,
-  PrivacyHintFeatures,
-  PrivacyHintFeatureValue,
-  PrivacyRedactor,
-  Pristine,
   PristineConfig,
   RecalledMemory,
-  RecallOptions,
-  RedactConfirmedSecret,
-  RedactKeyManager,
-  RedactKekManager,
-  RedactOptions,
-  RedactPrimitive,
-  RedactResult,
-  RedactResultRedaction,
-  RedactVaultStore,
-  RevealResult,
-  SecretClassifierCallbackDecision,
-  SecretClassifyDecision,
-  SensitiveRef,
-  SensitiveSummary,
   SourceChunkInput,
   SourceChunkMetadata,
   SourceChunkNormalizeOptions,
   SourceChunkSearchOptions,
   SourceChunkStoreOptions,
-  SourceLocation,
-  SourceSpan,
-  SourceSurface,
-  SourceSurfaceMetadata,
-  TextSpan,
   StoredMemory,
   StoredSourceChunk,
   StoreOptions,
-  UpdateSensitiveInput,
 ];
 
-// @ts-expect-error SecureAndRedactResult is intentionally removed from the root public type surface.
-type RemovedSecureAndRedactResult = import('@pristine/sdk').SecureAndRedactResult;
+type PublicApiValues = [
+  typeof AppError,
+  typeof ConfigError,
+  typeof EmbedderError,
+  typeof InvalidArgumentError,
+  typeof SOURCE_CHUNK_METADATA_JSON_LIMIT,
+  typeof SOURCE_CHUNK_TEXT_LIMIT,
+  typeof SourceChunkStore,
+  typeof buildSourceChunkVectorDdl,
+  typeof createDatabase,
+  typeof initSourceChunkTables,
+  typeof normalizeSourceChunkInput,
+  typeof Pristine,
+];
 
-declare const pristineClient: Pristine;
-const clientRedactResult = pristineClient.redact('no secrets here', [], 'user-1');
-// @ts-expect-error secureAndRedact is intentionally removed from the public Pristine client surface.
-const removedClientSecureAndRedact = pristineClient.secureAndRedact;
+// @ts-expect-error Privacy APIs are intentionally removed from the public package.
+import { secureAndRedact } from '@pristine/sdk';
+// @ts-expect-error Privacy types are intentionally removed from the public package.
+type RemovedPrivacyType = import('@pristine/sdk').SecureAndRedactResult;
 
-const classifyResult = classify('no secrets here', [], async () => ({ decisions: [] }));
-const detectResult = detect('no secrets here');
-const redactResult = redact('no secrets here', [], 'user-1', {
-  vaultStore: {} as RedactVaultStore,
-  keyManager: {} as RedactKeyManager,
-  kekManager: {} as RedactKekManager,
+const embedder: Embedder = {
+  dim: 768,
+  async embed(): Promise<number[]> {
+    return Array.from({ length: 768 }, () => 0);
+  },
+  async embedBatch(texts: readonly string[]): Promise<number[][]> {
+    return texts.map(() => Array.from({ length: 768 }, () => 0));
+  },
+};
+
+const chunk: SourceChunkInput = {
+  chunkId: 'memory-1',
+  text: 'Project memory stays local.',
+  sourceKind: 'fixture',
+  sourceUri: 'fixture://memory',
+  metadata: { durable: true },
+};
+
+const pristine = await Pristine.create({ embedder });
+const stored: readonly StoredMemory[] = await pristine.store([chunk], { projectId: 'fixture' });
+const recalled: readonly RecalledMemory[] = await pristine.recall('project memory', {
+  projectId: 'fixture',
+  limit: 1,
 });
-const detectPrimitiveFixture: DetectPrimitive = (_text, options) =>
-  options?.sourceSurface
-    ? { sourceSurface: options.sourceSurface, candidates: [] }
-    : { candidates: [] };
-const classifyPrimitiveFixture: ClassifyPrimitive = async (
-  _text,
-  _candidates,
-  _classifierCallback,
-  _options,
-) => ({ decisions: [] });
-const redactPrimitiveFixture: RedactPrimitive = async (_text, _confirmed, _userId, _options) => ({
-  text: _text,
-  redactions: [],
-});
-const canonicalPublicRootTypesFixture: CanonicalPublicRootTypes | null = null;
-const removedSecureAndRedactResultFixture: RemovedSecureAndRedactResult | null = null;
-void classifyResult;
-void detectResult;
-void redactResult;
-void clientRedactResult;
-void detectPrimitiveFixture;
-void classifyPrimitiveFixture;
-void redactPrimitiveFixture;
-void removedClientSecureAndRedact;
-void canonicalPublicRootTypesFixture;
-void removedSecureAndRedactResultFixture;
+const forgotten: ForgetResult = pristine.forget([stored[0]!.chunkId], { projectId: 'fixture' });
+const publicApiTypes: PublicApiTypes | null = null;
+const publicApiValues: PublicApiValues | null = null;
+
+void recalled;
+void forgotten;
+void secureAndRedact;
+void (null as unknown as RemovedPrivacyType);
+void publicApiTypes;
+void publicApiValues;
+await pristine.dispose();

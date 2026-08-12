@@ -107,7 +107,7 @@ describe('Pi JSONL index extension reference', () => {
     ).toBe('/env/pristine.db');
 
     expect(resolvePiPristineDbPath({ env: {}, homeDir: '/home/test' })).toBe(
-      '/home/test/.pi/pristine/pristine.db',
+      '/home/test/.pristine/data/pristine.db',
     );
   });
 

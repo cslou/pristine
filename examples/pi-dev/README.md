@@ -2,7 +2,7 @@ This is one way to use Pristine primitives. You can write your own.
 
 # Pristine Pi development reference
 
-This reference proves a Pi-only memory flow where Pi JSONL is the source of truth and Pristine stores only a semantic index: snippets/windows plus source pointers back to Pi's session file path. The first proof targets Pi sessions under `~/.pi/agent/sessions/.../*.jsonl` and a default Pristine DB at `~/.pi/pristine/pristine.db`.
+This reference proves a Pi memory flow where Pi JSONL is the source of truth and Pristine stores only a semantic index: snippets/windows plus source pointers back to Pi's session file path. The first proof targets Pi sessions under `~/.pi/agent/sessions/.../*.jsonl` and the default Pristine SDK DB at `~/.pristine/data/pristine.db`.
 
 This README is written as an agent-facing runbook: a coding agent should be able to copy these artifacts into another repo, install dependencies, understand how Pi discovers them, warm up the embedding model, and verify the flow.
 
@@ -172,12 +172,12 @@ Both extensions use the same local SQLite DB. Resolution precedence:
 
 1. Explicit extension config path, if wired by a custom host.
 2. `PRISTINE_DB_PATH` environment variable.
-3. Default `~/.pi/pristine/pristine.db`.
+3. Default `~/.pristine/data/pristine.db`.
 
 Reset the semantic index:
 
 ```bash
-db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+db="${PRISTINE_DB_PATH:-$HOME/.pristine/data/pristine.db}"
 rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ```
 
@@ -241,7 +241,7 @@ Pass condition: the response includes `copper-lion-harbor-31`, nearby visible us
 If you need to inspect the DB directly:
 
 ```bash
-sqlite3 "${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}" \
+sqlite3 "${PRISTINE_DB_PATH:-$HOME/.pristine/data/pristine.db}" \
   "select entry_id, source_uri, line_number from pi_jsonl_chunks where snippet like '%copper-lion-harbor-31%';"
 ```
 

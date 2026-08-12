@@ -1,14 +1,4 @@
-/**
- * # Pristine — local-first privacy and source-pointer memory SDK
- *
- * Pristine indexes source-owned text chunks with local embeddings and returns
- * semantic search hits containing snippets plus optional source pointers. Raw
- * transcripts remain in the harness/source system; Pristine stores indexed
- * chunk text/snippets, embeddings, source metadata, and privacy vault data. No server; no user
- * data leaves the device by default. The default embedder may download model
- * files on first use unless pre-cached or configured offline.
- */
-
+/** Local-first source-pointer memory SDK. */
 export { Pristine } from './client.js';
 export type {
   ForgetOptions,
@@ -19,66 +9,10 @@ export type {
   StoredMemory,
   StoreOptions,
 } from './client.js';
-
-export { classify } from './privacy/classifier/index.js';
-export { detect } from './privacy/detector/index.js';
-export { redact } from './privacy/redactor/index.js';
-
-export type {
-  BuiltInDetectCandidateKind,
-  ClassifierCallback,
-  ClassifierCallbackDecision,
-  ClassifierCallbackResult,
-  ClassifierRequest,
-  ClassifierRequestCandidate,
-  ClassifierVerdict,
-  ClassifyDecision,
-  ClassifyOptions,
-  ClassifyPrimitive,
-  ClassifyResult,
-  NonSecretClassifierCallbackDecision,
-  NonSecretClassifyDecision,
-  SecretClassifierCallbackDecision,
-  SecretClassifyDecision,
-  DetectCandidate,
-  DetectCandidateKind,
-  DetectHint,
-  DetectOptions,
-  DetectPrimitive,
-  DetectResult,
-  DetectSensitivityPreset,
-  DeleteSensitiveResult,
-  ListSensitiveOptions,
-  PrivacyHintFeatures,
-  PrivacyHintFeatureValue,
-  RedactConfirmedSecret,
-  RedactKeyManager,
-  RedactKekManager,
-  RedactOptions,
-  RedactPrimitive,
-  RedactResult,
-  RedactResultRedaction,
-  RedactVaultStore,
-  RevealResult,
-  SensitiveRef,
-  SensitiveSummary,
-  SourceChunkInput,
-  SourceChunkMetadata,
-  SourceLocation,
-  SourceSpan,
-  SourceSurface,
-  SourceSurfaceMetadata,
-  TextSpan,
-  UpdateSensitiveInput,
-} from './core/types.js';
-
-export type {
-  Embedder,
-  PrivacyClassifier,
-  PrivacyDetector,
-  PrivacyRedactor,
-} from './core/interfaces.js';
-
+export type { SourceChunkInput, SourceChunkMetadata } from './core/types.js';
+export type { Embedder } from './core/interfaces.js';
+export { AppError, ConfigError, EmbedderError, InvalidArgumentError } from './core/errors.js';
+export { createDatabase } from './core/database.js';
 export {
   SOURCE_CHUNK_METADATA_JSON_LIMIT,
   SOURCE_CHUNK_TEXT_LIMIT,
@@ -93,15 +27,3 @@ export type {
   SourceChunkStoreOptions,
   StoredSourceChunk,
 } from './memory/source-index/index.js';
-
-export type { DeterministicClassifierConfig } from './privacy/classifier/deterministic/index.js';
-
-export {
-  AppError,
-  ConfigError,
-  EmbedderError,
-  InvalidArgumentError,
-  SensitiveNotFoundError,
-} from './core/errors.js';
-
-export { createDatabase } from './core/database.js';

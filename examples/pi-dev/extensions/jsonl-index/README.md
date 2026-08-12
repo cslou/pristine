@@ -40,7 +40,7 @@ Resolution precedence:
 
 1. Explicit config path passed to the runtime factory.
 2. `PRISTINE_DB_PATH` environment variable.
-3. Default `~/.pi/pristine/pristine.db`.
+3. Default `~/.pristine/data/pristine.db`.
 
 ## Stored fields
 
@@ -60,7 +60,7 @@ Each indexed row stores:
 ## Reset
 
 ```bash
-db="${PRISTINE_DB_PATH:-$HOME/.pi/pristine/pristine.db}"
+db="${PRISTINE_DB_PATH:-$HOME/.pristine/data/pristine.db}"
 rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 ```
 
@@ -69,7 +69,7 @@ rm -f "$db" "$db-wal" "$db-shm" "$db-journal"
 Type a unique phrase in Pi, let the turn complete, then query the SQLite DB for that phrase:
 
 ```bash
-sqlite3 ~/.pi/pristine/pristine.db "select source_uri, entry_id, line_number, snippet from pi_jsonl_chunks where snippet like '%known phrase%';"
+sqlite3 ~/.pristine/data/pristine.db "select source_uri, entry_id, line_number, snippet from pi_jsonl_chunks where snippet like '%known phrase%';"
 ```
 
 Pass condition: the known phrase appears once with a Pi JSONL source pointer.

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 // package.json exports. It requires `pnpm run build` before `pnpm run test:smoke`.
 describe('package entrypoint smoke', () => {
   it('exports and exercises the source-index public API from dist', async () => {
-    const pkg = (await import('../../dist/index.js')) as Record<string, unknown>;
+    const pkg = (await import('@pristine/sdk')) as Record<string, unknown>;
 
     expect(Object.keys(pkg).sort()).toEqual([
       'AppError',
@@ -26,7 +26,7 @@ describe('package entrypoint smoke', () => {
     expect(pkg.initSourceChunkTables).toBeTypeOf('function');
     expect(pkg.normalizeSourceChunkInput).toBeTypeOf('function');
 
-    const { createDatabase, Pristine } = pkg as typeof import('../../dist/index.js');
+    const { createDatabase, Pristine } = pkg as typeof import('@pristine/sdk');
     const db = createDatabase({ path: ':memory:', loadSqliteVec: true, runIntegrityCheck: false });
     const vector = [1, ...Array.from({ length: 767 }, () => 0)];
     const embedder = {

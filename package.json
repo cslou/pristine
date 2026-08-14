@@ -55,6 +55,7 @@
     "build": "pnpm run clean && tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "verify:package": "pnpm run build && node scripts/verify-package-contents.mjs",
+    "verify:production-dependencies": "node scripts/verify-production-dependency-resolutions.mjs",
     "verify:public-api-types": "pnpm exec tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck tests/smoke/public-api-types-fixture.mts",
     "db:reset": "rm -f ~/.pristine/data/pristine.db*",
     "docs:dev": "vocs dev",
@@ -91,8 +92,5 @@
       "protobufjs",
       "sharp"
     ]
-  },
-  "overrides": {
-    "protobufjs": "7.5.5"
   }
 }
